@@ -48,7 +48,7 @@ class ProjectStore:
         return project_id
 
     def update_project(self, project_id: str, **fields) -> None:
-        allowed = {k: v for k, v in fields.items() if k in ("title", "format", "music_path")}
+        allowed = {k: v for k, v in fields.items() if k in ("title", "format", "music_path", "auto_accept", "style")}
         with db.write(self._conn) as c:
             for key, value in allowed.items():
                 c.execute(f"UPDATE projects SET {key} = ? WHERE project_id = ?", (value, project_id))
@@ -103,6 +103,19 @@ class ProjectStore:
     def selections(self, script_id: str) -> list[Selection]:
         shots = self.script(script_id)["shots"]
         return [s for s in (self.selection(shot.shot_id) for shot in shots) if s is not None]
+
+    def add_generation(self, shot_id: str, *, kind: str, spec: dict, prompt: str, compiler_version: str, provider: str, model: str | None,
+                       seed: int | None, asset_id: str | None) -> str:
+        record_id = new_id("gen")
+        with db.write(self._conn) as c:
+            c.execute("INSERT INTO generations (record_id, shot_id, kind, spec, prompt, compiler_version, provider, model, seed, asset_id, created_at) "
+                      "VALUES (?,?,?,?,?,?,?,?,?,?,?)", (record_id, shot_id, kind, json.dumps(spec, ensure_ascii=False), prompt, compiler_version, provider, model,
+                                                       seed, asset_id, time.time()))
+        return record_id
+
+    def generations(self, shot_id: str, *, kind: str | None = None) -> list[dict]:
+        rows = self._conn.execute("SELECT * FROM generations WHERE shot_id = ? AND (? IS NULL OR kind = ?) ORDER BY created_at, record_id", (shot_id, kind, kind))
+        return [{**dict(r), "spec": json.loads(r["spec"])} for r in rows]
 
     def add_render(self, project_id: str, script_id: str, path: str, qc: dict) -> str:
         render_id = new_id("rnd")

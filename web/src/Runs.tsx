@@ -1,4 +1,4 @@
-import { call, REASONS, STAGE_NAMES, usePoll, type Asset, type Run } from "./api";
+import { call, REASONS, stageName, usePoll, type Asset, type Run } from "./api";
 import { Button, StageRail, StatusText } from "./parts";
 
 const PIPELINES: Record<string, string> = { "library.ingest": "Nhập footage", "library.understand": "Xem và mô tả video", "sourcing.match": "Chọn clip cho kịch bản", "edit.render": "Dựng video" };
@@ -21,11 +21,11 @@ export default function Runs() {
             <li key={r.run_id} className="grid gap-x-6 gap-y-2 px-2 py-3 md:grid-cols-[minmax(0,1fr)_260px_140px] md:items-center">
               <div className="min-w-0">
                 <p className="truncate font-medium">{PIPELINES[r.pipeline] ?? r.pipeline}: {names.get(r.subject_ref ?? "") ?? r.subject_ref}</p>
-                {now && <p className="text-sm text-mute">Đang ở bước {STAGE_NAMES[now.stage_key] ?? now.stage_key}</p>}
+                {now && <p className="text-sm text-mute">Đang ở bước {stageName(now.stage_key, r.pipeline)}</p>}
                 {stuck.map((s) => (
                   <div key={s.stage_id} className="mt-1 flex flex-wrap items-center gap-3 text-sm">
                     <span className={s.status === "failed" ? "text-tally" : "text-cue"}>
-                      Bước {STAGE_NAMES[s.stage_key] ?? s.stage_key} {s.status === "failed" ? "thất bại" : "đang dừng"}{s.blocked_reason ? `: ${REASONS[s.blocked_reason] ?? s.blocked_reason}` : ""}
+                      Bước {stageName(s.stage_key, r.pipeline)} {s.status === "failed" ? "thất bại" : "đang dừng"}{s.blocked_reason ? `: ${REASONS[s.blocked_reason] ?? s.blocked_reason}` : ""}
                     </span>
                     {s.status === "blocked" && <Button onClick={() => resume(s.stage_id)}>Chạy tiếp</Button>}
                   </div>

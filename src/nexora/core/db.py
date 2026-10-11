@@ -122,6 +122,8 @@ CREATE TABLE IF NOT EXISTS projects (
     project_id TEXT PRIMARY KEY,
     title      TEXT NOT NULL,
     format     TEXT NOT NULL DEFAULT 'landscape',
+    auto_accept INTEGER NOT NULL DEFAULT 0,
+    style      TEXT,
     music_path TEXT,
     created_at REAL NOT NULL
 );
@@ -167,11 +169,34 @@ CREATE TABLE IF NOT EXISTS notifications (
     created_at REAL NOT NULL,
     read_at    REAL
 );
+CREATE TABLE IF NOT EXISTS generations (
+    record_id        TEXT PRIMARY KEY,
+    shot_id          TEXT NOT NULL,
+    kind             TEXT NOT NULL,
+    spec             TEXT NOT NULL,
+    prompt           TEXT NOT NULL,
+    compiler_version TEXT NOT NULL,
+    provider         TEXT NOT NULL,
+    model            TEXT,
+    seed             INTEGER,
+    asset_id         TEXT,
+    status           TEXT NOT NULL DEFAULT 'candidate',
+    created_at       REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
 """
+
+
+# Columns added after a table first shipped. CREATE TABLE IF NOT EXISTS does not add them to an existing database.
+MIGRATIONS = [
+    ("projects", "format", "TEXT NOT NULL DEFAULT 'landscape'"),
+    ("projects", "music_path", "TEXT"),
+    ("projects", "auto_accept", "INTEGER NOT NULL DEFAULT 0"),
+    ("projects", "style", "TEXT"),
+]
 
 
 def connect(path: str | Path) -> sqlite3.Connection:
@@ -180,6 +205,12 @@ def connect(path: str | Path) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.executescript(SCHEMA)
+    for table, column, ddl in MIGRATIONS:
+        if column not in {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}:
+            try:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+            except sqlite3.OperationalError:
+                pass                                     # another connection added it first
     return conn
 
 

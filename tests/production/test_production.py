@@ -171,3 +171,20 @@ def test_the_publishing_package_holds_everything_a_manual_upload_needs(system):
     captions = (folder / "captions.srt").read_text(encoding="utf-8")
     assert captions.startswith("1\n00:00:00,000 --> ") and "cá tươi trên sạp" in captions and "\n2\n" in captions
     assert system.distribution.choose_thumbnail(render["render_id"], package["thumbnails"][2])["thumbnail"] == package["thumbnails"][2]
+
+
+def test_confidence_based_acceptance_skips_the_review_only_when_every_selection_is_strong(system):
+    strong = system.planning.create_project("Tự duyệt")
+    system.projects.update_project(strong, auto_accept=1)
+    script = system.planning.save_script(strong, ["cá tươi trên sạp", "chợ rau củ"])
+    run = system.sourcing.start_match(script)
+    drain(system)
+    assert system.orch.run_status(run) is RunStatus.SUCCEEDED and system.projects.script(script)["match_approved"]
+    assert {s.decided_by for s in system.projects.selections(script)} == {"policy"}
+
+    weak = system.planning.create_project("Có khoảng trống")
+    system.projects.update_project(weak, auto_accept=1)
+    script2 = system.planning.save_script(weak, ["cá tươi trên sạp", "bàn phím máy tính"])
+    run2 = system.sourcing.start_match(script2)
+    drain(system)
+    assert system.orch.run_status(run2) is RunStatus.WAITING_REVIEW          # a gap always goes to the operator

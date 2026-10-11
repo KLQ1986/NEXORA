@@ -19,6 +19,7 @@ from nexora.modules.edit.render import Edit
 from nexora.modules.library.understand import Understanding
 from nexora.modules.planning.scripts import Planning
 from nexora.modules.quality.review import review_cut
+from nexora.modules.sourcing.generate import Generation
 from nexora.modules.sourcing.match import Sourcing
 
 
@@ -37,10 +38,12 @@ class System:
     sourcing: Sourcing
     edit: Edit
     distribution: Distribution
+    generation: Generation
 
 
 def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Adapter | None = None,
-          segment_seconds: float = 12.0, voice: Adapter | None = None, match_threshold: float = 0.5, judge: bool = True) -> System:
+          segment_seconds: float = 12.0, voice: Adapter | None = None, match_threshold: float = 0.5, judge: bool = True,
+          generators: list[Adapter] | None = None) -> System:
     """`model` is the adapter for vision, reasoning and embeddings; without one, footage is ingested but not understood."""
     data_dir = Path(data_dir).resolve()          # tools resolve relative paths differently; keep every path absolute
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -67,6 +70,10 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     sourcing.register(registry)
     edit = Edit(orch, projects, assets, adapters, data_dir / "media", voice=voice is not None, reviewer=review_cut)
     edit.register(registry)
+    for generator in generators or []:
+        adapters.register(generator)
+    generation = Generation(orch, projects, assets, adapters, data_dir / "media")
+    generation.register(registry)
     distribution = Distribution(projects, assets, adapters, data_dir / "exports")
     worker = Worker(orch, registry, worker_id=f"worker-{os.getpid()}")
-    return System(data_dir, orch, assets, adapters, registry, worker, library, index, projects, planning, sourcing, edit, distribution)
+    return System(data_dir, orch, assets, adapters, registry, worker, library, index, projects, planning, sourcing, edit, distribution, generation)

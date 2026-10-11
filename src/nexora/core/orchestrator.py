@@ -318,11 +318,11 @@ class Orchestrator:
             else:
                 self._retry_or_block(c, stage, attempt.number, now, None)
 
-    def decide_review(self, stage_id: str, *, approve: bool, now: float | None = None) -> None:
+    def decide_review(self, stage_id: str, *, approve: bool, now: float | None = None, actor: str = "operator") -> None:
         now = time.time() if now is None else now
         with db.write(self._conn) as c:
             stage = self._expect(c, stage_id, StageStatus.WAITING_REVIEW)
-            self._event(c, stage.run_id, "review.decided", now, stage_id, payload={"approve": approve}, actor="operator")
+            self._event(c, stage.run_id, "review.decided", now, stage_id, payload={"approve": approve}, actor=actor)
             if approve:
                 self._set_status(c, stage, StageStatus.SUCCEEDED, now)
                 self._promote(c, stage.run_id, now)

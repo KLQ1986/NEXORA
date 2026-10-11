@@ -60,6 +60,8 @@ class Worker:
             self._orch.fail(claim.attempt_id, ErrorCode.INTERNAL.value, retryable=True, message=repr(err), now=end())
         else:
             self._orch.complete(claim.attempt_id, outputs=outputs or {}, now=end())
+            if (outputs or {}).get("auto_approve") is True:       # a gate set to confidence-based acceptance, and the handler vouches for the result
+                self._orch.decide_review(claim.stage_id, approve=True, now=end(), actor="policy")
             follow_up = self._registry.on_success(self._orch.pipeline_of(claim.run_id))
             if self._orch.run_status(claim.run_id) is RunStatus.SUCCEEDED:
                 self._orch.notify("succeeded", claim.run_id)

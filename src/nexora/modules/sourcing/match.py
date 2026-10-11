@@ -20,6 +20,7 @@ LOCATE_PROMPT = (
 MATCH = PipelineDefinition("sourcing.match", "1", [StageDef("match", gate=True)])
 WORDS_PER_SECOND = 2.6
 MIN_SECONDS = 2.5
+AUTO_ACCEPT = 8          # judge points (0-10) every selection must reach for a match to be accepted without review
 
 
 def _fields(candidate: dict) -> dict:
@@ -94,6 +95,7 @@ class Sourcing:
     def _match(self, ctx):
         used: set[str] = set()
         matched = gaps = 0
+        confident: list[int] = []
         for shot in self._projects.script(ctx.subject_ref)["shots"]:
             need = needed_seconds(shot.text)
             hits = self._index.search(shot.text, limit=self._alternates + 1, min_score=self._threshold, exclude=frozenset(used))
@@ -111,6 +113,7 @@ class Sourcing:
             best, rest = self._candidate(hits[0], need), [self._candidate(h, need) for h in hits[1:]]
             if self._judge:
                 best["t_in"], best["t_out"] = self._locate(shot.text, hits[0], need)
+                confident.append(verdicts[best["moment_id"]][0])
                 for cand in [best, *rest]:
                     points, why = verdicts[cand["moment_id"]]
                     cand["judge"] = points
@@ -119,6 +122,17 @@ class Sourcing:
             used.add(best["moment_id"])
             self._projects.set_selection(shot.shot_id, status="proposed", alternates=rest, **_fields(best))
             matched += 1
+        # Review by exception: with the project's gate set to confidence-based, a match with no gap and every
+        # selection judged strong on real frames is accepted without waiting. Anything less waits for the operator.
+        script = self._projects.script(ctx.subject_ref)
+        project = self._projects.project(script["project_id"])
+        strong = self._judge and gaps == 0 and matched > 0 and all(v >= AUTO_ACCEPT for v in confident)
+        if project.get("auto_accept") and strong:
+            for sel in self._projects.selections(ctx.subject_ref):
+                self._projects.set_selection(sel.shot_id, status="accepted", asset_id=sel.asset_id, moment_id=sel.moment_id, t_in=sel.t_in, t_out=sel.t_out,
+                                             score=sel.score, reason=sel.reason, alternates=sel.alternates, decided_by="policy")
+            self._projects.set_match_approved(ctx.subject_ref, True)
+            return {"matched": matched, "gaps": gaps, "auto_approve": True}
         return {"matched": matched, "gaps": gaps}
 
     def swap(self, shot_id: str, alternate: int) -> None:

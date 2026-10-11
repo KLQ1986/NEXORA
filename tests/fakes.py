@@ -51,3 +51,38 @@ class FakeVoice(Adapter):
             w.setnchannels(1); w.setsampwidth(2); w.setframerate(48000)
             w.writeframes(b"\x00\x00" * int(48000 * seconds))
         return Result(outputs={"duration": seconds}, files=(request.params["out"],))
+
+
+class FakeImageGen(Adapter):
+    """Draws a flat picture whose colour follows the seed, so reproducibility can be tested."""
+
+    def __init__(self):
+        self.requests = []
+
+    def describe(self) -> Capability:
+        return Capability(name="image_gen", operations=("generate",), runs="cloud")
+
+    def submit(self, request: Request) -> Result:
+        from PIL import Image
+        from nexora.core.adapter import Usage
+        self.requests.append(request)
+        seed = request.params["seed"]
+        Image.new("RGB", (640, 360), (seed % 200, seed // 7 % 200, seed // 13 % 200)).save(request.params["out"])
+        return Result(outputs={"provider": "fake", "model": "fake-image-1"}, files=(request.params["out"],), usage=Usage(units=1, cost=0.02))
+
+
+class FakeVideoGen(Adapter):
+    def __init__(self):
+        self.requests = []
+
+    def describe(self) -> Capability:
+        return Capability(name="video_gen", operations=("generate",), runs="cloud")
+
+    def submit(self, request: Request) -> Result:
+        import subprocess
+        from nexora.core.adapter import Usage
+        self.requests.append(request)
+        d = request.params["duration"]
+        subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-loop", "1", "-i", request.inputs["first_frame"], "-t", str(d),
+                        "-vf", "scale=640:360,fps=25", "-pix_fmt", "yuv420p", request.params["out"]], check=True)
+        return Result(outputs={"provider": "fake", "model": "fake-video-1"}, files=(request.params["out"],), usage=Usage(units=d, cost=0.1 * d))

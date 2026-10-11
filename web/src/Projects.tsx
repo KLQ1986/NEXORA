@@ -109,6 +109,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<"work" | "board">("work");
   const [music, setMusic] = useState<string | null>(null);
+  const [style, setStyle] = useState<string | null>(null);
   useEffect(() => { if (p && text === null) setText(p.shots.map((s) => s.text).join("\n")); }, [p, text]);
   if (!p) return <section className="p-6 text-mute">Đang mở dự án</section>;
   const run = async (fn: () => Promise<unknown>) => { setBusy(true); setNote(null); try { await fn(); } catch (e) { setNote((e as Error).message); } setBusy(false); reload(); };
@@ -181,12 +182,46 @@ function Detail({ id, back }: { id: string; back: () => void }) {
 
         {p.script && (
           <div>
+            <h2 className="mb-1 text-lg font-semibold">Sinh hình bằng AI</h2>
+            <p className="mb-2 max-w-3xl text-mute">Dùng khi làm phim hoạt hình hoặc khi kho footage không có hình. Hệ thống sinh một ảnh tĩnh cho mỗi câu để bạn duyệt trước, rồi mới sinh video từ ảnh đã duyệt.</p>
+            {!p.generators.image || !p.generators.video ? (
+              <p className="max-w-3xl text-cue">Chưa cấu hình nhà cung cấp sinh ảnh và sinh video, nên chức năng này chưa chạy được. Cần khoá API của một nhà cung cấp để bật.</p>
+            ) : (
+              <>
+                <form className="mb-3 flex max-w-3xl items-end gap-2" onSubmit={(e) => { e.preventDefault(); run(() => post(`/api/v1/projects/${id}`, { style: (style ?? "").trim() || null }, "PATCH")); }}>
+                  <div className="min-w-0 flex-1"><label htmlFor="style" className="mb-1 block font-medium">Phong cách hình</label>
+                    <input id="style" value={style ?? p.style ?? ""} onChange={(e) => setStyle(e.target.value)} placeholder="Ví dụ: hoạt hình màu nước, ánh sáng ấm" className="w-full rounded border border-line bg-canvas px-3 py-1.5 placeholder:text-mute/70" /></div>
+                  <Button disabled={busy || style === null}>Lưu phong cách</Button>
+                </form>
+                <div className="flex flex-wrap items-center gap-3">
+                  <Button disabled={busy || dirty || (!!p.generate && ["queued", "running"].includes(p.generate.status))} onClick={() => run(() => post(`/api/v1/projects/${id}/generate`))}>{p.generate ? "Sinh lại" : "Sinh ảnh cho từng câu"}</Button>
+                  {p.generate && ["queued", "running"].includes(p.generate.status) && <span className="text-mute">Đang sinh</span>}
+                  {p.generate?.status === "waiting_review" && <Button kind="primary" disabled={busy} onClick={() => run(() => post(`/api/v1/projects/${id}/generate/approve`))}>
+                    {p.generate.stages.find((s) => s.status === "waiting_review")?.stage_key === "keyframes" ? "Duyệt ảnh, sinh video" : "Duyệt các clip này"}</Button>}
+                  {p.generate?.status === "blocked" && <span className="text-cue">Đang dừng, xem ở mục Tiến trình</span>}
+                </div>
+                {p.shots.some((s) => s.keyframe_url) && (
+                  <ol className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+                    {p.shots.map((s, i) => (
+                      <li key={s.shot_id}>{s.keyframe_url ? <img src={s.keyframe_url} alt="" className="aspect-video w-full rounded-sm bg-black object-cover" title={s.generation?.prompt} /> : <div className="aspect-video rounded-sm bg-raised" />}
+                        <p className="mt-1 line-clamp-2 text-sm"><span className="tc text-mute">{i + 1}</span> {s.text}</p></li>
+                    ))}
+                  </ol>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        {p.script && (
+          <div>
             <div className="mb-2 flex flex-wrap items-center gap-3">
               <h2 className="text-lg font-semibold">Clip cho từng câu</h2>
               <Button kind={!p.match ? "primary" : "plain"} disabled={busy || !!matching || dirty} onClick={() => run(() => post(`/api/v1/projects/${id}/match`))}>{p.match ? "Tìm lại clip" : "Tìm clip cho kịch bản"}</Button>
               {matching && <span className="text-mute">Đang tìm trong kho footage</span>}
               {reviewing && <Button kind="primary" disabled={busy} onClick={() => run(() => post(`/api/v1/projects/${id}/match/approve`))}>Duyệt các clip này</Button>}
               {approved && <span className="text-proof">Đã duyệt</span>}
+              <label className="ml-auto flex items-center gap-2 text-sm text-mute"><input type="checkbox" checked={p.auto_accept} disabled={busy} onChange={(e) => run(() => post(`/api/v1/projects/${id}`, { auto_accept: e.target.checked ? 1 : 0 }, "PATCH"))} />Tự duyệt khi mọi clip đều khớp chắc chắn</label>
             </div>
             {p.shots.some((s) => s.selection) && <div className="mb-4 max-w-4xl"><TimelineStrip shots={p.shots} /></div>}
             {reviewing && <p className="mb-2 text-cue">Xem từng clip. Đổi sang phương án khác nếu cần, rồi duyệt để dựng video.{gaps > 0 ? ` Còn ${gaps} câu chưa có hình.` : ""}</p>}

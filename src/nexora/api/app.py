@@ -170,7 +170,11 @@ def create_app(system, *, web_dir: str | Path | None = None) -> FastAPI:
         shots = []
         for shot in (script["shots"] if script else []):
             sel = system.projects.selection(shot.shot_id)
-            item = {"shot_id": shot.shot_id, "position": shot.position, "text": shot.text, "selection": None}
+            item = {"shot_id": shot.shot_id, "position": shot.position, "text": shot.text, "selection": None, "keyframe_url": None, "generation": None}
+            keys = system.projects.generations(shot.shot_id, kind="keyframe")
+            if keys:
+                item["keyframe_url"] = f"/media/{system.assets.original(keys[-1]['asset_id']).version_id}"
+                item["generation"] = {"prompt": keys[-1]["prompt"], "seed": keys[-1]["seed"], "provider": keys[-1]["provider"]}
             if sel:
                 item["selection"] = {"status": sel.status, "t_in": sel.t_in, "t_out": sel.t_out, "score": sel.score, "reason": sel.reason,
                                      "decided_by": sel.decided_by, "moment_id": sel.moment_id,
@@ -183,7 +187,9 @@ def create_app(system, *, web_dir: str | Path | None = None) -> FastAPI:
                    for r in system.projects.renders(project["project_id"])]
         return {**project, "script": {"script_id": script["script_id"], "version": script["version"], "match_approved": script["match_approved"]} if script else None,
                 "shots": shots, "match": latest_run(script["script_id"], "sourcing.match") if script else None,
-                "render": latest_run(script["script_id"], "edit.render") if script else None, "renders": renders}
+                "render": latest_run(script["script_id"], "edit.render") if script else None, "renders": renders,
+                "generate": latest_run(script["script_id"], "sourcing.generate") if script else None, "generators": system.generation.available(),
+                "auto_accept": bool(project.get("auto_accept"))}
 
     def need_project(project_id: str) -> dict:
         project = system.projects.project(project_id)
@@ -235,6 +241,18 @@ def create_app(system, *, web_dir: str | Path | None = None) -> FastAPI:
     @app.post("/api/v1/projects/{project_id}/match", status_code=202)
     def start_match(project_id: str):
         return {"run_id": system.sourcing.start_match(current_script_id(project_id))}
+
+    @app.post("/api/v1/projects/{project_id}/generate", status_code=202)
+    def start_generate(project_id: str):
+        return {"run_id": system.generation.start(current_script_id(project_id))}
+
+    @app.post("/api/v1/projects/{project_id}/generate/approve")
+    def approve_generate(project_id: str):
+        run = latest_run(current_script_id(project_id), "sourcing.generate")
+        if run is None or run["status"] != "waiting_review":
+            raise HTTPException(409, "Chưa có gì đang chờ duyệt")
+        system.generation.approve(run["run_id"])
+        return project_view(need_project(project_id))
 
     @app.post("/api/v1/projects/{project_id}/match/approve")
     def approve_match(project_id: str):

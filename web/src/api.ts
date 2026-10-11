@@ -47,6 +47,9 @@ export const STAGE_NAMES: Record<string, string> = {
   checksum: "Kiểm tra file", probe: "Đọc thông số", usable: "Tìm phần dùng được", proxy: "Tạo bản xem", thumbnail: "Ảnh đại diện",
   structure: "Chia đoạn", describe: "Mô tả hình", understand: "Hiểu nội dung", index: "Lập chỉ mục",
 };
+/** Stage names depend on the pipeline: "segments" means one thing when understanding footage and another when rendering. */
+export const stageName = (key: string, pipeline?: string | null) =>
+  (pipeline === "edit.render" && key === "segments" ? "Dựng từng cảnh" : pipeline === "animation.generate" && key === "segments" ? "Dựng từng cảnh" : STAGE_NAMES[key] ?? key);
 export const STATUS_NAMES: Record<string, string> = {
   queued: "Đang chờ", pending: "Chưa tới lượt", ready: "Sẵn sàng", running: "Đang chạy", waiting_review: "Chờ bạn duyệt",
   retry_wait: "Sẽ thử lại", blocked: "Cần bạn xử lý", succeeded: "Xong", skipped: "Bỏ qua", failed: "Thất bại", cancelled: "Đã huỷ",
@@ -62,7 +65,8 @@ export type Hit = Moment & { asset: AssetBrief };
 export type Candidate = { moment_id: string; t_in: number; t_out: number; score: number; reason: string; frame_url: string; asset: AssetBrief };
 export type Selection = { status: string; t_in: number | null; t_out: number | null; score: number | null; reason: string | null; decided_by: string;
   moment_id: string | null; frame_url: string | null; asset: AssetBrief | null; alternates: Candidate[] };
-export type Shot = { shot_id: string; position: number; text: string; selection: Selection | null };
+export type Shot = { shot_id: string; position: number; text: string; selection: Selection | null; keyframe_url: string | null;
+  generation: { prompt: string; seed: number | null; provider: string } | null };
 export type Finding = { check: string; shot: number; severity: string; text: string; fix: string };
 export type Package = { title: string; description: string; thumbnails: string[]; thumbnail: string; folder: string; synthetic_content: boolean; captions: string; video: string };
 export type RenderItem = { render_id: string; created_at: number; url: string; package: Package | null;
@@ -71,6 +75,7 @@ export type RenderItem = { render_id: string; created_at: number; url: string; p
 export type BoardEvent = { at: number; kind: string; pipeline: string; stage_key: string | null; actor: string; payload: Record<string, unknown> };
 export type Notice = { notification_id: number; kind: string; run_id: string; stage_key: string | null; reason: string | null; created_at: number; read_at: number | null; pipeline: string | null };
 export type Project = { project_id: string; title: string; created_at: number; format: string; music_path: string | null;
-  script: { script_id: string; version: number; match_approved: boolean } | null; shots: Shot[]; match: Run | null; render: Run | null; renders: RenderItem[] };
+  script: { script_id: string; version: number; match_approved: boolean } | null; shots: Shot[]; match: Run | null; render: Run | null; renders: RenderItem[];
+  generate: Run | null; generators: { image: boolean; video: boolean }; auto_accept: boolean; style: string | null };
 export const post = <T,>(url: string, body?: unknown, method = "POST") => call<T>(url, { method, body: body === undefined ? undefined : JSON.stringify(body) });
 Object.assign(STAGE_NAMES, { segments: "Chia đoạn", summarise: "Tóm tắt", match: "Chọn clip", narration: "Đọc lời dẫn", assemble: "Ghép và kiểm tra" });

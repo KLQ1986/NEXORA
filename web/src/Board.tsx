@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { STAGE_NAMES, timecode, usePoll, type BoardEvent, type Project } from "./api";
+import { stageName, timecode, usePoll, type BoardEvent, type Project } from "./api";
 
 const RAIL = [
   { key: "script", label: "Kịch bản" }, { key: "match", label: "Chọn clip" }, { key: "match_review", label: "Duyệt clip" },
@@ -97,7 +97,7 @@ export default function Board({ project: p }: { project: Project }) {
               <li key={i} className="grid grid-cols-[4.6rem_1fr] gap-2 py-1.5 text-sm">
                 <span className="tc text-mute">{clock(e.at)}</span>
                 <span><span className={e.kind === "stage.waiting_review" || e.kind === "stage.blocked" ? "text-cue" : e.kind === "stage.failed" ? "text-tally" : ""}>{WORDS[e.kind]}</span>
-                  {e.stage_key ? `: ${STAGE_NAMES[e.stage_key] ?? e.stage_key}` : e.pipeline === "sourcing.match" ? ": chọn clip" : ": dựng video"}</span>
+                  {e.stage_key ? `: ${stageName(e.stage_key, e.pipeline)}` : e.pipeline === "sourcing.match" ? ": chọn clip" : ": dựng video"}</span>
               </li>
             ))}
             {shown.length === 0 && <li className="py-2 text-sm text-mute">Chưa có hoạt động nào.</li>}
