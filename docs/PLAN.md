@@ -101,7 +101,19 @@ Các bước 1–10 của bảng trên đã có bản chạy được; bước 1
 | Nhạc trong thư viện: nhập file nhạc, đo độ dài và độ lớn, chọn trong dự án | Chạy trên trình duyệt với một file âm thử |
 | Sửa lỗi: video ngắn hơn 3 giây trước đây không ghép được | Test tự động |
 
-Còn lại chưa xây: reframe theo chủ thể, đồng bộ nhiều máy quay, đổi hình theo từ khoá trong câu. Các mục bị chặn giữ nguyên như bảng ở trên.
+### Lượt xây thứ tư, 2026-10-11
+
+108 test đạt. Ba tính năng dưới đây và toàn bộ lượt thứ ba đã được chạy trên trình duyệt bằng một server thử riêng (cổng 8601) dùng mô hình giả, vì mô hình thị giác thật đang tạm dừng theo yêu cầu.
+
+| Tính năng | Cách làm | Kiểm chứng |
+|---|---|---|
+| Cắt khung theo chủ thể cho video dọc và vuông | Mô hình nhìn một khung hình và cho biết chủ thể nằm ở đâu theo chiều ngang; người vận hành ghi đè bằng Bên trái, Chính giữa, Bên phải trên Dòng thời gian | Trình duyệt, mô hình giả. Xem khung hình thật của bản dựng: đúng phần được chọn |
+| Chèn hình khác khi nói tới một từ trong câu | Tìm cảnh theo từ đó trong kho; thời điểm chuyển hình tính theo vị trí của từ trong câu | Trình duyệt, mô hình giả. Khung hình trước và sau thời điểm chuyển khác nhau đúng như mong đợi |
+| Đồng bộ hai máy quay cùng một sự kiện | So độ lớn âm thanh của hai clip để tìm độ lệch; trên Dòng thời gian đổi sang góc máy khác ở đúng thời điểm đó | Trình duyệt: tìm đúng độ lệch 2,50 giây đã cài sẵn; từ chối hai clip không cùng sự kiện và clip không có tiếng |
+
+Giới hạn cần biết: đồng bộ máy quay cần cả hai clip có âm thanh; thời điểm chèn hình là ước lượng theo vị trí chữ, chưa dựa trên nhận dạng tiếng nói; chất lượng tìm chủ thể của mô hình thật chưa được đo.
+
+Chưa làm được vì đang chờ: chạy các phần cần mô hình thật trên giao diện (mô hình đang tạm dừng), và các mục bị chặn ở bảng trên.
 
 ### Lát 1 — Lõi chạy việc
 
