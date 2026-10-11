@@ -33,7 +33,7 @@ Cỡ là ước lượng tương đối (S nhỏ, M vừa, L lớn), không ph�
 | # | Lát cắt | Cỡ | Phụ thuộc | Trạng thái |
 |---|---|---|---|---|
 | 1 | Lõi chạy việc | M | — | Gần xong (42 test đạt); còn lệnh dòng lệnh và bộ kiểm thử adapter dùng chung |
-| 2 | Nhập một video | M | 1 | Chưa bắt đầu |
+| 2 | Nhập một video | M | 1 | Xong phần chính (63 test đạt); còn phát hiện đứng hình, kiểm tra dung lượng đĩa, chuẩn hoá HDR |
 | 3 | Hiểu video và tìm kiếm | L | 2 | Chưa bắt đầu |
 | 4 | Khớp kịch bản với footage | L | 3 | Chưa bắt đầu |
 | 5 | Dựng và render | L | 4 | Chưa bắt đầu |
@@ -49,10 +49,10 @@ Mục thiết kế: 5, 6, 7.
 - [x] Đăng ký pipeline và hàm xử lý: module khai báo, lõi chạy.
 - [x] Hợp đồng adapter: describe, estimate, submit, poll, cancel, reconcile; khuôn request, result, error; bảng mã lỗi chuẩn và phản ứng của lõi.
 - [x] Adapter đầu tiên: FFprobe chạy như tiến trình con, có giới hạn thời gian.
-- [ ] Adapter FFmpeg (chuyển sang lát 2, nơi có việc thật cho nó: tạo proxy, phát hiện khung đen).
+- [x] Adapter FFmpeg: phát hiện khung đen, tạo proxy (ghi tên tạm rồi đổi tên khi xong), ảnh thu nhỏ.
 - [ ] Bộ kiểm thử chung cho adapter (mục 7.6): mới có test riêng cho FFprobe và cho quy tắc riêng tư; chưa thành bộ dùng lại cho mọi adapter.
 - [x] Bản ghi chi phí và chặn theo ngân sách của run.
-- [ ] Lệnh dòng lệnh tối thiểu: chạy worker, xem trạng thái run.
+- [x] Lệnh dòng lệnh: `python -m nexora ingest | worker | runs | assets | env | serve`.
 
 **Xong khi:** một pipeline mẫu hai bước chạy qua worker và gọi FFprobe trên một file thật; dừng worker giữa chừng rồi chạy lại thì việc tiếp tục, không làm lại bước đã xong; adapter FFmpeg qua bộ kiểm thử chung.
 
@@ -60,14 +60,18 @@ Mục thiết kế: 5, 6, 7.
 
 Mục thiết kế: 8, 15.1, 17.1, 19.9.1, 23.3.
 
-- [ ] Bảng dữ liệu lõi cho Asset, AssetVersion, StorageVolume.
-- [ ] Các bước nhập: đăng ký và tính checksum, đọc thông số, phát hiện phần không dùng được (khung đen, đứng hình), chuẩn hoá và tạo proxy, ảnh thu nhỏ.
-- [ ] Kiểm tra môi trường bản đầu: phiên bản FFmpeg và các bộ lọc cần có, dung lượng trống.
-- [ ] API: đăng ký file, xem run, xem danh sách tài sản.
+- [x] Kho tài sản: Asset, AssetVersion bất biến, StorageVolume, nối lại ổ đĩa, phả hệ, tìm trùng theo checksum.
+- [x] Các bước nhập: đăng ký và tính checksum, đọc thông số, phát hiện khung đen, tạo proxy 720p, ảnh thu nhỏ; file trùng được liên kết chứ không xử lý lại.
+- [ ] Phát hiện đứng hình; chuẩn hoá tốc độ khung hình và HDR khi tạo proxy (cần bản FFmpeg có `zscale`).
+- [x] Kiểm tra môi trường bản đầu: bộ lọc và bộ mã hoá của FFmpeg (`python -m nexora env`).
+- [ ] Kiểm tra dung lượng trống trước khi nhập và trước khi render.
+- [x] API: đăng ký file, xem run, xem danh sách tài sản. Mỗi luồng dùng một kết nối SQLite riêng.
 
 **Xong khi:** nhập được bốn video của thử nghiệm; phần khung đen ở cuối video chợ Hội An được đánh dấu là không dùng được; ngắt giữa lúc tạo proxy rồi chạy lại thì tiếp tục; checksum file gốc không đổi.
 
-**Cần trước:** cài bản FFmpeg đầy đủ hơn (bản hiện có thiếu bộ lọc chuyển HDR, mục 12.5).
+**Đã đo (2026-10-11, bốn video thử nghiệm, 17 phút):** nhập hết 82 giây; phần khung đen của video chợ được phát hiện đúng (dùng được 0 → 2:25); checksum bốn file gốc không đổi. Proxy 720p ở 3 Mbps chiếm 325 MB, lớn hơn cả file gốc (205 MB): cần hạ bitrate và không tạo proxy cho phần khung đen.
+
+**Còn cần:** cài bản FFmpeg đầy đủ hơn (bản hiện có thiếu bộ lọc chuyển HDR, mục 12.5).
 
 ### Lát 3 — Hiểu video và tìm kiếm
 

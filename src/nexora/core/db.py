@@ -1,5 +1,6 @@
 """SQLite access for the Platform core: one file, WAL mode, explicit transactions."""
 import sqlite3
+import threading
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -69,6 +70,36 @@ CREATE TABLE IF NOT EXISTS cost_records (
     currency    TEXT NOT NULL,
     recorded_at REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS volumes (
+    volume_id  TEXT PRIMARY KEY,
+    name       TEXT NOT NULL,
+    kind       TEXT NOT NULL,
+    mount_path TEXT NOT NULL UNIQUE,
+    created_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS assets (
+    asset_id      TEXT PRIMARY KEY,
+    kind          TEXT NOT NULL,
+    origin        TEXT NOT NULL,
+    privacy_class TEXT NOT NULL,
+    created_at    REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS asset_versions (
+    seq                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    version_id            TEXT NOT NULL UNIQUE,
+    asset_id              TEXT NOT NULL REFERENCES assets(asset_id),
+    role                  TEXT NOT NULL,
+    volume_id             TEXT NOT NULL REFERENCES volumes(volume_id),
+    relative_path         TEXT NOT NULL,
+    checksum              TEXT,
+    size                  INTEGER NOT NULL,
+    metadata              TEXT NOT NULL DEFAULT '{}',
+    parents               TEXT NOT NULL DEFAULT '[]',
+    created_by_attempt_id TEXT,
+    created_at            REAL NOT NULL,
+    UNIQUE (volume_id, relative_path)
+);
+CREATE INDEX IF NOT EXISTS versions_by_checksum ON asset_versions(checksum);
 CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -83,6 +114,21 @@ def connect(path: str | Path) -> sqlite3.Connection:
     conn.execute("PRAGMA foreign_keys=ON")
     conn.executescript(SCHEMA)
     return conn
+
+
+class LocalConnections:
+    """One connection per thread. The API serves requests on worker threads while the pipeline worker
+    runs on another; SQLite connections must not cross threads, and WAL lets them work side by side."""
+
+    def __init__(self, path: str | Path):
+        self._path, self._local = path, threading.local()
+        self.get()                                  # create the schema at construction
+
+    def get(self) -> sqlite3.Connection:
+        conn = getattr(self._local, "conn", None)
+        if conn is None:
+            conn = self._local.conn = connect(self._path)
+        return conn
 
 
 @contextmanager

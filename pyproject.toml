@@ -3,10 +3,17 @@ name = "nexora"
 version = "0.1.0"
 description = "NEXORA: a local-first, AI-assisted video production system for one operator"
 requires-python = ">=3.12,<3.13"
-dependencies = []
+dependencies = [
+    "fastapi>=0.143.0",
+    "uvicorn>=0.54.0",
+]
 
 [dependency-groups]
-dev = ["pytest>=8", "import-linter>=2"]
+dev = [
+    "pytest>=8",
+    "import-linter>=2",
+    "httpx>=0.28.1",
+]
 
 [build-system]
 requires = ["hatchling"]

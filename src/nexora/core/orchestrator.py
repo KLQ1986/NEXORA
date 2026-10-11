@@ -81,10 +81,14 @@ def _attempt(row) -> Attempt:
 class Orchestrator:
     def __init__(self, path: str | Path, *, lease_seconds: float = 120.0, backoff_seconds: float = 30.0,
                  guard: Callable[[Stage], str | None] | None = None):
-        self._conn = db.connect(path)
+        self._db = db.LocalConnections(path)
         self._lease = lease_seconds
         self._backoff = backoff_seconds
         self._guard = guard            # policy and budget check at dispatch; returns a reason to block
+
+    @property
+    def _conn(self):
+        return self._db.get()
 
     # ------------------------------------------------------------------ reads
     def stages(self, run_id: str) -> list[Stage]:
@@ -127,6 +131,14 @@ class Orchestrator:
         if StageStatus.FAILED in statuses:
             return RunStatus.FAILED     # a stage failed and what remains can never run
         return RunStatus.QUEUED
+
+    def run_info(self, run_id: str) -> dict | None:
+        row = self._conn.execute("SELECT run_id, pipeline_id, project_id, subject_ref, budget_cap, created_at FROM runs "
+                                 "WHERE run_id = ?", (run_id,)).fetchone()
+        return dict(row) if row else None
+
+    def runs(self) -> list[str]:
+        return [r[0] for r in self._conn.execute("SELECT run_id FROM runs ORDER BY created_at DESC, run_id DESC")]
 
     def pipeline_of(self, run_id: str) -> str:
         return self._conn.execute("SELECT pipeline_id FROM runs WHERE run_id = ?", (run_id,)).fetchone()[0]

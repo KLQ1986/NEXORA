@@ -13,6 +13,7 @@ class StageContext:
     """What a stage handler receives."""
     claim: Claim
     inputs: dict[str, dict]                      # outputs of the stages this one depends on, by stage key
+    subject_ref: str | None                      # what the run is about, for example an asset id
     _orch: Orchestrator = field(repr=False)
 
     def should_stop(self) -> bool:
@@ -45,7 +46,7 @@ class Worker:
         handler = self._registry.handler(self._orch.pipeline_of(claim.run_id), claim.stage_key)
         deps = {s.stage_key: (s.outputs or {}) for s in self._orch.stages(claim.run_id)}
         me = next(s for s in self._orch.stages(claim.run_id) if s.stage_id == claim.stage_id)
-        ctx = StageContext(claim, {k: deps[k] for k in me.depends_on}, self._orch)
+        ctx = StageContext(claim, {k: deps[k] for k in me.depends_on}, self._orch.run_info(claim.run_id)["subject_ref"], self._orch)
         try:
             outputs = handler(ctx)
         except AdapterError as err:
