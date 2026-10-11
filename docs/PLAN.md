@@ -40,6 +40,24 @@ Cỡ là ước lượng tương đối (S nhỏ, M vừa, L lớn), không ph�
 | 6 | Web UI lõi | L | 2 (làm song song với 3–5) | Chưa bắt đầu |
 | 7 | Video đầu tiên trên footage thật | S | 5, 6 | Chưa bắt đầu |
 
+### Thứ tự thực hiện
+
+Giao diện được làm xen kẽ với phần xử lý, để mỗi năng lực mới đều nhìn thấy và thao tác được ngay.
+
+| Bước | Việc | Thuộc lát | Cần từ người vận hành trước khi bắt đầu | Trạng thái |
+|---|---|---|---|---|
+| 1 | Lõi chạy việc: trạng thái, worker, adapter, chi phí | 1 | — | Xong |
+| 2 | Nhập video: kho tài sản, khung đen, proxy, API, dòng lệnh | 2 | — | Xong |
+| 3 | Dọn nợ: hạ dung lượng proxy, phát hiện đứng hình, kiểm tra dung lượng đĩa, bộ kiểm thử chung cho adapter | 1, 2 | Cho phép cài bản FFmpeg đầy đủ hơn | Kế tiếp |
+| 4 | Khung Web UI và hai màn hình đầu: Library, Runs | 6 | Chọn công nghệ front-end | |
+| 5 | Hiểu video: chia đoạn, mô tả, chỉ mục | 3 | Chấm kết quả thử nghiệm; cho hay không cho dùng model cloud | |
+| 6 | Tìm kiếm trong Library và màn hình Asset | 3, 6 | — | |
+| 7 | Khớp kịch bản với footage | 4 | — | |
+| 8 | Màn hình Project, kịch bản và Match review | 6 | — | |
+| 9 | Dựng và render: timeline, lời dẫn, phụ đề, nhạc, QC | 5 | Mẫu định dạng số 1; chọn bộ render đồ hoạ; chọn giọng đọc | |
+| 10 | Màn hình Timeline preview, Render review và Board | 6 | Chép giao diện Backlot hay viết lại (ý định thương mại) | |
+| 11 | Video đầu tiên trên footage thật, đo và sửa | 7 | Footage thật | |
+
 ### Lát 1 — Lõi chạy việc
 
 Mục thiết kế: 5, 6, 7.
