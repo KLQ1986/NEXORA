@@ -135,7 +135,11 @@ Ghi nhận về chất lượng, để dành cho giai đoạn tối ưu (ngườ
 - [x] Hai luồng chạy: phân tích footage (nền) tách khỏi chọn clip và dựng video
 - [x] Lệnh `doctor` và mục Kiểm tra hệ thống trên giao diện
 - [x] `README.md`: cài đặt, lệnh, cấu trúc, cách tự khởi động cùng máy
-- [ ] Chưa làm: lớp tác tử (multi-agent), hàng đợi theo lịch, ngân sách theo dự án trên giao diện
+- [x] Trợ lý sản xuất (lớp `nexora.agents`): nhận một mục tiêu, tự viết kịch bản, tìm clip, lấp chỗ thiếu bằng stock, dựng; dừng ở hai cổng duyệt; ghi lại từng quyết định theo vai
+- [x] Giờ phân tích footage: chỉ cho việc nặng chạy trong khung giờ đã chọn
+- [x] Ngân sách theo dự án cho việc sinh hình trả tiền
+
+Đã chạy trên trình duyệt bằng server thử dùng mô hình giả: trợ lý làm trọn một video qua hai lần duyệt; giữ việc phân tích ngoài khung giờ trong khi việc nhập vẫn chạy; huỷ một lần chạy; trỏ lại nơi chứa footage sau khi thư mục đổi chỗ; lưu ngân sách. Lệnh `backup` và `restore` đã chạy trên dữ liệu thử. Trợ lý chưa chạy với mô hình thật.
 
 ### Lát 1 — Lõi chạy việc
 
