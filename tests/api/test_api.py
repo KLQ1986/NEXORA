@@ -65,3 +65,35 @@ def test_environment_reports_tools_and_free_disk(client_and_system):
     client, _ = client_and_system
     env = client.get("/api/v1/environment").json()
     assert env["ffmpeg"]["filters"]["blackdetect"] is True and env["disk"]["free_bytes"] > 0
+
+
+def test_a_video_can_be_made_end_to_end_through_the_api(tmp_path):
+    from tests.conftest import make_video
+    from tests.fakes import FakeModel, FakeVoice
+    system = build(tmp_path / "data", model=FakeModel(), voice=FakeVoice(), segment_seconds=2.0)
+    client = TestClient(create_app(system))
+    drain = lambda: [None for _ in iter(system.worker.run_once, False)]
+    client.post("/api/v1/assets/register", json={"path": str(make_video(tmp_path / "f.mp4", picture=20))}); drain()
+
+    hits = client.get("/api/v1/library/search", params={"q": "ca tuoi"}).json()["hits"]
+    assert hits and "cá tươi" in hits[0]["text"] and client.get(hits[0]["frame_url"]).status_code == 200
+    fixed = client.patch(f"/api/v1/moments/{hits[0]['moment_id']}", json={"text": "Mâm cá tươi trên sạp."}).json()
+    assert fixed["source"] == "human"
+
+    project = client.post("/api/v1/projects", json={"title": "Chợ sáng", "lines": ["cá tươi trên sạp", "bàn phím máy tính", "chợ rau củ"]}).json()
+    pid = project["project_id"]
+    assert client.post(f"/api/v1/projects/{pid}/render").status_code == 409            # nothing approved yet
+    client.post(f"/api/v1/projects/{pid}/match"); drain()
+    view = client.get(f"/api/v1/projects/{pid}").json()
+    assert view["match"]["status"] == "waiting_review"
+    assert [s["selection"]["status"] for s in view["shots"]] == ["proposed", "gap", "proposed"]
+    third = view["shots"][2]
+    assert client.post(f"/api/v1/shots/{third['shot_id']}/swap", json={"alternate": 0}).status_code == 200
+    assert client.post(f"/api/v1/projects/{pid}/match/approve").json()["script"]["match_approved"] is True
+
+    client.post(f"/api/v1/projects/{pid}/render"); drain()
+    view = client.get(f"/api/v1/projects/{pid}").json()
+    assert view["render"]["status"] == "waiting_review" and view["renders"][0]["qc"]["passed"]
+    video = client.get(view["renders"][0]["url"], headers={"Range": "bytes=0-9"})
+    assert video.status_code == 206
+    assert client.post(f"/api/v1/projects/{pid}/render/decision", json={"approve": True}).json()["render"]["status"] == "succeeded"

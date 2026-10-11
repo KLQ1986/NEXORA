@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { call, megabytes, timecode, usePoll, type Asset } from "./api";
+import { call, megabytes, post, timecode, usePoll, type Asset, type Hit, type Moment } from "./api";
 import { Button, RangeStrip, StageRail, StatusText } from "./parts";
 
 function AddFootage({ onDone }: { onDone: () => void }) {
@@ -27,17 +27,50 @@ function AddFootage({ onDone }: { onDone: () => void }) {
   );
 }
 
-function Player({ asset }: { asset: Asset }) {
+function Moments({ asset, t, seek }: { asset: Asset; t: number; seek: (s: number) => void }) {
+  const { data, reload } = usePoll<{ video: Moment | null; segments: Moment[] }>(`/api/v1/assets/${asset.asset_id}/moments`, 6000);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  if (!data) return null;
+  if (!data.segments.length) return <p className="text-mute">{asset.understand && asset.understand.status !== "succeeded" ? "Hệ thống đang xem video này. Mô tả sẽ hiện ra khi xong." : "Video này chưa được mô tả."}</p>;
+  const save = async (id: string) => { await post(`/api/v1/moments/${id}`, { text: draft }, "PATCH"); setEditing(null); reload(); };
+  return (
+    <div>
+      {data.video && <p className="mb-3">{data.video.text}</p>}
+      <h3 className="mb-1 font-semibold">Từng đoạn</h3>
+      <ol className="divide-y divide-line border-y border-line">
+        {data.segments.map((m) => {
+          const now = t >= m.t_start && t < m.t_end;
+          return (
+            <li key={m.moment_id} className={`grid grid-cols-[3.2rem_1fr] gap-2 py-2 ${now ? "bg-raised/60" : ""}`}>
+              <button type="button" className="tc self-start text-left text-mute hover:text-ink" onClick={() => seek(m.t_start)}>{timecode(m.t_start)}</button>
+              {editing === m.moment_id ? (
+                <div><textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={3} className="w-full rounded border border-line bg-canvas p-2" aria-label="Sửa mô tả" />
+                  <div className="mt-1 flex gap-2"><Button kind="primary" onClick={() => save(m.moment_id)}>Lưu mô tả</Button><Button onClick={() => setEditing(null)}>Bỏ</Button></div></div>
+              ) : (
+                <p>{m.text} <button type="button" className="text-mute underline decoration-line underline-offset-2 hover:text-ink" onClick={() => { setEditing(m.moment_id); setDraft(m.text); }}>Sửa</button>
+                  {m.source === "human" && <span className="ml-2 text-xs text-mute">Bạn đã sửa</span>}</p>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
+
+function Player({ asset, start }: { asset: Asset; start?: number }) {
   const video = useRef<HTMLVideoElement>(null);
   const [t, setT] = useState(0);
-  useEffect(() => setT(0), [asset.asset_id]);
+  const seek = (s: number) => { if (video.current) { video.current.currentTime = s; video.current.play().catch(() => {}); } };
+  useEffect(() => { setT(start ?? 0); const v = video.current; if (v && start != null) { const go = () => { v.currentTime = start; }; v.readyState >= 1 ? go() : v.addEventListener("loadedmetadata", go, { once: true }); } }, [asset.asset_id, start]);
   const unusable = asset.black_ranges.reduce((sum, [a, b]) => sum + (b - a), 0);
   return (
-    <aside className="flex w-full flex-col gap-4 border-t border-line bg-surface p-5 lg:w-[440px] lg:shrink-0 lg:border-l lg:border-t-0">
+    <aside className="flex w-full flex-col gap-4 overflow-y-auto border-t border-line bg-surface p-5 lg:w-[460px] lg:shrink-0 lg:border-l lg:border-t-0">
       {asset.proxy_url
         ? <video ref={video} key={asset.proxy_url} src={asset.proxy_url} controls className="aspect-video w-full rounded bg-black" onTimeUpdate={(e) => setT(e.currentTarget.currentTime)} />
         : <div className="grid aspect-video w-full place-items-center rounded bg-canvas text-mute">Bản xem chưa sẵn sàng</div>}
-      <RangeStrip asset={asset} tall playhead={t} onSeek={(s) => { if (video.current) video.current.currentTime = s; }} />
+      <RangeStrip asset={asset} tall playhead={t} onSeek={seek} />
       <div>
         <h2 className="break-all text-base font-semibold">{asset.name}</h2>
         <p className="tc text-mute">{asset.width}×{asset.height}, {asset.frame_rate ? `${Math.round(asset.frame_rate)} khung/giây, ` : ""}{megabytes(asset.size)}, {asset.has_audio ? "có âm thanh" : "không có âm thanh"}</p>
@@ -45,6 +78,7 @@ function Player({ asset }: { asset: Asset }) {
       {unusable > 0 && <p>Có <span className="tc">{timecode(unusable)}</span> khung đen. Hệ thống sẽ không chọn clip từ phần này.</p>}
       {asset.duplicate_of && <p className="text-mute">File này trùng nội dung với một video đã có trong thư viện nên không được xử lý lại.</p>}
       {!asset.online && <p className="text-cue">Không tìm thấy file gốc. Hãy cắm lại ổ chứa nó để render bản cuối.</p>}
+      <Moments asset={asset} t={t} seek={seek} />
       <p className="break-all text-xs text-mute">{asset.path}</p>
     </aside>
   );
@@ -53,13 +87,40 @@ function Player({ asset }: { asset: Asset }) {
 export default function Library() {
   const { data, error, reload } = usePoll<{ assets: Asset[] }>("/api/v1/library");
   const [picked, setPicked] = useState<string | null>(null);
+  const [start, setStart] = useState<number | undefined>();
+  const [q, setQ] = useState("");
+  const [hits, setHits] = useState<Hit[] | null>(null);
+  const search = async () => { if (!q.trim()) { setHits(null); return; } const r = await call<{ hits: Hit[] }>(`/api/v1/library/search?q=${encodeURIComponent(q.trim())}`); setHits(r.hits); };
   const assets = data?.assets ?? [];
   const current = assets.find((a) => a.asset_id === picked) ?? null;
   return (
     <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
       <section className="min-w-0 flex-1 overflow-y-auto p-6">
         <h1 className="mb-4 text-2xl font-semibold tracking-tight">Thư viện</h1>
+        <form className="mb-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); search(); }}>
+          <label htmlFor="q" className="sr-only">Tìm trong footage</label>
+          <input id="q" value={q} onChange={(e) => { setQ(e.target.value); if (!e.target.value) setHits(null); }} placeholder="Tìm một cảnh bằng lời, ví dụ: rót cà phê ra tách"
+                 className="min-w-0 flex-1 rounded border border-line bg-canvas px-3 py-1.5 placeholder:text-mute/70" />
+          <Button onClick={search} disabled={!q.trim()}>Tìm cảnh</Button>
+        </form>
         <AddFootage onDone={reload} />
+        {hits && (
+          <div className="mt-5">
+            <h2 className="mb-2 font-semibold">{hits.length ? `${hits.length} cảnh khớp với “${q}”` : `Không có cảnh nào khớp với “${q}”`}</h2>
+            {!hits.length && <p className="text-mute">Thử từ khác, hoặc kiểm tra xem video đã được hệ thống xem xong chưa ở mục Tiến trình.</p>}
+            <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {hits.map((h) => (
+                <li key={h.moment_id}>
+                  <button type="button" className="w-full text-left" onClick={() => { setPicked(h.asset_id); setStart(h.t_start); }}>
+                    {h.frame_url && <img src={h.frame_url} alt="" className="aspect-video w-full rounded-sm bg-black object-cover" />}
+                    <p className="tc mt-1 text-sm text-mute">{h.asset.name}, {timecode(h.t_start)} đến {timecode(h.t_end)}</p>
+                    <p className="line-clamp-3 text-sm">{h.text}</p>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {error && <p className="mt-4 text-tally">Không tải được thư viện: {error}</p>}
         {data && assets.length === 0 && (
           <p className="mt-10 max-w-md text-mute">Thư viện đang trống. Dán đường dẫn tới một video hoặc cả thư mục footage vào ô phía trên để hệ thống bắt đầu xem và ghi nhớ chúng.</p>
@@ -67,7 +128,7 @@ export default function Library() {
         <ul className="mt-5 divide-y divide-line border-y border-line">
           {assets.map((a) => (
             <li key={a.asset_id}>
-              <button type="button" onClick={() => setPicked(a.asset_id)} aria-pressed={picked === a.asset_id}
+              <button type="button" onClick={() => { setPicked(a.asset_id); setStart(undefined); }} aria-pressed={picked === a.asset_id}
                       className={`grid w-full grid-cols-[112px_1fr] items-center gap-4 px-2 py-3 text-left transition-colors sm:grid-cols-[112px_minmax(0,1fr)_minmax(140px,36%)] ${picked === a.asset_id ? "bg-surface" : "hover:bg-surface/60"}`}>
                 {a.thumbnail_url
                   ? <img src={a.thumbnail_url} alt="" className="aspect-video w-28 rounded-sm bg-black object-cover" />
@@ -87,7 +148,7 @@ export default function Library() {
           ))}
         </ul>
       </section>
-      {current && <Player asset={current} />}
+      {current && <Player asset={current} start={start} />}
     </div>
   );
 }

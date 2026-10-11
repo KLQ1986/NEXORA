@@ -3,11 +3,13 @@ import { createRoot } from "react-dom/client";
 import "./styles.css";
 import { usePoll, type Run } from "./api";
 import Library from "./Library";
+import Projects from "./Projects";
 import Runs from "./Runs";
 import System from "./System";
 
 const PAGES = [
   { path: "/", label: "Thư viện", view: Library },
+  { path: "/du-an", label: "Dự án", view: null },
   { path: "/tien-trinh", label: "Tiến trình", view: Runs },
   { path: "/he-thong", label: "Hệ thống", view: System },
 ];
@@ -18,8 +20,9 @@ function App() {
   const go = (to: string) => { window.history.pushState({}, "", to); setPath(to); };
   const { data: runs } = usePoll<Run[]>("/api/v1/runs", 4000);
   const waiting = (runs ?? []).filter((r) => r.status === "blocked" || r.status === "waiting_review").length;
-  const page = PAGES.find((p) => p.path === path) ?? PAGES[0];
+  const page = PAGES.find((p) => p.path !== "/" && path.startsWith(p.path)) ?? PAGES[0];
   const View = page.view;
+  const sub = path.startsWith("/du-an/") ? path.slice("/du-an/".length) : null;
   return (
     <div className="flex h-full flex-col md:flex-row">
       <nav className="flex shrink-0 items-center gap-1 border-b border-line bg-surface px-3 py-2 md:w-48 md:flex-col md:items-stretch md:border-b-0 md:border-r md:px-3 md:py-5" aria-label="Điều hướng chính">
@@ -32,7 +35,7 @@ function App() {
           </a>
         ))}
       </nav>
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col"><View /></main>
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col">{View ? <View /> : <Projects sub={sub} go={go} />}</main>
     </div>
   );
 }

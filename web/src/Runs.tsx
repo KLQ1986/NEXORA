@@ -1,7 +1,7 @@
 import { call, REASONS, STAGE_NAMES, usePoll, type Asset, type Run } from "./api";
 import { Button, StageRail, StatusText } from "./parts";
 
-const PIPELINES: Record<string, string> = { "library.ingest": "Nhập footage", "library.understand": "Hiểu video" };
+const PIPELINES: Record<string, string> = { "library.ingest": "Nhập footage", "library.understand": "Xem và mô tả video", "sourcing.match": "Chọn clip cho kịch bản", "edit.render": "Dựng video" };
 
 export default function Runs() {
   const { data: runs, error, reload } = usePoll<Run[]>("/api/v1/runs");

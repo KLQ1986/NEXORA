@@ -6,7 +6,7 @@ export type Asset = {
   asset_id: string; name: string; path: string; online: boolean; size: number; duplicate_of: string | null;
   duration: number | null; width: number | null; height: number | null; frame_rate: number | null; has_audio: boolean | null;
   usable_ranges: number[][]; black_ranges: number[][]; frozen_ranges: number[][];
-  thumbnail_url: string | null; proxy_url: string | null; ingest: Run | null;
+  thumbnail_url: string | null; proxy_url: string | null; ingest: Run | null; understand: Run | null;
 };
 
 export async function call<T>(url: string, init?: RequestInit): Promise<T> {
@@ -55,3 +55,17 @@ export const REASONS: Record<string, string> = {
   retry_limit: "Đã thử lại hết số lần cho phép", budget_exceeded: "Vượt ngân sách của lần chạy này",
   insufficient_storage: "Ổ đĩa sắp đầy", auth: "Khoá truy cập không hợp lệ", quota_exhausted: "Hết hạn mức của nhà cung cấp",
 };
+
+export type Moment = { moment_id: string; asset_id: string; t_start: number; t_end: number; text: string; source: string; score: number | null; frame_url: string | null; title?: string | null };
+export type AssetBrief = { asset_id: string; name: string; proxy_url: string | null; duration: number | null };
+export type Hit = Moment & { asset: AssetBrief };
+export type Candidate = { moment_id: string; t_in: number; t_out: number; score: number; reason: string; frame_url: string; asset: AssetBrief };
+export type Selection = { status: string; t_in: number | null; t_out: number | null; score: number | null; reason: string | null; decided_by: string;
+  moment_id: string | null; frame_url: string | null; asset: AssetBrief | null; alternates: Candidate[] };
+export type Shot = { shot_id: string; position: number; text: string; selection: Selection | null };
+export type RenderItem = { render_id: string; created_at: number; url: string;
+  qc: { passed: boolean; checks: Record<string, boolean>; duration: number; gaps: number } };
+export type Project = { project_id: string; title: string; created_at: number;
+  script: { script_id: string; version: number; match_approved: boolean } | null; shots: Shot[]; match: Run | null; render: Run | null; renders: RenderItem[] };
+export const post = <T,>(url: string, body?: unknown, method = "POST") => call<T>(url, { method, body: body === undefined ? undefined : JSON.stringify(body) });
+Object.assign(STAGE_NAMES, { segments: "Chia đoạn", summarise: "Tóm tắt", match: "Chọn clip", narration: "Đọc lời dẫn", assemble: "Ghép và kiểm tra" });

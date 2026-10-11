@@ -124,6 +124,166 @@ def create_app(system, *, web_dir: str | Path | None = None) -> FastAPI:
             raise HTTPException(404, "the volume holding this file is offline")
         return FileResponse(path)
 
+    # ------------------------------------------------------------------ understanding and search
+    def moment_view(m, score=None) -> dict:
+        return {"moment_id": m.moment_id, "asset_id": m.asset_id, "level": m.level, "t_start": m.t_start, "t_end": m.t_end, "text": m.text,
+                "source": m.source, "score": score, "frame_url": f"/api/v1/moments/{m.moment_id}/frame" if m.data.get("frame") else None}
+
+    def asset_brief(asset_id: str) -> dict:
+        versions = {v.role: v for v in system.assets.versions(asset_id)}
+        original = versions["original"]
+        return {"asset_id": asset_id, "name": system.assets.path_of(original).name,
+                "proxy_url": f"/media/{versions['proxy'].version_id}" if "proxy" in versions else None,
+                "duration": original.metadata.get("probe", {}).get("duration")}
+
+    @app.get("/api/v1/library/search")
+    def search(q: str, limit: int = 24):
+        hits = system.index.search(q, limit=limit, min_score=0.3)
+        return {"hits": [{**moment_view(h.moment, h.score), "asset": asset_brief(h.moment.asset_id)} for h in hits]}
+
+    @app.get("/api/v1/assets/{asset_id}/moments")
+    def asset_moments(asset_id: str):
+        moments = system.index.moments(asset_id)
+        return {"video": next((moment_view(m) | {"title": m.data.get("detail", {}).get("tieu_de")} for m in moments if m.level == "video"), None),
+                "segments": [moment_view(m) for m in moments if m.level == "segment"]}
+
+    @app.patch("/api/v1/moments/{moment_id}")
+    def correct_moment(moment_id: str, body: dict):
+        if system.index.by_id(moment_id) is None or not str(body.get("text", "")).strip():
+            raise HTTPException(404, "no such moment, or empty text")
+        system.index.correct(moment_id, str(body["text"]).strip())
+        return moment_view(system.index.by_id(moment_id))
+
+    @app.get("/api/v1/moments/{moment_id}/frame")
+    def moment_frame(moment_id: str):
+        m = system.index.by_id(moment_id)
+        if m is None or not m.data.get("frame") or not Path(m.data["frame"]).is_file():
+            raise HTTPException(404, "no frame")
+        return FileResponse(m.data["frame"])
+
+    # ------------------------------------------------------------------ projects, matching, render
+    def latest_run(subject: str, pipeline: str):
+        return next((run_view(system, r) for r in system.orch.runs_for_subject(subject) if system.orch.pipeline_of(r) == pipeline), None)
+
+    def project_view(project: dict) -> dict:
+        script = system.projects.current_script(project["project_id"])
+        shots = []
+        for shot in (script["shots"] if script else []):
+            sel = system.projects.selection(shot.shot_id)
+            item = {"shot_id": shot.shot_id, "position": shot.position, "text": shot.text, "selection": None}
+            if sel:
+                item["selection"] = {"status": sel.status, "t_in": sel.t_in, "t_out": sel.t_out, "score": sel.score, "reason": sel.reason,
+                                     "decided_by": sel.decided_by, "moment_id": sel.moment_id,
+                                     "frame_url": f"/api/v1/moments/{sel.moment_id}/frame" if sel.moment_id else None,
+                                     "asset": asset_brief(sel.asset_id) if sel.asset_id else None,
+                                     "alternates": [{**a, "frame_url": f"/api/v1/moments/{a['moment_id']}/frame", "asset": asset_brief(a["asset_id"])} for a in sel.alternates]}
+            shots.append(item)
+        renders = [{"render_id": r["render_id"], "script_id": r["script_id"], "created_at": r["created_at"], "qc": r["qc"],
+                    "url": f"/api/v1/renders/{r['render_id']}/file"} for r in system.projects.renders(project["project_id"])]
+        return {**project, "script": {"script_id": script["script_id"], "version": script["version"], "match_approved": script["match_approved"]} if script else None,
+                "shots": shots, "match": latest_run(script["script_id"], "sourcing.match") if script else None,
+                "render": latest_run(script["script_id"], "edit.render") if script else None, "renders": renders}
+
+    def need_project(project_id: str) -> dict:
+        project = system.projects.project(project_id)
+        if project is None:
+            raise HTTPException(404, "Không tìm thấy dự án")
+        return project
+
+    def current_script_id(project_id: str) -> str:
+        script = system.projects.current_script(need_project(project_id)["project_id"])
+        if script is None:
+            raise HTTPException(409, "Dự án chưa có kịch bản")
+        return script["script_id"]
+
+    @app.get("/api/v1/projects")
+    def list_projects():
+        return [project_view(p) for p in system.projects.projects()]
+
+    @app.post("/api/v1/projects", status_code=201)
+    def create_project(body: dict):
+        title = str(body.get("title", "")).strip()
+        if not title:
+            raise HTTPException(422, "Dự án cần có tên")
+        project_id = system.planning.create_project(title)
+        if body.get("lines"):
+            system.planning.save_script(project_id, list(body["lines"]))
+        return project_view(system.projects.project(project_id))
+
+    @app.get("/api/v1/projects/{project_id}")
+    def get_project(project_id: str):
+        return project_view(need_project(project_id))
+
+    @app.put("/api/v1/projects/{project_id}/script")
+    def save_script(project_id: str, body: dict):
+        need_project(project_id)
+        lines = [str(line).strip() for line in body.get("lines", []) if str(line).strip()]
+        if not lines:
+            raise HTTPException(422, "Kịch bản cần ít nhất một câu")
+        system.planning.save_script(project_id, lines)
+        return project_view(system.projects.project(project_id))
+
+    @app.post("/api/v1/projects/{project_id}/draft")
+    def draft_script(project_id: str, body: dict):
+        need_project(project_id)
+        try:
+            return {"lines": system.planning.draft_script(str(body.get("topic", "")), lines=int(body.get("lines", 6)))}
+        except Exception as err:
+            raise HTTPException(503, f"Không viết nháp được: {err}")
+
+    @app.post("/api/v1/projects/{project_id}/match", status_code=202)
+    def start_match(project_id: str):
+        return {"run_id": system.sourcing.start_match(current_script_id(project_id))}
+
+    @app.post("/api/v1/projects/{project_id}/match/approve")
+    def approve_match(project_id: str):
+        run = latest_run(current_script_id(project_id), "sourcing.match")
+        if run is None or run["status"] != "waiting_review":
+            raise HTTPException(409, "Chưa có lựa chọn nào đang chờ duyệt")
+        system.sourcing.approve(run["run_id"])
+        return project_view(need_project(project_id))
+
+    @app.post("/api/v1/shots/{shot_id}/swap")
+    def swap(shot_id: str, body: dict):
+        try:
+            system.sourcing.swap(shot_id, int(body.get("alternate", 0)))
+        except (IndexError, AttributeError):
+            raise HTTPException(409, "Không có phương án dự phòng này")
+        return {"ok": True}
+
+    @app.post("/api/v1/shots/{shot_id}/gap")
+    def gap(shot_id: str):
+        system.sourcing.mark_gap(shot_id)
+        return {"ok": True}
+
+    @app.post("/api/v1/shots/{shot_id}/trim")
+    def trim(shot_id: str, body: dict):
+        system.sourcing.trim(shot_id, float(body["t_in"]), float(body["t_out"]))
+        return {"ok": True}
+
+    @app.post("/api/v1/projects/{project_id}/render", status_code=202)
+    def start_render(project_id: str):
+        try:
+            return {"run_id": system.edit.start_render(current_script_id(project_id))}
+        except ValueError:
+            raise HTTPException(409, "Hãy duyệt các clip đã chọn trước khi dựng video")
+
+    @app.post("/api/v1/projects/{project_id}/render/decision")
+    def decide_render(project_id: str, body: dict):
+        run = latest_run(current_script_id(project_id), "edit.render")
+        if run is None or run["status"] != "waiting_review":
+            raise HTTPException(409, "Chưa có bản dựng nào đang chờ duyệt")
+        stage = next(s for s in run["stages"] if s["status"] == "waiting_review")
+        system.orch.decide_review(stage["stage_id"], approve=bool(body.get("approve")))
+        return project_view(need_project(project_id))
+
+    @app.get("/api/v1/renders/{render_id}/file")
+    def render_file(render_id: str):
+        render = system.projects.render(render_id)
+        if render is None or not Path(render["path"]).is_file():
+            raise HTTPException(404, "Không tìm thấy bản dựng")
+        return FileResponse(render["path"], media_type="video/mp4")
+
     if web_dir and Path(web_dir).is_dir():
         app.mount("/assets", StaticFiles(directory=Path(web_dir) / "assets"), name="web-assets")
 
