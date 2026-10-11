@@ -16,6 +16,7 @@ from nexora.agents.producer import Producer
 from nexora.core.pipeline import PipelineRegistry
 from nexora.core.schedule import in_window
 from nexora.core.projects import ProjectStore
+from nexora.core.states import RunStatus
 from nexora.core.worker import Worker
 from nexora.modules.library.ingest import Library
 from nexora.modules.distribution.package import Distribution
@@ -61,6 +62,8 @@ def fill_gap_from_stock(system: "System", shot_id: str, query: str) -> dict:
     # Proposed at once so the operator sees something; placed properly, or withdrawn, once the clip has been watched (see build()).
     system.sourcing.use_asset(shot_id, asset_id, pending=system.library.understands,
                               reason=f"Clip stock từ {clip.get('source')}. Giấy phép: {clip.get('license')}. Nguồn: {clip.get('source_url')}")
+    if system.orch.run_status(run_id) is RunStatus.SUCCEEDED and system.index.moments(asset_id, level="segment"):
+        system.sourcing.refine_from_asset(shot_id, asset_id)     # the same clip was fetched before and has already been watched
     return {"found": True, "asset_id": asset_id, "run_id": run_id, "rights": rights}
 
 

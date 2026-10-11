@@ -336,3 +336,17 @@ def test_stock_that_does_not_show_the_line_is_withdrawn_once_it_has_been_watched
     fill_gap_from_stock(system, gap.shot_id, "train on a bridge"); drain(system)
     after = system.projects.selections(script)[1]
     assert after.status == "gap" and after.asset_id is None and "không có đoạn nào" in after.reason      # a wrong picture is worse than none
+
+
+def test_stock_fetched_a_second_time_is_judged_at_once_because_it_was_already_watched(tmp_path):
+    from nexora.app import fill_gap_from_stock
+    from tests.fakes import FakeStock
+    system = build(tmp_path / "data", model=FakeModel(), voice=FakeVoice(), segment_seconds=2.0, stock=FakeStock())
+    system.library.ingest(make_video(tmp_path / "footage.mp4", picture=20)); drain(system)
+    pid = system.planning.create_project("Tàu")
+    script = system.planning.save_script(pid, ["đoàn tàu qua cầu sắt", "xe lửa trên cầu"])
+    system.sourcing.start_match(script); drain(system)
+    first, second = system.projects.selections(script)
+    fill_gap_from_stock(system, first.shot_id, "train"); drain(system)
+    fill_gap_from_stock(system, second.shot_id, "train")                           # nothing is left to run: the answer must come now
+    assert system.projects.selections(script)[1].status == "gap"
