@@ -41,10 +41,16 @@ def test_the_web_reader_fetches_a_real_page_and_refuses_what_is_not_a_web_addres
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     try:
-        out = WebReader().submit(Request("read", inputs={"url": f"http://127.0.0.1:{server.server_port}/bai.html"})).outputs
+        local = f"http://127.0.0.1:{server.server_port}/bai.html"
+        out = WebReader(public_only=False).submit(Request("read", inputs={"url": local})).outputs
         assert out["title"] == "Bài" and "đoạn văn đủ dài" in out["text"] and out["publisher"].startswith("127.0.0.1")
         with pytest.raises(AdapterError):
-            WebReader().submit(Request("read", inputs={"url": f"http://127.0.0.1:{server.server_port}/missing.html"}))
+            WebReader(public_only=False).submit(Request("read", inputs={"url": f"http://127.0.0.1:{server.server_port}/missing.html"}))
+        # As installed, the reader keeps to the public web: this machine, the local network and addresses carrying a password are refused.
+        for inside in (local, "http://localhost/", "http://192.168.1.1/", "http://169.254.169.254/latest/meta-data/", "http://[::1]/", "http://user:pw@example.com/"):
+            with pytest.raises(AdapterError) as refused:
+                WebReader().submit(Request("read", inputs={"url": inside}))
+            assert refused.value.code.value == "invalid_request"
     finally:
         server.shutdown()
     with pytest.raises(AdapterError):

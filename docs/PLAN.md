@@ -206,7 +206,7 @@ Chưa làm so với thiết kế: hệ thống tự đi tìm nguồn trên mạn
 
 ### Hoàn thiện theo từng module, bắt đầu 2026-10-12
 
-Planning (142 test đạt; đã bấm thử trên giao diện với mô hình giả):
+Planning (137 test đạt; đã bấm thử trên giao diện với mô hình giả):
 
 - [x] Đọc nguồn từ một địa chỉ web do người vận hành đưa: lấy tên bài, nơi xuất bản, ngày và đoạn mở đầu. Chế độ riêng tư chặn việc này. Hệ thống chưa tự tìm bài trên mạng (cần một dịch vụ tìm kiếm)
 - [x] Tìm câu nêu dữ kiện và đối chiếu với nguồn: mỗi câu nhận kết luận (nguồn xác nhận, trái với nguồn, chưa có căn cứ) kèm đoạn trích. Kết luận mà đoạn trích không có thật trong nguồn thì bị coi là chưa có căn cứ. Câu trái nguồn bị nêu ra khi kiểm tra bản dựng

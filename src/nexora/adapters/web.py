@@ -1,9 +1,12 @@
 """Reads one web page the operator points at, so that a claim in a script can be tied to where it was published.
 
 It fetches only the address it is given and never follows a search on its own. The address leaves this machine, so it
-counts as a cloud tool and privacy mode refuses it.
+counts as a cloud tool and privacy mode refuses it. It reads the public web only: an address that leads to this machine
+or to the local network is refused, at the first hop and at every redirect.
 """
+import ipaddress
 import re
+import socket
 import urllib.error
 import urllib.request
 from html.parser import HTMLParser
@@ -58,7 +61,33 @@ def read_html(html: str) -> dict:
             "text": "\n".join(line for line in lines if len(line) > 40)}
 
 
+def public_address(url: str) -> None:
+    """Refuse an address that is not on the public web."""
+    parts = urlparse(url)
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        raise AdapterError(ErrorCode.INVALID_REQUEST, "only http and https addresses can be read")
+    if parts.username or parts.password:
+        raise AdapterError(ErrorCode.INVALID_REQUEST, "an address with a name and password in it is not read")
+    try:
+        found = {info[4][0] for info in socket.getaddrinfo(parts.hostname, parts.port or (443 if parts.scheme == "https" else 80))}
+    except OSError:
+        raise AdapterError(ErrorCode.UNAVAILABLE, f"{parts.hostname} cannot be found") from None
+    for address in found:
+        if not ipaddress.ip_address(address.split("%")[0]).is_global:
+            raise AdapterError(ErrorCode.INVALID_REQUEST, "this address is on this machine or the local network, not on the public web")
+
+
+class _CheckedRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        public_address(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 class WebReader(Adapter):
+    def __init__(self, *, public_only: bool = True):
+        self._public_only = public_only          # a test may serve its own page from this machine
+        self._opener = urllib.request.build_opener(_CheckedRedirects()) if public_only else urllib.request.build_opener()
+
     def describe(self) -> Capability:
         return Capability(name="web", operations=("read",), runs="cloud")
 
@@ -66,9 +95,11 @@ class WebReader(Adapter):
         url = str(request.inputs["url"]).strip()
         if urlparse(url).scheme not in ("http", "https"):
             raise AdapterError(ErrorCode.INVALID_REQUEST, "only http and https addresses can be read")
+        if self._public_only:
+            public_address(url)
         req = urllib.request.Request(url, headers={"user-agent": "Mozilla/5.0 (Macintosh) NEXORA research reader"})
         try:
-            with urllib.request.urlopen(req, timeout=request.deadline_seconds or 20) as r:
+            with self._opener.open(req, timeout=request.deadline_seconds or 20) as r:
                 kind = r.headers.get_content_type()
                 if kind not in ("text/html", "text/plain", "application/xhtml+xml"):
                     raise AdapterError(ErrorCode.INVALID_REQUEST, f"this address holds {kind}, not a page of text")
