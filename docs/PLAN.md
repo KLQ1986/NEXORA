@@ -58,6 +58,20 @@ Giao diện được làm xen kẽ với phần xử lý, để mỗi năng lự
 | 10 | Màn hình Timeline preview, Render review và Board | 6 | Chép giao diện Backlot hay viết lại (ý định thương mại) | |
 | 11 | Video đầu tiên trên footage thật, đo và sửa | 7 | Footage thật | |
 
+### Trạng thái sau lượt xây 2026-10-11
+
+Các bước 1–10 của bảng trên đã có bản chạy được; bước 11 đã chạy trên bốn video thử nghiệm (chưa phải footage thật của người vận hành). 84 test đạt.
+
+**Đã thử trọn luồng trên giao diện:** tạo dự án → nhập kịch bản 6 câu → hệ thống chọn clip → đổi một clip sang phương án khác → duyệt → dựng → kiểm tra tự động đạt → duyệt bản dựng. Kết quả là một file MP4 1280×720 dài 19 giây, có lời dẫn giọng Linh của macOS, phụ đề tiếng Việt, và một thẻ nền trơn cho câu không có footage.
+
+**Lựa chọn đã tự quyết thay người vận hành (đổi được):** React + Vite + Tailwind cho giao diện; mô hình cục bộ qua Ollama (qwen2.5vl:7b để nhìn hình, bge-m3 để tìm theo nghĩa), không gửi gì lên cloud; giọng đọc Linh có sẵn của macOS; khung hình 1280×720 ngang; chưa cài bản FFmpeg đầy đủ.
+
+**Số đo với mô hình cục bộ (12 câu của thử nghiệm):** lựa chọn đầu đúng đoạn 2/10 câu; đúng trong ba phương án đầu 7/10; một trong hai câu không có footage bị gán nhầm clip. Kém rõ so với lần Claude tự xem khung hình trong thử nghiệm. Hiểu bốn video (17 phút) mất khoảng 25 phút.
+
+**Chưa có so với thiết kế v4.0:** dây chuyền A (hoạt hình sinh bằng AI) hoàn toàn chưa làm; nhạc nền và trộn âm; reframe và đồng bộ nhiều máy; dựng thô theo transcript và nhận dạng giọng nói; chuẩn hoá HDR; bước chấm ứng viên bằng keyframe và định vị điểm vào/ra bằng lấy mẫu dày; canh hình theo từ khoá; xem lại cả video; đăng lên nền tảng và số liệu; ảnh tĩnh, thư viện nhạc, giọng của người vận hành; thông báo; tự chấp nhận theo độ tin cậy; màn hình Board riêng, Timeline preview và Costs; tích hợp OpenMontage.
+
+**Lỗi do thử trên giao diện phát hiện và đã sửa:** bước ghép cuối hỏng khi thư mục dữ liệu là đường dẫn tương đối.
+
 ### Lát 1 — Lõi chạy việc
 
 Mục thiết kế: 5, 6, 7.
