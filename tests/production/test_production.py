@@ -87,3 +87,26 @@ def test_render_is_blocked_until_the_match_is_approved(system):
     drain(system)
     with pytest.raises(ValueError):
         system.edit.start_render(script)
+
+
+def test_the_judge_rejects_a_candidate_whose_frames_do_not_show_the_line(system):
+    """Retrieval alone would accept this: the line shares one word with a moment. Looking at the frames rejects it."""
+    project = system.planning.create_project("Chợ")
+    script = system.planning.save_script(project, ["cá tươi trên sạp", "pha trà nóng"])     # "pha" also occurs in "pha cà phê"
+    system.sourcing.start_match(script)
+    drain(system)
+    fish, tea = system.projects.selections(script)
+    assert fish.status == "proposed" and "9/10" in fish.reason
+    assert tea.status == "gap"
+
+
+def test_the_clip_is_centred_on_the_frame_the_model_points_at(tmp_path):
+    system = build(tmp_path / "data", model=FakeModel(), voice=FakeVoice(), segment_seconds=10.0)
+    system.library.ingest(make_video(tmp_path / "f.mp4", picture=20))
+    drain(system)
+    project = system.planning.create_project("Chợ")
+    script = system.planning.save_script(project, ["chợ rau củ"])
+    system.sourcing.start_match(script)
+    drain(system)
+    sel = system.projects.selections(script)[0]
+    assert (sel.t_in, sel.t_out) == (7.5, 10.0)             # the fake points at the last frame of a ten-second moment

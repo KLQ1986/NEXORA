@@ -37,7 +37,7 @@ class System:
 
 
 def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Adapter | None = None,
-          segment_seconds: float = 12.0, voice: Adapter | None = None, match_threshold: float = 0.5) -> System:
+          segment_seconds: float = 12.0, voice: Adapter | None = None, match_threshold: float = 0.5, judge: bool = True) -> System:
     """`model` is the adapter for vision, reasoning and embeddings; without one, footage is ingested but not understood."""
     data_dir = Path(data_dir).resolve()          # tools resolve relative paths differently; keep every path absolute
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -60,7 +60,7 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     library.register(registry)
     projects = ProjectStore(db_path)
     planning = Planning(projects, assets, index, adapters)
-    sourcing = Sourcing(orch, projects, index, threshold=match_threshold)
+    sourcing = Sourcing(orch, projects, index, threshold=match_threshold, adapters=adapters, judge=judge and model is not None)
     sourcing.register(registry)
     edit = Edit(orch, projects, assets, adapters, data_dir / "media", voice=voice is not None)
     edit.register(registry)

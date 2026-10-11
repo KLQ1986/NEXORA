@@ -16,6 +16,11 @@ class FakeModel(Adapter):
 
     def submit(self, request: Request) -> Result:
         self.calls[request.operation] += 1
+        if request.operation == "describe" and request.params.get("task") == "judge":
+            line, text = set(request.params["line"].lower().split()), set(request.params["candidate_text"].lower().replace(".", "").replace(":", "").split())
+            return Result(outputs={"json": {"phu_hop": 9 if len(line & text) >= 2 else 1, "ly_do": "giả lập"}})
+        if request.operation == "describe" and request.params.get("task") == "locate":
+            return Result(outputs={"json": {"khung": len(request.inputs["images"])}})
         if request.operation == "describe":
             index = request.params.get("index", 0)
             return Result(outputs={"json": {"mo_ta": f"Đoạn {index}: {WORDS[index % len(WORDS)]}.", "chu_the": [WORDS[index % len(WORDS)]],
