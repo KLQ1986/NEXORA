@@ -9,6 +9,9 @@ FONTS = ["/System/Library/Fonts/Supplemental/Arial Bold.ttf", "/System/Library/F
          "/Library/Fonts/Arial Unicode.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"]
 
 
+SERIF = ["/System/Library/Fonts/Supplemental/Georgia Bold.ttf", "/System/Library/Fonts/Supplemental/Times New Roman Bold.ttf"]
+
+
 class CaptionAdapter(Adapter):
     def describe(self) -> Capability:
         return Capability(name="graphics", operations=("caption",), runs="local")
@@ -17,7 +20,8 @@ class CaptionAdapter(Adapter):
         return {"font": next((f for f in FONTS if Path(f).is_file()), None)}
 
     def submit(self, request: Request) -> Result:
-        font_path = next((f for f in FONTS if Path(f).is_file()), None)
+        faces = (SERIF + FONTS) if request.params.get("typeface") == "serif" else FONTS
+        font_path = next((f for f in faces if Path(f).is_file()), None)
         if font_path is None:
             raise AdapterError(ErrorCode.UNAVAILABLE, "no font with Vietnamese glyphs was found", retryable=False)
         w, h = int(request.params.get("width", 1280)), int(request.params.get("height", 720))
@@ -49,6 +53,13 @@ class CaptionAdapter(Adapter):
                                radius=round(h * 0.012), fill=(20, 22, 23, 190))
         for i, line in enumerate(lines):
             draw.text(((w - draw.textlength(line, font=font)) / 2, top + i * line_h), line, font=font, fill=tuple(request.params.get("colour") or (240, 238, 232)) + (255,))
+        logo = request.params.get("logo")
+        if logo and Path(logo).is_file():                      # the brand's mark, small, in the corner the caption does not use
+            mark = Image.open(logo).convert("RGBA")
+            size = round(h * 0.09)
+            mark.thumbnail((size * 3, size))
+            margin = round(h * 0.04)
+            image.alpha_composite(mark, (w - mark.width - margin, h - mark.height - margin if place == "top" else margin))
         out = Path(request.params["out"])
         image.save(out)
         return Result(files=(str(out),))

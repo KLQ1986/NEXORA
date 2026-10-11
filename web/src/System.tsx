@@ -129,6 +129,12 @@ function Preferences() {
                 <label className="flex items-center gap-2">Cỡ phụ đề<select value={String(t.caption_scale ?? 1)} onChange={(e) => edit(i, { caption_scale: Number(e.target.value) })} className="h-8 px-2"><option value="0.85">Nhỏ</option><option value="1">Vừa</option><option value="1.15">Lớn</option><option value="1.3">Rất lớn</option></select></label>
                 <label className="flex items-center gap-2">Vị trí phụ đề<select value={t.caption_position ?? "bottom"} onChange={(e) => edit(i, { caption_position: e.target.value })} className="h-8 px-2"><option value="bottom">Dưới</option><option value="middle">Giữa</option><option value="top">Trên</option></select></label>
               </div>
+              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px]">
+                <label className="flex items-center gap-2">Kiểu chữ<select value={t.typeface ?? "sans"} onChange={(e) => edit(i, { typeface: e.target.value })} className="h-8 px-2"><option value="sans">Không chân</option><option value="serif">Có chân</option></select></label>
+                <label className="flex items-center gap-2">Màu chữ<input type="color" aria-label="Màu chữ phụ đề" value={`#${(t.caption_colour ?? [240, 238, 232]).map((n) => n.toString(16).padStart(2, "0")).join("")}`}
+                  onChange={(e) => edit(i, { caption_colour: [1, 3, 5].map((k) => parseInt(e.target.value.slice(k, k + 2), 16)) })} className="h-8 w-12 cursor-pointer p-1" /></label>
+                <label className="flex min-w-0 flex-1 items-center gap-2">Logo<input value={t.logo_path ?? ""} onChange={(e) => edit(i, { logo_path: e.target.value })} placeholder="Đường dẫn tới file PNG (để trống nếu không dùng)" className="h-8 min-w-0 flex-1 px-2" /></label>
+              </div>
               <label className="mt-2 grid gap-1 text-[13px]"><span className="text-mute">Cách đọc riêng, mỗi dòng một cặp viết=đọc</span>
                 <textarea rows={2} defaultValue={Object.entries(t.pronounce ?? {}).map(([k, v]) => `${k}=${v}`).join("\n")} placeholder="NEXORA=nếch xô ra"
                           onBlur={(e) => edit(i, { pronounce: Object.fromEntries(e.target.value.split("\n").map((l) => l.split("=")).filter((x) => x.length === 2).map(([k, v]) => [k, v])) })} className="p-2" /></label>

@@ -241,6 +241,8 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             clean = [{"name": str(t["name"]).strip(), "format": t.get("format") if t.get("format") in ("landscape", "portrait", "square") else "landscape", "voice": str(t.get("voice") or ""),
                       "music_gain": max(0.05, min(1.0, float(t.get("music_gain") or 0.35))), "auto_accept": bool(t.get("auto_accept")),
                       "caption_scale": max(0.7, min(1.6, float(t.get("caption_scale") or 1.0))), "caption_position": t.get("caption_position") if t.get("caption_position") in ("top", "middle", "bottom") else "bottom",
+                      "typeface": "serif" if t.get("typeface") == "serif" else "sans", "caption_colour": t.get("caption_colour") if isinstance(t.get("caption_colour"), list) and len(t["caption_colour"]) == 3 else None,
+                      "logo_path": str(Path(str(t["logo_path"])).expanduser()) if t.get("logo_path") else "",
                       "pronounce": {str(k).strip(): str(v).strip() for k, v in (t.get("pronounce") or {}).items() if str(k).strip() and str(v).strip()}} for t in body["templates"] if str(t.get("name", "")).strip()]
             system.orch.set_setting("templates", json.dumps(clean, ensure_ascii=False))
         return get_settings()
@@ -254,6 +256,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             raise HTTPException(404, "Không có mẫu này")
         system.projects.update_project(project_id, template=chosen["name"], format=chosen["format"], voice=chosen["voice"] or None, music_gain=chosen["music_gain"], auto_accept=int(chosen["auto_accept"]),
                                        profile=json.dumps({"caption_scale": chosen.get("caption_scale", 1.0), "caption_position": chosen.get("caption_position", "bottom"),
+                                                           "typeface": chosen.get("typeface", "sans"), "caption_colour": chosen.get("caption_colour"), "logo_path": chosen.get("logo_path") or None,
                                                            "pronounce": chosen.get("pronounce", {})}, ensure_ascii=False))
         return project_view(need_project(project_id))
 
@@ -474,7 +477,8 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         shots = []
         for shot in (script["shots"] if script else []):
             sel = system.projects.selection(shot.shot_id)
-            item = {"shot_id": shot.shot_id, "position": shot.position, "text": shot.text, "scene": shot.scene, "brief": shot.brief, "screen_text": shot.screen_text, "selection": None, "keyframe_url": None, "generation": None}
+            item = {"shot_id": shot.shot_id, "position": shot.position, "text": shot.text, "scene": shot.scene, "brief": shot.brief, "screen_text": shot.screen_text, "target_seconds": shot.target_seconds, "sound_cue": shot.sound_cue,
+                    "is_fact": shot.is_fact, "source": shot.source, "selection": None, "keyframe_url": None, "generation": None}
             keys = system.projects.generations(shot.shot_id, kind="keyframe")
             if keys:
                 item["keyframe_url"] = f"/media/{system.assets.original(keys[-1]['asset_id']).version_id}"
@@ -495,6 +499,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
                 "shots": shots, "match": latest_run(script["script_id"], "sourcing.match") if script else None,
                 "render": latest_run(script["script_id"], "edit.render") if script else None, "renders": renders,
                 "generate": latest_run(script["script_id"], "sourcing.generate") if script else None, "generators": system.generation.available(),
+                "research": json.loads(project.get("research") or "[]"),
                 "auto_accept": bool(project.get("auto_accept")), "own_takes": own_takes(project, len(shots)),
                 "spent": system.generation.spent(project["project_id"])}
 
@@ -648,7 +653,8 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
 
     @app.patch("/api/v1/shots/{shot_id}")
     def annotate_shot(shot_id: str, body: dict):
-        system.projects.annotate_shot(shot_id, brief=body.get("brief"), screen_text=body.get("screen_text"))
+        system.projects.annotate_shot(shot_id, brief=body.get("brief"), screen_text=body.get("screen_text"),
+                                      **{k: body[k] for k in ("target_seconds", "sound_cue", "is_fact", "source") if k in body})
         return {"ok": True}
 
     @app.post("/api/v1/ideas")
@@ -710,6 +716,9 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         if body.get("narration_dir") and not Path(str(body["narration_dir"])).expanduser().is_dir():
             raise HTTPException(404, "Không tìm thấy thư mục này")
         fields = {k: (str(Path(str(v)).expanduser()) if k in ("music_path", "narration_dir") and v else v) for k, v in body.items()}
+        if "research" in fields:                 # sources: where a claim comes from, who published it, when, and the passage that supports it
+            fields["research"] = json.dumps([{key: str(src.get(key) or "").strip() for key in ("title", "publisher", "date", "url", "passage")} | {"retrieved_at": src.get("retrieved_at") or time.time()}
+                                             for src in fields["research"] if str(src.get("title", "")).strip()], ensure_ascii=False)
         system.projects.update_project(project_id, **fields)
         return project_view(need_project(project_id))
 

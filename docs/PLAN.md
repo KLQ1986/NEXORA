@@ -195,7 +195,14 @@ Làm tiếp cùng ngày (127 test đạt, đã bấm thử trên giao diện v�
 - [x] Bản dựng nháp: khi không thấy file gốc, hệ thống cắt từ bản xem và ghi rõ là bản nháp
 - [x] Thông báo khi ổ đĩa sắp đầy hoặc mất nơi chứa footage, mỗi lần đổi trạng thái báo một lần
 
-Chưa làm so với thiết kế: nghiên cứu có nguồn dẫn và kiểm chứng dữ kiện (16.1); bảng màu, kiểu chữ, logo trong hồ sơ thương hiệu (16.3); thời lượng mục tiêu và tín hiệu âm thanh cho từng câu (16.2); dựng thô theo lời nói (19.1, cần mô hình nhận dạng tiếng nói); đăng bài và số liệu (21, cần tài khoản).
+Làm tiếp (128 test đạt, đã bấm thử trên giao diện với mô hình giả và xem khung hình):
+
+- [x] Nguồn tham khảo của dự án (tên, nơi xuất bản, ngày, đường dẫn, đoạn trích); câu nêu dữ kiện gắn với một nguồn; dữ kiện chưa có nguồn bị nêu ra khi kiểm tra bản dựng
+- [x] Mỗi câu có thời lượng giữ hình tối thiểu và ghi chú âm thanh (ghi chú âm thanh đi vào file EDL; hệ thống chưa tự chèn hiệu ứng âm thanh)
+- [x] Hồ sơ thương hiệu: kiểu chữ có chân hoặc không chân, màu chữ phụ đề, logo đặt ở góc
+- [x] Phụ đề hai dòng được chia đều, không để một chữ lẻ ở dòng cuối
+
+Chưa làm so với thiết kế: hệ thống tự đi tìm nguồn trên mạng (người vận hành hiện tự nhập nguồn); dựng thô theo lời nói (19.1, cần mô hình nhận dạng tiếng nói); đăng bài và số liệu (21, cần tài khoản).
 
 ### Lát 1 — Lõi chạy việc
 

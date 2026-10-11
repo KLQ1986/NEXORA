@@ -79,7 +79,8 @@ export type Candidate = { moment_id: string; t_in: number; t_out: number; score:
 export type Selection = { status: string; t_in: number | null; t_out: number | null; score: number | null; reason: string | null; decided_by: string;
   moment_id: string | null; frame_url: string | null; asset: AssetBrief | null; alternates: Candidate[];
   inserts: { keyword: string; at: number; reason: string }[]; focus_x: number | null; angles: (AssetBrief & { offset: number; t_in: number })[] };
-export type Shot = { scene: string | null; brief: string | null; screen_text: string | null; shot_id: string; position: number; text: string; selection: Selection | null; keyframe_url: string | null;
+export type Source = { title: string; publisher: string; date: string; url: string; passage: string; retrieved_at?: number };
+export type Shot = { target_seconds: number | null; sound_cue: string | null; is_fact: boolean; source: string | null; scene: string | null; brief: string | null; screen_text: string | null; shot_id: string; position: number; text: string; selection: Selection | null; keyframe_url: string | null;
   generation: { prompt: string; seed: number | null; provider: string } | null };
 export type Finding = { check: string; shot: number; severity: string; text: string; fix: string };
 export type Package = { title: string; description: string; thumbnails: string[]; thumbnail: string; folder: string; synthetic_content: boolean; captions: string; video: string };
@@ -90,8 +91,8 @@ export type BoardEvent = { at: number; kind: string; pipeline: string; stage_key
 export type Notice = { notification_id: number; kind: string; run_id: string; stage_key: string | null; reason: string | null; created_at: number; read_at: number | null; pipeline: string | null; subject_name: string | null; link: string | null };
 export type Project = { project_id: string; title: string; created_at: number; format: string; music_path: string | null;
   script: { script_id: string; version: number; match_approved: boolean } | null; shots: Shot[]; match: Run | null; render: Run | null; renders: RenderItem[];
-  generate: Run | null; generators: { image: boolean; video: boolean }; auto_accept: boolean; style: string | null; narration_dir: string | null; own_takes: number[]; budget_cap: number | null; spent: number; template: string | null; voice: string | null };
-export type Template = { name: string; format: string; voice: string; music_gain: number; auto_accept: boolean; caption_scale: number; caption_position: string; pronounce: Record<string, string> };
+  generate: Run | null; generators: { image: boolean; video: boolean }; auto_accept: boolean; style: string | null; narration_dir: string | null; own_takes: number[]; budget_cap: number | null; spent: number; template: string | null; voice: string | null; research: Source[] };
+export type Template = { name: string; format: string; voice: string; music_gain: number; auto_accept: boolean; caption_scale: number; caption_position: string; pronounce: Record<string, string>; typeface?: string; caption_colour?: number[] | null; logo_path?: string };
 export type Idea = { title: string; summary: string; scores: Record<string, number>; total: number; risk: string };
 /** The script as the operator types it: scene names on lines starting with "#", one spoken line per row. */
 export const scriptText = (shots: Shot[]) => { const out: string[] = []; let scene: string | null = null; for (const s of shots) { if (s.scene && s.scene !== scene) out.push(`# ${s.scene}`); scene = s.scene; out.push(s.text); } return out.join("\n"); };

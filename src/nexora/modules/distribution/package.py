@@ -44,6 +44,8 @@ def edl(title: str, shots: list[dict], *, fps: int = 30) -> str:
         else:
             lines.append(f"{n:03d}  BL       V     C        {_tc(0, fps)} {_tc(d, fps)} {_tc(at, fps)} {_tc(at + d, fps)}")
         lines.append(f"* COMMENT: {shot['text']}")
+        if shot.get("sound_cue"):
+            lines.append(f"* SOUND: {shot['sound_cue']}")
         at += d
     return "\n".join(lines) + "\n"
 

@@ -14,6 +14,8 @@ def review_cut(shots: list[dict]) -> list[dict]:
     for i, s in enumerate(shots):
         if s["gap"]:
             add("Thiếu hình", i, "cao", "Câu này không có clip nên video hiện nền trơn.", "Thêm footage, đổi sang phương án khác, hoặc sửa câu.")
+        if s.get("is_fact") and not s.get("source"):
+            add("Dữ kiện", i, "cao", "Câu này nêu một dữ kiện nhưng chưa gắn nguồn nào.", "Gắn một nguồn trong phần Nguồn tham khảo của dự án, hoặc sửa câu.")
         if s["duration"] > MAX_SHOT:
             add("Nhịp", i, "vừa", f"Cảnh dài {s['duration']:.1f} giây, dễ làm người xem chán.", "Tách câu thành hai câu ngắn hơn.")
         if s["duration"] < MIN_SHOT:

@@ -135,12 +135,13 @@ class Edit:
         FORMAT = FORMATS.get(project["format"], FORMATS["landscape"])
         fill = "fit" if project["format"] == "landscape" else "cover"
         profile = json.loads(project.get("profile") or "{}")
-        look = {"scale": float(profile.get("caption_scale") or 1.0), "position": profile.get("caption_position") or "bottom", "colour": profile.get("caption_colour")}
+        look = {"scale": float(profile.get("caption_scale") or 1.0), "position": profile.get("caption_position") or "bottom", "colour": profile.get("caption_colour"),
+                "typeface": profile.get("typeface") or "sans", "logo": profile.get("logo_path")}
         durations = {l["shot_id"]: l for l in ctx.inputs["narration"]["lines"]}
         out, draft = [], False
         for shot in script["shots"]:
             line, sel = durations[shot.shot_id], self._projects.selection(shot.shot_id)
-            duration = round(line["duration"] + PAD_SECONDS, 2)
+            duration = round(max(line["duration"] + PAD_SECONDS, shot.target_seconds or 0.0), 2)      # never shorter than the narration, longer if the script asks
             words = shot.screen_text or shot.text
             caption = self._media / "captions" / f"{_key(words, FORMAT, look)}.png"
             if not caption.is_file():
@@ -167,6 +168,7 @@ class Edit:
                                                                "audio": line["audio"], "fill": fill, "focus_x": focus, "inserts": inserts, **FORMAT}))
             out.append({"shot_id": shot.shot_id, "file": str(segment), "duration": duration, "gap": not has_picture, "text": shot.text,
                         "asset_id": sel.asset_id if has_picture else None, "t_in": t_in, "chosen_in": sel.t_in if has_picture else None,
+                        "is_fact": shot.is_fact, "source": shot.source, "sound_cue": shot.sound_cue,
                         "own_voice": bool(line.get("own_voice")), "focus_x": focus if fill == "cover" else None,
                         "inserts": [{"keyword": i["keyword"], "at": i["at"]} for i in inserts]})
             ctx.heartbeat()
@@ -195,6 +197,6 @@ class Edit:
               "format": project["format"], "music": bool(music), "draft": bool(ctx.inputs["segments"].get("draft")), "mean_db": loud["mean_db"], "max_db": loud["max_db"],
               "findings": self._reviewer(segments) if self._reviewer else [],
               "shots": [{"text": s["text"], "duration": s["duration"], "gap": s["gap"], "asset_id": s.get("asset_id"), "t_in": s.get("chosen_in"),
-                         "own_voice": s.get("own_voice", False), "focus_x": s.get("focus_x"), "inserts": s.get("inserts", [])} for s in segments]}
+                         "is_fact": s.get("is_fact", False), "source": s.get("source"), "sound_cue": s.get("sound_cue"), "own_voice": s.get("own_voice", False), "focus_x": s.get("focus_x"), "inserts": s.get("inserts", [])} for s in segments]}
         render_id = self._projects.add_render(script["project_id"], ctx.subject_ref, str(out), qc)
         return {"render_id": render_id, "qc_passed": qc["passed"]}

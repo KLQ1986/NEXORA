@@ -343,3 +343,31 @@ def test_structured_script_brand_profile_ideas_draft_and_health_notices(tmp_path
     assert client.get("/api/v1/notifications").json()["items"][0]["kind"] == "volume_offline"
     client.post(f"/api/v1/projects/{pid}/render"); drain()
     assert client.get(f"/api/v1/projects/{pid}").json()["renders"][0]["qc"]["draft"] is True          # cut from proxies while the originals are away
+
+
+def test_sources_for_facts_hold_times_sound_cues_and_the_brand_look(tmp_path):
+    from PIL import Image
+    from tests.conftest import make_video
+    from tests.fakes import FakeModel, FakeVoice
+    system = build(tmp_path / "data", model=FakeModel(), voice=FakeVoice(), segment_seconds=2.0)
+    client = TestClient(create_app(system))
+    drain = lambda: [None for _ in iter(system.worker.run_once, False)]
+    client.post("/api/v1/assets/register", json={"path": str(make_video(tmp_path / "f.mp4", picture=20))}); drain()
+    logo = tmp_path / "logo.png"; Image.new("RGBA", (200, 80), (255, 200, 0, 255)).save(logo)
+    templates = client.get("/api/v1/settings").json()["templates"]
+    templates[0].update(typeface="serif", caption_colour=[255, 220, 120], logo_path=str(logo))
+    client.post("/api/v1/settings", json={"templates": templates})
+
+    pid = client.post("/api/v1/projects", json={"title": "Có nguồn", "lines": ["cá tươi trên sạp", "chợ rau củ"]}).json()["project_id"]
+    client.post(f"/api/v1/projects/{pid}/template", json={"name": templates[0]["name"]})
+    research = client.patch(f"/api/v1/projects/{pid}", json={"research": [{"title": "Niên giám chợ", "publisher": "Sở Công thương", "date": "2025", "passage": "Chợ mở từ 5 giờ sáng."}, {"title": ""}]}).json()["research"]
+    assert [s["title"] for s in research] == ["Niên giám chợ"] and research[0]["retrieved_at"]
+    first, second = [s["shot_id"] for s in client.get(f"/api/v1/projects/{pid}").json()["shots"]]
+    client.patch(f"/api/v1/shots/{first}", json={"is_fact": True, "target_seconds": 5, "sound_cue": "tiếng chợ"})
+    client.patch(f"/api/v1/shots/{second}", json={"is_fact": True, "source": "Niên giám chợ"})
+    client.post(f"/api/v1/projects/{pid}/match"); drain(); client.post(f"/api/v1/projects/{pid}/match/approve")
+    client.post(f"/api/v1/projects/{pid}/render"); drain()
+    render = client.get(f"/api/v1/projects/{pid}").json()["renders"][0]
+    assert render["qc"]["passed"] and render["qc"]["shots"][0]["duration"] == 5.0                     # the picture is held as long as the script asks
+    assert [(f["shot"], f["check"]) for f in render["qc"]["findings"] if f["check"] == "Dữ kiện"] == [(1, "Dữ kiện")]      # only the unsourced fact is flagged
+    assert "* SOUND: tiếng chợ" in client.get(f"/api/v1/renders/{render['render_id']}/edl").text

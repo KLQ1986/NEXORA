@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { post, projectState, scriptText, timecode, usePoll, type Idea, type AgentTask, type Asset, type Settings, type Candidate, type Project, type RenderItem, type Shot } from "./api";
+import { post, projectState, scriptText, timecode, usePoll, type Idea, type Source, type AgentTask, type Asset, type Settings, type Candidate, type Project, type RenderItem, type Shot } from "./api";
 import Board from "./Board";
 import { Button, Filmstrip, Icon, Page, Section, StageRail, Steps, Tag } from "./parts";
 import Timeline from "./Timeline";
@@ -11,7 +11,8 @@ function Clip({ url, tIn, tOut, poster }: { url: string | null; tIn: number; tOu
   return <video ref={ref} key={`${url}${tIn}`} src={`${url}#t=${tIn},${tOut}`} poster={poster ?? undefined} muted playsInline controls preload="metadata" className="aspect-video w-full rounded-sm bg-black" />;
 }
 
-function ShotRow({ shot, n, locked, changed, heading }: { shot: Shot; n: number; locked: boolean; changed: () => void; heading?: string | null }) {
+function ShotRow({ shot, n, locked, changed, heading, sources = [] }: { shot: Shot; n: number; locked: boolean; changed: () => void; heading?: string | null; sources?: Source[] }) {
+  const note = async (body: Record<string, unknown>) => { await post(`/api/v1/shots/${shot.shot_id}`, body, "PATCH").catch(() => {}); changed(); };
   const sel = shot.selection;
   const [brief, setBrief] = useState<string | null>(null);
   const [screen, setScreen] = useState<string | null>(null);
@@ -26,12 +27,21 @@ function ShotRow({ shot, n, locked, changed, heading }: { shot: Shot; n: number;
       <div className="min-w-0">
         {heading && <p className="mb-1 text-[12px] font-medium text-faint">{heading}</p>}
         <p className="text-[15px] leading-relaxed">{shot.text}</p>
-        <details className="mt-1.5 text-[13px]" open={brief !== null || screen !== null}>
-          <summary className="cursor-pointer text-mute hover:text-ink">{shot.brief || shot.screen_text ? `Ghi chú: ${[shot.brief && `hình cần có “${shot.brief}”`, shot.screen_text && `chữ trên màn hình “${shot.screen_text}”`].filter(Boolean).join(", ")}` : "Thêm ghi chú hình hoặc chữ trên màn hình"}</summary>
+        <details className="mt-1.5 text-[13px]">
+          <summary className="cursor-pointer text-mute hover:text-ink">{shot.brief || shot.screen_text || shot.is_fact || shot.target_seconds || shot.sound_cue ? `Ghi chú: ${[shot.brief && `hình cần có “${shot.brief}”`, shot.screen_text && `chữ trên màn hình “${shot.screen_text}”`, shot.target_seconds && `giữ ${shot.target_seconds} giây`, shot.sound_cue && `âm thanh “${shot.sound_cue}”`, shot.is_fact && (shot.source ? `dữ kiện, nguồn “${shot.source}”` : "dữ kiện chưa có nguồn")].filter(Boolean).join(", ")}` : "Thêm ghi chú cho câu này"}</summary>
           <form className="mt-2 grid max-w-xl gap-2" onSubmit={(e) => { e.preventDefault(); saveNotes(); }}>
             <label className="grid gap-1"><span className="text-mute">Hình cần có (dùng để tìm clip khi lời dẫn không tả hình)</span><input value={brief ?? shot.brief ?? ""} onChange={(e) => setBrief(e.target.value)} placeholder="Ví dụ: cận cảnh bàn tay rót cà phê" className="px-3" /></label>
             <label className="grid gap-1"><span className="text-mute">Chữ trên màn hình (để trống thì hiện đúng lời dẫn)</span><input value={screen ?? shot.screen_text ?? ""} onChange={(e) => setScreen(e.target.value)} placeholder="Ví dụ: Hội An, 6 giờ sáng" className="px-3" /></label>
             <div><Button size="sm" disabled={brief === null && screen === null} onClick={saveNotes}>Lưu ghi chú</Button></div>
+            <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line pt-3">
+              <label className="flex items-center gap-2 text-mute">Giữ hình ít nhất<input type="number" min="0" step="0.5" defaultValue={shot.target_seconds ?? ""} onBlur={(e) => note({ target_seconds: e.target.value })} className="tc h-8 w-20 px-2" />giây</label>
+              <label className="flex min-w-0 flex-1 items-center gap-2 text-mute">Âm thanh<input defaultValue={shot.sound_cue ?? ""} onBlur={(e) => note({ sound_cue: e.target.value })} placeholder="Ví dụ: tiếng chợ, ngừng nhạc" className="h-8 min-w-0 flex-1 px-2" /></label>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <label className="flex items-center gap-2"><input type="checkbox" checked={shot.is_fact} onChange={(e) => note({ is_fact: e.target.checked })} />Câu này nêu một dữ kiện</label>
+              {shot.is_fact && (sources.length ? <select aria-label="Nguồn của dữ kiện" value={shot.source ?? ""} onChange={(e) => note({ source: e.target.value })} className="h-8 px-2"><option value="">Chưa gắn nguồn</option>{sources.map((src) => <option key={src.title}>{src.title}</option>)}</select>
+                : <span className="text-cue">Thêm nguồn ở bảng Nguồn tham khảo bên phải rồi gắn vào đây.</span>)}
+            </div>
           </form>
         </details>
         {!sel && <p className="mt-1 text-sm text-mute">Chưa tìm clip cho câu này.</p>}
@@ -234,7 +244,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
                      </>}>
               {p.shots.some((s) => s.selection) && <div className="mb-1"><TimelineStrip shots={p.shots} /></div>}
               <ol className="rows border-y border-line">
-                {p.shots.map((s, i) => <ShotRow key={s.shot_id} shot={s} n={i + 1} locked={!!rendering} changed={reload} heading={s.scene && s.scene !== p.shots[i - 1]?.scene ? s.scene : null} />)}
+                {p.shots.map((s, i) => <ShotRow key={s.shot_id} shot={s} n={i + 1} locked={!!rendering} changed={reload} heading={s.scene && s.scene !== p.shots[i - 1]?.scene ? s.scene : null} sources={p.research} />)}
               </ol>
             </Section>
           )}
@@ -335,6 +345,25 @@ function Detail({ id, back }: { id: string; back: () => void }) {
             </form>
             <label className="flex items-start gap-2.5"><input type="checkbox" className="mt-0.5" checked={p.auto_accept} disabled={busy} onChange={(e) => patch({ auto_accept: e.target.checked ? 1 : 0 })} />
               <span>Tự duyệt clip<span className="block text-[13px] text-mute">Chỉ khi mọi câu đều có clip và mô hình chấm chắc chắn.</span></span></label>
+          </div>
+
+          <div className="panel grid gap-3 p-5">
+            <div><h2 className="text-[15px] font-semibold">Nguồn tham khảo</h2>
+              <p className="mt-1 text-[13px] text-mute">Câu nào nêu dữ kiện thì gắn với một nguồn ở đây. Dữ kiện chưa có nguồn sẽ bị nêu ra khi kiểm tra bản dựng.</p></div>
+            <ul className="rows empty:hidden">
+              {p.research.map((src) => (
+                <li key={src.title} className="py-2 text-[13px]"><div className="flex justify-between gap-2"><span className="min-w-0 font-medium">{src.url ? <a href={src.url} target="_blank" rel="noreferrer" className="underline underline-offset-2">{src.title}</a> : src.title}</span>
+                  <button type="button" className="shrink-0 text-mute underline underline-offset-2 hover:text-ink" onClick={() => patch({ research: p.research.filter((x) => x.title !== src.title) })}>Bỏ</button></div>
+                  <p className="text-mute">{[src.publisher, src.date].filter(Boolean).join(", ")}</p>{src.passage && <p className="mt-0.5 text-mute">“{src.passage}”</p>}</li>
+              ))}
+            </ul>
+            <form className="grid gap-2" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); const src = Object.fromEntries(["title", "publisher", "date", "url", "passage"].map((k) => [k, String(f.get(k) ?? "")])); if (!src.title.trim()) return; patch({ research: [...p.research, src] }); e.currentTarget.reset(); }}>
+              <input name="title" aria-label="Tên nguồn" placeholder="Tên nguồn, ví dụ: Niên giám thống kê 2025" className="px-3" />
+              <div className="flex gap-2"><input name="publisher" aria-label="Nơi xuất bản" placeholder="Nơi xuất bản" className="min-w-0 flex-1 px-3" /><input name="date" aria-label="Ngày" placeholder="Ngày" className="w-24 px-3" /></div>
+              <input name="url" aria-label="Đường dẫn" placeholder="Đường dẫn (nếu có)" className="px-3" />
+              <textarea name="passage" aria-label="Đoạn trích" rows={2} placeholder="Đoạn trích chứng minh dữ kiện" className="p-2.5" />
+              <div><button type="submit" className="h-9 rounded-md border border-line bg-surface px-3.5 text-sm font-medium hover:border-faint hover:bg-raised">Thêm nguồn</button></div>
+            </form>
           </div>
 
           {p.script && (
