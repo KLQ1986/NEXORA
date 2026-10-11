@@ -48,6 +48,7 @@ class Library:
         self._orch, self._assets, self._adapters = orch, assets, adapters
         self._min_free = min_free_bytes
         self._understanding = understanding          # None when no model is available
+        self.on_understood = []                      # called with an asset id once that asset has been described and indexed
         self._media = Path(media_dir)
         self._media.mkdir(parents=True, exist_ok=True)
         assets.add_volume("managed", self._media, kind="internal")
@@ -61,7 +62,12 @@ class Library:
         registry.register(INGEST_AUDIO, {"checksum": self._checksum, "listen": self._listen})
         if self._understanding:
             from nexora.modules.library.understand import UNDERSTAND
-            registry.register(UNDERSTAND, self._understanding.handlers())
+            registry.register(UNDERSTAND, self._understanding.handlers(),
+                              on_success=lambda run_id, asset_id: [listener(asset_id) for listener in self.on_understood])
+
+    @property
+    def understands(self) -> bool:
+        return self._understanding is not None
 
     def understand(self, asset_id: str, *, force: bool = False) -> str | None:
         """Start understanding an ingested asset. Duplicates are skipped; `force` starts a new run."""

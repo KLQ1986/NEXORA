@@ -144,13 +144,50 @@ class Sourcing:
         rest = [a for i, a in enumerate(sel.alternates) if i != alternate] + old
         self._projects.set_selection(shot_id, status="accepted" if sel.status == "accepted" else "proposed", alternates=rest, decided_by="operator", **_fields(chosen))
 
-    def use_asset(self, shot_id: str, asset_id: str, *, reason: str, seconds: float | None = None) -> None:
+    def use_asset(self, shot_id: str, asset_id: str, *, reason: str, seconds: float | None = None, pending: bool = False) -> None:
         """Fill a shot with a whole asset from another strategy (stock or generation); it still goes through review."""
         shot_text = next(s.text for sc in [self._projects.script(self._script_of(shot_id))] for s in sc["shots"] if s.shot_id == shot_id)
         need = seconds or needed_seconds(shot_text)
         old = self._projects.selection(shot_id)
         self._projects.set_selection(shot_id, status="proposed", asset_id=asset_id, t_in=0.0, t_out=need, reason=reason,
                                      alternates=old.alternates if old else [], decided_by="operator")
+        if pending:
+            self._projects.set_extras(shot_id, pending_asset=asset_id)
+
+    def refine_from_asset(self, shot_id: str, asset_id: str) -> bool:
+        """A clip brought in for one line (stock, for example) was proposed whole, before anyone had looked at it. Now that it has been
+        described, find the part that shows the line. If no part does, the line is a gap again: a wrong picture is worse than none."""
+        sel = self._projects.selection(shot_id)
+        if sel is None or sel.asset_id != asset_id or sel.moment_id:
+            return False                             # the operator has moved on from this clip, or it was already placed
+        text = next(s.text for s in self._projects.script(self._script_of(shot_id))["shots"] if s.shot_id == shot_id)
+        need = needed_seconds(text)
+        hits = [h for h in self._index.search(text, limit=400) if h.moment.asset_id == asset_id][:4]
+        if not hits:                                 # the description shares nothing with the line; still let the model look at the opening
+            first = [m for m in self._index.moments(asset_id, level="segment")][:2]
+            hits = [type("Hit", (), {"moment": m, "score": 0.0})() for m in first]
+        best, why = None, ""
+        for hit in hits:
+            points, reason = self._look(text, hit) if self._judge else (self._judge_pass if hit.score >= self._threshold else 0, "")
+            if points >= self._judge_pass and (best is None or points > best[0]):
+                best, why = (points, hit), reason
+        note = (sel.reason or "").split(" Đoạn được chọn:")[0]
+        if best is None:
+            self._projects.set_selection(shot_id, status="gap", alternates=sel.alternates, decided_by="system",
+                                         reason=f"Clip stock tải về không có đoạn nào cho thấy điều câu này nói. {note}")
+            self._projects.set_extras(shot_id, pending_asset=None)
+            return True
+        hit = best[1]
+        t_in, t_out = self._locate(text, hit, need) if self._judge else fit(hit.moment.t_start, hit.moment.t_end, need)
+        self._projects.set_selection(shot_id, status=sel.status, asset_id=asset_id, moment_id=hit.moment.moment_id, t_in=t_in, t_out=t_out, score=hit.score,
+                                     reason=f"{note} Đoạn được chọn: {why or hit.moment.text}", alternates=sel.alternates, decided_by=sel.decided_by)
+        self._projects.set_extras(shot_id, pending_asset=None)
+        return True
+
+    def pending_for(self, asset_id: str) -> list[str]:
+        """Shots waiting for this asset to be described before their clip can be placed."""
+        rows = self._projects._conn.execute("SELECT shot_id, extras FROM selections WHERE asset_id = ? AND extras LIKE '%pending_asset%'", (asset_id,))
+        return [r["shot_id"] for r in rows if __import__("json").loads(r["extras"]).get("pending_asset") == asset_id]
 
     def use_angle(self, shot_id: str, asset_id: str, offset: float) -> None:
         """Show the same instant from another camera that was lined up with the current one."""

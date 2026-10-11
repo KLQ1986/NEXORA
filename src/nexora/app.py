@@ -58,7 +58,9 @@ def fill_gap_from_stock(system: "System", shot_id: str, query: str) -> dict:
     clip = result.outputs["clips"][0]
     rights = {"source": clip.get("source"), "source_url": clip.get("source_url"), "license": clip.get("license"), "creator": clip.get("creator"), "query": query}
     asset_id, run_id = system.library.ingest(result.files[0], origin="licensed", rights=rights)
-    system.sourcing.use_asset(shot_id, asset_id, reason=f"Clip stock từ {clip.get('source')}. Giấy phép: {clip.get('license')}. Nguồn: {clip.get('source_url')}")
+    # Proposed at once so the operator sees something; placed properly, or withdrawn, once the clip has been watched (see build()).
+    system.sourcing.use_asset(shot_id, asset_id, pending=system.library.understands,
+                              reason=f"Clip stock từ {clip.get('source')}. Giấy phép: {clip.get('license')}. Nguồn: {clip.get('source_url')}")
     return {"found": True, "asset_id": asset_id, "run_id": run_id, "rights": rights}
 
 
@@ -124,6 +126,7 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     planning = Planning(projects, assets, index, adapters)
     sourcing = Sourcing(orch, projects, index, threshold=match_threshold, adapters=adapters, judge=judge and model is not None)
     sourcing.register(registry)
+    library.on_understood.append(lambda asset_id: [sourcing.refine_from_asset(shot_id, asset_id) for shot_id in sourcing.pending_for(asset_id)])
     edit = Edit(orch, projects, assets, adapters, data_dir / "media", voice=voice is not None, voice_name=voice_name, reviewer=review_cut, model=model is not None)
     edit.register(registry)
     if stock is not None:

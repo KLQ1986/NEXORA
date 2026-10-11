@@ -197,14 +197,16 @@ def test_a_gap_is_filled_with_licensed_stock_that_enters_the_library_with_its_ri
     system = build(tmp_path / "data", model=FakeModel(), voice=FakeVoice(), segment_seconds=2.0, stock=FakeStock())
     system.library.ingest(make_video(tmp_path / "footage.mp4", picture=20)); drain(system)
     pid = system.planning.create_project("Biển")
-    script = system.planning.save_script(pid, ["cá tươi trên sạp", "bàn phím máy tính"])
+    script = system.planning.save_script(pid, ["cá tươi trên sạp", "pha cà phê"])
     run = system.sourcing.start_match(script); drain(system)
     gap = system.projects.selections(script)[1]
-    assert gap.status == "gap"
-    out = fill_gap_from_stock(system, gap.shot_id, "keyboard typing")
+    system.sourcing.mark_gap(gap.shot_id)                                          # the operator rejects what the library offered
+    out = fill_gap_from_stock(system, gap.shot_id, "making coffee")
+    assert system.projects.selections(script)[1].t_in == 0.0                       # proposed whole, before anyone has watched it
     drain(system)                                                                  # the stock clip is ingested and understood like any footage
     filled = system.projects.selections(script)[1]
     assert out["found"] and filled.status == "proposed" and "Public Domain" in filled.reason
+    assert filled.moment_id and filled.t_in >= 3.5 and "Đoạn được chọn" in filled.reason      # placed on the part that shows the line, not on its first seconds
     asset = next(a for a in system.assets.assets() if a["asset_id"] == filled.asset_id)
     assert asset["origin"] == "licensed" and system.assets.original(filled.asset_id).metadata["rights"]["license"] == "Public Domain"
     system.sourcing.approve(run)
@@ -320,3 +322,17 @@ def test_a_new_render_withdraws_the_earlier_one_still_waiting_for_review(system)
     assert system.orch.run_status(first) is RunStatus.WAITING_REVIEW
     second = system.edit.start_render(script); drain(system)
     assert system.orch.run_status(first) is RunStatus.CANCELLED and system.orch.run_status(second) is RunStatus.WAITING_REVIEW
+
+
+def test_stock_that_does_not_show_the_line_is_withdrawn_once_it_has_been_watched(tmp_path):
+    from nexora.app import fill_gap_from_stock
+    from tests.fakes import FakeStock
+    system = build(tmp_path / "data", model=FakeModel(), voice=FakeVoice(), segment_seconds=2.0, stock=FakeStock())
+    system.library.ingest(make_video(tmp_path / "footage.mp4", picture=20)); drain(system)
+    pid = system.planning.create_project("Tàu")
+    script = system.planning.save_script(pid, ["cá tươi trên sạp", "đoàn tàu qua cầu sắt"])
+    system.sourcing.start_match(script); drain(system)
+    gap = system.projects.selections(script)[1]
+    fill_gap_from_stock(system, gap.shot_id, "train on a bridge"); drain(system)
+    after = system.projects.selections(script)[1]
+    assert after.status == "gap" and after.asset_id is None and "không có đoạn nào" in after.reason      # a wrong picture is worse than none
