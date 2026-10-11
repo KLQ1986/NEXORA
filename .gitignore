@@ -9,3 +9,6 @@ spike/out/
 spike/footage/
 spike/report/clips/
 .DS_Store
+.playwright-mcp/
+review.png
+*.png

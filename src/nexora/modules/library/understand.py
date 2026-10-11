@@ -5,7 +5,7 @@ analyzer, and a text corrected by the operator is never overwritten.
 """
 from pathlib import Path
 
-from nexora.core.adapter import AdapterRegistry, Request
+from nexora.core.adapter import AdapterError, AdapterRegistry, ErrorCode, Request
 from nexora.core.assets import AssetStore
 from nexora.core.index import MomentIndex
 from nexora.core.pipeline import PipelineDefinition, StageDef
@@ -74,7 +74,7 @@ class Understanding:
         return {"segments": segments}
 
     def _describe(self, ctx):
-        done = 0
+        done = unreadable = 0
         for i, seg in enumerate(ctx.inputs["segments"]["segments"]):
             if ctx.should_stop():
                 break
@@ -84,8 +84,15 @@ class Understanding:
             if not seg["frames"]:
                 continue
             prompt = DESCRIBE_PROMPT.format(n=len(seg["frames"]), gap=1 / FRAME_FPS)
-            out = self._adapters.submit("model", Request("describe", inputs={"images": seg["frames"]}, params={"prompt": prompt, "index": i},
-                                                        attempt_id=ctx.claim.attempt_id)).outputs["json"]
+            try:
+                out = self._adapters.submit("model", Request("describe", inputs={"images": seg["frames"]},
+                                                            params={"prompt": prompt, "index": i, "max_tokens": 700},
+                                                            attempt_id=ctx.claim.attempt_id)).outputs["json"]
+            except AdapterError as err:
+                if err.code is not ErrorCode.OUTPUT_INVALID:
+                    raise
+                unreadable += 1                      # one bad answer must not cost the whole video; the segment stays undescribed
+                continue
             parts = [str(out.get("mo_ta", "")).strip()]
             for key, label in (("chu_the", "Thấy"), ("hanh_dong", "Hành động")):
                 values = out.get(key) or []
@@ -100,7 +107,7 @@ class Understanding:
                                data={"frame": frame, "frames": seg["frames"], "detail": out}, analyzer=self.analyzer)
             done += 1
             ctx.heartbeat()
-        return {"described": done}
+        return {"described": done, "unreadable": unreadable}
 
     def _summarise(self, ctx):
         segments = self._index.moments(ctx.subject_ref, level="segment")

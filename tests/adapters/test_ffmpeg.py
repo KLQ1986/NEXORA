@@ -56,3 +56,12 @@ def test_proxy_bitrate_is_modest(plain_clip, tmp_path):
     out = tmp_path / "p.mp4"
     FFmpegAdapter().submit(Request("proxy", inputs={"path": str(plain_clip)}, params={"out": str(out)}))
     assert out.stat().st_size < 2 * 1_500_000 / 8 * 1.5          # two seconds at well under 1.5 Mbit/s plus overhead
+
+
+def test_concat_works_when_segments_are_given_as_relative_paths(plain_clip, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    for name in ("a.mp4", "b.mp4"):
+        FFmpegAdapter().submit(Request("segment", inputs={"path": str(plain_clip)}, params={"out": name, "duration": 2.0}))
+    out = FFmpegAdapter().submit(Request("concat", inputs={"paths": ["a.mp4", "b.mp4"]}, params={"out": "final.mp4"}))
+    probe = FFprobeAdapter().submit(Request("probe", inputs={"path": "final.mp4"})).outputs
+    assert probe["duration"] == pytest.approx(4.0, abs=0.3) and probe["has_audio"]

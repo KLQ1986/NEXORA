@@ -124,6 +124,8 @@ function Detail({ id, back }: { id: string; back: () => void }) {
               {rendering && p.render && <div className="w-56"><StageRail stages={p.render.stages} /></div>}
               {rendering && <span className="text-mute">Đang dựng</span>}
             </div>
+            {p.render?.status === "failed" && <p className="mb-3 text-tally">Lần dựng vừa rồi thất bại ở bước {p.render.stages.find((s) => s.status === "failed")?.stage_key}. Xem chi tiết ở mục Tiến trình, rồi bấm dựng lại.</p>}
+            {p.render?.status === "blocked" && <p className="mb-3 text-cue">Việc dựng đang dừng và cần bạn xử lý. Xem ở mục Tiến trình.</p>}
             {latest && (
               <div className="grid gap-6 lg:grid-cols-[minmax(0,640px)_1fr]">
                 <video key={latest.url} src={latest.url} controls className="aspect-video w-full rounded bg-black" />

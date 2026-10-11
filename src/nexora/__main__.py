@@ -27,7 +27,7 @@ def main() -> None:
     p = sub.add_parser("serve", help="start the API on the loopback address")
     p.add_argument("--port", type=int, default=8600)
     args = parser.parse_args()
-    system = build(args.data, model=OllamaAdapter(), voice=SayVoice())
+    system = build(args.data, model=OllamaAdapter(), voice=SayVoice(), match_threshold=0.52)
 
     if args.command == "ingest":
         for given in args.paths:

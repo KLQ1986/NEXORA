@@ -165,7 +165,7 @@ class FFmpegAdapter(Adapter):
     def _concat(self, paths: list[str], params: dict, timeout: float) -> Result:
         out = Path(params["out"])
         listing = out.with_suffix(".txt")
-        listing.write_text("".join(f"file '{p}'\n" for p in paths), encoding="utf-8")
+        listing.write_text("".join(f"file '{Path(p).resolve()}'\n" for p in paths), encoding="utf-8")
         partial = out.with_name(out.stem + ".partial" + out.suffix)
         self._run(["-y", "-f", "concat", "-safe", "0", "-i", str(listing), "-c:v", "copy", "-af", "loudnorm=I=-16:TP=-1.5:LRA=11",
                    "-c:a", "aac", "-ar", "48000", "-b:a", "160k", "-movflags", "+faststart", str(partial)], timeout, "concat")
