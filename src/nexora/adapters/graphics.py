@@ -25,14 +25,21 @@ class CaptionAdapter(Adapter):
         font = ImageFont.truetype(font_path, round(h * 0.052 * scale))
         image = Image.new("RGBA", (w, h), (0, 0, 0, 0))
         draw = ImageDraw.Draw(image)
-        lines, current = [], ""
-        for word in request.inputs["text"].split():
-            trial = f"{current} {word}".strip()
-            if draw.textlength(trial, font=font) <= w * 0.82 or not current:
-                current = trial
-            else:
-                lines.append(current); current = word
-        lines.append(current)
+        def wrap(limit: float) -> list[str]:
+            out, current = [], ""
+            for word in request.inputs["text"].split():
+                trial = f"{current} {word}".strip()
+                if draw.textlength(trial, font=font) <= limit or not current:
+                    current = trial
+                else:
+                    out.append(current); current = word
+            return out + [current]
+
+        lines = wrap(w * 0.82)
+        if len(lines) > 1:
+            # Even out the lines, so that a caption never ends on one stranded word.
+            even = wrap(min(w * 0.82, draw.textlength(request.inputs["text"], font=font) / len(lines) * 1.12))
+            lines = even if len(even) == len(lines) else lines
         line_h = round(h * 0.07 * scale)
         place = request.params.get("position", "bottom")
         top = (round(h * 0.08) if place == "top" else (h - line_h * len(lines)) // 2 if place == "middle" else h - round(h * 0.09) - line_h * len(lines))
