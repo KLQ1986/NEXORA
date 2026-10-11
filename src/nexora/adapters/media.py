@@ -62,7 +62,7 @@ class FFmpegAdapter(Adapter):
         return ffmpeg_capabilities()
 
     def describe(self) -> Capability:
-        return Capability(name="ffmpeg", operations=("blackdetect", "freezedetect", "proxy", "thumbnail", "frames", "segment", "concat"), runs="local", supports_cancel=True)
+        return Capability(name="ffmpeg", operations=("blackdetect", "freezedetect", "proxy", "thumbnail", "frames", "segment", "concat", "loudness"), runs="local", supports_cancel=True)
 
     def submit(self, request: Request) -> Result:
         timeout = request.deadline_seconds or 3600
@@ -144,7 +144,10 @@ class FFmpegAdapter(Adapter):
             args += ["-f", "lavfi", "-i", f"color=c=0x1e2021:s={w}x{h}:r={fps}:d={d}"]
         else:
             args += ["-ss", str(params.get("t_in", 0.0)), "-t", str(d), "-i", str(src)]
-        chain = f"[0:v]scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={fps},tpad=stop_mode=clone:stop_duration={d}[base]"
+        # "cover" fills the frame and crops the overflow (used when the output shape differs from the footage); "fit" letterboxes.
+        shape = (f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}" if params.get("fill", "fit") == "cover"
+                 else f"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2")
+        chain = f"[0:v]{shape},setsar=1,fps={fps},tpad=stop_mode=clone:stop_duration={d}[base]"
         n = 1
         if params.get("overlay"):
             args += ["-loop", "1", "-i", str(params["overlay"])]
@@ -167,10 +170,26 @@ class FFmpegAdapter(Adapter):
         listing = out.with_suffix(".txt")
         listing.write_text("".join(f"file '{Path(p).resolve()}'\n" for p in paths), encoding="utf-8")
         partial = out.with_name(out.stem + ".partial" + out.suffix)
-        self._run(["-y", "-f", "concat", "-safe", "0", "-i", str(listing), "-c:v", "copy", "-af", "loudnorm=I=-16:TP=-1.5:LRA=11",
-                   "-c:a", "aac", "-ar", "48000", "-b:a", "160k", "-movflags", "+faststart", str(partial)], timeout, "concat")
+        tail = ["-c:a", "aac", "-ar", "48000", "-b:a", "160k", "-movflags", "+faststart", str(partial)]
+        if params.get("music"):
+            # The music loops under the narration and is pushed down whenever the narration speaks (ducking).
+            gain = float(params.get("music_gain", 0.35))
+            graph = (f"[1:a]aresample=48000,volume={gain}[m];[0:a]asplit=2[voice][key];"
+                     "[m][key]sidechaincompress=threshold=0.02:ratio=10:attack=15:release=350[duck];"
+                     "[voice][duck]amix=inputs=2:duration=first:normalize=0,loudnorm=I=-16:TP=-1.5:LRA=11[a]")
+            self._run(["-y", "-f", "concat", "-safe", "0", "-i", str(listing), "-stream_loop", "-1", "-i", str(params["music"]),
+                       "-filter_complex", graph, "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-shortest", *tail], timeout, "concat")
+        else:
+            self._run(["-y", "-f", "concat", "-safe", "0", "-i", str(listing), "-c:v", "copy", "-af", "loudnorm=I=-16:TP=-1.5:LRA=11", *tail],
+                      timeout, "concat")
         partial.replace(out); listing.unlink(missing_ok=True)
         return Result(files=(str(out),))
+
+    def _loudness(self, src: Path, params: dict, timeout: float) -> Result:
+        done = self._run(["-i", str(src), "-af", "volumedetect", "-vn", "-f", "null", "-"], timeout, "loudness")
+        found = dict(__import__("re").findall(r"(mean_volume|max_volume): (-?[\d.]+|-inf) dB", done.stderr))
+        number = lambda v: -120.0 if v in (None, "-inf") else float(v)
+        return Result(outputs={"mean_db": number(found.get("mean_volume")), "max_db": number(found.get("max_volume"))})
 
     def _thumbnail(self, src: Path, params: dict, timeout: float) -> Result:
         out = Path(params["out"])

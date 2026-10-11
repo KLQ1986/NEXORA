@@ -18,7 +18,12 @@ RENDER = PipelineDefinition("edit.render", "1", [
     StageDef("segments", depends_on=("narration",)),
     StageDef("assemble", depends_on=("segments",), gate=True),
 ])
-FORMAT = {"width": 1280, "height": 720, "fps": 30}
+FORMATS = {
+    "landscape": {"width": 1280, "height": 720, "fps": 30},     # 16:9
+    "portrait": {"width": 720, "height": 1280, "fps": 30},      # 9:16, for short-form
+    "square": {"width": 720, "height": 720, "fps": 30},
+}
+FORMAT = FORMATS["landscape"]
 PAD_SECONDS = 0.4
 WORDS_PER_SECOND = 2.6
 
@@ -29,9 +34,10 @@ def _key(*parts) -> str:
 
 class Edit:
     def __init__(self, orch: Orchestrator, projects: ProjectStore, assets: AssetStore, adapters: AdapterRegistry, media_dir: str | Path,
-                 *, voice: bool = False, voice_name: str = "Linh"):
+                 *, voice: bool = False, voice_name: str = "Linh", reviewer=None):
         self._orch, self._projects, self._assets, self._adapters = orch, projects, assets, adapters
         self._media, self._voice, self._voice_name = Path(media_dir), voice, voice_name
+        self._reviewer = reviewer                    # the whole-cut review of the Quality module, injected by the composition root
         for sub in ("narration", "captions", "segments", "renders"):
             (self._media / sub).mkdir(parents=True, exist_ok=True)
 
@@ -75,6 +81,9 @@ class Edit:
 
     def _segments(self, ctx):
         script = self._projects.script(ctx.subject_ref)
+        project = self._projects.project(script["project_id"])
+        FORMAT = FORMATS.get(project["format"], FORMATS["landscape"])
+        fill = "fit" if project["format"] == "landscape" else "cover"
         durations = {l["shot_id"]: l for l in ctx.inputs["narration"]["lines"]}
         out = []
         for shot in script["shots"]:
@@ -86,32 +95,41 @@ class Edit:
             has_picture = sel is not None and sel.status != "gap" and sel.asset_id
             if has_picture:
                 path, checksum, t_in = self._source(sel.asset_id, sel.t_in, duration)
-                key = _key(checksum, t_in, duration, shot.text, line["audio"], FORMAT)
+                key = _key(checksum, t_in, duration, shot.text, line["audio"], FORMAT, fill)
             else:
                 path, t_in, key = None, 0.0, _key("gap", duration, shot.text, line["audio"], FORMAT)
             segment = self._media / "segments" / f"{key}.mp4"
             if not segment.is_file():                                   # unchanged shots are reused, not rendered again
                 self._adapters.submit("ffmpeg", Request("segment", inputs={"path": path}, attempt_id=ctx.claim.attempt_id,
                                                        params={"out": str(segment), "t_in": t_in, "duration": duration, "overlay": str(caption),
-                                                               "audio": line["audio"], **FORMAT}))
-            out.append({"shot_id": shot.shot_id, "file": str(segment), "duration": duration, "gap": not has_picture})
+                                                               "audio": line["audio"], "fill": fill, **FORMAT}))
+            out.append({"shot_id": shot.shot_id, "file": str(segment), "duration": duration, "gap": not has_picture, "text": shot.text,
+                        "asset_id": sel.asset_id if has_picture else None, "t_in": t_in})
             ctx.heartbeat()
         return {"segments": out}
 
     def _assemble(self, ctx):
         script = self._projects.script(ctx.subject_ref)
+        project = self._projects.project(script["project_id"])
+        FORMAT = FORMATS.get(project["format"], FORMATS["landscape"])
+        music = project["music_path"] if project["music_path"] and Path(project["music_path"]).is_file() else None
         segments = ctx.inputs["segments"]["segments"]
         out = self._media / "renders" / f"{ctx.subject_ref}_{ctx.claim.attempt_id}.mp4"
-        self._adapters.submit("ffmpeg", Request("concat", inputs={"paths": [s["file"] for s in segments]}, params={"out": str(out)},
+        self._adapters.submit("ffmpeg", Request("concat", inputs={"paths": [s["file"] for s in segments]}, params={"out": str(out), "music": music},
                                                attempt_id=ctx.claim.attempt_id))
         probe = self._adapters.submit("ffprobe", Request("probe", inputs={"path": str(out)})).outputs
         expected = sum(s["duration"] for s in segments)
+        loud = self._adapters.submit("ffmpeg", Request("loudness", inputs={"path": str(out)})).outputs
         checks = {
             "Có hình và đúng kích thước": (probe["width"], probe["height"]) == (FORMAT["width"], FORMAT["height"]),
             "Có âm thanh": bool(probe["has_audio"]),
             "Độ dài khớp với kịch bản": abs(probe["duration"] - expected) < 1.0,
+            "Âm thanh không bị vỡ": loud["max_db"] <= -0.5,
         }
         qc = {"passed": all(checks.values()), "checks": checks, "width": probe["width"], "height": probe["height"], "duration": probe["duration"],
-              "has_audio": probe["has_audio"], "shot_durations": [s["duration"] for s in segments], "gaps": sum(1 for s in segments if s["gap"])}
+              "has_audio": probe["has_audio"], "shot_durations": [s["duration"] for s in segments], "gaps": sum(1 for s in segments if s["gap"]),
+              "format": project["format"], "music": bool(music), "mean_db": loud["mean_db"], "max_db": loud["max_db"],
+              "findings": self._reviewer(segments) if self._reviewer else [],
+              "shots": [{"text": s["text"], "duration": s["duration"], "gap": s["gap"]} for s in segments]}
         render_id = self._projects.add_render(script["project_id"], ctx.subject_ref, str(out), qc)
         return {"render_id": render_id, "qc_passed": qc["passed"]}

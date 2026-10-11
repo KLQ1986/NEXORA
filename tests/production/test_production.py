@@ -110,3 +110,49 @@ def test_the_clip_is_centred_on_the_frame_the_model_points_at(tmp_path):
     drain(system)
     sel = system.projects.selections(script)[0]
     assert (sel.t_in, sel.t_out) == (7.5, 10.0)             # the fake points at the last frame of a ten-second moment
+
+
+def render_project(system, lines, **project):
+    pid = system.planning.create_project("Thử", format=project.get("format", "landscape"))
+    if project.get("music"):
+        system.projects.update_project(pid, music_path=str(project["music"]))
+    script = system.planning.save_script(pid, lines)
+    system.sourcing.approve(system.sourcing.start_match(script, wait=lambda: drain(system)))
+    system.edit.start_render(script)
+    drain(system)
+    return system.projects.renders(pid)[0]["qc"]
+
+
+def test_a_portrait_project_renders_a_vertical_video_that_fills_the_frame(system):
+    qc = render_project(system, ["cá tươi trên sạp", "chợ rau củ"], format="portrait")
+    assert (qc["width"], qc["height"], qc["format"]) == (720, 1280, "portrait") and qc["passed"]
+
+
+def test_music_is_mixed_under_the_narration(system, tmp_path):
+    import subprocess
+    music = tmp_path / "music.wav"
+    subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=330:duration=3", str(music)], check=True)
+    silent = render_project(system, ["cá tươi trên sạp", "chợ rau củ"])
+    with_music = render_project(system, ["cá tươi trên sạp", "chợ rau củ"], music=music)
+    assert with_music["music"] and not silent["music"]
+    assert with_music["mean_db"] > silent["mean_db"] + 20              # the fake narration is silence, so the music is what is heard
+    assert with_music["checks"]["Âm thanh không bị vỡ"]
+
+
+def test_the_cut_review_reports_gaps_with_the_shot_they_concern(system):
+    qc = render_project(system, ["bàn phím máy tính", "cá tươi trên sạp"])
+    checks = {(f["check"], f["shot"]) for f in qc["findings"]}
+    assert ("Thiếu hình", 1) in checks and ("Mở đầu", 1) in checks
+
+
+def test_the_operator_is_notified_when_a_decision_is_needed_and_when_a_run_ends(system):
+    system.orch.mark_notifications_read()
+    pid = system.planning.create_project("Thử")
+    script = system.planning.save_script(pid, ["cá tươi trên sạp"])
+    run = system.sourcing.start_match(script)
+    drain(system)
+    assert [(n["kind"], n["stage_key"]) for n in system.orch.notifications(unread_only=True)] == [("waiting_review", "match")]
+    system.sourcing.approve(run)
+    system.orch.notify("succeeded", run)
+    system.orch.mark_notifications_read()
+    assert system.orch.notifications(unread_only=True) == []

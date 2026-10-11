@@ -17,6 +17,7 @@ from nexora.modules.library.ingest import Library
 from nexora.modules.edit.render import Edit
 from nexora.modules.library.understand import Understanding
 from nexora.modules.planning.scripts import Planning
+from nexora.modules.quality.review import review_cut
 from nexora.modules.sourcing.match import Sourcing
 
 
@@ -62,7 +63,7 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     planning = Planning(projects, assets, index, adapters)
     sourcing = Sourcing(orch, projects, index, threshold=match_threshold, adapters=adapters, judge=judge and model is not None)
     sourcing.register(registry)
-    edit = Edit(orch, projects, assets, adapters, data_dir / "media", voice=voice is not None)
+    edit = Edit(orch, projects, assets, adapters, data_dir / "media", voice=voice is not None, reviewer=review_cut)
     edit.register(registry)
     worker = Worker(orch, registry, worker_id=f"worker-{os.getpid()}")
     return System(data_dir, orch, assets, adapters, registry, worker, library, index, projects, planning, sourcing, edit)

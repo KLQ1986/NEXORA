@@ -41,11 +41,17 @@ class ProjectStore:
     def _conn(self):
         return self._db.get()
 
-    def create_project(self, title: str) -> str:
+    def create_project(self, title: str, *, format: str = "landscape") -> str:
         project_id = new_id("prj")
         with db.write(self._conn) as c:
-            c.execute("INSERT INTO projects (project_id, title, created_at) VALUES (?,?,?)", (project_id, title, time.time()))
+            c.execute("INSERT INTO projects (project_id, title, format, created_at) VALUES (?,?,?,?)", (project_id, title, format, time.time()))
         return project_id
+
+    def update_project(self, project_id: str, **fields) -> None:
+        allowed = {k: v for k, v in fields.items() if k in ("title", "format", "music_path")}
+        with db.write(self._conn) as c:
+            for key, value in allowed.items():
+                c.execute(f"UPDATE projects SET {key} = ? WHERE project_id = ?", (value, project_id))
 
     def projects(self) -> list[dict]:
         return [dict(r) for r in self._conn.execute("SELECT * FROM projects ORDER BY created_at DESC, project_id DESC")]

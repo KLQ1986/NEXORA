@@ -16,8 +16,8 @@ class Planning:
     def __init__(self, projects: ProjectStore, assets: AssetStore, index: MomentIndex, adapters: AdapterRegistry):
         self._projects, self._assets, self._index, self._adapters = projects, assets, index, adapters
 
-    def create_project(self, title: str) -> str:
-        return self._projects.create_project(title)
+    def create_project(self, title: str, *, format: str = "landscape") -> str:
+        return self._projects.create_project(title, format=format)
 
     def save_script(self, project_id: str, lines: list[str]) -> str:
         return self._projects.save_script(project_id, lines)

@@ -150,6 +150,20 @@ class Orchestrator:
     def run_cost(self, run_id: str) -> float:
         return self._conn.execute("SELECT COALESCE(SUM(cost), 0) FROM cost_records WHERE run_id = ?", (run_id,)).fetchone()[0]
 
+    def notifications(self, *, unread_only: bool = False, limit: int = 50) -> list[dict]:
+        rows = self._conn.execute("SELECT * FROM notifications WHERE (? = 0 OR read_at IS NULL) ORDER BY notification_id DESC LIMIT ?",
+                                  (int(unread_only), limit))
+        return [dict(r) for r in rows]
+
+    def notify(self, kind: str, run_id: str, *, stage_key: str | None = None, reason: str | None = None) -> None:
+        with db.write(self._conn) as c:
+            c.execute("INSERT INTO notifications (kind, run_id, stage_key, reason, created_at) VALUES (?,?,?,?,?)",
+                      (kind, run_id, stage_key, reason, time.time()))
+
+    def mark_notifications_read(self) -> None:
+        with db.write(self._conn) as c:
+            c.execute("UPDATE notifications SET read_at = ? WHERE read_at IS NULL", (time.time(),))
+
     def kill_switch(self) -> bool:
         row = self._conn.execute("SELECT value FROM settings WHERE key = ?", (KILL_SWITCH,)).fetchone()
         return bool(row and row[0] == "1")
@@ -358,6 +372,9 @@ class Orchestrator:
         if blocked_reason:
             body["reason"] = blocked_reason
         self._event(c, stage.run_id, f"stage.{status}", now, stage.stage_id, payload=body, actor=actor)
+        if status in (StageStatus.BLOCKED, StageStatus.FAILED, StageStatus.WAITING_REVIEW):
+            c.execute("INSERT INTO notifications (kind, run_id, stage_key, reason, created_at) VALUES (?,?,?,?,?)",
+                      (str(status), stage.run_id, stage.stage_key, blocked_reason, now))
 
     def _end_attempt(self, c, attempt: Attempt, stage: Stage, outcome: AttemptOutcome, now, error_code=None, message=None):
         c.execute("UPDATE attempts SET outcome = ?, ended_at = ?, error_code = ?, error_message = ? WHERE attempt_id = ?",

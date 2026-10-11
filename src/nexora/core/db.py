@@ -121,6 +121,8 @@ CREATE TABLE IF NOT EXISTS moment_vectors (
 CREATE TABLE IF NOT EXISTS projects (
     project_id TEXT PRIMARY KEY,
     title      TEXT NOT NULL,
+    format     TEXT NOT NULL DEFAULT 'landscape',
+    music_path TEXT,
     created_at REAL NOT NULL
 );
 CREATE TABLE IF NOT EXISTS scripts (
@@ -155,6 +157,15 @@ CREATE TABLE IF NOT EXISTS renders (
     path       TEXT NOT NULL,
     qc         TEXT NOT NULL,
     created_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS notifications (
+    notification_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind       TEXT NOT NULL,
+    run_id     TEXT NOT NULL,
+    stage_key  TEXT,
+    reason     TEXT,
+    created_at REAL NOT NULL,
+    read_at    REAL
 );
 CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
