@@ -124,6 +124,17 @@ def main() -> None:
                 time.sleep(3)
         threading.Thread(target=produce, name="nexora-producer", daemon=True).start()
 
+        def watch():
+            import time
+            from nexora.app import scan_watch_folders
+            while True:
+                try:
+                    scan_watch_folders(system)
+                except Exception as err:
+                    print(f"watch folders: {err!r}")
+                time.sleep(20)
+        threading.Thread(target=watch, name="nexora-watch", daemon=True).start()
+
         def announcer():
             import time
             from nexora.app import announce

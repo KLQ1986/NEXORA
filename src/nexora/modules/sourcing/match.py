@@ -134,6 +134,8 @@ class Sourcing:
                                              score=sel.score, reason=sel.reason, alternates=sel.alternates, decided_by="policy")
             self._projects.set_match_approved(ctx.subject_ref, True)
             return {"matched": matched, "gaps": gaps, "auto_approve": True}
+        if gaps:
+            self._orch.notify("gaps", ctx.claim.run_id, reason=str(gaps))
         return {"matched": matched, "gaps": gaps}
 
     def swap(self, shot_id: str, alternate: int) -> None:

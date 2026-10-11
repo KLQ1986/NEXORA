@@ -101,6 +101,10 @@ class MomentIndex:
         row = self._conn.execute("SELECT * FROM moments WHERE moment_id = ?", (moment_id,)).fetchone()
         return _moment(row) if row else None
 
+    def moment(self, moment_id: str) -> Moment | None:
+        row = self._conn.execute("SELECT * FROM moments WHERE moment_id = ?", (moment_id,)).fetchone()
+        return _moment(row) if row else None
+
     def count(self) -> int:
         return self._conn.execute("SELECT COUNT(*) FROM moments WHERE level = 'segment'").fetchone()[0]
 

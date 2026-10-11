@@ -1,7 +1,7 @@
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
-import { listenForChanges, usePoll, type Run } from "./api";
+import { listenForChanges, post, usePoll, type Run } from "./api";
 import Costs from "./Costs";
 import Home from "./Home";
 import Library from "./Library";
@@ -60,7 +60,9 @@ function App() {
         ))}
         <div className="mt-auto hidden items-start gap-2.5 rounded-md border border-line px-3 py-2.5 text-[12px] leading-snug md:flex">
           <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${home?.kill_switch ? "bg-tally" : working > 0 ? "animate-pulse bg-proof" : "bg-faint"}`} />
-          <span><span className="block text-ink">{home?.kill_switch ? "Đang dừng khẩn cấp" : working > 0 ? `Đang chạy ${working} việc` : "Máy đang rảnh"}</span><span className="text-faint">Mọi thứ chạy trên máy này</span></span>
+          <span className="min-w-0 flex-1"><span className="block text-ink">{home?.kill_switch ? "Đang dừng khẩn cấp" : working > 0 ? `Đang chạy ${working} việc` : "Máy đang rảnh"}</span>
+            <button type="button" onClick={async () => { await post("/api/v1/control/kill-switch", { on: !home?.kill_switch }).catch(() => {}); }}
+                    className={`mt-1 underline underline-offset-2 ${home?.kill_switch ? "text-ink" : "text-faint hover:text-tally"}`}>{home?.kill_switch ? "Cho chạy lại" : "Dừng khẩn cấp"}</button></span>
         </div>
       </nav>
       <main className="flex min-h-0 min-w-0 flex-1 flex-col">{View ? <View /> : page.path === "/" ? <Home go={go} /> : <Projects sub={sub} go={go} />}</main>

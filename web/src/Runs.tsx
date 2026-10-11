@@ -62,12 +62,13 @@ export default function Runs() {
                     <span className={s.status === "failed" ? "text-tally" : "text-cue"}>
                       Bước {stageName(s.stage_key, r.pipeline)} {s.status === "failed" ? "thất bại" : "đang dừng"}{s.blocked_reason ? `: ${REASONS[s.blocked_reason] ?? s.blocked_reason}` : ""}
                     </span>
-                    {s.status === "blocked" && <Button onClick={() => resume(s.stage_id)}>Chạy tiếp</Button>}
+                    {s.status === "blocked" && <Button size="sm" onClick={() => resume(s.stage_id)}>Chạy tiếp</Button>}
+                    {s.status === "failed" && <Button size="sm" onClick={async () => { await post(`/api/v1/stages/${s.stage_id}/retry`).catch(() => {}); reload(); }}>Thử lại bước này</Button>}
                   </div>
                 ))}
               </div>
               <StageRail stages={r.stages} />
-              <p className="md:text-right">{r.held ? <Tag>Chờ tới giờ phân tích</Tag> : <Tag tone={r.status === "succeeded" ? "proof" : r.status === "failed" ? "tally" : r.status === "blocked" || r.status === "waiting_review" ? "cue" : "mute"}>{STATUS_NAMES[r.status] ?? r.status}</Tag>}</p>
+              <p className="md:text-right">{r.stalled ? <Tag tone="cue">Có vẻ bị treo</Tag> : r.held ? <Tag>Chờ tới giờ phân tích</Tag> : <Tag tone={r.status === "succeeded" ? "proof" : r.status === "failed" ? "tally" : r.status === "blocked" || r.status === "waiting_review" ? "cue" : "mute"}>{STATUS_NAMES[r.status] ?? r.status}</Tag>}</p>
               {open === r.run_id && <RunDetail id={r.run_id} pipeline={r.pipeline} reload={reload} />}
             </li>
           );

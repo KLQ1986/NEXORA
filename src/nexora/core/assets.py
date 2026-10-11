@@ -144,9 +144,11 @@ class AssetStore:
     def original(self, asset_id: str) -> AssetVersion:
         return next(v for v in self.versions(asset_id) if v.role == "original")
 
-    def annotate(self, asset_id: str, *, rating: int | None = None, collections: list[str] | None = None) -> None:
+    def annotate(self, asset_id: str, *, rating: int | None = None, collections: list[str] | None = None, note: str | None = None) -> None:
         """The operator's own marks on an asset: how good it is (0 to 5) and which collections it belongs to."""
         with db.write(self._conn) as c:
+            if note is not None:
+                c.execute("UPDATE assets SET note = ? WHERE asset_id = ?", (note.strip() or None, asset_id))
             if rating is not None:
                 c.execute("UPDATE assets SET rating = ? WHERE asset_id = ?", (max(0, min(5, int(rating))), asset_id))
             if collections is not None:

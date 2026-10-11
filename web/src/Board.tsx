@@ -38,6 +38,7 @@ export default function Board({ project: p }: { project: Project }) {
   const feed = [...shown].reverse().filter((e) => WORDS[e.kind] && e.kind !== "stage.ready");
   return (
     <div className="grid gap-6">
+      {(p.render?.stalled || p.match?.stalled) && <p className="panel border-cue/50 px-4 py-3 text-cue">Một bước đang chạy nhưng đã lâu không báo tiến độ, có thể bị treo. Hệ thống sẽ tự thu hồi và chạy lại; xem chi tiết ở mục Tiến trình.</p>}
       <div className="panel p-5">
         <ol className="grid grid-cols-7 gap-1.5" aria-label="Các công đoạn">
           {RAIL.map((s, i) => (
@@ -96,6 +97,14 @@ export default function Board({ project: p }: { project: Project }) {
             </Section>
           )}
         </div>
+        <div className="grid gap-6">
+        <Section title="Kịch bản" note={p.script ? `Phiên bản ${p.script.version}` : undefined}>
+          <div className="panel max-h-72 overflow-y-auto px-6 py-5 font-[ui-monospace,Menlo,monospace] text-[13px] leading-relaxed">
+            <p className="mb-3 text-center tracking-wide text-mute">{p.title}</p>
+            {p.shots.length === 0 && <p className="text-center text-faint">Chưa có kịch bản.</p>}
+            {p.shots.map((s, i) => <p key={s.shot_id} className="mb-2.5"><span className="mr-2 text-faint">{String(i + 1).padStart(2, "0")}</span>{s.text}{s.selection?.status === "gap" && <span className="ml-2 text-cue">[thiếu hình]</span>}</p>)}
+          </div>
+        </Section>
         <Section title="Hoạt động" note={`Chi phí: ${(data?.cost ?? 0).toFixed(2)} USD${(data?.cost ?? 0) === 0 ? ", mọi thứ chạy trên máy" : ""}`}>
           <ol className="panel max-h-[34rem] overflow-y-auto px-4 py-2">
             {feed.map((e, i) => (
@@ -110,6 +119,7 @@ export default function Board({ project: p }: { project: Project }) {
             {shown.length === 0 && <li className="py-3 text-[13px] text-mute">Chưa có hoạt động nào.</li>}
           </ol>
         </Section>
+        </div>
       </div>
     </div>
   );

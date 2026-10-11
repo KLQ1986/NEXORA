@@ -67,7 +67,9 @@ class Edit:
         """One audio file per line; without a voice, the length is estimated and the line is silent."""
         lines = []
         script = self._projects.script(ctx.subject_ref)
-        recorded = self._projects.project(script["project_id"]).get("narration_dir")
+        project = self._projects.project(script["project_id"])
+        recorded = project.get("narration_dir")
+        voice = project.get("voice") or self._orch.setting("voice", self._voice_name)      # the project's voice, else the installation's
         for shot in script["shots"]:
             # The operator's own recording for this line, if one exists, takes the place of the synthetic voice.
             own = next((p for ext in ("wav", "m4a", "mp3", "aiff") for p in [Path(recorded or "/nonexistent") / f"{shot.position + 1}.{ext}"] if p.is_file()), None)
@@ -78,13 +80,13 @@ class Edit:
             if not self._voice:
                 lines.append({"shot_id": shot.shot_id, "audio": None, "duration": round(max(2.0, len(shot.text.split()) / WORDS_PER_SECOND), 2)})
                 continue
-            out = self._media / "narration" / f"{_key(shot.text, self._voice_name)}.wav"
+            out = self._media / "narration" / f"{_key(shot.text, voice)}.wav"
             if out.is_file():
                 import wave
                 with wave.open(str(out)) as w:
                     duration = w.getnframes() / w.getframerate()
             else:
-                duration = self._adapters.submit("voice", Request("speak", inputs={"text": shot.text}, params={"out": str(out), "voice": self._voice_name},
+                duration = self._adapters.submit("voice", Request("speak", inputs={"text": shot.text}, params={"out": str(out), "voice": voice},
                                                                  attempt_id=ctx.claim.attempt_id)).outputs["duration"]
             lines.append({"shot_id": shot.shot_id, "audio": str(out), "duration": round(float(duration), 2)})
         return {"lines": lines}
@@ -170,7 +172,7 @@ class Edit:
         music = project["music_path"] if project["music_path"] and Path(project["music_path"]).is_file() else None
         segments = ctx.inputs["segments"]["segments"]
         out = self._media / "renders" / f"{ctx.subject_ref}_{ctx.claim.attempt_id}.mp4"
-        self._adapters.submit("ffmpeg", Request("concat", inputs={"paths": [s["file"] for s in segments]}, params={"out": str(out), "music": music},
+        self._adapters.submit("ffmpeg", Request("concat", inputs={"paths": [s["file"] for s in segments]}, params={"out": str(out), "music": music, "music_gain": project.get("music_gain") or 0.35},
                                                attempt_id=ctx.claim.attempt_id))
         probe = self._adapters.submit("ffprobe", Request("probe", inputs={"path": str(out)})).outputs
         expected = sum(s["duration"] for s in segments)

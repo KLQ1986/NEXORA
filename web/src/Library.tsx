@@ -27,7 +27,7 @@ function AddFootage({ onDone }: { onDone: () => void }) {
   );
 }
 
-function Moments({ asset, t, seek }: { asset: Asset; t: number; seek: (s: number) => void }) {
+function Moments({ asset, t, seek, similar }: { asset: Asset; t: number; seek: (s: number) => void; similar: (m: Moment) => void }) {
   const { data, reload } = usePoll<{ video: Moment | null; segments: Moment[] }>(`/api/v1/assets/${asset.asset_id}/moments`, 6000);
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -49,6 +49,7 @@ function Moments({ asset, t, seek }: { asset: Asset; t: number; seek: (s: number
                   <div className="mt-1 flex gap-2"><Button kind="primary" onClick={() => save(m.moment_id)}>Lưu mô tả</Button><Button onClick={() => setEditing(null)}>Bỏ</Button></div></div>
               ) : (
                 <p>{m.text} <button type="button" className="text-mute underline decoration-line underline-offset-2 hover:text-ink" onClick={() => { setEditing(m.moment_id); setDraft(m.text); }}>Sửa</button>
+                  <button type="button" className="ml-2 text-mute underline decoration-line underline-offset-2 hover:text-ink" onClick={() => similar(m)}>Tìm cảnh giống</button>
                   {m.source === "human" && <span className="ml-2 text-xs text-mute">Bạn đã sửa</span>}</p>
               )}
             </li>
@@ -59,7 +60,8 @@ function Moments({ asset, t, seek }: { asset: Asset; t: number; seek: (s: number
   );
 }
 
-function Player({ asset, start, others, close }: { asset: Asset; start?: number; others: Asset[]; close: () => void }) {
+function Player({ asset, start, others, close, similar }: { asset: Asset; start?: number; others: Asset[]; close: () => void; similar: (m: Moment) => void }) {
+  const [memo, setMemo] = useState<string | null>(null);
   const [other, setOther] = useState("");
   const [sync, setSync] = useState<string | null>(null);
   const [tags, setTags] = useState<string | null>(null);
@@ -111,7 +113,12 @@ function Player({ asset, start, others, close }: { asset: Asset; start?: number;
           <button type="submit" disabled={tags === null} className="rounded border border-line px-3 py-1.5 text-sm font-medium hover:border-mute disabled:opacity-40">Lưu</button>
         </form>
       </div>
-      <Moments asset={asset} t={t} seek={seek} />
+      <form onSubmit={(e) => { e.preventDefault(); post(`/api/v1/assets/${asset.asset_id}`, { note: memo ?? "" }, "PATCH").then(() => setMemo(null)); }}>
+        <label htmlFor="memo" className="mb-1 block font-semibold">Ghi chú buổi quay</label>
+        <textarea id="memo" rows={2} value={memo ?? asset.note ?? ""} onChange={(e) => setMemo(e.target.value)} placeholder="Ví dụ: quay sáng thứ bảy ở chợ Hội An, máy cầm tay" className="w-full p-2.5" />
+        {memo !== null && <div className="mt-1.5 flex gap-2"><Button size="sm" kind="primary" onClick={() => post(`/api/v1/assets/${asset.asset_id}`, { note: memo }, "PATCH").then(() => setMemo(null))}>Lưu ghi chú</Button><Button size="sm" onClick={() => setMemo(null)}>Bỏ</Button></div>}
+      </form>
+      <Moments asset={asset} t={t} seek={seek} similar={similar} />
       <p className="break-all text-xs text-mute">{asset.path}</p>
     </aside>
   );
@@ -200,7 +207,8 @@ export default function Library() {
           })}
         </ul>
       </Page>
-      {current && <Player key={current.asset_id} asset={current} start={start} others={assets} close={() => setPicked(null)} />}
+      {current && <Player key={current.asset_id} asset={current} start={start} others={assets} close={() => setPicked(null)}
+                           similar={async (m) => { const r = await call<{ hits: Hit[] }>(`/api/v1/moments/${m.moment_id}/similar`); setQ(m.text.slice(0, 60)); setHits(r.hits); }} />}
     </div>
   );
 }

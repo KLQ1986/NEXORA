@@ -175,6 +175,20 @@ Xem lại khung hình của video này: ba cảnh đầu đúng nội dung (ch�
 
 Đã sửa (125 test đạt): clip stock được đề xuất ngay, và khi đã được mô tả xong thì hệ thống chấm, chọn đoạn khớp trong clip, hoặc trả về trạng thái thiếu hình. Thử lại đúng trường hợp trên bằng mô hình thật: thay vì bờ biển ở giây 0, hệ thống chọn giây 137 đến 141 của phim, nơi có cây cầu sắt. Còn chưa chuẩn: khoảng 2 giây đầu của đoạn này vẫn là cảnh đồi cát trước khi tới cây cầu, tức điểm vào còn sớm. Đây là độ chính xác của bước định vị trong đoạn, để dành cho giai đoạn tối ưu.
 
+### Giao diện theo mục 22 của thiết kế, 2026-10-12 (126 test đạt)
+
+Giao diện đã được thiết kế lại toàn bộ (khung chung, dải phim, lưới thư viện, bàn dựng) và bổ sung các tính năng thiết kế nêu mà trước đó chưa có:
+
+- [x] Tiến trình: thử lại một bước đã thất bại; báo lần chạy có vẻ bị treo
+- [x] Hệ thống: giọng đọc, mô hình theo từng việc, chế độ riêng tư (chặn mọi thứ gửi ra ngoài máy), thư mục theo dõi tự nhập footage, mẫu định dạng
+- [x] Dự án: chọn mẫu định dạng; ghi mốc thời gian đang xem vào ghi chú khi từ chối bản dựng
+- [x] Thư viện: ghi chú buổi quay cho từng nguyên liệu; tìm cảnh giống một cảnh đã có
+- [x] Bảng theo dõi: trang kịch bản; cảnh báo bước bị treo
+- [x] Thông báo: báo khi kịch bản còn câu thiếu hình
+- [x] Nút dừng khẩn cấp luôn có ở thanh bên
+
+Còn thiếu so với thiết kế, chưa làm: nghiên cứu và chấm điểm ý tưởng (16.1), hồ sơ thương hiệu đầy đủ (16.3; hiện mới có mẫu định dạng đơn giản), kịch bản có cấu trúc cảnh và ghi chú hình (16.2), dựng thô theo lời nói (19.1, cần mô hình nhận dạng tiếng nói), bản dựng nháp từ bản xem khi ổ đĩa gốc không có, thông báo khi ổ đĩa đầy hoặc ổ chứa footage mất kết nối, đăng bài và số liệu (21, cần tài khoản).
+
 ### Lát 1 — Lõi chạy việc
 
 Mục thiết kế: 5, 6, 7.

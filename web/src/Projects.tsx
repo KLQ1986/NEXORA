@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { post, projectState, timecode, usePoll, type AgentTask, type Asset, type Candidate, type Project, type RenderItem, type Shot } from "./api";
+import { post, projectState, timecode, usePoll, type AgentTask, type Asset, type Settings, type Candidate, type Project, type RenderItem, type Shot } from "./api";
 import Board from "./Board";
 import { Button, Filmstrip, Icon, Page, Section, StageRail, Steps, Tag } from "./parts";
 import Timeline from "./Timeline";
@@ -144,6 +144,8 @@ function Detail({ id, back }: { id: string; back: () => void }) {
   const [why, setWhy] = useState("");
   const { data: lib } = usePoll<{ assets: Asset[] }>("/api/v1/library", 30000);
   const tracks = (lib?.assets ?? []).filter((a) => a.kind === "audio" && a.online);
+  const { data: prefs } = usePoll<Settings>("/api/v1/settings", 30000);
+  const cut = useRef<HTMLVideoElement>(null);
   const stored = p ? p.shots.map((s) => s.text).join("\n") : null;
   const last = useRef<string | null>(null);
   // The editor follows the stored script (after a reorder on the timeline, for example) unless the operator has typed something not yet saved.
@@ -234,7 +236,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
               {!latest && !rendering && <p className="panel px-4 py-5 text-mute">Các clip đã được duyệt. Bấm Dựng video để hệ thống đọc lời dẫn, vẽ phụ đề và ghép cảnh.</p>}
               {latest && (
                 <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-                  <video key={latest.url} src={latest.url} controls className={`w-full rounded-md bg-black ${latest.qc.format === "portrait" ? "mx-auto aspect-[9/16] max-h-[70vh] w-auto" : latest.qc.format === "square" ? "aspect-square max-h-[70vh]" : "aspect-video"}`} />
+                  <video ref={cut} key={latest.url} src={latest.url} controls className={`w-full rounded-md bg-black ${latest.qc.format === "portrait" ? "mx-auto aspect-[9/16] max-h-[70vh] w-auto" : latest.qc.format === "square" ? "aspect-square max-h-[70vh]" : "aspect-video"}`} />
                   <div className="min-w-0">
                     <div className="panel rows mb-4">
                       {Object.entries(latest.qc.checks).map(([name, ok]) => <p key={name} className="flex items-center justify-between gap-3 px-4 py-2.5"><span>{name}</span><Tag tone={ok ? "proof" : "tally"}>{ok ? "Đạt" : "Không đạt"}</Tag></p>)}
@@ -256,6 +258,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
                         <label htmlFor="why" className={field}>Ghi chú nếu chưa được</label>
                         <textarea id="why" value={why} onChange={(e) => setWhy(e.target.value)} rows={2} placeholder="Ví dụ: 0:07 cảnh xay cà phê bị tối, đổi cảnh khác" className="mb-3 w-full p-2.5" />
                         <div className="flex flex-wrap gap-2">
+                          <Button onClick={() => setWhy(`${why}${why && !why.endsWith(" ") ? " " : ""}${timecode(cut.current?.currentTime ?? 0)} `)}>Ghi mốc đang xem</Button>
                           <Button kind="primary" disabled={busy} onClick={() => run(() => post(`/api/v1/projects/${id}/render/decision`, { approve: true }))}>Duyệt bản dựng</Button>
                           <Button disabled={busy} onClick={() => run(async () => { await post(`/api/v1/projects/${id}/render/decision`, { approve: false, comment: why }); setWhy(""); })}>Chưa được, dựng lại</Button>
                         </div>
@@ -283,6 +286,13 @@ function Detail({ id, back }: { id: string; back: () => void }) {
 
         <aside className="grid gap-4 xl:sticky xl:top-0" aria-label="Thiết lập của dự án">
           <div className="panel grid gap-5 p-5">
+            <div>
+              <label htmlFor="template" className={field}>Mẫu định dạng</label>
+              <select id="template" value={p.template ?? ""} disabled={busy} onChange={(e) => e.target.value && run(() => post(`/api/v1/projects/${id}/template`, { name: e.target.value }))} className="w-full px-2.5">
+                <option value="">Chưa dùng mẫu</option>{(prefs?.templates ?? []).map((t) => <option key={t.name}>{t.name}</option>)}
+              </select>
+              <p className="mt-1.5 text-[13px] text-mute">Mẫu đặt sẵn khung hình, giọng đọc, mức nhạc và cách duyệt. Sửa mẫu ở mục Hệ thống.</p>
+            </div>
             <div>
               <p className={field} id="format-label">Khung hình</p>
               <div className="flex rounded-md border border-line p-0.5" role="radiogroup" aria-labelledby="format-label">

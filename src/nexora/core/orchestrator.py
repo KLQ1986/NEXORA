@@ -376,6 +376,20 @@ class Orchestrator:
             else:
                 self._set_status(c, stage, StageStatus.READY, now)
 
+    def retry(self, stage_id: str, *, now: float | None = None) -> None:
+        """The operator asks for a failed stage to be tried again, after fixing what made it fail."""
+        now = time.time() if now is None else now
+        with db.write(self._conn) as c:
+            stage = self._expect(c, stage_id, StageStatus.FAILED)
+            self._set_status(c, stage, StageStatus.READY, now, actor="operator")
+
+    def stalled(self, run_id: str, *, now: float | None = None) -> bool:
+        """A stage is marked running but its worker has stopped reporting: the lease ran out and nothing has recovered it yet."""
+        now = time.time() if now is None else now
+        row = self._conn.execute("SELECT 1 FROM attempts a JOIN stages s USING (stage_id) WHERE s.run_id = ? AND s.status = 'running' AND a.outcome IS NULL "
+                                 "AND a.claim_expires_at < ?", (run_id, now)).fetchone()
+        return row is not None
+
     def resume(self, stage_id: str, *, now: float | None = None) -> None:
         now = time.time() if now is None else now
         with db.write(self._conn) as c:

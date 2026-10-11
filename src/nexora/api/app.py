@@ -27,7 +27,7 @@ def run_view(system, run_id: str) -> dict:
     held = (info["pipeline_id"] == "library.understand" and not in_window(system.orch.setting("background_window", ""))
             and any(s.status.value == "ready" for s in stages) and not any(s.status.value == "running" for s in stages))
     return {
-        "held": held,
+        "held": held, "stalled": system.orch.stalled(run_id),
         "run_id": run_id,
         "pipeline": info["pipeline_id"],
         "subject_ref": info["subject_ref"],
@@ -56,7 +56,7 @@ def asset_view(system, asset: dict) -> dict:
         "usable_ranges": meta.get("usable_ranges", []), "black_ranges": meta.get("black_ranges", []),
         "frozen_ranges": meta.get("frozen_ranges", []),
         "angles": [{"asset_id": other, "offset": shift} for other, shift in meta.get("angles", {}).items()],
-        "rating": asset.get("rating", 0), "collections": json.loads(asset.get("collections") or "[]"),
+        "note": asset.get("note"), "rating": asset.get("rating", 0), "collections": json.loads(asset.get("collections") or "[]"),
         "still": bool(probe.get("still")), "kind": asset.get("kind"), "mean_db": probe.get("mean_db"),
         "thumbnail_url": f"/media/{by_role['thumbnail'].version_id}" if "thumbnail" in by_role else f"/media/{original.version_id}" if probe.get("still") else None,
         "proxy_url": f"/media/{by_role['proxy'].version_id}" if "proxy" in by_role else None,
@@ -95,7 +95,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
     def annotate_asset(asset_id: str, body: dict):
         if system.assets.asset(asset_id) is None:
             raise HTTPException(404, "no such asset")
-        system.assets.annotate(asset_id, rating=body.get("rating"), collections=body.get("collections"))
+        system.assets.annotate(asset_id, rating=body.get("rating"), collections=body.get("collections"), note=body.get("note"))
         return asset_view(system, system.assets.asset(asset_id))
 
     @app.get("/api/v1/events/stream")
@@ -195,6 +195,61 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
     @app.get("/api/v1/doctor")
     def run_doctor():
         return {"checks": health()}
+
+    @app.post("/api/v1/stages/{stage_id}/retry")
+    def retry_stage(stage_id: str):
+        try:
+            system.orch.retry(stage_id)
+        except (ValueError, TypeError) as err:
+            raise HTTPException(409, str(err))
+        return {"ok": True}
+
+    @app.get("/api/v1/moments/{moment_id}/similar")
+    def similar_moments(moment_id: str):
+        m = system.index.moment(moment_id)
+        if m is None:
+            raise HTTPException(404, "no such moment")
+        hits = system.index.search(m.text, limit=9, exclude=frozenset({moment_id}))
+        return {"hits": [{**moment_view(h.moment, h.score), "asset": asset_brief(h.moment.asset_id)} for h in hits[:8]]}
+
+    @app.get("/api/v1/settings")
+    def get_settings():
+        """What the Settings screen shows: voices, models, privacy mode, watched folders and templates."""
+        from nexora.app import templates
+        env = system.adapters.environment()
+        return {"voice": system.orch.setting("voice", config.voice if config else "Linh"), "voices": sorted(set((env.get("voice") or {}).get("vietnamese_voices", []))),
+                "models": (env.get("model") or {}).get("models", {}), "model_roles": {"vision": config.vision_model, "judge": config.judge_model or config.vision_model,
+                                                                                     "writer": config.writer_model or config.vision_model, "embed": config.embed_model} if config else {},
+                "privacy_local_only": system.orch.setting("privacy_local_only", "0") == "1",
+                "watch_folders": json.loads(system.orch.setting("watch_folders", "[]")), "templates": templates(system)}
+
+    @app.post("/api/v1/settings")
+    def set_settings(body: dict):
+        if "voice" in body:
+            system.orch.set_setting("voice", str(body["voice"]))
+        if "privacy_local_only" in body:
+            system.orch.set_setting("privacy_local_only", "1" if body["privacy_local_only"] else "0")
+        if "watch_folders" in body:
+            folders = [str(Path(str(f)).expanduser()) for f in body["watch_folders"] if str(f).strip()]
+            missing = [f for f in folders if not Path(f).is_dir()]
+            if missing:
+                raise HTTPException(404, f"Không tìm thấy thư mục: {missing[0]}")
+            system.orch.set_setting("watch_folders", json.dumps(folders, ensure_ascii=False))
+        if "templates" in body:
+            clean = [{"name": str(t["name"]).strip(), "format": t.get("format") if t.get("format") in ("landscape", "portrait", "square") else "landscape", "voice": str(t.get("voice") or ""),
+                      "music_gain": max(0.05, min(1.0, float(t.get("music_gain") or 0.35))), "auto_accept": bool(t.get("auto_accept"))} for t in body["templates"] if str(t.get("name", "")).strip()]
+            system.orch.set_setting("templates", json.dumps(clean, ensure_ascii=False))
+        return get_settings()
+
+    @app.post("/api/v1/projects/{project_id}/template")
+    def apply_template(project_id: str, body: dict):
+        from nexora.app import templates
+        need_project(project_id)
+        chosen = next((t for t in templates(system) if t["name"] == body.get("name")), None)
+        if chosen is None:
+            raise HTTPException(404, "Không có mẫu này")
+        system.projects.update_project(project_id, template=chosen["name"], format=chosen["format"], voice=chosen["voice"] or None, music_gain=chosen["music_gain"], auto_accept=int(chosen["auto_accept"]))
+        return project_view(need_project(project_id))
 
     @app.post("/api/v1/stages/{stage_id}/resume")
     def resume_stage(stage_id: str):

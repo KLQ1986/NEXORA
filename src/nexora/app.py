@@ -69,7 +69,7 @@ def fill_gap_from_stock(system: "System", shot_id: str, query: str) -> dict:
 
 PIPELINE_NAMES = {"library.ingest": "Nhập footage", "library.ingest_image": "Nhập ảnh", "library.ingest_audio": "Nhập nhạc", "library.understand": "Hiểu nội dung footage",
                   "sourcing.match": "Chọn clip", "sourcing.generate": "Sinh hình bằng AI", "edit.render": "Dựng video"}
-ANNOUNCE = {"waiting_review": "đang chờ bạn duyệt", "blocked": "đang dừng và cần bạn xử lý", "failed": "thất bại", "succeeded": "đã xong"}
+ANNOUNCE = {"gaps": "còn câu chưa có hình", "waiting_review": "đang chờ bạn duyệt", "blocked": "đang dừng và cần bạn xử lý", "failed": "thất bại", "succeeded": "đã xong"}
 QUIET = frozenset({"library.ingest", "library.ingest_image", "library.ingest_audio", "library.understand"})   # finishing these needs nobody's attention
 
 
@@ -88,6 +88,36 @@ def announce(system: "System", after: int) -> int:
         except Exception:                # a notification that cannot be shown must never disturb the work
             pass
     return after
+
+
+DEFAULT_TEMPLATES = [
+    {"name": "Video ngang có lời dẫn", "format": "landscape", "voice": "", "music_gain": 0.35, "auto_accept": False},
+    {"name": "Video dọc ngắn", "format": "portrait", "voice": "", "music_gain": 0.3, "auto_accept": True},
+]
+MEDIA_EXT = frozenset({".mp4", ".mov", ".m4v", ".mkv", ".avi", ".mts", ".webm", ".jpg", ".jpeg", ".png", ".webp", ".mp3", ".wav", ".m4a", ".aiff", ".flac"})
+
+
+def templates(system: "System") -> list[dict]:
+    """Format templates: the settings a kind of video always starts from."""
+    stored = system.orch.setting("templates")
+    return json.loads(stored) if stored else DEFAULT_TEMPLATES
+
+
+def scan_watch_folders(system: "System", *, now: float | None = None, settle_seconds: float = 15.0) -> list[str]:
+    """Ingest media that appeared in a watched folder. A file is taken only once it has stopped changing, so a copy in progress is never read."""
+    import time
+    now = time.time() if now is None else now
+    known = {str(system.assets.path_of(system.assets.original(a["asset_id"]))) for a in system.assets.assets()}
+    taken = []
+    for folder in json.loads(system.orch.setting("watch_folders", "[]")):
+        root = Path(folder)
+        if not root.is_dir():
+            continue
+        for f in sorted(root.rglob("*")):
+            if f.is_file() and f.suffix.lower() in MEDIA_EXT and not f.name.startswith(".") and str(f.resolve()) not in known and now - f.stat().st_mtime >= settle_seconds:
+                system.library.ingest(f)
+                taken.append(str(f))
+    return taken
 
 
 def capabilities(system: "System") -> list[dict]:
@@ -116,6 +146,7 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     if voice is not None:
         adapters.register(voice)
     adapters.observer = orch.record_call
+    adapters.local_only = lambda: orch.setting("privacy_local_only", "0") == "1"
     index = MomentIndex(db_path)
     understanding = None
     if model is not None:

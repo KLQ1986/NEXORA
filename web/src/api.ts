@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export type Stage = { stage_id: string; stage_key: string; status: string; blocked_reason: string | null; attempts: number };
-export type Run = { held?: boolean; run_id: string; pipeline: string; subject_ref: string | null; created_at: number; status: string; cost: number; stages: Stage[] };
+export type Run = { held?: boolean; stalled?: boolean; run_id: string; pipeline: string; subject_ref: string | null; created_at: number; status: string; cost: number; stages: Stage[] };
 export type Asset = {
   asset_id: string; name: string; path: string; online: boolean; size: number; duplicate_of: string | null;
   duration: number | null; width: number | null; height: number | null; frame_rate: number | null; has_audio: boolean | null;
   usable_ranges: number[][]; black_ranges: number[][]; frozen_ranges: number[][];
-  thumbnail_url: string | null; proxy_url: string | null; ingest: Run | null; understand: Run | null; still: boolean; kind: string; mean_db: number | null; rating: number; collections: string[]; angles: { asset_id: string; offset: number }[];
+  thumbnail_url: string | null; proxy_url: string | null; ingest: Run | null; understand: Run | null; still: boolean; kind: string; mean_db: number | null; rating: number; collections: string[]; note: string | null; angles: { asset_id: string; offset: number }[];
 };
 
 export async function call<T>(url: string, init?: RequestInit): Promise<T> {
@@ -90,7 +90,9 @@ export type BoardEvent = { at: number; kind: string; pipeline: string; stage_key
 export type Notice = { notification_id: number; kind: string; run_id: string; stage_key: string | null; reason: string | null; created_at: number; read_at: number | null; pipeline: string | null; subject_name: string | null; link: string | null };
 export type Project = { project_id: string; title: string; created_at: number; format: string; music_path: string | null;
   script: { script_id: string; version: number; match_approved: boolean } | null; shots: Shot[]; match: Run | null; render: Run | null; renders: RenderItem[];
-  generate: Run | null; generators: { image: boolean; video: boolean }; auto_accept: boolean; style: string | null; narration_dir: string | null; own_takes: number[]; budget_cap: number | null; spent: number };
+  generate: Run | null; generators: { image: boolean; video: boolean }; auto_accept: boolean; style: string | null; narration_dir: string | null; own_takes: number[]; budget_cap: number | null; spent: number; template: string | null; voice: string | null };
+export type Template = { name: string; format: string; voice: string; music_gain: number; auto_accept: boolean };
+export type Settings = { voice: string; voices: string[]; models: Record<string, boolean>; model_roles: Record<string, string>; privacy_local_only: boolean; watch_folders: string[]; templates: Template[] };
 export type AgentTask = { task_id: string; project_id: string; goal: string; status: string; step: string; created_at: number; log: { at: number; role: string; text: string }[] };
 /** Every change the operator makes refreshes the open screens at once. */
 export const post = <T,>(url: string, body?: unknown, method = "POST") =>

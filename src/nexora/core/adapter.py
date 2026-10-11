@@ -110,6 +110,7 @@ class AdapterRegistry:
 
     def __init__(self):
         self._adapters: dict[str, Adapter] = {}
+        self.local_only = None           # asked before every call to a cloud adapter; True means nothing may leave this machine
         self.observer = None             # called with a record of every call: what, how long, how it ended, what it cost
 
     def register(self, adapter: Adapter) -> None:
@@ -129,6 +130,8 @@ class AdapterRegistry:
         cap = adapter.describe()
         if request.operation not in cap.operations:
             raise AdapterError(ErrorCode.INVALID_REQUEST, f"{name} does not support {request.operation}")
+        if cap.runs == "cloud" and self.local_only is not None and self.local_only():
+            raise AdapterError(ErrorCode.AUTH, f"privacy mode is on: {name} would send data off this machine", retryable=False)
         if cap.runs == "cloud" and request.privacy_class is PrivacyClass.LOCAL_ONLY:
             raise AdapterError(ErrorCode.INVALID_REQUEST, f"a local-only request may not be sent to cloud adapter {name}")
         if self.observer is None:

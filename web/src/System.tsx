@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { call, megabytes, post, usePoll, type Run } from "./api";
+import { call, megabytes, post, usePoll, type Run, type Settings, type Template } from "./api";
 import { Button, Page } from "./parts";
 
 type Env = { ffmpeg?: { filters: Record<string, boolean>; encoders: Record<string, boolean> }; disk: { free_bytes: number; total_bytes: number };
@@ -63,6 +63,80 @@ function Capabilities() {
         {(data?.pipelines ?? []).map((p) => <li key={p.pipeline} className="flex justify-between gap-4 px-1 py-2"><span>{WORK[p.pipeline] ?? p.pipeline}</span><span className={p.available ? "text-mute" : "text-cue"}>{p.available ? "Sẵn sàng" : `Thiếu ${p.missing.map((m) => NEED[m] ?? m).join(", ")}`}</span></li>)}
       </ul>
     </div>
+  );
+}
+
+const ROLES: Record<string, string> = { vision: "Xem và mô tả footage", judge: "Chấm clip và tìm chủ thể", writer: "Viết kịch bản và từ khoá", embed: "Lập chỉ mục để tìm bằng lời" };
+const SHAPES: Record<string, string> = { landscape: "Ngang 16:9", portrait: "Dọc 9:16", square: "Vuông 1:1" };
+
+/** Voice, models, privacy, watched folders and format templates: what an installation is set up with. */
+function Preferences() {
+  const { data: s, reload } = usePoll<Settings>("/api/v1/settings", 20000);
+  const [folder, setFolder] = useState("");
+  const [note, setNote] = useState<string | null>(null);
+  const [draft, setDraft] = useState<Template[] | null>(null);
+  if (!s) return null;
+  const save = async (body: Record<string, unknown>, done?: string) => { setNote(null); try { await post("/api/v1/settings", body); if (done) setNote(done); } catch (e) { setNote((e as Error).message); } reload(); };
+  const list = draft ?? s.templates;
+  const edit = (i: number, change: Partial<Template>) => setDraft(list.map((t, k) => (k === i ? { ...t, ...change } : t)));
+  return (
+    <>
+      <div>
+        <h2 className="mb-2 text-[15px] font-semibold">Giọng đọc và mô hình</h2>
+        <label htmlFor="voice" className="mb-1.5 block text-[13px] font-medium">Giọng đọc lời dẫn</label>
+        <select id="voice" value={s.voice} onChange={(e) => save({ voice: e.target.value })} className="mb-1.5 w-full max-w-xs px-2.5">
+          {[...new Set([s.voice, ...s.voices])].map((v) => <option key={v}>{v}</option>)}
+        </select>
+        <p className="mb-4 text-[13px] text-mute">Dùng cho mọi dự án không đặt giọng riêng. Bản dựng sau sẽ đọc bằng giọng này.</p>
+        <ul className="divide-y divide-line border-y border-line">
+          {Object.entries(s.model_roles).map(([role, model]) => (
+            <li key={role} className="flex justify-between gap-4 px-1 py-2"><span>{ROLES[role] ?? role}</span><span className={`tc ${s.models[model] === false ? "text-cue" : "text-mute"}`}>{model}{s.models[model] === false ? ", chưa tải" : ""}</span></li>
+          ))}
+        </ul>
+        <p className="mt-2 text-[13px] text-mute">Đổi mô hình cho từng việc trong file <span className="tc text-ink">nexora.toml</span> rồi khởi động lại.</p>
+      </div>
+      <div>
+        <h2 className="mb-2 text-[15px] font-semibold">Chế độ riêng tư</h2>
+        <label className="flex items-start gap-2.5"><input type="checkbox" className="mt-0.5" checked={s.privacy_local_only} onChange={(e) => save({ privacy_local_only: e.target.checked })} />
+          <span>Không gửi gì ra khỏi máy này<span className="block text-[13px] text-mute">Khi bật, tìm clip stock và sinh hình bằng dịch vụ ngoài đều bị chặn. Footage bạn tự quay vốn không bao giờ được gửi đi.</span></span></label>
+      </div>
+      <div>
+        <h2 className="mb-2 text-[15px] font-semibold">Thư mục theo dõi</h2>
+        <p className="mb-3 text-[13px] text-mute">File mới chép vào các thư mục này tự được nhập vào thư viện, sau khi đã chép xong.</p>
+        <ul className="mb-3 divide-y divide-line border-y border-line empty:hidden">
+          {s.watch_folders.map((f) => <li key={f} className="flex items-center justify-between gap-3 px-1 py-2"><span className="min-w-0 break-all">{f}</span>
+            <button type="button" className="shrink-0 text-[13px] text-mute underline underline-offset-2 hover:text-ink" onClick={() => save({ watch_folders: s.watch_folders.filter((x) => x !== f) })}>Bỏ theo dõi</button></li>)}
+        </ul>
+        <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (folder.trim()) save({ watch_folders: [...s.watch_folders, folder.trim()] }).then(() => setFolder("")); }}>
+          <label htmlFor="watch" className="sr-only">Thư mục cần theo dõi</label>
+          <input id="watch" value={folder} onChange={(e) => setFolder(e.target.value)} placeholder="Ví dụ: /Volumes/TheNho/DCIM" className="min-w-0 flex-1 px-3" />
+          <Button disabled={!folder.trim()} onClick={() => save({ watch_folders: [...s.watch_folders, folder.trim()] }).then(() => setFolder(""))}>Theo dõi</Button>
+        </form>
+      </div>
+      <div>
+        <h2 className="mb-2 text-[15px] font-semibold">Mẫu định dạng</h2>
+        <p className="mb-3 text-[13px] text-mute">Mỗi mẫu là điểm xuất phát cho một kiểu video. Chọn mẫu trong dự án để áp dụng.</p>
+        <ul className="grid gap-3">
+          {list.map((t, i) => (
+            <li key={i} className="rounded-md border border-line p-3">
+              <div className="mb-2 flex gap-2"><label className="sr-only" htmlFor={`tn${i}`}>Tên mẫu</label><input id={`tn${i}`} value={t.name} onChange={(e) => edit(i, { name: e.target.value })} className="min-w-0 flex-1 px-3 font-medium" />
+                <button type="button" className="shrink-0 px-1 text-[13px] text-mute underline underline-offset-2 hover:text-ink" onClick={() => setDraft(list.filter((_, k) => k !== i))}>Xoá</button></div>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px]">
+                <label className="flex items-center gap-2">Khung hình<select value={t.format} onChange={(e) => edit(i, { format: e.target.value })} className="h-8 px-2">{Object.entries(SHAPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
+                <label className="flex items-center gap-2">Giọng<select value={t.voice} onChange={(e) => edit(i, { voice: e.target.value })} className="h-8 px-2"><option value="">Theo máy</option>{s.voices.map((v) => <option key={v}>{v}</option>)}</select></label>
+                <label className="flex items-center gap-2">Mức nhạc<input type="number" min="0.05" max="1" step="0.05" value={t.music_gain} onChange={(e) => edit(i, { music_gain: Number(e.target.value) })} className="tc h-8 w-20 px-2" /></label>
+                <label className="flex items-center gap-2"><input type="checkbox" checked={t.auto_accept} onChange={(e) => edit(i, { auto_accept: e.target.checked })} />Tự duyệt clip</label>
+              </div>
+            </li>
+          ))}
+        </ul>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button onClick={() => setDraft([...list, { name: "Mẫu mới", format: "landscape", voice: "", music_gain: 0.35, auto_accept: false }])}>Thêm mẫu</Button>
+          <Button kind="primary" disabled={draft === null} onClick={() => save({ templates: list }, "Đã lưu các mẫu.").then(() => setDraft(null))}>Lưu các mẫu</Button>
+        </div>
+      </div>
+      {note && <p role="status">{note}</p>}
+    </>
   );
 }
 
@@ -143,6 +217,7 @@ export default function System() {
             <span className={control?.background_window && !control.background_running_now ? "text-cue" : "text-mute"}>{!control?.background_window ? "Đang cho chạy bất cứ lúc nào. Để trống cả hai ô để giữ như vậy." : control.background_running_now ? "Đang trong khung giờ, việc phân tích được chạy." : "Ngoài khung giờ, việc phân tích đang chờ."}</span>
           </form>
         </div>
+        <Preferences />
         <Health />
         <StoragePanel />
         <Capabilities />

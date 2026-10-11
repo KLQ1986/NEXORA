@@ -248,3 +248,55 @@ def test_ratings_collections_reordering_the_edit_list_and_the_change_stream(tmp_
     assert text.splitlines()[3].endswith("00:00:00:00 " + "00:00:01:18") or " 00:00:00:00 " in text.splitlines()[3]
 
     assert client.get("/api/v1/events/stream", params={"once": True}).text.startswith("data: [")
+
+
+def test_settings_templates_watch_folders_privacy_retry_notes_and_similar_moments(tmp_path):
+    import os, time
+    from nexora.app import scan_watch_folders
+    from nexora.core.states import StageStatus
+    from tests.conftest import make_video
+    from tests.fakes import FakeModel, FakeStock, FakeVoice
+    system = build(tmp_path / "data", model=FakeModel(), voice=FakeVoice(), segment_seconds=2.0, stock=FakeStock())
+    client = TestClient(create_app(system))
+    drain = lambda: [None for _ in iter(system.worker.run_once, False)]
+
+    inbox = tmp_path / "inbox"; inbox.mkdir()
+    assert client.post("/api/v1/settings", json={"watch_folders": [str(tmp_path / "nowhere")]}).status_code == 404
+    assert client.post("/api/v1/settings", json={"watch_folders": [str(inbox)]}).json()["watch_folders"] == [str(inbox)]
+    clip = make_video(inbox / "new.mp4", picture=20)
+    assert scan_watch_folders(system) == []                                        # still fresh: it may be a copy in progress
+    os.utime(clip, (time.time() - 60, time.time() - 60))
+    assert scan_watch_folders(system) == [str(clip)] and scan_watch_folders(system) == []      # taken once
+    drain()
+    asset = client.get("/api/v1/library").json()["assets"][0]
+    assert client.patch(f"/api/v1/assets/{asset['asset_id']}", json={"note": "Quay sáng thứ bảy ở chợ"}).json()["note"] == "Quay sáng thứ bảy ở chợ"
+    first = client.get(f"/api/v1/assets/{asset['asset_id']}/moments").json()["segments"][1]
+    alike = client.get(f"/api/v1/moments/{first['moment_id']}/similar").json()["hits"]
+    assert alike and all(h["moment_id"] != first["moment_id"] for h in alike) and "cá tươi" in alike[0]["text"]
+
+    names = [t["name"] for t in client.get("/api/v1/settings").json()["templates"]]
+    pid = client.post("/api/v1/projects", json={"title": "Mẫu", "lines": ["cá tươi trên sạp", "bàn phím máy tính"]}).json()["project_id"]
+    applied = client.post(f"/api/v1/projects/{pid}/template", json={"name": names[1]}).json()
+    assert applied["format"] == "portrait" and applied["auto_accept"] and applied["template"] == names[1]
+
+    client.post(f"/api/v1/projects/{pid}/match"); drain()
+    kinds = [n["kind"] for n in client.get("/api/v1/notifications").json()["items"]]
+    assert "gaps" in kinds                                                          # a script with a line nothing fits is announced
+    gap = client.get(f"/api/v1/projects/{pid}").json()["shots"][1]["shot_id"]
+    client.post("/api/v1/settings", json={"privacy_local_only": True})
+    assert client.post(f"/api/v1/shots/{gap}/stock", json={"query": "keyboard"}).status_code == 503        # nothing leaves the machine in privacy mode
+    client.post("/api/v1/settings", json={"privacy_local_only": False})
+    assert client.post(f"/api/v1/shots/{gap}/stock", json={"query": "keyboard"}).json()["found"]
+
+    from nexora.core.adapter import AdapterError, ErrorCode
+    from nexora.core.pipeline import PipelineDefinition, StageDef
+    broken = PipelineDefinition("t.broken", "1", [StageDef("only")])
+
+    def refuse(ctx):
+        raise AdapterError(ErrorCode.INVALID_REQUEST, "no", retryable=False)
+    system.registry.register(broken, {"only": refuse})
+    run = system.orch.submit_run(broken)
+    drain()
+    failed = next(s for s in system.orch.stages(run) if s.status is StageStatus.FAILED)
+    assert client.post(f"/api/v1/stages/{failed.stage_id}/retry").status_code == 200
+    assert next(s for s in system.orch.stages(run) if s.stage_id == failed.stage_id).status is StageStatus.READY
