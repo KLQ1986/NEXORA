@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { post, usePoll } from "./api";
-import { Button } from "./parts";
+import { Button, Page, Section } from "./parts";
 
 type Tool = { adapter: string; operation: string; runs: string; calls: number; seconds: number; failures: number; cost: number };
 type Usage = { budget_day: number | null; budget_month: number | null; spent_today: number; spent_month: number; spent_total: number;
@@ -29,25 +29,22 @@ export default function Costs() {
   const [month, setMonth] = useState<string | null>(null);
   const [all, setAll] = useState(false);
   const [note, setNote] = useState<string | null>(null);
-  if (!u) return <section className="p-6 text-mute">Đang mở</section>;
+  if (!u) return <Page title="Chi phí"><p className="text-mute">Đang mở</p></Page>;
   const save = async () => { setNote(null); try { await post("/api/v1/control/settings", { budget_day: day ?? u.budget_day ?? "", budget_month: month ?? u.budget_month ?? "" }); setDay(null); setMonth(null); } catch (e) { setNote((e as Error).message); } reload(); };
   const tools = all ? u.tools_all : u.tools_today;
   const total = tools.reduce((sum, t) => sum + t.seconds, 0) || 1;
   const peak = Math.max(...u.by_day.map((d) => d.cost), 0.01);
   return (
-    <section className="flex-1 overflow-y-auto p-6">
-      <h1 className="mb-6 text-2xl font-semibold tracking-tight">Chi phí</h1>
-      <div className="grid max-w-4xl gap-10">
-        <div>
-          <h2 className="mb-1 text-base font-semibold">Tiền</h2>
-          <p className="mb-4 max-w-2xl text-mute">Mô hình và công cụ chạy trên máy này không tốn tiền. Chỉ việc gọi dịch vụ trả tiền, như sinh ảnh và video, mới tính vào đây. Hết ngân sách thì việc trả tiền dừng lại chờ bạn; việc trên máy vẫn chạy.</p>
-          <div className="grid max-w-2xl gap-4"><Meter label="Hôm nay" spent={u.spent_today} cap={u.budget_day} /><Meter label="Tháng này" spent={u.spent_month} cap={u.budget_month} /></div>
-          <form className="mt-4 flex flex-wrap items-end gap-3" onSubmit={(e) => { e.preventDefault(); save(); }}>
+    <Page title="Chi phí" note="Tiền so với ngân sách, và thời gian máy đã dùng cho từng việc.">
+      <div className="grid gap-10">
+        <Section title="Tiền" note="Mô hình và công cụ chạy trên máy này không tốn tiền. Chỉ việc gọi dịch vụ trả tiền, như sinh ảnh và video, mới tính vào đây. Hết ngân sách thì việc trả tiền dừng lại chờ bạn; việc trên máy vẫn chạy.">
+          <div className="panel max-w-3xl p-5"><div className="grid gap-5"><Meter label="Hôm nay" spent={u.spent_today} cap={u.budget_day} /><Meter label="Tháng này" spent={u.spent_month} cap={u.budget_month} /></div>
+          <form className="mt-5 flex flex-wrap items-end gap-3 border-t border-line pt-5" onSubmit={(e) => { e.preventDefault(); save(); }}>
             <div><label htmlFor="bd" className="mb-1 block text-sm">Ngân sách mỗi ngày (USD)</label><input id="bd" type="number" min="0" step="0.5" value={day ?? u.budget_day ?? ""} onChange={(e) => setDay(e.target.value)} placeholder="Không giới hạn" className="tc w-40 rounded border border-line bg-canvas px-3 py-1.5 placeholder:text-mute/70" /></div>
             <div><label htmlFor="bm" className="mb-1 block text-sm">Ngân sách mỗi tháng (USD)</label><input id="bm" type="number" min="0" step="1" value={month ?? u.budget_month ?? ""} onChange={(e) => setMonth(e.target.value)} placeholder="Không giới hạn" className="tc w-40 rounded border border-line bg-canvas px-3 py-1.5 placeholder:text-mute/70" /></div>
             <Button disabled={day === null && month === null} onClick={save}>Lưu ngân sách</Button>
             {note && <p className="w-full text-tally">{note}</p>}
-          </form>
+          </form></div>
           {u.by_day.length > 0 && (
             <div className="mt-6 max-w-2xl">
               <p className="mb-2 text-sm text-mute">Chi theo ngày, 14 ngày gần đây. Tổng từ trước tới nay {u.spent_total.toFixed(2)} USD.</p>
@@ -61,32 +58,29 @@ export default function Costs() {
               {u.projects.map((p) => <li key={p.project_id} className="flex justify-between gap-4 px-1 py-2"><span className="min-w-0 truncate">{p.title}</span><span className="tc shrink-0 text-mute">{p.spent.toFixed(2)} USD{p.budget_cap != null ? ` trên ${p.budget_cap.toFixed(2)}` : ""}</span></li>)}
             </ul>
           )}
-        </div>
+        </Section>
 
-        <div>
-          <div className="mb-2 flex flex-wrap items-center gap-4">
-            <h2 className="text-base font-semibold">Thời gian máy</h2>
-            <div className="flex gap-1" role="radiogroup" aria-label="Khoảng thời gian">
-              {([[false, "Hôm nay"], [true, "Từ trước tới nay"]] as const).map(([v, name]) => <button key={name} type="button" role="radio" aria-checked={all === v} onClick={() => setAll(v)} className={`rounded border px-2.5 py-1 text-sm ${all === v ? "border-ink bg-raised font-medium" : "border-line text-mute hover:text-ink"}`}>{name}</button>)}
-            </div>
-          </div>
-          {tools.length === 0 ? <p className="text-mute">Chưa có công cụ nào được gọi trong khoảng này.</p> : (
-            <table className="w-full text-left">
-              <thead className="text-sm text-mute"><tr><th className="py-1.5 font-medium">Việc</th><th className="font-medium">Số lần</th><th className="font-medium">Tổng thời gian</th><th className="w-1/3 font-medium">Phần trong tổng</th><th className="text-right font-medium">Lỗi</th></tr></thead>
-              <tbody className="divide-y divide-line border-y border-line">
+        <Section title="Thời gian máy" actions={
+            <div className="flex rounded-md border border-line p-0.5" role="radiogroup" aria-label="Khoảng thời gian">
+              {([[false, "Hôm nay"], [true, "Từ trước tới nay"]] as const).map(([v, name]) => <button key={name} type="button" role="radio" aria-checked={all === v} onClick={() => setAll(v)} className={`h-7 rounded px-2.5 text-[13px] ${all === v ? "bg-raised font-medium" : "text-mute hover:text-ink"}`}>{name}</button>)}
+            </div>}>
+          {tools.length === 0 ? <p className="panel px-4 py-5 text-mute">Chưa có công cụ nào được gọi trong khoảng này.</p> : (
+            <div className="panel overflow-hidden"><table className="w-full text-left">
+              <thead className="text-[13px] text-mute"><tr className="[&>th]:px-4"><th className="py-2.5 font-medium">Việc</th><th className="font-medium">Số lần</th><th className="font-medium">Tổng thời gian</th><th className="w-1/3 font-medium">Phần trong tổng</th><th className="text-right font-medium">Lỗi</th></tr></thead>
+              <tbody className="divide-y divide-line border-t border-line">
                 {tools.map((t) => (
-                  <tr key={`${t.adapter}.${t.operation}`}>
-                    <td className="py-2">{TOOLS[t.adapter] ?? t.adapter}: {OPS[t.operation] ?? t.operation}{t.runs === "cloud" && <span className="text-mute">, ngoài máy</span>}</td>
+                  <tr key={`${t.adapter}.${t.operation}`} className="[&>td]:px-4">
+                    <td className="py-2.5">{TOOLS[t.adapter] ?? t.adapter}: {OPS[t.operation] ?? t.operation}{t.runs === "cloud" && <span className="text-mute">, ngoài máy</span>}</td>
                     <td className="tc">{t.calls}</td><td className="tc">{long(t.seconds)}</td>
                     <td><div className="h-1.5 overflow-hidden rounded-full bg-raised"><div className="h-full bg-ink/70" style={{ width: `${(t.seconds / total) * 100}%` }} /></div></td>
                     <td className={`tc text-right ${t.failures ? "text-tally" : "text-mute"}`}>{t.failures}</td>
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></div>
           )}
-        </div>
+        </Section>
       </div>
-    </section>
+    </Page>
   );
 }

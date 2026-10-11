@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { call, post, REASONS, stageName, STATUS_NAMES, usePoll, type Asset, type Project, type Run } from "./api";
-import { Button, StageRail, StatusText } from "./parts";
+import { Button, Page, StageRail, Tag } from "./parts";
 
 const PIPELINES: Record<string, string> = { "library.ingest": "Nhập footage", "library.ingest_image": "Nhập ảnh", "library.ingest_audio": "Nhập nhạc", "sourcing.generate": "Sinh hình bằng AI", "library.understand": "Xem và mô tả video", "sourcing.match": "Chọn clip cho kịch bản", "edit.render": "Dựng video" };
 
@@ -16,7 +16,7 @@ function RunDetail({ id, pipeline, reload }: { id: string; pipeline: string; rel
   const total = d.attempts.reduce((sum, a) => sum + (a.seconds ?? 0), 0);
   const live = ["queued", "running", "blocked", "waiting_review"].includes(d.status);
   return (
-    <div className="col-span-full mb-2 rounded bg-surface p-4">
+    <div className="col-span-full mb-1 rounded-md bg-canvas p-4">
       <div className="mb-2 flex flex-wrap items-center gap-4 text-sm text-mute">
         <span className="tc">Bắt đầu {clock(d.created_at)}</span><span className="tc">Tổng thời gian chạy {total.toFixed(1)} giây</span><span className="tc">{d.run_id}</span>
         {live && <span className="ml-auto"><Button kind="danger" onClick={async () => { await post(`/api/v1/runs/${id}/cancel`).catch(() => {}); reload(); }}>Huỷ lần chạy này</Button></span>}
@@ -45,16 +45,15 @@ export default function Runs() {
     ...(projects ?? []).filter((p) => p.script).map((p) => [p.script!.script_id, p.title] as [string, string])]);
   const resume = async (stageId: string) => { await call(`/api/v1/stages/${stageId}/resume`, { method: "POST" }).catch(() => {}); reload(); };
   return (
-    <section className="flex-1 overflow-y-auto p-6">
-      <h1 className="mb-4 text-2xl font-semibold tracking-tight">Tiến trình</h1>
+    <Page title="Tiến trình" note="Mọi lần chạy và từng bước của nó. Bấm vào một dòng để xem từng lần thử, thời gian và lỗi.">
       {error && <p className="text-tally">Không tải được danh sách: {error}</p>}
-      {runs && runs.length === 0 && <p className="max-w-md text-mute">Chưa có việc nào chạy. Mỗi khi bạn thêm footage hoặc bắt đầu một video, các bước xử lý sẽ hiện ở đây.</p>}
-      <ul className="divide-y divide-line border-y border-line">
+      {runs && runs.length === 0 && <p className="panel max-w-xl px-4 py-6 text-mute">Chưa có việc nào chạy. Mỗi khi bạn thêm footage hoặc bắt đầu một video, các bước xử lý sẽ hiện ở đây.</p>}
+      <ul className="panel rows overflow-hidden empty:hidden">
         {(runs ?? []).map((r) => {
           const stuck = r.stages.filter((s) => s.status === "blocked" || s.status === "failed");
           const now = r.stages.find((s) => s.status === "running");
           return (
-            <li key={r.run_id} className="grid gap-x-6 gap-y-2 px-2 py-3 md:grid-cols-[minmax(0,1fr)_260px_140px] md:items-center">
+            <li key={r.run_id} className="grid gap-x-6 gap-y-2 px-4 py-3 md:grid-cols-[minmax(0,1fr)_220px_150px] md:items-center">
               <div className="min-w-0">
                 <button type="button" aria-expanded={open === r.run_id} onClick={() => setOpen(open === r.run_id ? null : r.run_id)} className="block max-w-full truncate text-left font-medium hover:underline">{PIPELINES[r.pipeline] ?? r.pipeline}: {names.get(r.subject_ref ?? "") ?? (r.subject_ref?.startsWith("scr_") ? "phiên bản kịch bản cũ" : r.subject_ref)}</button>
                 {now && <p className="text-sm text-mute">Đang ở bước {stageName(now.stage_key, r.pipeline)}</p>}
@@ -68,12 +67,12 @@ export default function Runs() {
                 ))}
               </div>
               <StageRail stages={r.stages} />
-              <p className="text-sm md:text-right">{r.held ? <span className="text-mute">Chờ tới giờ phân tích</span> : <StatusText status={r.status} />}</p>
+              <p className="md:text-right">{r.held ? <Tag>Chờ tới giờ phân tích</Tag> : <Tag tone={r.status === "succeeded" ? "proof" : r.status === "failed" ? "tally" : r.status === "blocked" || r.status === "waiting_review" ? "cue" : "mute"}>{STATUS_NAMES[r.status] ?? r.status}</Tag>}</p>
               {open === r.run_id && <RunDetail id={r.run_id} pipeline={r.pipeline} reload={reload} />}
             </li>
           );
         })}
       </ul>
-    </section>
+    </Page>
   );
 }

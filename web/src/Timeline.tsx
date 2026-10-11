@@ -68,25 +68,25 @@ export default function Timeline({ project: p, reload, rerender, busy }: { proje
   const label = "flex h-9 items-center text-sm text-mute";
 
   return (
-    <div className="grid max-w-7xl gap-6">
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-        <div>
+    <div className="grid gap-4">
+      <div className="grid gap-4 lg:h-[min(54vh,540px)] lg:grid-cols-[minmax(0,1fr)_380px]">
+        <div className="flex min-h-0 flex-col">
           {rendered
-            ? <video ref={video} key={latest.url} src={latest.url} controls onTimeUpdate={(e) => setNow(e.currentTarget.currentTime)} className="max-h-[52vh] w-full rounded bg-black" />
-            : <div className="grid aspect-video max-h-[52vh] w-full place-items-center rounded bg-surface p-6 text-center text-mute">{latest ? (latest.qc.shots ? "Kịch bản đã đổi sau bản dựng gần nhất. Dựng lại để xem." : "Bản dựng gần nhất được làm trước khi có màn hình này nên thiếu thông tin từng cảnh. Dựng lại để xem.") : "Chưa có bản dựng. Bên dưới là bố cục dự kiến theo các clip đang chọn."}</div>}
-          <div className="mt-2 flex flex-wrap items-center gap-3">
-            <span className="tc text-lg">{timecode(now)} <span className="text-mute">/ {timecode(total)}</span></span>
+            ? <video ref={video} key={latest.url} src={latest.url} controls onTimeUpdate={(e) => setNow(e.currentTarget.currentTime)} className="min-h-0 w-full flex-1 rounded-md bg-black object-contain" />
+            : <div className="grid min-h-[220px] w-full flex-1 place-items-center rounded-md border border-dashed border-line bg-surface p-6 text-center text-mute">{latest ? (latest.qc.shots ? "Kịch bản đã đổi sau bản dựng gần nhất. Dựng lại để xem." : "Bản dựng gần nhất được làm trước khi có màn hình này nên thiếu thông tin từng cảnh. Dựng lại để xem.") : "Chưa có bản dựng. Bên dưới là bố cục dự kiến theo các clip đang chọn."}</div>}
+          <div className="mt-3 flex shrink-0 flex-wrap items-center gap-3">
+            <span className="tc text-lg font-medium">{timecode(now)} <span className="text-mute">/ {timecode(total)}</span></span>
             {rendered && <span className="text-mute">Đang ở câu {playing.i + 1}</span>}
             {stale > 0 && <span className="text-cue">{stale} cảnh đã đổi nhưng chưa dựng lại</span>}
             <span className="ml-auto" />
             {(stale > 0 || !rendered) && p.script?.match_approved && <Button kind="primary" disabled={busy} onClick={rerender}>{rendered ? "Dựng lại với thay đổi" : "Dựng video"}</Button>}
-            <div className="flex gap-1" role="radiogroup" aria-label="Độ phóng của dòng thời gian">
-              {ZOOMS.map((z) => <button key={z} type="button" role="radio" aria-checked={zoom === z} onClick={() => setZoom(z)} className={`tc rounded border px-2 py-1 text-sm ${zoom === z ? "border-ink bg-raised" : "border-line text-mute hover:text-ink"}`}>{z}×</button>)}
+            <div className="flex rounded-md border border-line p-0.5" role="radiogroup" aria-label="Độ phóng của dòng thời gian">
+              {ZOOMS.map((z) => <button key={z} type="button" role="radio" aria-checked={zoom === z} onClick={() => setZoom(z)} className={`tc h-7 rounded px-2.5 text-[13px] ${zoom === z ? "bg-raised font-medium" : "text-mute hover:text-ink"}`}>{z}×</button>)}
             </div>
           </div>
         </div>
 
-        <aside aria-label="Cảnh đang chọn" className="min-w-0 border-l border-line pl-5">
+        <aside aria-label="Cảnh đang chọn" className="panel min-h-0 min-w-0 overflow-y-auto p-5">
           <p className="tc text-sm text-mute">Câu {current.i + 1} trên {items.length}, từ {timecode(current.at)}, dài {current.d.toFixed(1)} giây</p>
           <p className="mb-3 mt-1 text-base">{current.shot.text}</p>
           {current.gap
@@ -171,7 +171,7 @@ export default function Timeline({ project: p, reload, rerender, busy }: { proje
         </aside>
       </div>
 
-      <div className="grid grid-cols-[5.5rem_minmax(0,1fr)] gap-x-3">
+      <div className="panel grid grid-cols-[5rem_minmax(0,1fr)] gap-x-3 px-4 pb-2 pt-3">
         <div className="pt-5">
           <p className={`${label} h-16`}>Hình</p><p className={label}>Lời dẫn</p><p className={label}>Phụ đề</p><p className={label}>Nhạc</p>
         </div>
@@ -213,7 +213,7 @@ export default function Timeline({ project: p, reload, rerender, busy }: { proje
           </div>
         </div>
       </div>
-      <p className="text-sm text-mute">Bấm vào một cảnh để chọn. Phím mũi tên trái, phải để sang cảnh kề bên; phím cách để phát hoặc dừng.</p>
+      <p className="text-[13px] text-faint">Bấm vào một cảnh để chọn. Phím mũi tên trái, phải để sang cảnh kề bên; phím cách để phát hoặc dừng.</p>
     </div>
   );
 }

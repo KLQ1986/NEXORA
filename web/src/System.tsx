@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { call, megabytes, post, usePoll, type Run } from "./api";
-import { Button } from "./parts";
+import { Button, Page } from "./parts";
 
 type Env = { ffmpeg?: { filters: Record<string, boolean>; encoders: Record<string, boolean> }; disk: { free_bytes: number; total_bytes: number };
              adapters: { name: string; runs: string; operations: string[] }[] };
@@ -19,7 +19,7 @@ function Health() {
   const bad = (data?.checks ?? []).filter((c) => !c.ok && !c.optional);
   return (
     <div>
-      <h2 className="mb-2 text-base font-semibold">Kiểm tra hệ thống</h2>
+      <h2 className="mb-2 text-[15px] font-semibold">Kiểm tra hệ thống</h2>
       {data && <p className={`mb-2 ${bad.length ? "text-cue" : "text-proof"}`}>{bad.length ? `Có ${bad.length} thứ cần xử lý trước khi làm video.` : "Mọi thứ hệ thống cần đều sẵn sàng."}</p>}
       <ul className="max-w-2xl divide-y divide-line border-y border-line">
         {(data?.checks ?? []).map((c) => (
@@ -58,7 +58,7 @@ function Capabilities() {
   const { data } = usePoll<{ pipelines: { pipeline: string; available: boolean; missing: string[] }[] }>("/api/v1/capabilities", 30000);
   return (
     <div>
-      <h2 className="mb-2 text-base font-semibold">Việc máy này làm được</h2>
+      <h2 className="mb-2 text-[15px] font-semibold">Việc máy này làm được</h2>
       <ul className="max-w-2xl divide-y divide-line border-y border-line">
         {(data?.pipelines ?? []).map((p) => <li key={p.pipeline} className="flex justify-between gap-4 px-1 py-2"><span>{WORK[p.pipeline] ?? p.pipeline}</span><span className={p.available ? "text-mute" : "text-cue"}>{p.available ? "Sẵn sàng" : `Thiếu ${p.missing.map((m) => NEED[m] ?? m).join(", ")}`}</span></li>)}
       </ul>
@@ -77,7 +77,7 @@ function StoragePanel() {
   return (
     <>
       <div>
-        <h2 className="mb-2 text-base font-semibold">Dữ liệu hệ thống đang giữ</h2>
+        <h2 className="mb-2 text-[15px] font-semibold">Dữ liệu hệ thống đang giữ</h2>
         <ul className="max-w-2xl divide-y divide-line border-y border-line">
           {(data?.stores ?? []).map((s) => <li key={s.key} className="flex justify-between gap-4 px-1 py-2"><span>{s.label}{s.cleanable ? "" : " (giữ lại)"}</span><span className="tc text-mute">{megabytes(s.bytes)}</span></li>)}
         </ul>
@@ -87,7 +87,7 @@ function StoragePanel() {
         </div>
       </div>
       <div>
-        <h2 className="mb-2 text-base font-semibold">Sao lưu</h2>
+        <h2 className="mb-2 text-[15px] font-semibold">Sao lưu</h2>
         <p className="mb-2 max-w-xl text-mute">Cơ sở dữ liệu được sao lưu mỗi lần khởi động. Khôi phục bằng lệnh <span className="tc text-ink">python -m nexora restore</span> khi server đã dừng.</p>
         <ul className="max-w-2xl divide-y divide-line border-y border-line">
           {(data?.backups ?? []).slice(0, 5).map((b) => <li key={b.name} className="flex justify-between gap-4 px-1 py-2"><span className="tc">{b.name}</span><span className="tc text-mute">{new Date(b.created_at * 1000).toLocaleString("vi-VN")}, {megabytes(b.size)}</span></li>)}
@@ -96,7 +96,7 @@ function StoragePanel() {
         <div className="mt-3"><Button onClick={backup}>Sao lưu ngay</Button></div>
       </div>
       <div>
-        <h2 className="mb-2 text-base font-semibold">Nơi chứa footage</h2>
+        <h2 className="mb-2 text-[15px] font-semibold">Nơi chứa footage</h2>
         <ul className="max-w-2xl divide-y divide-line border-y border-line">
           {(data?.volumes ?? []).map((v) => (
             <li key={v.volume_id} className="px-1 py-2">
@@ -126,19 +126,15 @@ export default function System() {
   const missing = Object.entries(env?.ffmpeg?.filters ?? {}).filter(([, ok]) => !ok).map(([name]) => name);
   const used = env ? 1 - env.disk.free_bytes / env.disk.total_bytes : 0;
   return (
-    <section className="flex-1 overflow-y-auto p-6">
-      <h1 className="mb-6 text-2xl font-semibold tracking-tight">Hệ thống</h1>
-      <div className="grid max-w-3xl gap-8">
+    <Page title="Hệ thống" note="Điều khiển, sức khoẻ của máy, dữ liệu và thông báo." wide
+          actions={<><span className={`text-[13px] ${control?.kill_switch ? "text-cue" : "text-mute"}`}>{control?.kill_switch ? "Đang dừng khẩn cấp" : "Đang hoạt động bình thường"}</span><Button kind={control?.kill_switch ? "primary" : "danger"} onClick={toggle}>{control?.kill_switch ? "Cho chạy lại" : "Dừng khẩn cấp"}</Button></>}>
+      <div className="cards columns-1 gap-5 xl:columns-2">
         <div>
-          <h2 className="mb-2 text-base font-semibold">Dừng khẩn cấp</h2>
-          <p className="mb-3 max-w-xl text-mute">Khi bật, hệ thống không bắt đầu thêm bước nào tốn tiền hoặc tác động ra bên ngoài. Việc đang chạy dở vẫn được giữ nguyên trạng thái.</p>
-          <div className="flex items-center gap-4">
-            <Button kind={control?.kill_switch ? "primary" : "danger"} onClick={toggle}>{control?.kill_switch ? "Cho chạy lại" : "Dừng khẩn cấp"}</Button>
-            <span className={control?.kill_switch ? "text-cue" : "text-mute"}>{control?.kill_switch ? "Đang dừng" : "Đang hoạt động bình thường"}</span>
-          </div>
+          <h2 className="mb-2 text-[15px] font-semibold">Dừng khẩn cấp</h2>
+          <p className="max-w-xl text-mute">Nút ở góc trên bên phải. Khi bật, hệ thống không bắt đầu thêm bước nào tốn tiền hoặc tác động ra bên ngoài. Việc đang chạy dở vẫn được giữ nguyên trạng thái.</p>
         </div>
         <div>
-          <h2 className="mb-2 text-base font-semibold">Giờ phân tích footage</h2>
+          <h2 className="mb-2 text-[15px] font-semibold">Giờ phân tích footage</h2>
           <p className="mb-3 max-w-xl text-mute">Xem và mô tả footage là việc nặng nhất của máy. Bạn có thể chỉ cho nó chạy trong một khung giờ, ví dụ ban đêm. Chọn clip và dựng video không bị ảnh hưởng.</p>
           <form className="flex flex-wrap items-center gap-2" onSubmit={async (e) => { e.preventDefault(); const f = new FormData(e.currentTarget); const a = String(f.get("from") ?? ""), b = String(f.get("to") ?? ""); await post("/api/v1/control/background-window", { window: a !== "" && b !== "" ? `${a}-${b}` : "" }).catch(() => {}); reload(); }}>
             <label htmlFor="from">Từ</label><input id="from" name="from" type="number" min="0" max="23" defaultValue={control?.background_window.split("-")[0] ?? ""} key={`f${control?.background_window}`} className="tc w-16 rounded border border-line bg-canvas px-2 py-1.5" />
@@ -151,26 +147,14 @@ export default function System() {
         <StoragePanel />
         <Capabilities />
         <div>
-          <h2 className="mb-2 text-base font-semibold">Thông báo trên máy Mac</h2>
+          <h2 className="mb-2 text-[15px] font-semibold">Thông báo trên máy Mac</h2>
           <label className="flex max-w-xl items-start gap-2"><input type="checkbox" className="mt-1" checked={control?.desktop_notifications ?? false}
             onChange={async (e) => { await call("/api/v1/control/desktop-notifications", { method: "POST", body: JSON.stringify({ on: e.target.checked }) }); reload(); }} />
             <span>Báo ở góc màn hình khi có việc chờ bạn duyệt, bị dừng, thất bại, hoặc khi video dựng xong.<span className="block text-mute">Nhập và phân tích footage xong thì không báo.</span></span></label>
           <NoticePrefs />
         </div>
         <div>
-          <h2 className="mb-2 text-base font-semibold">Chi phí mô hình</h2>
-          <p className="tc">{spent.toFixed(2)} USD cho {(runs ?? []).length} lần chạy</p>
-          <p className="max-w-xl text-mute">Mô hình đang chạy trên máy này nên không phát sinh phí. Nếu sau này dùng mô hình trên cloud, chi phí từng lần chạy sẽ cộng vào đây và bị chặn theo ngân sách.</p>
-        </div>
-        <div>
-          <h2 className="mb-2 text-base font-semibold">Ổ đĩa</h2>
-          {env && <>
-            <div className="h-2 max-w-xl overflow-hidden rounded-sm bg-raised"><div className={`h-full ${used > 0.9 ? "bg-cue" : "bg-ink/80"}`} style={{ width: `${used * 100}%` }} /></div>
-            <p className="tc mt-1 text-mute">Còn trống {megabytes(env.disk.free_bytes)} trên tổng {megabytes(env.disk.total_bytes)}</p>
-          </>}
-        </div>
-        <div>
-          <h2 className="mb-2 text-base font-semibold">Công cụ trên máy này</h2>
+          <h2 className="mb-2 text-[15px] font-semibold">Công cụ trên máy này</h2>
           {env && missing.length === 0 && <p className="text-mute">FFmpeg có đủ các bộ lọc hệ thống cần.</p>}
           {missing.length > 0 && (
             <>
@@ -185,6 +169,6 @@ export default function System() {
           </ul>
         </div>
       </div>
-    </section>
+    </Page>
   );
 }

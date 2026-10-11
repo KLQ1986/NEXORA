@@ -6,22 +6,64 @@
 /* The palette of a grading suite: neutral greys so the picture is judged, not the chrome.
    Amber is reserved for one meaning only — this needs the operator. */
 @theme {
-  --color-canvas: #1e2021;
-  --color-surface: #2b2d2f;
-  --color-raised: #34373a;
-  --color-line: #44484b;
-  --color-ink: #e9e6df;
-  --color-mute: #a0a39e;
+  --color-canvas: #191b1c;
+  --color-surface: #212425;
+  --color-raised: #2b2f31;
+  --color-line: #363b3e;
+  --color-ink: #edebe6;
+  --color-mute: #9a9e9b;
+  --color-faint: #6c7173;
   --color-cue: #f2b33d;
-  --color-tally: #e5484d;
-  --color-proof: #4fb286;
+  --color-tally: #ec5a5f;
+  --color-proof: #57b98d;
   --font-sans: "Be Vietnam Pro", system-ui, sans-serif;
 }
 
 html, body, #root { height: 100%; }
-body { background: var(--color-canvas); color: var(--color-ink); font-family: var(--font-sans); font-size: 14px; line-height: 1.5; }
+body { background: var(--color-canvas); color: var(--color-ink); font-family: var(--font-sans); font-size: 14px; line-height: 1.55;
+       -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
 .tc { font-variant-numeric: tabular-nums; letter-spacing: 0.01em; }
-:focus-visible { outline: 2px solid var(--color-cue); outline-offset: 2px; }
+:focus-visible { outline: 2px solid var(--color-cue); outline-offset: 2px; border-radius: 4px; }
+::selection { background: color-mix(in srgb, var(--color-cue) 35%, transparent); }
 .hatch { background-image: repeating-linear-gradient(135deg, #5a5e62 0 2px, transparent 2px 6px); }
 .dots { background-image: radial-gradient(#8b8f93 1px, transparent 1.2px); background-size: 5px 5px; }
+
+/* One look for everything the operator types into or presses, whatever utility classes a screen adds. */
+@layer base {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea {
+    border-radius: 6px; border: 1px solid var(--color-line); background: var(--color-surface); color: var(--color-ink);
+    transition: border-color 120ms, background-color 120ms;
+  }
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select { min-height: 36px; }
+  input:hover, select:hover, textarea:hover { border-color: var(--color-faint); }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--color-ink); background: var(--color-canvas); }
+  input::placeholder, textarea::placeholder { color: var(--color-faint); }
+  input[type="checkbox"] { accent-color: var(--color-ink); width: 15px; height: 15px; }
+  button { cursor: pointer; }
+  button:disabled { cursor: default; }
+  h1, h2, h3 { letter-spacing: -0.01em; }
+  table th { font-weight: 500; }
+  /* A grid cell never grows past its track because of long content inside it. */
+  main .grid > * { min-width: 0; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: var(--color-raised); border-radius: 8px; border: 2px solid var(--color-canvas); }
+  ::-webkit-scrollbar-thumb:hover { background: var(--color-line); }
+  ::-webkit-scrollbar-track { background: transparent; }
+}
+
+/* Plain bordered buttons written inline on older screens share the look of the Button component. */
+@layer components {
+  .panel { background: var(--color-surface); border: 1px solid var(--color-line); border-radius: 10px; }
+  .rows > * + * { border-top: 1px solid var(--color-line); }
+  .filmstrip { display: flex; gap: 2px; overflow: hidden; border-radius: 4px; background: #000; }
+  .filmstrip > * { min-width: 0; }
+}
+main button.rounded.border.border-line { border-radius: 6px; }
+/* The System screen: independent cards flowing into two columns. */
+.cards > div { break-inside: avoid; margin-bottom: 20px; padding: 20px; background: var(--color-surface); border: 1px solid var(--color-line); border-radius: 10px; }
+.cards > p { break-inside: avoid; margin-bottom: 20px; }
+.cards input:not([type="checkbox"]), .cards select { background: var(--color-canvas); }
+
+@keyframes rise { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.rise { animation: rise 220ms ease-out both; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }

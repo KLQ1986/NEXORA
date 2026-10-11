@@ -96,3 +96,18 @@ export type AgentTask = { task_id: string; project_id: string; goal: string; sta
 export const post = <T,>(url: string, body?: unknown, method = "POST") =>
   call<T>(url, { method, body: body === undefined ? undefined : JSON.stringify(body) }).then((r) => { window.dispatchEvent(new Event(CHANGED)); return r; });
 Object.assign(STAGE_NAMES, { segments: "Chia đoạn", summarise: "Tóm tắt", match: "Chọn clip", narration: "Đọc lời dẫn", assemble: "Ghép và kiểm tra" });
+
+/** Where a project stands, in the operator's words. `step` counts the five stages from script to approved cut. */
+export function projectState(p: Project): { label: string; tone: "mute" | "cue" | "proof" | "tally"; step: number } {
+  const busy = (r: Run | null) => !!r && ["queued", "running"].includes(r.status);
+  if (!p.script) return { label: "Chưa có kịch bản", tone: "mute", step: 0 };
+  if (p.render?.status === "succeeded") return { label: "Đã xong", tone: "proof", step: 5 };
+  if (p.render?.status === "waiting_review") return { label: "Chờ duyệt bản dựng", tone: "cue", step: 4 };
+  if (p.render?.status === "failed" || p.match?.status === "failed") return { label: "Có lỗi", tone: "tally", step: p.render ? 3 : 1 };
+  if (p.render?.status === "blocked" || p.match?.status === "blocked") return { label: "Đang dừng", tone: "cue", step: p.render ? 3 : 1 };
+  if (busy(p.render)) return { label: "Đang dựng", tone: "mute", step: 3 };
+  if (p.match?.status === "waiting_review") return { label: "Chờ duyệt clip", tone: "cue", step: 2 };
+  if (busy(p.match)) return { label: "Đang tìm clip", tone: "mute", step: 1 };
+  if (p.script.match_approved) return { label: "Sẵn sàng dựng", tone: "mute", step: 3 };
+  return { label: p.match ? "Cần tìm lại clip" : "Có kịch bản", tone: "mute", step: 1 };
+}

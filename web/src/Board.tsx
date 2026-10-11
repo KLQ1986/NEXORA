@@ -54,7 +54,7 @@ export default function Board({ project: p }: { project: Project }) {
 
       <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div>
-          <h2 className="mb-2 text-lg font-semibold">Các cảnh</h2>
+          <h2 className="mb-2 text-[15px] font-semibold">Các cảnh</h2>
           <ol className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
             {p.shots.map((s, i) => {
               const sel = s.selection;
@@ -76,7 +76,7 @@ export default function Board({ project: p }: { project: Project }) {
           {p.shots.length === 0 && <p className="text-mute">Dự án chưa có kịch bản. Viết kịch bản ở thẻ Làm video để các cảnh hiện ra ở đây.</p>}
           {latest && (
             <div className="mt-8">
-              <h2 className="mb-2 text-lg font-semibold">Bản dựng</h2>
+              <h2 className="mb-2 text-[15px] font-semibold">Bản dựng</h2>
               <ul className="divide-y divide-line border-y border-line">
                 {p.renders.map((r) => (
                   <li key={r.render_id} className="flex flex-wrap items-center justify-between gap-3 py-2">
@@ -90,7 +90,7 @@ export default function Board({ project: p }: { project: Project }) {
           )}
         </div>
         <aside>
-          <h2 className="mb-2 text-lg font-semibold">Hoạt động</h2>
+          <h2 className="mb-2 text-[15px] font-semibold">Hoạt động</h2>
           <p className="tc mb-2 text-sm text-mute">Chi phí mô hình: {(data?.cost ?? 0).toFixed(2)} USD{(data?.cost ?? 0) === 0 ? " (đang chạy trên máy, không tốn phí)" : ""}</p>
           <ol className="max-h-[28rem] divide-y divide-line overflow-y-auto border-y border-line">
             {[...shown].reverse().filter((e) => WORDS[e.kind] && e.kind !== "stage.ready").map((e, i) => (
