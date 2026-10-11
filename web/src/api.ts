@@ -6,7 +6,7 @@ export type Asset = {
   asset_id: string; name: string; path: string; online: boolean; size: number; duplicate_of: string | null;
   duration: number | null; width: number | null; height: number | null; frame_rate: number | null; has_audio: boolean | null;
   usable_ranges: number[][]; black_ranges: number[][]; frozen_ranges: number[][];
-  thumbnail_url: string | null; proxy_url: string | null; ingest: Run | null; understand: Run | null; still: boolean; kind: string; mean_db: number | null;
+  thumbnail_url: string | null; proxy_url: string | null; ingest: Run | null; understand: Run | null; still: boolean; kind: string; mean_db: number | null; angles: { asset_id: string; offset: number }[];
 };
 
 export async function call<T>(url: string, init?: RequestInit): Promise<T> {
@@ -64,14 +64,15 @@ export type AssetBrief = { asset_id: string; name: string; proxy_url: string | n
 export type Hit = Moment & { asset: AssetBrief };
 export type Candidate = { moment_id: string; t_in: number; t_out: number; score: number; reason: string; frame_url: string; asset: AssetBrief };
 export type Selection = { status: string; t_in: number | null; t_out: number | null; score: number | null; reason: string | null; decided_by: string;
-  moment_id: string | null; frame_url: string | null; asset: AssetBrief | null; alternates: Candidate[] };
+  moment_id: string | null; frame_url: string | null; asset: AssetBrief | null; alternates: Candidate[];
+  inserts: { keyword: string; at: number; reason: string }[]; focus_x: number | null; angles: (AssetBrief & { offset: number; t_in: number })[] };
 export type Shot = { shot_id: string; position: number; text: string; selection: Selection | null; keyframe_url: string | null;
   generation: { prompt: string; seed: number | null; provider: string } | null };
 export type Finding = { check: string; shot: number; severity: string; text: string; fix: string };
 export type Package = { title: string; description: string; thumbnails: string[]; thumbnail: string; folder: string; synthetic_content: boolean; captions: string; video: string };
 export type RenderItem = { render_id: string; created_at: number; url: string; package: Package | null;
   qc: { passed: boolean; checks: Record<string, boolean>; duration: number; gaps: number; findings?: Finding[]; format?: string; music?: boolean;
-        shots?: { text: string; duration: number; gap: boolean; asset_id?: string | null; t_in?: number | null; own_voice?: boolean }[] } };
+        shots?: { text: string; duration: number; gap: boolean; asset_id?: string | null; t_in?: number | null; own_voice?: boolean; focus_x?: number | null; inserts?: { keyword: string; at: number }[] }[] } };
 export type BoardEvent = { at: number; kind: string; pipeline: string; stage_key: string | null; actor: string; payload: Record<string, unknown> };
 export type Notice = { notification_id: number; kind: string; run_id: string; stage_key: string | null; reason: string | null; created_at: number; read_at: number | null; pipeline: string | null };
 export type Project = { project_id: string; title: string; created_at: number; format: string; music_path: string | null;

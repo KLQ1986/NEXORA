@@ -281,3 +281,32 @@ def test_the_desktop_is_told_when_work_waits_for_the_operator_and_stays_quiet_wh
     system.sourcing.approve(system.orch.runs_for_subject(script)[0]); system.edit.start_render(script); drain(system)
     announce(system, seen)
     assert len(desk.shown) == 1
+
+
+def test_a_word_of_the_line_can_bring_in_a_second_picture_at_the_moment_it_is_spoken(system):
+    pid = system.planning.create_project("Chèn hình")
+    script = system.planning.save_script(pid, ["cá tươi trên sạp và con đường mòn"])
+    run = system.sourcing.start_match(script); drain(system)
+    shot = system.projects.script(script)["shots"][0]
+    with pytest.raises(ValueError):
+        system.sourcing.add_insert(shot.shot_id, "máy bay")                        # the word must be in the line
+    insert = system.sourcing.add_insert(shot.shot_id, "con đường mòn")
+    assert "con đường mòn" in insert["reason"] and 0.4 < insert["at"] < 0.75
+    assert insert["moment_id"] != system.projects.selection(shot.shot_id).moment_id
+    system.sourcing.approve(run); system.edit.start_render(script); drain(system)
+    qc = system.projects.renders(pid)[0]["qc"]
+    assert qc["passed"] and [i["keyword"] for i in qc["shots"][0]["inserts"]] == ["con đường mòn"]
+    system.sourcing.remove_insert(shot.shot_id, "con đường mòn")
+    assert system.projects.selection(shot.shot_id).extras["inserts"] == []
+
+
+def test_a_vertical_cut_is_framed_by_the_model_unless_the_operator_says_where_the_subject_is(system):
+    pid = system.planning.create_project("Dọc", format="portrait")
+    script = system.planning.save_script(pid, ["cá tươi trên sạp"])
+    run = system.sourcing.start_match(script); drain(system)
+    shot = system.projects.script(script)["shots"][0]
+    system.sourcing.approve(run); system.edit.start_render(script); drain(system)
+    assert system.projects.renders(pid)[0]["qc"]["shots"][0]["focus_x"] == 0.9      # where the (fake) model saw the subject
+    system.sourcing.set_focus(shot.shot_id, 0.2)
+    system.edit.start_render(script); drain(system)
+    assert system.projects.renders(pid)[0]["qc"]["shots"][0]["focus_x"] == 0.2

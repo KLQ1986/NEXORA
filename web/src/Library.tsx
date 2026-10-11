@@ -59,7 +59,9 @@ function Moments({ asset, t, seek }: { asset: Asset; t: number; seek: (s: number
   );
 }
 
-function Player({ asset, start }: { asset: Asset; start?: number }) {
+function Player({ asset, start, others }: { asset: Asset; start?: number; others: Asset[] }) {
+  const [other, setOther] = useState("");
+  const [sync, setSync] = useState<string | null>(null);
   const video = useRef<HTMLVideoElement>(null);
   const [t, setT] = useState(0);
   const seek = (s: number) => { if (video.current) { video.current.currentTime = s; video.current.play().catch(() => {}); } };
@@ -79,6 +81,21 @@ function Player({ asset, start }: { asset: Asset; start?: number }) {
       {unusable > 0 && <p>Có <span className="tc">{timecode(unusable)}</span> khung đen. Hệ thống sẽ không chọn clip từ phần này.</p>}
       {asset.duplicate_of && <p className="text-mute">File này trùng nội dung với một video đã có trong thư viện nên không được xử lý lại.</p>}
       {!asset.online && <p className="text-cue">Không tìm thấy file gốc. Hãy cắm lại ổ chứa nó để render bản cuối.</p>}
+      {asset.kind === "video" && asset.has_audio && others.filter((o) => o.asset_id !== asset.asset_id && o.kind === "video" && o.has_audio).length > 0 && (
+        <div>
+          <h3 className="mb-1 font-semibold">Quay cùng lúc với clip khác</h3>
+          {asset.angles.map((a) => <p key={a.asset_id} className="tc text-sm">{others.find((o) => o.asset_id === a.asset_id)?.name}: {a.offset >= 0 ? "bắt đầu sớm hơn" : "bắt đầu muộn hơn"} {Math.abs(a.offset).toFixed(2)} giây</p>)}
+          <form className="mt-1 flex gap-2" onSubmit={async (e) => { e.preventDefault(); if (!other) return; setSync("Đang so âm thanh của hai clip"); try { const r = await post<{ offset: number }>("/api/v1/assets/sync", { a: asset.asset_id, b: other }); setSync(`Đã đồng bộ, lệch ${Math.abs(r.offset).toFixed(2)} giây.`); } catch (err) { setSync((err as Error).message); } }}>
+            <label htmlFor="other" className="sr-only">Clip quay cùng lúc</label>
+            <select id="other" value={other} onChange={(e) => setOther(e.target.value)} className="min-w-0 flex-1 rounded border border-line bg-canvas px-2 py-1.5">
+              <option value="">Chọn clip quay cùng lúc</option>
+              {others.filter((o) => o.asset_id !== asset.asset_id && o.kind === "video" && o.has_audio).map((o) => <option key={o.asset_id} value={o.asset_id}>{o.name}</option>)}
+            </select>
+            <button type="submit" disabled={!other} className="rounded border border-line px-3 py-1.5 text-sm font-medium hover:border-mute disabled:opacity-40">Đồng bộ theo tiếng</button>
+          </form>
+          {sync && <p className="mt-1 text-sm text-mute">{sync}</p>}
+        </div>
+      )}
       <Moments asset={asset} t={t} seek={seek} />
       <p className="break-all text-xs text-mute">{asset.path}</p>
     </aside>
@@ -149,7 +166,7 @@ export default function Library() {
           ))}
         </ul>
       </section>
-      {current && <Player asset={current} start={start} />}
+      {current && <Player key={current.asset_id} asset={current} start={start} others={assets} />}
     </div>
   );
 }

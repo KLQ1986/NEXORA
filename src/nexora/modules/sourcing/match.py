@@ -151,6 +151,43 @@ class Sourcing:
         self._projects.set_selection(shot_id, status="proposed", asset_id=asset_id, t_in=0.0, t_out=need, reason=reason,
                                      alternates=old.alternates if old else [], decided_by="operator")
 
+    def use_angle(self, shot_id: str, asset_id: str, offset: float) -> None:
+        """Show the same instant from another camera that was lined up with the current one."""
+        sel = self._projects.selection(shot_id)
+        t_in = round(max(0.0, sel.t_in + offset), 2)
+        self._projects.set_selection(shot_id, status=sel.status, asset_id=asset_id, t_in=t_in, t_out=round(t_in + (sel.t_out - sel.t_in), 2), score=sel.score,
+                                     reason=f"Cùng thời điểm, góc máy khác. {sel.reason or ''}".strip(), alternates=sel.alternates, decided_by="operator")
+
+    def add_insert(self, shot_id: str, keyword: str) -> dict:
+        """Cut to a second picture at the moment a word of the line is spoken. The picture is found by searching for that word;
+        the moment is placed by where the word stands in the line, since speech runs at a nearly even pace."""
+        keyword = keyword.strip()
+        text = next(s.text for s in self._projects.script(self._script_of(shot_id))["shots"] if s.shot_id == shot_id)
+        where = text.lower().find(keyword.lower())
+        sel = self._projects.selection(shot_id)
+        if not keyword or where < 0:
+            raise ValueError("Từ này không có trong câu")
+        if sel is None or sel.status == "gap":
+            raise ValueError("Câu này chưa có hình chính")
+        inserts = list(sel.extras.get("inserts", []))
+        taken = {sel.moment_id, *(i["moment_id"] for i in inserts)} - {None}
+        hits = self._index.search(keyword, limit=1, min_score=self._threshold, exclude=frozenset(taken))
+        if not hits:
+            raise LookupError(keyword)
+        m = hits[0].moment
+        insert = {"keyword": keyword, "at": round(where / len(text), 3), "asset_id": m.asset_id, "moment_id": m.moment_id, "t_in": m.t_start, "reason": m.text}
+        self._projects.set_extras(shot_id, inserts=sorted([i for i in inserts if i["keyword"].lower() != keyword.lower()] + [insert], key=lambda i: i["at"]))
+        return insert
+
+    def remove_insert(self, shot_id: str, keyword: str) -> None:
+        sel = self._projects.selection(shot_id)
+        self._projects.set_extras(shot_id, inserts=[i for i in sel.extras.get("inserts", []) if i["keyword"] != keyword])
+
+    def set_focus(self, shot_id: str, x: float | None) -> None:
+        """Where the subject stands across the frame (0 left, 1 right), as the operator sees it; None hands the choice back to the system."""
+        sel = self._projects.selection(shot_id)
+        self._projects.set_extras(shot_id, focus=None if x is None else {"asset_id": sel.asset_id, "x": max(0.0, min(1.0, float(x)))})
+
     def _script_of(self, shot_id: str) -> str:
         return self._projects._conn.execute("SELECT script_id FROM shots WHERE shot_id = ?", (shot_id,)).fetchone()[0]
 

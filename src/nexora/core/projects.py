@@ -4,7 +4,7 @@ Planning writes scripts, Sourcing writes selections, Edit reads both and writes 
 """
 import json
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from nexora.core import db
@@ -31,6 +31,7 @@ class Selection:
     reason: str | None
     alternates: list
     decided_by: str
+    extras: dict = field(default_factory=dict)      # what rides on a selection: inserts timed to a word, the operator's framing
 
 
 class ProjectStore:
@@ -98,7 +99,13 @@ class ProjectStore:
     def selection(self, shot_id: str) -> Selection | None:
         row = self._conn.execute("SELECT * FROM selections WHERE shot_id = ?", (shot_id,)).fetchone()
         return Selection(row["shot_id"], row["status"], row["asset_id"], row["moment_id"], row["t_in"], row["t_out"], row["score"],
-                         row["reason"], json.loads(row["alternates"]), row["decided_by"]) if row else None
+                         row["reason"], json.loads(row["alternates"]), row["decided_by"], json.loads(row["extras"])) if row else None
+
+    def set_extras(self, shot_id: str, **values) -> None:
+        with db.write(self._conn) as c:
+            current = json.loads(c.execute("SELECT extras FROM selections WHERE shot_id = ?", (shot_id,)).fetchone()[0])
+            current.update(values)
+            c.execute("UPDATE selections SET extras = ? WHERE shot_id = ?", (json.dumps(current, ensure_ascii=False), shot_id))
 
     def selections(self, script_id: str) -> list[Selection]:
         shots = self.script(script_id)["shots"]

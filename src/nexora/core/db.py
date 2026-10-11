@@ -151,7 +151,8 @@ CREATE TABLE IF NOT EXISTS selections (
     score      REAL,
     reason     TEXT,
     alternates TEXT NOT NULL DEFAULT '[]',
-    decided_by TEXT NOT NULL DEFAULT 'system'
+    decided_by TEXT NOT NULL DEFAULT 'system',
+    extras     TEXT NOT NULL DEFAULT '{}'
 );
 CREATE TABLE IF NOT EXISTS renders (
     render_id  TEXT PRIMARY KEY,
@@ -198,6 +199,7 @@ MIGRATIONS = [
     ("projects", "auto_accept", "INTEGER NOT NULL DEFAULT 0"),
     ("projects", "style", "TEXT"),
     ("projects", "narration_dir", "TEXT"),
+    ("selections", "extras", "TEXT NOT NULL DEFAULT '{}'"),
 ]
 
 

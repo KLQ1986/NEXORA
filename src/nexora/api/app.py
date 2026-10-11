@@ -47,6 +47,7 @@ def asset_view(system, asset: dict) -> dict:
         "frame_rate": probe.get("frame_rate"), "has_audio": probe.get("has_audio"),
         "usable_ranges": meta.get("usable_ranges", []), "black_ranges": meta.get("black_ranges", []),
         "frozen_ranges": meta.get("frozen_ranges", []),
+        "angles": [{"asset_id": other, "offset": shift} for other, shift in meta.get("angles", {}).items()],
         "still": bool(probe.get("still")), "kind": asset.get("kind"), "mean_db": probe.get("mean_db"),
         "thumbnail_url": f"/media/{by_role['thumbnail'].version_id}" if "thumbnail" in by_role else f"/media/{original.version_id}" if probe.get("still") else None,
         "proxy_url": f"/media/{by_role['proxy'].version_id}" if "proxy" in by_role else None,
@@ -191,6 +192,8 @@ def create_app(system, *, web_dir: str | Path | None = None) -> FastAPI:
                                      "decided_by": sel.decided_by, "moment_id": sel.moment_id,
                                      "frame_url": f"/api/v1/moments/{sel.moment_id}/frame" if sel.moment_id else None,
                                      "asset": asset_brief(sel.asset_id) if sel.asset_id else None,
+                                     "inserts": sel.extras.get("inserts", []), "focus_x": (sel.extras.get("focus") or {}).get("x") if (sel.extras.get("focus") or {}).get("asset_id") == sel.asset_id else None,
+                                     "angles": angles_of(sel),
                                      "alternates": [{**a, "frame_url": f"/api/v1/moments/{a['moment_id']}/frame", "asset": asset_brief(a["asset_id"])} for a in sel.alternates]}
             shots.append(item)
         renders = [{"render_id": r["render_id"], "script_id": r["script_id"], "created_at": r["created_at"], "qc": r["qc"],
@@ -201,6 +204,17 @@ def create_app(system, *, web_dir: str | Path | None = None) -> FastAPI:
                 "render": latest_run(script["script_id"], "edit.render") if script else None, "renders": renders,
                 "generate": latest_run(script["script_id"], "sourcing.generate") if script else None, "generators": system.generation.available(),
                 "auto_accept": bool(project.get("auto_accept")), "own_takes": own_takes(project, len(shots))}
+
+    def angles_of(sel) -> list[dict]:
+        """Other cameras that recorded the instant this selection shows."""
+        if not sel.asset_id or sel.t_in is None or sel.status == "gap":
+            return []
+        out = []
+        for other, shift in system.assets.original(sel.asset_id).metadata.get("angles", {}).items():
+            brief = asset_brief(other)
+            if 0 <= sel.t_in + shift < (brief["duration"] or 0):
+                out.append({**brief, "offset": shift, "t_in": round(sel.t_in + shift, 2)})
+        return out
 
     def own_takes(project: dict, lines: int) -> list[int]:
         """The line numbers for which the operator has put a recording in the narration folder (1.wav, 2.m4a, ...)."""
@@ -302,6 +316,42 @@ def create_app(system, *, web_dir: str | Path | None = None) -> FastAPI:
             return fill_gap_from_stock(system, shot_id, query)
         except AdapterError as err:
             raise HTTPException(503, f"Không tìm được clip stock: {err.message}")
+
+    @app.post("/api/v1/assets/sync")
+    def sync_assets(body: dict):
+        try:
+            return system.library.sync(str(body["a"]), str(body["b"]))
+        except ValueError as err:
+            raise HTTPException(409, {"no_audio": "Một trong hai clip không có âm thanh nên không đồng bộ theo tiếng được.",
+                                      "too_short": "Clip quá ngắn để đồng bộ.",
+                                      "not_alike": "Âm thanh của hai clip không giống nhau. Có thể chúng không quay cùng một lúc."}.get(str(err), str(err)))
+
+    @app.post("/api/v1/shots/{shot_id}/angle")
+    def use_angle(shot_id: str, body: dict):
+        angle = next((a for a in angles_of(system.projects.selection(shot_id)) if a["asset_id"] == body.get("asset_id")), None)
+        if angle is None:
+            raise HTTPException(404, "Clip này chưa được đồng bộ với cảnh đang chọn")
+        system.sourcing.use_angle(shot_id, angle["asset_id"], angle["offset"])
+        return {"ok": True}
+
+    @app.post("/api/v1/shots/{shot_id}/inserts")
+    def add_insert(shot_id: str, body: dict):
+        try:
+            return system.sourcing.add_insert(shot_id, str(body.get("keyword", "")))
+        except ValueError as err:
+            raise HTTPException(422, str(err))
+        except LookupError:
+            raise HTTPException(404, "Không tìm thấy cảnh nào trong kho khớp với từ này")
+
+    @app.post("/api/v1/shots/{shot_id}/inserts/remove")
+    def remove_insert(shot_id: str, body: dict):
+        system.sourcing.remove_insert(shot_id, str(body.get("keyword", "")))
+        return {"ok": True}
+
+    @app.post("/api/v1/shots/{shot_id}/focus")
+    def set_focus(shot_id: str, body: dict):
+        system.sourcing.set_focus(shot_id, body.get("x"))
+        return {"ok": True}
 
     @app.post("/api/v1/shots/{shot_id}/trim")
     def trim(shot_id: str, body: dict):

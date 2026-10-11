@@ -13,6 +13,8 @@ export default function Timeline({ project: p, reload, rerender, busy }: { proje
   const [now, setNow] = useState(0);
   const [picked, setPicked] = useState(0);
   const [zoom, setZoom] = useState(1);
+  const [word, setWord] = useState("");
+  const [note, setNote] = useState<string | null>(null);
   const latest = p.renders[0];
   // A render describes the script it was made from. After the script changes, its timings no longer apply.
   const rendered = latest && latest.qc.shots && latest.qc.shots.length === p.shots.length && latest.qc.shots.every((r, i) => r.text === p.shots[i].text) ? latest.qc.shots : null;
@@ -23,7 +25,9 @@ export default function Timeline({ project: p, reload, rerender, busy }: { proje
       const d = r?.duration ?? estimate(shot);
       const sel = shot.selection;
       const gap = !sel || sel.status === "gap";
-      const stale = !!r && (gap !== r.gap || (!gap && (sel!.asset?.asset_id !== r.asset_id || Math.abs((sel!.t_in ?? 0) - (r.t_in ?? 0)) > 0.05)));
+      const words = (list?: { keyword: string }[]) => (list ?? []).map((x) => x.keyword).join("|");
+      const stale = !!r && (gap !== r.gap || (!gap && (sel!.asset?.asset_id !== r.asset_id || Math.abs((sel!.t_in ?? 0) - (r.t_in ?? 0)) > 0.05
+        || words(sel!.inserts) !== words(r.inserts) || (sel!.focus_x != null && sel!.focus_x !== r.focus_x))));
       const item = { shot, i, at, d, gap, stale, own: r ? !!r.own_voice : p.own_takes.includes(i + 1) };
       at += d;
       return item;
@@ -52,7 +56,9 @@ export default function Timeline({ project: p, reload, rerender, busy }: { proje
 
   const pct = (t: number) => `${(t / total) * 100}%`;
   const sel = current.shot.selection;
-  const act = async (path: string, body?: unknown) => { await post(`/api/v1/shots/${current.shot.shot_id}/${path}`, body).catch(() => {}); reload(); };
+  const act = async (path: string, body?: unknown) => { setNote(null); await post(`/api/v1/shots/${current.shot.shot_id}/${path}`, body).catch((e) => setNote((e as Error).message)); reload(); };
+  const cropped = p.format !== "landscape";
+  const seen = rendered?.[current.i]?.focus_x;
   const length = sel && sel.t_in != null && sel.t_out != null ? sel.t_out - sel.t_in : 0;
   const slip = (by: number) => { if (!sel || sel.t_in == null || sel.t_out == null) return; const a = Math.max(0, Math.min(sel.t_in + by, Math.max(0, (sel.asset?.duration ?? sel.t_out) - length))); act("trim", { t_in: a, t_out: a + length }); };
   const ticks = Array.from({ length: Math.floor(total / (total > 90 ? 15 : 5)) + 1 }, (_, k) => k * (total > 90 ? 15 : 5));
@@ -102,6 +108,39 @@ export default function Timeline({ project: p, reload, rerender, busy }: { proje
                 {sel?.reason && <p className="mt-3 break-words text-sm text-mute">Vì sao chọn: {sel.reason}</p>}
               </>
             )}
+          {!current.gap && sel && sel.angles.length > 0 && (
+            <div className="mt-4">
+              <p className="mb-1 text-sm font-medium">Góc máy khác, cùng thời điểm</p>
+              <div className="flex flex-wrap gap-1">{sel.angles.map((a) => <button key={a.asset_id} type="button" onClick={() => act("angle", { asset_id: a.asset_id })} className="rounded border border-line px-2 py-1 text-sm hover:border-mute">{a.name} ở {timecode(a.t_in)}</button>)}</div>
+            </div>
+          )}
+          {!current.gap && cropped && (
+            <div className="mt-4">
+              <p className="mb-1 text-sm font-medium" id="focus">Giữ phần nào của hình khi cắt khung</p>
+              <div className="flex flex-wrap gap-1" role="radiogroup" aria-labelledby="focus">
+                {([[null, "Hệ thống tự chọn"], [0.15, "Bên trái"], [0.5, "Chính giữa"], [0.85, "Bên phải"]] as const).map(([x, name]) => (
+                  <button key={name} type="button" role="radio" aria-checked={(sel?.focus_x ?? null) === x} onClick={() => act("focus", { x })}
+                          className={`rounded border px-2 py-1 text-sm ${(sel?.focus_x ?? null) === x ? "border-ink bg-raised" : "border-line text-mute hover:text-ink"}`}>{name}</button>
+                ))}
+              </div>
+              {sel?.focus_x == null && seen != null && <p className="tc mt-1 text-sm text-mute">Bản dựng gần nhất lấy quanh điểm {Math.round(seen * 100)}% tính từ mép trái.</p>}
+            </div>
+          )}
+          {!current.gap && (
+            <div className="mt-4">
+              <p className="mb-1 text-sm font-medium">Chèn hình khác khi nói tới một từ</p>
+              {(sel?.inserts ?? []).map((ins) => (
+                <p key={ins.keyword} className="mb-1 flex items-baseline justify-between gap-2 text-sm"><span className="min-w-0 truncate" title={ins.reason}>Tới “{ins.keyword}” thì chuyển hình</span>
+                  <button type="button" className="shrink-0 text-mute underline underline-offset-2 hover:text-ink" onClick={() => act("inserts/remove", { keyword: ins.keyword })}>Bỏ</button></p>
+              ))}
+              <form className="flex gap-2" onSubmit={async (e) => { e.preventDefault(); if (word.trim()) { await act("inserts", { keyword: word.trim() }); setWord(""); } }}>
+                <label htmlFor="word" className="sr-only">Từ trong câu</label>
+                <input id="word" value={word} onChange={(e) => setWord(e.target.value)} placeholder="Một từ có trong câu" className="min-w-0 flex-1 rounded border border-line bg-canvas px-2 py-1 text-sm placeholder:text-mute/70" />
+                <button type="submit" disabled={!word.trim()} className="rounded border border-line px-2 py-1 text-sm hover:border-mute disabled:opacity-40">Tìm và chèn</button>
+              </form>
+            </div>
+          )}
+          {note && <p className="mt-2 text-sm text-tally">{note}</p>}
           {sel && sel.alternates.length > 0 && (
             <div className="mt-4">
               <p className="mb-1 text-sm font-medium">Đổi sang cảnh khác</p>
@@ -141,6 +180,7 @@ export default function Timeline({ project: p, reload, rerender, busy }: { proje
                           className={`absolute inset-y-0 overflow-hidden border-r border-canvas ${it.gap ? "hatch bg-raised" : "bg-black"} ${it.i === current.i ? "z-10 outline outline-2 -outline-offset-2 outline-ink" : ""}`}>
                     {src && <img src={src} alt="" className="h-full w-full object-cover opacity-90" />}
                     <span className="tc absolute left-1 top-0.5 rounded-sm bg-canvas/80 px-1 text-[11px]">{it.i + 1}</span>
+                    {(it.shot.selection?.inserts ?? []).map((ins) => <span key={ins.keyword} className="absolute inset-y-0 w-px bg-ink" style={{ left: `${ins.at * 100}%` }} title={`Chuyển hình ở “${ins.keyword}”`} />)}
                     {(flagged || it.stale) && <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-cue" title={it.stale ? "Đã đổi, chưa dựng lại" : "Nên xem lại"} />}
                   </button>
                 );

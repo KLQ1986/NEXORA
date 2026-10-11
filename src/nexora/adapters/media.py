@@ -65,7 +65,7 @@ class FFmpegAdapter(Adapter):
         return ffmpeg_capabilities()
 
     def describe(self) -> Capability:
-        return Capability(name="ffmpeg", operations=("blackdetect", "freezedetect", "proxy", "thumbnail", "frames", "segment", "concat", "loudness"), runs="local", supports_cancel=True)
+        return Capability(name="ffmpeg", operations=("blackdetect", "freezedetect", "proxy", "thumbnail", "frames", "segment", "concat", "loudness", "envelope"), runs="local", supports_cancel=True)
 
     def submit(self, request: Request) -> Result:
         timeout = request.deadline_seconds or 3600
@@ -151,20 +151,32 @@ class FFmpegAdapter(Adapter):
         else:
             args += ["-ss", str(params.get("t_in", 0.0)), "-t", str(d), "-i", str(src)]
         # "cover" fills the frame and crops the overflow (used when the output shape differs from the footage); "fit" letterboxes.
-        shape = (f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}" if params.get("fill", "fit") == "cover"
-                 else f"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2")
+        # The crop is centred on `focus_x` (0 left, 1 right) so that a subject off to one side stays in a narrower frame.
+        fx = max(0.0, min(1.0, float(params.get("focus_x", 0.5))))
+        crop = lambda cw, ch, x=fx: f"crop={cw}:{ch}:'min(max(iw*{x}-{cw}/2,0),iw-{cw})':(ih-{ch})/2"
+        cover = lambda x=fx: f"scale={w}:{h}:force_original_aspect_ratio=increase,{crop(w, h, x)}"
+        filling = params.get("fill", "fit") == "cover"
+        fitted = f"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2"
+        shape = cover() if filling else fitted
         if still:
             # A photograph gets a slow push-in so that it reads as a shot, not a slide.
             frames = max(1, round(d * fps))
-            shape = (f"scale={w * 2}:{h * 2}:force_original_aspect_ratio=increase,crop={w * 2}:{h * 2},"
+            shape = (f"scale={w * 2}:{h * 2}:force_original_aspect_ratio=increase,{crop(w * 2, h * 2)},"
                      f"zoompan=z='1+0.08*on/{frames}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={frames}:s={w}x{h}:fps={fps}")
         chain = f"[0:v]{shape},setsar=1,fps={fps},tpad=stop_mode=clone:stop_duration={d}[base]"
-        n = 1
+        n, last = 1, "base"
+        # An insert is a second picture laid over the first from its moment to the end of the shot: a cut, without splitting the audio.
+        for k, ins in enumerate(params.get("inserts") or []):
+            at, ipath = float(ins["at"]), Path(ins["path"])
+            args += (["-loop", "1"] if ipath.suffix.lower() in IMAGE_EXT else ["-ss", str(ins.get("t_in", 0.0))]) + ["-t", str(round(d - at, 2)), "-i", str(ipath)]
+            chain += (f";[{n}:v]{cover(0.5) if filling else fitted},setsar=1,fps={fps},setpts=PTS-STARTPTS+{at}/TB[i{k}]"
+                      f";[{last}][i{k}]overlay=enable='gte(t,{at})':eof_action=pass[b{k}]")
+            n, last = n + 1, f"b{k}"
         if params.get("overlay"):
             args += ["-loop", "1", "-i", str(params["overlay"])]
-            chain += f";[base][{n}:v]overlay=0:0[v]"; n += 1
+            chain += f";[{last}][{n}:v]overlay=0:0[v]"; n += 1
         else:
-            chain += ";[base]null[v]"
+            chain += f";[{last}]null[v]"
         if params.get("audio"):
             args += ["-i", str(params["audio"])]
         else:
@@ -196,6 +208,16 @@ class FFmpegAdapter(Adapter):
                        "-shortest", *tail], timeout, "concat")
         partial.replace(out); listing.unlink(missing_ok=True)
         return Result(files=(str(out),))
+
+    def _envelope(self, src: Path, params: dict, timeout: float) -> Result:
+        """How loud the sound is, `rate` times a second: enough to recognise the same event in two recordings."""
+        rate, raw = int(params.get("rate", 100)), Path(params["out"])
+        self._run(["-y", "-t", str(params.get("max_seconds", 600)), "-i", str(src), "-vn", "-ac", "1", "-ar", "8000", "-f", "s16le", str(raw)], timeout, "envelope")
+        samples = __import__("array").array("h")
+        data = raw.read_bytes(); raw.unlink()
+        samples.frombytes(data[:len(data) // 2 * 2])
+        window = 8000 // rate
+        return Result(outputs={"rate": rate, "envelope": [sum(map(abs, samples[i:i + window])) / window for i in range(0, len(samples) - window + 1, window)]})
 
     def _loudness(self, src: Path, params: dict, timeout: float) -> Result:
         done = self._run(["-i", str(src), "-af", "volumedetect", "-vn", "-f", "null", "-"], timeout, "loudness")

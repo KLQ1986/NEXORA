@@ -120,3 +120,32 @@ def test_photographs_recorded_takes_and_desktop_notifications_are_reachable_thro
 
     assert client.get("/api/v1/control").json()["desktop_notifications"] is True
     assert client.post("/api/v1/control/desktop-notifications", json={"on": False}).json()["desktop_notifications"] is False
+
+
+def test_inserts_framing_and_camera_angles_are_reachable_through_the_api(tmp_path):
+    from tests.conftest import make_video
+    from tests.fakes import FakeModel, FakeVoice
+    from tests.library.test_sync import camera, room_sound
+    system = build(tmp_path / "data", model=FakeModel(), voice=FakeVoice(), segment_seconds=2.0)
+    client = TestClient(create_app(system))
+    drain = lambda: [None for _ in iter(system.worker.run_once, False)]
+    sound = room_sound(tmp_path / "room.wav", 1)
+    a = client.post("/api/v1/assets/register", json={"path": str(camera(tmp_path / "a.mp4", sound, seconds=20))}).json()["asset_id"]
+    b = client.post("/api/v1/assets/register", json={"path": str(camera(tmp_path / "b.mp4", sound, skip=1.0, seconds=18))}).json()["asset_id"]
+    mute = client.post("/api/v1/assets/register", json={"path": str(make_video(tmp_path / "m.mp4", picture=4))}).json()["asset_id"]
+    drain()
+    assert abs(client.post("/api/v1/assets/sync", json={"a": a, "b": b}).json()["offset"] + 1.0) < 0.1
+    assert client.post("/api/v1/assets/sync", json={"a": a, "b": mute}).status_code == 409
+
+    pid = client.post("/api/v1/projects", json={"title": "Hai máy", "lines": ["cá tươi trên sạp và con đường mòn"]}).json()["project_id"]
+    client.post(f"/api/v1/projects/{pid}/match"); drain()
+    shot = client.get(f"/api/v1/projects/{pid}").json()["shots"][0]
+    sid, sel = shot["shot_id"], shot["selection"]
+    assert client.post(f"/api/v1/shots/{sid}/inserts", json={"keyword": "máy bay"}).status_code == 422
+    assert client.post(f"/api/v1/shots/{sid}/inserts", json={"keyword": "con đường mòn"}).status_code == 200
+    client.post(f"/api/v1/shots/{sid}/focus", json={"x": 0.85})
+    angle = sel["angles"][0]
+    assert client.post(f"/api/v1/shots/{sid}/angle", json={"asset_id": angle["asset_id"]}).status_code == 200
+    after = client.get(f"/api/v1/projects/{pid}").json()["shots"][0]["selection"]
+    assert after["asset"]["asset_id"] == angle["asset_id"] and abs(after["t_in"] - angle["t_in"]) < 0.01
+    assert [i["keyword"] for i in after["inserts"]] == ["con đường mòn"] and after["focus_x"] is None      # framing was for the other camera

@@ -19,6 +19,8 @@ class FakeModel(Adapter):
         if request.operation == "describe" and request.params.get("task") == "judge":
             line, text = set(request.params["line"].lower().split()), set(request.params["candidate_text"].lower().replace(".", "").replace(":", "").split())
             return Result(outputs={"json": {"phu_hop": 9 if len(line & text) >= 2 else 1, "ly_do": "giả lập"}})
+        if request.operation == "describe" and request.params.get("task") == "focus":
+            return Result(outputs={"json": {"vi_tri": 90}})
         if request.operation == "describe" and request.params.get("task") == "locate":
             return Result(outputs={"json": {"khung": len(request.inputs["images"])}})
         if request.operation == "describe":

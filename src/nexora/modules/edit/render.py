@@ -7,7 +7,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from nexora.core.adapter import AdapterRegistry, Request
+from nexora.core.adapter import AdapterError, AdapterRegistry, Request
 from nexora.core.assets import AssetStore
 from nexora.core.orchestrator import Orchestrator
 from nexora.core.pipeline import PipelineDefinition, PipelineRegistry, StageDef
@@ -28,17 +28,25 @@ PAD_SECONDS = 0.4
 WORDS_PER_SECOND = 2.6
 
 
+FOCUS_PROMPT = (
+    "Chủ thể chính của hình này nằm ở đâu theo chiều ngang? Chỉ trả về JSON với khoá vi_tri: một số từ 0 (sát mép trái) đến 100 (sát mép phải); "
+    "50 là chính giữa."
+)
+MIN_BEFORE_INSERT, MIN_INSERT = 0.4, 0.8          # seconds: a cut closer than this to either end of a shot reads as a glitch
+
+
 def _key(*parts) -> str:
     return hashlib.sha256(json.dumps(parts, ensure_ascii=False, sort_keys=True).encode()).hexdigest()[:24]
 
 
 class Edit:
     def __init__(self, orch: Orchestrator, projects: ProjectStore, assets: AssetStore, adapters: AdapterRegistry, media_dir: str | Path,
-                 *, voice: bool = False, voice_name: str = "Linh", reviewer=None):
+                 *, voice: bool = False, voice_name: str = "Linh", reviewer=None, model: bool = False):
         self._orch, self._projects, self._assets, self._adapters = orch, projects, assets, adapters
         self._media, self._voice, self._voice_name = Path(media_dir), voice, voice_name
         self._reviewer = reviewer                    # the whole-cut review of the Quality module, injected by the composition root
-        for sub in ("narration", "captions", "segments", "renders"):
+        self._model = model                          # a vision model is available to find the subject when a frame must be cropped
+        for sub in ("narration", "captions", "segments", "renders", "focus"):
             (self._media / sub).mkdir(parents=True, exist_ok=True)
 
     def register(self, registry: PipelineRegistry) -> None:
@@ -89,6 +97,28 @@ class Edit:
         start, end = next(((a, b) for a, b in usable if a <= t_in < b), usable[0])
         return str(path), original.checksum, round(max(start, min(t_in, end - need)), 2)
 
+    def _focus(self, sel, path: str, checksum: str, t_in: float, duration: float) -> float:
+        """Where to centre the crop when the output is narrower than the footage: the operator's word first, then the model's eye, then the middle."""
+        own = sel.extras.get("focus") or {}
+        if own.get("asset_id") == sel.asset_id:
+            return float(own["x"])
+        if not self._model:
+            return 0.5
+        cache = self._media / "focus" / f"{_key(checksum, t_in, duration)}.json"
+        if cache.is_file():
+            return json.loads(cache.read_text())["x"]
+        try:
+            frame = path
+            if Path(path).suffix.lower() not in (".jpg", ".jpeg", ".png", ".webp"):
+                frame = str(cache.with_suffix(".jpg"))
+                self._adapters.submit("ffmpeg", Request("thumbnail", inputs={"path": path}, params={"out": frame, "at": round(t_in + duration / 2, 2)}))
+            out = self._adapters.submit("model", Request("describe", inputs={"images": [frame]}, params={"task": "focus", "prompt": FOCUS_PROMPT, "max_tokens": 40})).outputs["json"]
+            x = round(max(0.0, min(1.0, float(out.get("vi_tri", 50)) / 100)), 2)
+        except (AdapterError, ValueError, TypeError):
+            return 0.5                               # no answer is not a reason to fail a render
+        cache.write_text(json.dumps({"x": x}))
+        return x
+
     def _segments(self, ctx):
         script = self._projects.script(ctx.subject_ref)
         project = self._projects.project(script["project_id"])
@@ -103,19 +133,28 @@ class Edit:
             if not caption.is_file():
                 self._adapters.submit("graphics", Request("caption", inputs={"text": shot.text}, params={"out": str(caption), **FORMAT}))
             has_picture = sel is not None and sel.status != "gap" and sel.asset_id
+            inserts, focus = [], 0.5
             if has_picture:
                 path, checksum, t_in = self._source(sel.asset_id, sel.t_in, duration)
-                key = _key(checksum, t_in, duration, shot.text, line["audio"], FORMAT, fill)
+                focus = self._focus(sel, path, checksum, t_in, duration) if fill == "cover" else 0.5
+                for ins in sel.extras.get("inserts", []):
+                    at = round(ins["at"] * line["duration"], 2)
+                    if at < MIN_BEFORE_INSERT or duration - at < MIN_INSERT:
+                        continue
+                    ipath, isum, iin = self._source(ins["asset_id"], ins["t_in"], duration - at)
+                    inserts.append({"path": ipath, "t_in": iin, "at": at, "checksum": isum, "keyword": ins["keyword"]})
+                key = _key(checksum, t_in, duration, shot.text, line["audio"], FORMAT, fill, focus, [(i["checksum"], i["t_in"], i["at"]) for i in inserts])
             else:
                 path, t_in, key = None, 0.0, _key("gap", duration, shot.text, line["audio"], FORMAT)
             segment = self._media / "segments" / f"{key}.mp4"
             if not segment.is_file():                                   # unchanged shots are reused, not rendered again
                 self._adapters.submit("ffmpeg", Request("segment", inputs={"path": path}, attempt_id=ctx.claim.attempt_id,
                                                        params={"out": str(segment), "t_in": t_in, "duration": duration, "overlay": str(caption),
-                                                               "audio": line["audio"], "fill": fill, **FORMAT}))
+                                                               "audio": line["audio"], "fill": fill, "focus_x": focus, "inserts": inserts, **FORMAT}))
             out.append({"shot_id": shot.shot_id, "file": str(segment), "duration": duration, "gap": not has_picture, "text": shot.text,
                         "asset_id": sel.asset_id if has_picture else None, "t_in": t_in, "chosen_in": sel.t_in if has_picture else None,
-                        "own_voice": bool(line.get("own_voice"))})
+                        "own_voice": bool(line.get("own_voice")), "focus_x": focus if fill == "cover" else None,
+                        "inserts": [{"keyword": i["keyword"], "at": i["at"]} for i in inserts]})
             ctx.heartbeat()
         return {"segments": out}
 
@@ -142,6 +181,6 @@ class Edit:
               "format": project["format"], "music": bool(music), "mean_db": loud["mean_db"], "max_db": loud["max_db"],
               "findings": self._reviewer(segments) if self._reviewer else [],
               "shots": [{"text": s["text"], "duration": s["duration"], "gap": s["gap"], "asset_id": s.get("asset_id"), "t_in": s.get("chosen_in"),
-                         "own_voice": s.get("own_voice", False)} for s in segments]}
+                         "own_voice": s.get("own_voice", False), "focus_x": s.get("focus_x"), "inserts": s.get("inserts", [])} for s in segments]}
         render_id = self._projects.add_render(script["project_id"], ctx.subject_ref, str(out), qc)
         return {"render_id": render_id, "qc_passed": qc["passed"]}

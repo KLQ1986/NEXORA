@@ -20,6 +20,7 @@ INGEST = PipelineDefinition("library.ingest", "1", [
 ])
 
 MIN_USABLE_SECONDS = 0.1
+MIN_SYNC_CONFIDENCE = 0.35       # below this the two sounds are not the same event
 IMAGE_EXT = frozenset({".jpg", ".jpeg", ".png", ".webp"})
 AUDIO_EXT = frozenset({".mp3", ".wav", ".m4a", ".aiff", ".flac"})
 
@@ -88,6 +89,26 @@ class Library:
         return asset_id, run_id
 
     # ------------------------------------------------------------------ stage handlers
+    def sync(self, first: str, second: str) -> dict:
+        """Line up two recordings of the same event by their sound and remember it on both, so that a cut can switch camera at the same instant."""
+        from nexora.modules.library.sync import best_offset
+        envelopes = []
+        for asset_id in (first, second):
+            original = self._assets.original(asset_id)
+            if not original.metadata.get("probe", {}).get("has_audio"):
+                raise ValueError("no_audio")
+            versions = {v.role: v for v in self._assets.versions(asset_id)}
+            path = self._assets.path_of(original)
+            path = path if path.is_file() else self._assets.path_of(versions["proxy"])
+            envelopes.append(self._adapters.submit("ffmpeg", Request("envelope", inputs={"path": str(path)}, params={"out": str(self._media / f"{asset_id}.raw")})).outputs)
+        offset, sure = best_offset(envelopes[0]["envelope"], envelopes[1]["envelope"], envelopes[0]["rate"])
+        if sure < MIN_SYNC_CONFIDENCE:
+            raise ValueError("not_alike")
+        for asset_id, other, shift in ((first, second, offset), (second, first, -offset)):
+            original = self._assets.original(asset_id)
+            self._assets.update_metadata(original.version_id, angles={**original.metadata.get("angles", {}), other: shift})
+        return {"offset": offset, "confidence": sure}
+
     def _source(self, ctx):
         original = self._assets.original(ctx.subject_ref)
         path = self._assets.path_of(original)
