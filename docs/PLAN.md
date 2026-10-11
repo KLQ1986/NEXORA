@@ -173,6 +173,8 @@ Một video ngang 4 câu làm trọn từ giao diện bằng mô hình thật: c
 
 Xem lại khung hình của video này: ba cảnh đầu đúng nội dung (chợ, ấm moka, rừng lúc chạng vạng). Cảnh thứ tư sai: câu nói về đoàn tàu qua cầu sắt nhưng hình là bờ biển. Nguyên nhân: clip stock dài được lấy từ giây đầu tiên mà không xem hình có khớp câu hay không, và kiểm tra tự động không bắt được vì nó không so hình với lời. Việc cần làm đầu tiên của giai đoạn tối ưu: sau khi clip stock được mô tả xong, chấm và chọn đoạn khớp trong clip đó như với footage của người vận hành, hoặc trả lại trạng thái thiếu hình nếu không đoạn nào khớp.
 
+Đã sửa (125 test đạt): clip stock được đề xuất ngay, và khi đã được mô tả xong thì hệ thống chấm, chọn đoạn khớp trong clip, hoặc trả về trạng thái thiếu hình. Thử lại đúng trường hợp trên bằng mô hình thật: thay vì bờ biển ở giây 0, hệ thống chọn giây 137 đến 141 của phim, nơi có cây cầu sắt. Còn chưa chuẩn: khoảng 2 giây đầu của đoạn này vẫn là cảnh đồi cát trước khi tới cây cầu, tức điểm vào còn sớm. Đây là độ chính xác của bước định vị trong đoạn, để dành cho giai đoạn tối ưu.
+
 ### Lát 1 — Lõi chạy việc
 
 Mục thiết kế: 5, 6, 7.
