@@ -156,3 +156,18 @@ def test_the_operator_is_notified_when_a_decision_is_needed_and_when_a_run_ends(
     system.orch.notify("succeeded", run)
     system.orch.mark_notifications_read()
     assert system.orch.notifications(unread_only=True) == []
+
+
+def test_the_publishing_package_holds_everything_a_manual_upload_needs(system):
+    pid = system.planning.create_project("Chợ sáng")
+    script = system.planning.save_script(pid, ["cá tươi trên sạp", "chợ rau củ"])
+    system.sourcing.approve(system.sourcing.start_match(script, wait=lambda: drain(system)))
+    system.edit.start_render(script); drain(system)
+    render = system.projects.renders(pid)[0]
+    package = system.distribution.build_package(render["render_id"])
+    folder = __import__("pathlib").Path(package["folder"])
+    assert package["title"] == "Chợ sáng" and package["synthetic_content"] is False and len(package["thumbnails"]) == 3
+    assert all((folder / name).stat().st_size > 0 for name in [package["video"], package["captions"], *package["thumbnails"], "package.json"])
+    captions = (folder / "captions.srt").read_text(encoding="utf-8")
+    assert captions.startswith("1\n00:00:00,000 --> ") and "cá tươi trên sạp" in captions and "\n2\n" in captions
+    assert system.distribution.choose_thumbnail(render["render_id"], package["thumbnails"][2])["thumbnail"] == package["thumbnails"][2]

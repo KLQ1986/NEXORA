@@ -14,6 +14,7 @@ from nexora.core.pipeline import PipelineRegistry
 from nexora.core.projects import ProjectStore
 from nexora.core.worker import Worker
 from nexora.modules.library.ingest import Library
+from nexora.modules.distribution.package import Distribution
 from nexora.modules.edit.render import Edit
 from nexora.modules.library.understand import Understanding
 from nexora.modules.planning.scripts import Planning
@@ -35,6 +36,7 @@ class System:
     planning: Planning
     sourcing: Sourcing
     edit: Edit
+    distribution: Distribution
 
 
 def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Adapter | None = None,
@@ -65,5 +67,6 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     sourcing.register(registry)
     edit = Edit(orch, projects, assets, adapters, data_dir / "media", voice=voice is not None, reviewer=review_cut)
     edit.register(registry)
+    distribution = Distribution(projects, assets, adapters, data_dir / "exports")
     worker = Worker(orch, registry, worker_id=f"worker-{os.getpid()}")
-    return System(data_dir, orch, assets, adapters, registry, worker, library, index, projects, planning, sourcing, edit)
+    return System(data_dir, orch, assets, adapters, registry, worker, library, index, projects, planning, sourcing, edit, distribution)

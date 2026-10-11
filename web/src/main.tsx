@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import "./styles.css";
 import { usePoll, type Run } from "./api";
 import Library from "./Library";
+import Notices from "./Notices";
 import Projects from "./Projects";
 import Runs from "./Runs";
 import System from "./System";
@@ -11,6 +12,7 @@ const PAGES = [
   { path: "/", label: "Thư viện", view: Library },
   { path: "/du-an", label: "Dự án", view: null },
   { path: "/tien-trinh", label: "Tiến trình", view: Runs },
+  { path: "/thong-bao", label: "Thông báo", view: Notices },
   { path: "/he-thong", label: "Hệ thống", view: System },
 ];
 
@@ -20,6 +22,7 @@ function App() {
   const go = (to: string) => { window.history.pushState({}, "", to); setPath(to); };
   const { data: runs } = usePoll<Run[]>("/api/v1/runs", 4000);
   const waiting = (runs ?? []).filter((r) => r.status === "blocked" || r.status === "waiting_review").length;
+  const { data: notices } = usePoll<{ unread: number }>("/api/v1/notifications", 5000);
   const page = PAGES.find((p) => p.path !== "/" && path.startsWith(p.path)) ?? PAGES[0];
   const View = page.view;
   const sub = path.startsWith("/du-an/") ? path.slice("/du-an/".length) : null;
@@ -32,6 +35,7 @@ function App() {
              className={`flex items-center justify-between rounded px-2 py-1.5 transition-colors ${p === page ? "bg-raised font-medium" : "text-mute hover:text-ink"}`}>
             {p.label}
             {p.path === "/tien-trinh" && waiting > 0 && <span className="tc ml-2 rounded-full bg-cue px-1.5 text-xs font-semibold text-canvas" title="Số việc đang cần bạn">{waiting}</span>}
+            {p.path === "/thong-bao" && (notices?.unread ?? 0) > 0 && p !== page && <span className="tc ml-2 rounded-full bg-raised px-1.5 text-xs font-semibold" title="Thông báo chưa đọc">{notices?.unread}</span>}
           </a>
         ))}
       </nav>

@@ -63,9 +63,14 @@ export type Candidate = { moment_id: string; t_in: number; t_out: number; score:
 export type Selection = { status: string; t_in: number | null; t_out: number | null; score: number | null; reason: string | null; decided_by: string;
   moment_id: string | null; frame_url: string | null; asset: AssetBrief | null; alternates: Candidate[] };
 export type Shot = { shot_id: string; position: number; text: string; selection: Selection | null };
-export type RenderItem = { render_id: string; created_at: number; url: string;
-  qc: { passed: boolean; checks: Record<string, boolean>; duration: number; gaps: number } };
-export type Project = { project_id: string; title: string; created_at: number;
+export type Finding = { check: string; shot: number; severity: string; text: string; fix: string };
+export type Package = { title: string; description: string; thumbnails: string[]; thumbnail: string; folder: string; synthetic_content: boolean; captions: string; video: string };
+export type RenderItem = { render_id: string; created_at: number; url: string; package: Package | null;
+  qc: { passed: boolean; checks: Record<string, boolean>; duration: number; gaps: number; findings?: Finding[]; format?: string; music?: boolean;
+        shots?: { text: string; duration: number; gap: boolean }[] } };
+export type BoardEvent = { at: number; kind: string; pipeline: string; stage_key: string | null; actor: string; payload: Record<string, unknown> };
+export type Notice = { notification_id: number; kind: string; run_id: string; stage_key: string | null; reason: string | null; created_at: number; read_at: number | null; pipeline: string | null };
+export type Project = { project_id: string; title: string; created_at: number; format: string; music_path: string | null;
   script: { script_id: string; version: number; match_approved: boolean } | null; shots: Shot[]; match: Run | null; render: Run | null; renders: RenderItem[] };
 export const post = <T,>(url: string, body?: unknown, method = "POST") => call<T>(url, { method, body: body === undefined ? undefined : JSON.stringify(body) });
 Object.assign(STAGE_NAMES, { segments: "Chia đoạn", summarise: "Tóm tắt", match: "Chọn clip", narration: "Đọc lời dẫn", assemble: "Ghép và kiểm tra" });

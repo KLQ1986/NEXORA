@@ -1,4 +1,4 @@
-import { call, megabytes, usePoll } from "./api";
+import { call, megabytes, usePoll, type Run } from "./api";
 import { Button } from "./parts";
 
 type Env = { ffmpeg?: { filters: Record<string, boolean>; encoders: Record<string, boolean> }; disk: { free_bytes: number; total_bytes: number };
@@ -13,6 +13,8 @@ export default function System() {
   const { data: env } = usePoll<Env>("/api/v1/environment", 15000);
   const { data: control, reload } = usePoll<{ kill_switch: boolean }>("/api/v1/control", 3000);
   const toggle = async () => { await call("/api/v1/control/kill-switch", { method: "POST", body: JSON.stringify({ on: !control?.kill_switch }) }); reload(); };
+  const { data: runs } = usePoll<Run[]>("/api/v1/runs", 10000);
+  const spent = (runs ?? []).reduce((sum, r) => sum + r.cost, 0);
   const missing = Object.entries(env?.ffmpeg?.filters ?? {}).filter(([, ok]) => !ok).map(([name]) => name);
   const used = env ? 1 - env.disk.free_bytes / env.disk.total_bytes : 0;
   return (
@@ -26,6 +28,11 @@ export default function System() {
             <Button kind={control?.kill_switch ? "primary" : "danger"} onClick={toggle}>{control?.kill_switch ? "Cho chạy lại" : "Dừng khẩn cấp"}</Button>
             <span className={control?.kill_switch ? "text-cue" : "text-mute"}>{control?.kill_switch ? "Đang dừng" : "Đang hoạt động bình thường"}</span>
           </div>
+        </div>
+        <div>
+          <h2 className="mb-2 text-base font-semibold">Chi phí mô hình</h2>
+          <p className="tc">{spent.toFixed(2)} USD cho {(runs ?? []).length} lần chạy</p>
+          <p className="max-w-xl text-mute">Mô hình đang chạy trên máy này nên không phát sinh phí. Nếu sau này dùng mô hình trên cloud, chi phí từng lần chạy sẽ cộng vào đây và bị chặn theo ngân sách.</p>
         </div>
         <div>
           <h2 className="mb-2 text-base font-semibold">Ổ đĩa</h2>

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { post, timecode, usePoll, type Candidate, type Project, type Shot } from "./api";
+import { post, timecode, usePoll, type Candidate, type Project, type RenderItem, type Shot } from "./api";
+import Board from "./Board";
 import { Button, StageRail } from "./parts";
 
 function Clip({ url, tIn, tOut, poster }: { url: string | null; tIn: number; tOut: number; poster: string | null }) {
@@ -49,6 +50,55 @@ function ShotRow({ shot, n, locked, changed }: { shot: Shot; n: number; locked: 
   );
 }
 
+const FORMATS: Record<string, string> = { landscape: "Ngang 16:9", portrait: "Dọc 9:16", square: "Vuông 1:1" };
+
+/** The cut laid out to scale: one block per shot, as wide as it lasts. */
+function TimelineStrip({ shots }: { shots: Shot[] }) {
+  const items = shots.map((s) => ({ s, d: s.selection && s.selection.t_in != null && s.selection.t_out != null ? s.selection.t_out - s.selection.t_in : Math.max(2.5, s.text.split(/\s+/).length / 2.6) }));
+  const total = items.reduce((sum, i) => sum + i.d, 0) || 1;
+  let t = 0;
+  return (
+    <div>
+      <div className="flex h-16 gap-px overflow-hidden rounded-sm" role="list" aria-label="Bản dựng theo thời gian">
+        {items.map(({ s, d }, i) => (
+          <div key={s.shot_id} role="listitem" title={`${i + 1}. ${s.text}`} style={{ width: `${(d / total) * 100}%` }}
+               className={`relative min-w-0 ${s.selection?.status === "gap" || !s.selection ? "hatch bg-raised" : "bg-black"}`}>
+            {s.selection?.frame_url && s.selection.status !== "gap" && <img src={s.selection.frame_url} alt="" className="h-full w-full object-cover opacity-90" />}
+            <span className="tc absolute left-1 top-0.5 rounded-sm bg-canvas/80 px-1 text-[11px]">{i + 1}</span>
+          </div>
+        ))}
+      </div>
+      <div className="tc mt-1 flex text-[11px] text-mute">
+        {items.map(({ s, d }) => { const at = t; t += d; return <span key={s.shot_id} style={{ width: `${(d / total) * 100}%` }} className="truncate">{timecode(at)}</span>; })}
+        <span className="ml-auto pl-1">{timecode(total)}</span>
+      </div>
+    </div>
+  );
+}
+
+function PackagePanel({ render, reload }: { render: RenderItem; reload: () => void }) {
+  const pkg = render.package;
+  const base = `/api/v1/renders/${render.render_id}/package`;
+  if (!pkg) return <div><Button kind="primary" onClick={async () => { await post(base, {}); reload(); }}>Chuẩn bị gói xuất bản</Button><p className="mt-1 text-sm text-mute">Tạo file video, phụ đề rời và ảnh đại diện trong một thư mục để bạn đăng tay.</p></div>;
+  return (
+    <div>
+      <h3 className="mb-1 font-semibold">Gói xuất bản</h3>
+      <p className="mb-2 text-sm text-mute">Chọn ảnh đại diện. Mọi file nằm trong thư mục <span className="break-all">{pkg.folder}</span></p>
+      <div className="mb-2 flex gap-2">
+        {pkg.thumbnails.map((name) => (
+          <button key={name} type="button" aria-pressed={pkg.thumbnail === name} onClick={async () => { await post(base, { thumbnail: name }); reload(); }}
+                  className={`w-36 rounded-sm border-2 ${pkg.thumbnail === name ? "border-cue" : "border-transparent opacity-70 hover:opacity-100"}`}>
+            <img src={`${base}/${name}`} alt="Ảnh đại diện ứng viên" className="aspect-video w-full rounded-sm object-cover" />
+          </button>
+        ))}
+      </div>
+      <p className="font-medium">{pkg.title}</p>
+      <p className="mb-2 line-clamp-3 text-sm text-mute">{pkg.description}</p>
+      <p className="flex flex-wrap gap-4 text-sm"><a className="underline" href={`${base}/${pkg.video}`} download>Tải video</a><a className="underline" href={`${base}/${pkg.captions}`} download>Tải phụ đề (SRT)</a><a className="underline" href={`${base}/${pkg.thumbnail}`} download>Tải ảnh đại diện</a></p>
+    </div>
+  );
+}
+
 const STEPS = ["Kịch bản", "Chọn clip", "Duyệt clip", "Dựng video", "Duyệt bản dựng"];
 
 function Detail({ id, back }: { id: string; back: () => void }) {
@@ -57,6 +107,8 @@ function Detail({ id, back }: { id: string; back: () => void }) {
   const [topic, setTopic] = useState("");
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [tab, setTab] = useState<"work" | "board">("work");
+  const [music, setMusic] = useState<string | null>(null);
   useEffect(() => { if (p && text === null) setText(p.shots.map((s) => s.text).join("\n")); }, [p, text]);
   if (!p) return <section className="p-6 text-mute">Đang mở dự án</section>;
   const run = async (fn: () => Promise<unknown>) => { setBusy(true); setNote(null); try { await fn(); } catch (e) { setNote((e as Error).message); } setBusy(false); reload(); };
@@ -83,8 +135,35 @@ function Detail({ id, back }: { id: string; back: () => void }) {
         ))}
       </ol>
       {note && <p className="mb-4 text-tally">{note}</p>}
+      <div className="mb-6 flex gap-1 border-b border-line" role="tablist">
+        {([["work", "Làm video"], ["board", "Bảng theo dõi"]] as const).map(([key, label]) => (
+          <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)}
+                  className={`-mb-px border-b-2 px-3 py-2 ${tab === key ? "border-ink font-medium" : "border-transparent text-mute hover:text-ink"}`}>{label}</button>
+        ))}
+      </div>
+      {tab === "board" && <Board project={p} />}
 
-      <div className="grid max-w-6xl gap-10">
+      <div className={`grid max-w-6xl gap-10 ${tab === "board" ? "hidden" : ""}`}>
+        <div className="flex flex-wrap items-end gap-6">
+          <div>
+            <p className="mb-1 font-medium" id="format-label">Khung hình</p>
+            <div className="flex gap-1" role="radiogroup" aria-labelledby="format-label">
+              {Object.entries(FORMATS).map(([key, label]) => (
+                <button key={key} type="button" role="radio" aria-checked={p.format === key} disabled={busy}
+                        onClick={() => run(() => post(`/api/v1/projects/${id}`, { format: key }, "PATCH"))}
+                        className={`rounded border px-3 py-1.5 text-sm ${p.format === key ? "border-ink bg-raised font-medium" : "border-line text-mute hover:text-ink"}`}>{label}</button>
+              ))}
+            </div>
+          </div>
+          <form className="flex min-w-0 flex-1 items-end gap-2" onSubmit={(e) => { e.preventDefault(); run(() => post(`/api/v1/projects/${id}`, { music_path: (music ?? "").trim() || null }, "PATCH")); }}>
+            <div className="min-w-0 flex-1">
+              <label htmlFor="music" className="mb-1 block font-medium">Nhạc nền</label>
+              <input id="music" value={music ?? p.music_path ?? ""} onChange={(e) => setMusic(e.target.value)} placeholder="Đường dẫn tới file nhạc bạn có quyền dùng (để trống nếu không cần)"
+                     className="w-full rounded border border-line bg-canvas px-3 py-1.5 placeholder:text-mute/70" />
+            </div>
+            <Button disabled={busy || music === null || (music ?? "") === (p.music_path ?? "")} onClick={() => run(() => post(`/api/v1/projects/${id}`, { music_path: (music ?? "").trim() || null }, "PATCH"))}>Lưu nhạc</Button>
+          </form>
+        </div>
         <div>
           <h2 className="mb-1 text-lg font-semibold">Kịch bản</h2>
           <p className="mb-2 text-mute">Mỗi dòng là một câu lời dẫn. Hệ thống tìm một clip cho từng câu.</p>
@@ -109,6 +188,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
               {reviewing && <Button kind="primary" disabled={busy} onClick={() => run(() => post(`/api/v1/projects/${id}/match/approve`))}>Duyệt các clip này</Button>}
               {approved && <span className="text-proof">Đã duyệt</span>}
             </div>
+            {p.shots.some((s) => s.selection) && <div className="mb-4 max-w-4xl"><TimelineStrip shots={p.shots} /></div>}
             {reviewing && <p className="mb-2 text-cue">Xem từng clip. Đổi sang phương án khác nếu cần, rồi duyệt để dựng video.{gaps > 0 ? ` Còn ${gaps} câu chưa có hình.` : ""}</p>}
             <ol className="divide-y divide-line border-y border-line">
               {p.shots.map((s, i) => <ShotRow key={s.shot_id} shot={s} n={i + 1} locked={!!rendering} changed={reload} />)}
@@ -135,14 +215,24 @@ function Detail({ id, back }: { id: string; back: () => void }) {
                     {Object.entries(latest.qc.checks).map(([name, ok]) => <li key={name} className={ok ? "" : "text-tally"}>{ok ? "Đạt" : "Không đạt"}: {name}</li>)}
                     {latest.qc.gaps > 0 && <li className="text-cue">Có {latest.qc.gaps} câu đang dùng nền trơn vì thiếu hình</li>}
                   </ul>
-                  <p className="tc mb-4 text-mute">Dài {timecode(latest.qc.duration)}</p>
+                  <p className="tc mb-4 text-mute">Dài {timecode(latest.qc.duration)}, {FORMATS[latest.qc.format ?? "landscape"]}{latest.qc.music ? ", có nhạc nền" : ""}</p>
+                  {(latest.qc.findings ?? []).length > 0 && (
+                    <div className="mb-4">
+                      <h3 className="mb-1 font-semibold">Nên xem lại</h3>
+                      <ul className="divide-y divide-line border-y border-line">
+                        {(latest.qc.findings ?? []).map((f, i) => (
+                          <li key={i} className="py-2"><p><span className={f.severity === "cao" ? "text-cue" : ""}>Câu {f.shot}, {f.check.toLowerCase()}:</span> {f.text}</p><p className="text-sm text-mute">{f.fix}</p></li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                   {renderReview && (
                     <div className="flex flex-wrap gap-2">
                       <Button kind="primary" disabled={busy} onClick={() => run(() => post(`/api/v1/projects/${id}/render/decision`, { approve: true }))}>Duyệt bản dựng</Button>
                       <Button disabled={busy} onClick={() => run(() => post(`/api/v1/projects/${id}/render/decision`, { approve: false }))}>Chưa được, dựng lại</Button>
                     </div>
                   )}
-                  {p.render?.status === "succeeded" && <p className="text-proof">Bạn đã duyệt bản dựng này. <a className="underline" href={latest.url} download={`${p.title}.mp4`}>Tải file MP4</a></p>}
+                  {p.render?.status === "succeeded" && <><p className="mb-4 text-proof">Bạn đã duyệt bản dựng này.</p><PackagePanel render={latest} reload={reload} /></>}
                 </div>
               </div>
             )}
