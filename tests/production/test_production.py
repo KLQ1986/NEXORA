@@ -211,3 +211,41 @@ def test_a_gap_is_filled_with_licensed_stock_that_enters_the_library_with_its_ri
     render = system.projects.renders(pid)[0]
     assert render["qc"]["gaps"] == 0
     assert system.distribution.build_package(render["render_id"])["credits"] == ["licensed"]
+
+
+def test_a_photograph_enters_the_library_is_found_by_search_and_renders_as_a_moving_shot(system, tmp_path):
+    from PIL import Image
+    photo = tmp_path / "photo.jpg"
+    Image.new("RGB", (1600, 1200), (180, 120, 60)).save(photo)
+    asset_id, run = system.library.ingest(photo)
+    drain(system)
+    assert system.orch.run_status(run) is RunStatus.SUCCEEDED
+    meta = system.assets.original(asset_id).metadata
+    assert meta["probe"]["still"] and (meta["probe"]["width"], meta["probe"]["height"]) == (1600, 1200)
+    moment = system.index.moments(asset_id, level="segment")[0]
+    assert (moment.t_start, moment.t_end) == (0.0, 0.0) and moment.data["frame"] == str(photo)
+
+    pid = system.planning.create_project("Ảnh")
+    script = system.planning.save_script(pid, ["cá tươi trên sạp"])
+    run = system.sourcing.start_match(script); drain(system)
+    shot = system.projects.script(script)["shots"][0]
+    system.sourcing.use_asset(shot.shot_id, asset_id, reason="Ảnh chụp của người vận hành.")
+    system.sourcing.approve(run)
+    system.edit.start_render(script); drain(system)
+    qc = system.projects.renders(pid)[0]["qc"]
+    assert qc["passed"] and qc["gaps"] == 0
+
+
+def test_a_recording_by_the_operator_replaces_the_synthetic_voice_for_that_line(system, tmp_path):
+    import subprocess
+    takes = tmp_path / "takes"; takes.mkdir()
+    subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=220:duration=5", str(takes / "2.wav")], check=True)
+    pid = system.planning.create_project("Giọng tôi")
+    system.projects.update_project(pid, narration_dir=str(takes))
+    script = system.planning.save_script(pid, ["cá tươi trên sạp", "chợ rau củ"])
+    system.sourcing.approve(system.sourcing.start_match(script, wait=lambda: drain(system)))
+    system.edit.start_render(script); drain(system)
+    qc = system.projects.renders(pid)[0]["qc"]
+    assert qc["shot_durations"][1] == pytest.approx(5.4, abs=0.1)                  # the length of the recording decides the length of the shot
+    assert qc["shot_durations"][0] < 3 and qc["mean_db"] > -40                     # line 1 keeps the synthetic voice; line 2 is audible
+

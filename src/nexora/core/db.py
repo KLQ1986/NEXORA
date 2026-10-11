@@ -124,6 +124,7 @@ CREATE TABLE IF NOT EXISTS projects (
     format     TEXT NOT NULL DEFAULT 'landscape',
     auto_accept INTEGER NOT NULL DEFAULT 0,
     style      TEXT,
+    narration_dir TEXT,
     music_path TEXT,
     created_at REAL NOT NULL
 );
@@ -196,6 +197,7 @@ MIGRATIONS = [
     ("projects", "music_path", "TEXT"),
     ("projects", "auto_accept", "INTEGER NOT NULL DEFAULT 0"),
     ("projects", "style", "TEXT"),
+    ("projects", "narration_dir", "TEXT"),
 ]
 
 

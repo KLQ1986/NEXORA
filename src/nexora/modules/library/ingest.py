@@ -20,6 +20,10 @@ INGEST = PipelineDefinition("library.ingest", "1", [
 ])
 
 MIN_USABLE_SECONDS = 0.1
+IMAGE_EXT = frozenset({".jpg", ".jpeg", ".png", ".webp"})
+
+# A photograph: no proxy and no time ranges. It is its own thumbnail.
+INGEST_IMAGE = PipelineDefinition("library.ingest_image", "1", [StageDef("checksum"), StageDef("measure", depends_on=("checksum",))])
 
 
 def usable_ranges(duration: float, black: list[list[float]]) -> list[list[float]]:
@@ -48,6 +52,8 @@ class Library:
         registry.register(INGEST, {"checksum": self._checksum, "probe": self._probe, "usable": self._usable,
                                    "proxy": self._proxy, "thumbnail": self._thumbnail},
                           on_success=(lambda run_id, asset_id: self.understand(asset_id)) if self._understanding else None)
+        registry.register(INGEST_IMAGE, {"checksum": self._checksum, "measure": self._measure},
+                          on_success=(lambda run_id, asset_id: self.understand(asset_id)) if self._understanding else None)
         if self._understanding:
             from nexora.modules.library.understand import UNDERSTAND
             registry.register(UNDERSTAND, self._understanding.handlers())
@@ -65,9 +71,13 @@ class Library:
         path = Path(path)
         if not path.is_file():
             raise FileNotFoundError(path)
-        asset_id, version_id = self._assets.create_asset(path, kind="video", origin=origin, privacy_class="local_only" if origin == "self_shot" else "cloud_allowed")
+        image = path.suffix.lower() in IMAGE_EXT
+        asset_id, version_id = self._assets.create_asset(path, kind="image" if image else "video", origin=origin,
+                                                       privacy_class="local_only" if origin == "self_shot" else "cloud_allowed")
         if rights:
             self._assets.update_metadata(version_id, rights=rights)
+        if image:
+            return asset_id, self._orch.submit_run(INGEST_IMAGE, subject_ref=asset_id, idempotency_key=f"ingest:{asset_id}")
         run_id = self._orch.submit_run(INGEST, subject_ref=asset_id, idempotency_key=f"ingest:{asset_id}")
         return asset_id, run_id
 
@@ -95,6 +105,15 @@ class Library:
         if duplicate_of:
             self._assets.update_metadata(original.version_id, duplicate_of=duplicate_of)
         return {"checksum": checksum, "duplicate_of": duplicate_of}
+
+    def _measure(self, ctx):
+        if self._is_duplicate(ctx):
+            return {"skipped": "duplicate"}
+        original, path = self._source(ctx)
+        info = self._adapters.submit("ffprobe", Request("probe", inputs={"path": str(path)}, attempt_id=ctx.claim.attempt_id)).outputs
+        size = {"width": info["width"], "height": info["height"], "duration": 0.0, "has_audio": False, "still": True}
+        self._assets.update_metadata(original.version_id, probe=size, usable_ranges=[[0.0, 0.0]])
+        return size
 
     def _probe(self, ctx):
         if self._is_duplicate(ctx):

@@ -63,6 +63,8 @@ class Understanding:
     def _segments(self, ctx):
         versions = {v.role: v for v in self._assets.versions(ctx.subject_ref)}
         original = versions["original"]
+        if original.metadata.get("probe", {}).get("still"):          # a photograph is one moment and its own frame
+            return {"segments": [{"t_start": 0.0, "t_end": 0.0, "frames": [str(self._assets.path_of(original))]}]}
         source = self._assets.path_of(versions.get("proxy", original))
         out_dir = self._media / original.checksum[:2] / f"{original.checksum}_frames"
         frames = self._adapters.submit("ffmpeg", Request("frames", inputs={"path": str(source)}, params={"out_dir": str(out_dir), "fps": FRAME_FPS},

@@ -53,7 +53,15 @@ class Edit:
     def _narration(self, ctx):
         """One audio file per line; without a voice, the length is estimated and the line is silent."""
         lines = []
-        for shot in self._projects.script(ctx.subject_ref)["shots"]:
+        script = self._projects.script(ctx.subject_ref)
+        recorded = self._projects.project(script["project_id"]).get("narration_dir")
+        for shot in script["shots"]:
+            # The operator's own recording for this line, if one exists, takes the place of the synthetic voice.
+            own = next((p for ext in ("wav", "m4a", "mp3", "aiff") for p in [Path(recorded or "/nonexistent") / f"{shot.position + 1}.{ext}"] if p.is_file()), None)
+            if own:
+                duration = self._adapters.submit("ffprobe", Request("duration", inputs={"path": str(own)})).outputs["duration"]
+                lines.append({"shot_id": shot.shot_id, "audio": str(own), "duration": round(float(duration), 2), "own_voice": True})
+                continue
             if not self._voice:
                 lines.append({"shot_id": shot.shot_id, "audio": None, "duration": round(max(2.0, len(shot.text.split()) / WORDS_PER_SECOND), 2)})
                 continue
@@ -75,6 +83,8 @@ class Edit:
         path = self._assets.path_of(original)
         if not path.is_file() and "proxy" in versions:
             path = self._assets.path_of(versions["proxy"])
+        if original.metadata.get("probe", {}).get("still"):
+            return str(path), original.checksum, 0.0
         usable = original.metadata.get("usable_ranges") or [[0.0, original.metadata.get("probe", {}).get("duration", t_in + need)]]
         start, end = next(((a, b) for a, b in usable if a <= t_in < b), usable[0])
         return str(path), original.checksum, round(max(start, min(t_in, end - need)), 2)

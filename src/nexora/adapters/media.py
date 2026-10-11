@@ -13,7 +13,7 @@ def _rate(value: str | None) -> float:
 
 class FFprobeAdapter(Adapter):
     def describe(self) -> Capability:
-        return Capability(name="ffprobe", operations=("probe",), runs="local")
+        return Capability(name="ffprobe", operations=("probe", "duration"), runs="local")
 
     def submit(self, request: Request) -> Result:
         path = Path(request.inputs["path"])
@@ -24,6 +24,8 @@ class FFprobeAdapter(Adapter):
         if done.returncode != 0:
             raise AdapterError(ErrorCode.INVALID_REQUEST, f"ffprobe cannot read {path.name}: {done.stderr.strip()[:200]}")
         info = json.loads(done.stdout)
+        if request.operation == "duration":                 # any media file, including audio only
+            return Result(outputs={"duration": float(info.get("format", {}).get("duration") or 0.0)})
         video = next((s for s in info.get("streams", []) if s.get("codec_type") == "video"), None)
         if video is None:
             raise AdapterError(ErrorCode.INVALID_REQUEST, f"{path.name} has no video stream")
@@ -43,6 +45,7 @@ class FFprobeAdapter(Adapter):
 _BLACK = __import__("re").compile(r"black_start:([\d.]+)\s+black_end:([\d.]+)")
 _FREEZE = __import__("re").compile(r"freeze_(start|end): ([\d.]+)")
 HDR_TRANSFERS = frozenset({"smpte2084", "arib-std-b67"})
+IMAGE_EXT = frozenset({".jpg", ".jpeg", ".png", ".webp"})
 
 
 def ffmpeg_capabilities() -> dict:
@@ -140,13 +143,21 @@ class FFmpegAdapter(Adapter):
         out, d = Path(params["out"]), float(params["duration"])
         w, h, fps = int(params.get("width", 1280)), int(params.get("height", 720)), int(params.get("fps", 30))
         args = ["-y"]
+        still = src is not None and src.suffix.lower() in IMAGE_EXT
         if src is None:
             args += ["-f", "lavfi", "-i", f"color=c=0x1e2021:s={w}x{h}:r={fps}:d={d}"]
+        elif still:
+            args += ["-loop", "1", "-t", str(d), "-i", str(src)]
         else:
             args += ["-ss", str(params.get("t_in", 0.0)), "-t", str(d), "-i", str(src)]
         # "cover" fills the frame and crops the overflow (used when the output shape differs from the footage); "fit" letterboxes.
         shape = (f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}" if params.get("fill", "fit") == "cover"
                  else f"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2")
+        if still:
+            # A photograph gets a slow push-in so that it reads as a shot, not a slide.
+            frames = max(1, round(d * fps))
+            shape = (f"scale={w * 2}:{h * 2}:force_original_aspect_ratio=increase,crop={w * 2}:{h * 2},"
+                     f"zoompan=z='1+0.08*on/{frames}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={frames}:s={w}x{h}:fps={fps}")
         chain = f"[0:v]{shape},setsar=1,fps={fps},tpad=stop_mode=clone:stop_duration={d}[base]"
         n = 1
         if params.get("overlay"):
@@ -176,12 +187,13 @@ class FFmpegAdapter(Adapter):
             gain = float(params.get("music_gain", 0.35))
             graph = (f"[1:a]aresample=48000,volume={gain}[m];[0:a]asplit=2[voice][key];"
                      "[m][key]sidechaincompress=threshold=0.02:ratio=10:attack=15:release=350[duck];"
-                     "[voice][duck]amix=inputs=2:duration=first:normalize=0,loudnorm=I=-16:TP=-1.5:LRA=11[a]")
+                     "[voice][duck]amix=inputs=2:duration=first:normalize=0,apad=pad_dur=4,loudnorm=I=-16:TP=-1.5:LRA=11[a]")
             self._run(["-y", "-f", "concat", "-safe", "0", "-i", str(listing), "-stream_loop", "-1", "-i", str(params["music"]),
                        "-filter_complex", graph, "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-shortest", *tail], timeout, "concat")
         else:
-            self._run(["-y", "-f", "concat", "-safe", "0", "-i", str(listing), "-c:v", "copy", "-af", "loudnorm=I=-16:TP=-1.5:LRA=11", *tail],
-                      timeout, "concat")
+            # loudnorm emits nothing for less than about three seconds of sound, so the sound is padded and the picture decides the length.
+            self._run(["-y", "-f", "concat", "-safe", "0", "-i", str(listing), "-c:v", "copy", "-af", "apad=pad_dur=4,loudnorm=I=-16:TP=-1.5:LRA=11",
+                       "-shortest", *tail], timeout, "concat")
         partial.replace(out); listing.unlink(missing_ok=True)
         return Result(files=(str(out),))
 
