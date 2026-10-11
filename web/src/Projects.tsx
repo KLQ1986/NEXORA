@@ -352,7 +352,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
               <p className="mt-1 text-[13px] text-mute">Câu nào nêu dữ kiện thì gắn với một nguồn ở đây. Dữ kiện chưa có nguồn sẽ bị nêu ra khi kiểm tra bản dựng.</p></div>
             <ul className="rows empty:hidden">
               {p.research.map((src) => (
-                <li key={src.title} className="py-2 text-[13px]"><div className="flex justify-between gap-2"><span className="min-w-0 font-medium">{src.url ? <a href={src.url} target="_blank" rel="noreferrer" className="underline underline-offset-2">{src.title}</a> : src.title}</span>
+                <li key={src.title} className="py-2 text-[13px]"><div className="flex justify-between gap-2"><span className="min-w-0 font-medium">{/^https?:\/\//i.test(src.url) ? <a href={src.url} target="_blank" rel="noreferrer" className="underline underline-offset-2">{src.title}</a> : src.title}</span>
                   <button type="button" className="shrink-0 text-mute underline underline-offset-2 hover:text-ink" onClick={() => patch({ research: p.research.filter((x) => x.title !== src.title) })}>Bỏ</button></div>
                   <p className="text-mute">{[src.publisher, src.date].filter(Boolean).join(", ")}</p>{src.passage && <p className="mt-0.5 text-mute">“{src.passage}”</p>}</li>
               ))}

@@ -717,7 +717,9 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             raise HTTPException(404, "Không tìm thấy thư mục này")
         fields = {k: (str(Path(str(v)).expanduser()) if k in ("music_path", "narration_dir") and v else v) for k, v in body.items()}
         if "research" in fields:                 # sources: where a claim comes from, who published it, when, and the passage that supports it
-            fields["research"] = json.dumps([{key: str(src.get(key) or "").strip() for key in ("title", "publisher", "date", "url", "passage")} | {"retrieved_at": src.get("retrieved_at") or time.time()}
+            # A source link is shown as a link, so only web addresses are kept: anything else (a javascript: address, for example) is dropped.
+            web = lambda url: url if url.lower().startswith(("http://", "https://")) else ""
+            fields["research"] = json.dumps([{key: str(src.get(key) or "").strip() for key in ("title", "publisher", "date", "passage")} | {"url": web(str(src.get("url") or "").strip()), "retrieved_at": src.get("retrieved_at") or time.time()}
                                              for src in fields["research"] if str(src.get("title", "")).strip()], ensure_ascii=False)
         system.projects.update_project(project_id, **fields)
         return project_view(need_project(project_id))

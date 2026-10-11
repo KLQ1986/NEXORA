@@ -362,6 +362,9 @@ def test_sources_for_facts_hold_times_sound_cues_and_the_brand_look(tmp_path):
     client.post(f"/api/v1/projects/{pid}/template", json={"name": templates[0]["name"]})
     research = client.patch(f"/api/v1/projects/{pid}", json={"research": [{"title": "Niên giám chợ", "publisher": "Sở Công thương", "date": "2025", "passage": "Chợ mở từ 5 giờ sáng."}, {"title": ""}]}).json()["research"]
     assert [s["title"] for s in research] == ["Niên giám chợ"] and research[0]["retrieved_at"]
+    unsafe = client.patch(f"/api/v1/projects/{pid}", json={"research": [{**research[0], "url": "javascript:alert(1)"}]}).json()["research"]
+    assert unsafe[0]["url"] == ""                                                                 # only web addresses may become links
+    assert client.patch(f"/api/v1/projects/{pid}", json={"research": [{**research[0], "url": "https://example.org/a"}]}).json()["research"][0]["url"] == "https://example.org/a"
     first, second = [s["shot_id"] for s in client.get(f"/api/v1/projects/{pid}").json()["shots"]]
     client.patch(f"/api/v1/shots/{first}", json={"is_fact": True, "target_seconds": 5, "sound_cue": "tiếng chợ"})
     client.patch(f"/api/v1/shots/{second}", json={"is_fact": True, "source": "Niên giám chợ"})
