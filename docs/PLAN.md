@@ -171,6 +171,8 @@ Năm điểm cuối so với thiết kế, đã xây (123 test đạt) và đã 
 
 Một video ngang 4 câu làm trọn từ giao diện bằng mô hình thật: chọn clip có chấm bằng khung hình (3 câu có clip, 1 câu báo thiếu hình), lấp chỗ thiếu bằng clip stock thuộc phạm vi công cộng, duyệt clip, dựng 1280×720 dài 13,8 giây, kiểm tra tự động đạt và không có điểm nào cần xem lại, duyệt bản dựng, tạo gói xuất bản, tải được EDL 4 cảnh. Bản dựng xong trong khi việc mô tả clip stock mới nhập vẫn còn chạy nền, tức hai luồng chạy tách nhau đúng như thiết kế. Mục Chi phí ghi lại 15 lần mô hình xem khung hình (121 giây), không lần gọi nào lỗi.
 
+Xem lại khung hình của video này: ba cảnh đầu đúng nội dung (chợ, ấm moka, rừng lúc chạng vạng). Cảnh thứ tư sai: câu nói về đoàn tàu qua cầu sắt nhưng hình là bờ biển. Nguyên nhân: clip stock dài được lấy từ giây đầu tiên mà không xem hình có khớp câu hay không, và kiểm tra tự động không bắt được vì nó không so hình với lời. Việc cần làm đầu tiên của giai đoạn tối ưu: sau khi clip stock được mô tả xong, chấm và chọn đoạn khớp trong clip đó như với footage của người vận hành, hoặc trả lại trạng thái thiếu hình nếu không đoạn nào khớp.
+
 ### Lát 1 — Lõi chạy việc
 
 Mục thiết kế: 5, 6, 7.
