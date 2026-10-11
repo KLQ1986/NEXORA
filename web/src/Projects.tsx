@@ -144,7 +144,10 @@ function Detail({ id, back }: { id: string; back: () => void }) {
   const [why, setWhy] = useState("");
   const { data: lib } = usePoll<{ assets: Asset[] }>("/api/v1/library", 30000);
   const tracks = (lib?.assets ?? []).filter((a) => a.kind === "audio" && a.online);
-  useEffect(() => { if (p && text === null) setText(p.shots.map((s) => s.text).join("\n")); }, [p, text]);
+  const stored = p ? p.shots.map((s) => s.text).join("\n") : null;
+  const last = useRef<string | null>(null);
+  // The editor follows the stored script (after a reorder on the timeline, for example) unless the operator has typed something not yet saved.
+  useEffect(() => { if (stored === null) return; if (text === null || text.trim() === (last.current ?? "").trim()) setText(stored); last.current = stored; }, [stored]);
   if (!p) return <Page title="Dự án" back={{ label: "Dự án", onClick: back }}><p className="text-mute">Đang mở dự án</p></Page>;
   const run = async (fn: () => Promise<unknown>) => { setBusy(true); setNote(null); try { await fn(); } catch (e) { setNote((e as Error).message); } setBusy(false); reload(); };
   const saved = p.shots.map((s) => s.text).join("\n");

@@ -650,10 +650,17 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
 
     @app.get("/api/v1/notifications")
     def notifications():
-        out = []
+        out, names = [], {}
+        for p in system.projects.projects():
+            for sid in system.projects.script_ids(p["project_id"]):
+                names[sid] = (p["title"], f"/du-an/{p['project_id']}")
         for n in system.orch.notifications():
             info = system.orch.run_info(n["run_id"]) or {}
-            out.append({**n, "pipeline": info.get("pipeline_id"), "subject_ref": info.get("subject_ref")})
+            subject = info.get("subject_ref") or ""
+            if subject not in names and subject.startswith("ast_") and system.assets.asset(subject):
+                names[subject] = (system.assets.path_of(system.assets.original(subject)).name, "/thu-vien")
+            name, link = names.get(subject, (None, None))
+            out.append({**n, "pipeline": info.get("pipeline_id"), "subject_ref": subject, "subject_name": name, "link": link})
         return {"unread": sum(1 for n in out if n["read_at"] is None), "items": out}
 
     @app.post("/api/v1/notifications/read")
