@@ -28,10 +28,14 @@ PAD_SECONDS = 0.4
 WORDS_PER_SECOND = 2.6
 
 
+# Asked for a number, the local model answers "50" for every picture. Asked to name the subject and choose one of
+# three parts, it answers correctly (measured on pictures with a known answer), so the question is put that way.
 FOCUS_PROMPT = (
-    "Chủ thể chính của hình này nằm ở đâu theo chiều ngang? Chỉ trả về JSON với khoá vi_tri: một số từ 0 (sát mép trái) đến 100 (sát mép phải); "
-    "50 là chính giữa."
+    "Chia hình này thành ba phần theo chiều ngang: trái, giữa, phải. Trước hết nói ngắn gọn chủ thể chính là gì, rồi cho biết nó nằm chủ yếu ở phần nào. "
+    "Chỉ trả về JSON với khoá chu_the (vài từ) và phan (một trong: trai, giua, phai)."
 )
+FOCUS_PARTS = {"trai": 0.2, "giua": 0.5, "phai": 0.8}
+FOCUS_VERSION = "thirds-1"
 MIN_BEFORE_INSERT, MIN_INSERT = 0.4, 0.8          # seconds: a cut closer than this to either end of a shot reads as a glitch
 
 
@@ -104,7 +108,7 @@ class Edit:
             return float(own["x"])
         if not self._model:
             return 0.5
-        cache = self._media / "focus" / f"{_key(checksum, t_in, duration)}.json"
+        cache = self._media / "focus" / f"{_key(FOCUS_VERSION, checksum, t_in, duration)}.json"
         if cache.is_file():
             return json.loads(cache.read_text())["x"]
         try:
@@ -112,8 +116,8 @@ class Edit:
             if Path(path).suffix.lower() not in (".jpg", ".jpeg", ".png", ".webp"):
                 frame = str(cache.with_suffix(".jpg"))
                 self._adapters.submit("ffmpeg", Request("thumbnail", inputs={"path": path}, params={"out": frame, "at": round(t_in + duration / 2, 2)}))
-            out = self._adapters.submit("model", Request("describe", inputs={"images": [frame]}, params={"task": "focus", "prompt": FOCUS_PROMPT, "max_tokens": 40})).outputs["json"]
-            x = round(max(0.0, min(1.0, float(out.get("vi_tri", 50)) / 100)), 2)
+            out = self._adapters.submit("model", Request("describe", inputs={"images": [frame]}, params={"task": "focus", "prompt": FOCUS_PROMPT, "max_tokens": 80})).outputs["json"]
+            x = FOCUS_PARTS.get(str(out.get("phan", "")).strip().lower(), 0.5)
         except (AdapterError, ValueError, TypeError):
             return 0.5                               # no answer is not a reason to fail a render
         cache.write_text(json.dumps({"x": x}))

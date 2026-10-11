@@ -306,7 +306,7 @@ def test_a_vertical_cut_is_framed_by_the_model_unless_the_operator_says_where_th
     run = system.sourcing.start_match(script); drain(system)
     shot = system.projects.script(script)["shots"][0]
     system.sourcing.approve(run); system.edit.start_render(script); drain(system)
-    assert system.projects.renders(pid)[0]["qc"]["shots"][0]["focus_x"] == 0.9      # where the (fake) model saw the subject
+    assert system.projects.renders(pid)[0]["qc"]["shots"][0]["focus_x"] == 0.8      # where the (fake) model saw the subject
     system.sourcing.set_focus(shot.shot_id, 0.2)
     system.edit.start_render(script); drain(system)
     assert system.projects.renders(pid)[0]["qc"]["shots"][0]["focus_x"] == 0.2
