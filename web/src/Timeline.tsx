@@ -44,7 +44,8 @@ export default function Timeline({ project: p, reload, rerender, busy }: { proje
   const choose = (i: number) => { setPicked(i); seek(items[i].at + 0.02); };
   useEffect(() => {
     const on = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement).closest("input, textarea, button, video")) return;
+      const on = e.target instanceof Element ? e.target : null;
+      if (on?.closest("input, textarea, select, video") || (e.key === " " && on?.closest("button"))) return;       // typing, and pressing a focused button, keep their meaning
       if (e.key === "ArrowRight") { e.preventDefault(); choose(Math.min(items.length - 1, picked + 1)); }
       if (e.key === "ArrowLeft") { e.preventDefault(); choose(Math.max(0, picked - 1)); }
       if (e.key === " ") { e.preventDefault(); const v = video.current; if (v) v.paused ? v.play() : v.pause(); }

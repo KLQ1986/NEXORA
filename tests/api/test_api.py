@@ -111,6 +111,7 @@ def test_photographs_recorded_takes_and_desktop_notifications_are_reachable_thro
     [None for _ in iter(system.worker.run_once, False)]
     asset = client.get("/api/v1/library").json()["assets"][0]
     assert asset["still"] and client.get(asset["thumbnail_url"]).status_code == 200
+    assert asset["ingest"]["status"] == "succeeded"                                # a photograph shows its progress like any footage
 
     pid = client.post("/api/v1/projects", json={"title": "Giọng tôi", "lines": ["cá tươi trên sạp", "chợ rau củ"]}).json()["project_id"]
     assert client.patch(f"/api/v1/projects/{pid}", json={"narration_dir": str(tmp_path / "missing")}).status_code == 404
@@ -132,10 +133,8 @@ def test_inserts_framing_and_camera_angles_are_reachable_through_the_api(tmp_pat
     sound = room_sound(tmp_path / "room.wav", 1)
     a = client.post("/api/v1/assets/register", json={"path": str(camera(tmp_path / "a.mp4", sound, seconds=20))}).json()["asset_id"]
     b = client.post("/api/v1/assets/register", json={"path": str(camera(tmp_path / "b.mp4", sound, skip=1.0, seconds=18))}).json()["asset_id"]
-    mute = client.post("/api/v1/assets/register", json={"path": str(make_video(tmp_path / "m.mp4", picture=4))}).json()["asset_id"]
     drain()
     assert abs(client.post("/api/v1/assets/sync", json={"a": a, "b": b}).json()["offset"] + 1.0) < 0.1
-    assert client.post("/api/v1/assets/sync", json={"a": a, "b": mute}).status_code == 409
 
     pid = client.post("/api/v1/projects", json={"title": "Hai máy", "lines": ["cá tươi trên sạp và con đường mòn"]}).json()["project_id"]
     client.post(f"/api/v1/projects/{pid}/match"); drain()
@@ -149,3 +148,7 @@ def test_inserts_framing_and_camera_angles_are_reachable_through_the_api(tmp_pat
     after = client.get(f"/api/v1/projects/{pid}").json()["shots"][0]["selection"]
     assert after["asset"]["asset_id"] == angle["asset_id"] and abs(after["t_in"] - angle["t_in"]) < 0.01
     assert [i["keyword"] for i in after["inserts"]] == ["con đường mòn"] and after["focus_x"] is None      # framing was for the other camera
+    # A silent clip joins only now, so that the match above could only choose one of the two cameras.
+    mute = client.post("/api/v1/assets/register", json={"path": str(make_video(tmp_path / "m.mp4", picture=4))}).json()["asset_id"]
+    drain()
+    assert client.post("/api/v1/assets/sync", json={"a": a, "b": mute}).status_code == 409

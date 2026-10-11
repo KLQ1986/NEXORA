@@ -51,7 +51,7 @@ def asset_view(system, asset: dict) -> dict:
         "still": bool(probe.get("still")), "kind": asset.get("kind"), "mean_db": probe.get("mean_db"),
         "thumbnail_url": f"/media/{by_role['thumbnail'].version_id}" if "thumbnail" in by_role else f"/media/{original.version_id}" if probe.get("still") else None,
         "proxy_url": f"/media/{by_role['proxy'].version_id}" if "proxy" in by_role else None,
-        "ingest": next((run_view(system, r) for r in runs if system.orch.pipeline_of(r) == "library.ingest"), None),
+        "ingest": next((run_view(system, r) for r in runs if system.orch.pipeline_of(r).startswith("library.ingest")), None),
         "understand": next((run_view(system, r) for r in runs if system.orch.pipeline_of(r) == "library.understand"), None),
     }
 
