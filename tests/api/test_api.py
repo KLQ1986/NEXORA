@@ -219,3 +219,32 @@ def test_a_system_without_a_model_says_which_pipelines_it_cannot_run(tmp_path):
     client = TestClient(create_app(build(tmp_path / "data")))
     caps = {c["pipeline"]: c for c in client.get("/api/v1/capabilities").json()["pipelines"]}
     assert caps["library.ingest"]["available"] and caps["sourcing.match"]["missing"] == ["model"] and "voice" in caps["edit.render"]["missing"]
+
+
+def test_ratings_collections_reordering_the_edit_list_and_the_change_stream(tmp_path):
+    from tests.conftest import make_video
+    from tests.fakes import FakeModel, FakeVoice
+    system = build(tmp_path / "data", model=FakeModel(), voice=FakeVoice(), segment_seconds=2.0)
+    client = TestClient(create_app(system))
+    drain = lambda: [None for _ in iter(system.worker.run_once, False)]
+    asset = client.post("/api/v1/assets/register", json={"path": str(make_video(tmp_path / "f.mp4", picture=20))}).json()["asset_id"]; drain()
+    marked = client.patch(f"/api/v1/assets/{asset}", json={"rating": 9, "collections": ["Chợ", " chợ đêm ", "Chợ"]}).json()
+    assert marked["rating"] == 5 and marked["collections"] == ["Chợ", "chợ đêm"]
+
+    pid = client.post("/api/v1/projects", json={"title": "Đổi thứ tự", "lines": ["cá tươi trên sạp", "chợ rau củ", "bàn phím máy tính"]}).json()["project_id"]
+    client.post(f"/api/v1/projects/{pid}/match"); drain(); client.post(f"/api/v1/projects/{pid}/match/approve")
+    before = client.get(f"/api/v1/projects/{pid}").json()
+    ids = [s["shot_id"] for s in before["shots"]]
+    assert client.post(f"/api/v1/projects/{pid}/reorder", json={"shot_ids": ids[:2]}).status_code == 422
+    after = client.post(f"/api/v1/projects/{pid}/reorder", json={"shot_ids": [ids[1], ids[0], ids[2]]}).json()
+    assert [s["text"] for s in after["shots"]] == ["chợ rau củ", "cá tươi trên sạp", "bàn phím máy tính"] and after["script"]["match_approved"]
+    assert after["shots"][0]["selection"]["moment_id"] == before["shots"][1]["selection"]["moment_id"]      # each line kept its clip
+    assert after["shots"][2]["selection"]["status"] == "gap" and after["script"]["version"] == before["script"]["version"] + 1
+
+    client.post(f"/api/v1/projects/{pid}/render"); drain()
+    render = client.get(f"/api/v1/projects/{pid}").json()["renders"][0]
+    text = client.get(f"/api/v1/renders/{render['render_id']}/edl").text
+    assert text.startswith("TITLE: Đổi thứ tự") and "001  AX       V     C" in text and "* FROM CLIP NAME: f.mp4" in text and "003  BL " in text
+    assert text.splitlines()[3].endswith("00:00:00:00 " + "00:00:01:18") or " 00:00:00:00 " in text.splitlines()[3]
+
+    assert client.get("/api/v1/events/stream", params={"once": True}).text.startswith("data: [")

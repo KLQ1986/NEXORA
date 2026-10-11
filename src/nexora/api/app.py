@@ -56,6 +56,7 @@ def asset_view(system, asset: dict) -> dict:
         "usable_ranges": meta.get("usable_ranges", []), "black_ranges": meta.get("black_ranges", []),
         "frozen_ranges": meta.get("frozen_ranges", []),
         "angles": [{"asset_id": other, "offset": shift} for other, shift in meta.get("angles", {}).items()],
+        "rating": asset.get("rating", 0), "collections": json.loads(asset.get("collections") or "[]"),
         "still": bool(probe.get("still")), "kind": asset.get("kind"), "mean_db": probe.get("mean_db"),
         "thumbnail_url": f"/media/{by_role['thumbnail'].version_id}" if "thumbnail" in by_role else f"/media/{original.version_id}" if probe.get("still") else None,
         "proxy_url": f"/media/{by_role['proxy'].version_id}" if "proxy" in by_role else None,
@@ -89,6 +90,31 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             out.append({**asset, "roles": [v.role for v in versions], "path": str(system.assets.path_of(original)),
                         "checksum": original.checksum, "metadata": original.metadata})
         return out
+
+    @app.patch("/api/v1/assets/{asset_id}")
+    def annotate_asset(asset_id: str, body: dict):
+        if system.assets.asset(asset_id) is None:
+            raise HTTPException(404, "no such asset")
+        system.assets.annotate(asset_id, rating=body.get("rating"), collections=body.get("collections"))
+        return asset_view(system, system.assets.asset(asset_id))
+
+    @app.get("/api/v1/events/stream")
+    async def event_stream(once: bool = False):
+        """Tells an open screen that something changed, so it can refresh at once instead of waiting for its next poll."""
+        import asyncio
+        from fastapi.responses import StreamingResponse
+
+        async def ticks():
+            last = None
+            while True:
+                mark = system.orch.change_mark()
+                if mark != last:
+                    last = mark
+                    yield f"data: {json.dumps(mark)}\n\n"
+                    if once:
+                        return
+                await asyncio.sleep(0.7)
+        return StreamingResponse(ticks(), media_type="text/event-stream", headers={"cache-control": "no-cache"})
 
     @app.get("/api/v1/library")
     def library():
@@ -558,6 +584,20 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
     def set_focus(shot_id: str, body: dict):
         system.sourcing.set_focus(shot_id, body.get("x"))
         return {"ok": True}
+
+    @app.post("/api/v1/projects/{project_id}/reorder")
+    def reorder(project_id: str, body: dict):
+        try:
+            system.projects.reorder(current_script_id(project_id), [str(s) for s in body.get("shot_ids", [])])
+        except ValueError:
+            raise HTTPException(422, "Thứ tự mới phải gồm đủ mọi câu của kịch bản")
+        return project_view(need_project(project_id))
+
+    @app.get("/api/v1/renders/{render_id}/edl")
+    def render_edl(render_id: str):
+        if system.projects.render(render_id) is None:
+            raise HTTPException(404, "no such render")
+        return FileResponse(system.distribution.export_edl(render_id), filename="cut.edl", media_type="text/plain")
 
     @app.post("/api/v1/shots/{shot_id}/trim")
     def trim(shot_id: str, body: dict):

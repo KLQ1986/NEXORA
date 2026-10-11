@@ -9,8 +9,11 @@ from nexora.core.adapter import Adapter, AdapterError, Capability, ErrorCode, Re
 
 
 class OllamaAdapter(Adapter):
-    def __init__(self, *, host: str = "http://127.0.0.1:11434", vision_model: str = "qwen2.5vl:7b", embed_model: str = "bge-m3"):
+    def __init__(self, *, host: str = "http://127.0.0.1:11434", vision_model: str = "qwen2.5vl:7b", embed_model: str = "bge-m3",
+                 judge_model: str = "", writer_model: str = ""):
         self._host, self.vision_model, self.embed_model = host, vision_model, embed_model
+        # A model per kind of work, each falling back to the vision model: looking at footage in bulk, judging a candidate, writing.
+        self.judge_model, self.writer_model = judge_model or vision_model, writer_model or vision_model
 
     def describe(self) -> Capability:
         return Capability(name="model", operations=("describe", "chat", "embed"), runs="local")
@@ -20,9 +23,9 @@ class OllamaAdapter(Adapter):
             with urllib.request.urlopen(self._host + "/api/tags", timeout=3) as r:
                 installed = [m["name"] for m in json.load(r).get("models", [])]
         except Exception:
-            return {"running": False, "models": {self.vision_model: False, self.embed_model: False}}
+            return {"running": False, "models": {m: False for m in dict.fromkeys((self.vision_model, self.judge_model, self.writer_model, self.embed_model))}}
         has = lambda name: any(m == name or m.startswith(name + ":") for m in installed)
-        return {"running": True, "models": {self.vision_model: has(self.vision_model), self.embed_model: has(self.embed_model)}}
+        return {"running": True, "models": {m: has(m) for m in dict.fromkeys((self.vision_model, self.judge_model, self.writer_model, self.embed_model))}}
 
     def _post(self, path: str, body: dict, timeout: float) -> dict:
         req = urllib.request.Request(self._host + path, data=json.dumps(body).encode(), headers={"content-type": "application/json"})
@@ -38,6 +41,11 @@ class OllamaAdapter(Adapter):
         except (urllib.error.URLError, ConnectionError) as err:
             raise AdapterError(ErrorCode.UNAVAILABLE, f"Ollama is not reachable: {err}") from None
 
+    def model_for(self, request: Request) -> str:
+        if request.operation == "chat":
+            return self.writer_model
+        return self.judge_model if request.params.get("task") in ("judge", "locate", "focus") else self.vision_model
+
     def submit(self, request: Request) -> Result:
         timeout = request.deadline_seconds or 300
         if request.operation == "embed":
@@ -51,7 +59,7 @@ class OllamaAdapter(Adapter):
                 raise AdapterError(ErrorCode.MISSING_INPUT, f"{missing[0]} does not exist")
             message["images"] = [base64.b64encode(p.read_bytes()).decode() for p in paths]
         want_json = request.operation == "describe" or request.params.get("json")
-        body = {"model": self.vision_model, "stream": False, "messages": [message],
+        body = {"model": self.model_for(request), "stream": False, "messages": [message],
                 "options": {"temperature": 0.1, "num_predict": int(request.params.get("max_tokens", 500)), "num_ctx": 8192}}
         if want_json:
             body["format"] = "json"

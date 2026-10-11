@@ -71,6 +71,27 @@ class ProjectStore:
                 c.execute("INSERT INTO shots (shot_id, script_id, position, text) VALUES (?,?,?,?)", (new_id("sht"), script_id, position, text))
         return script_id
 
+    def reorder(self, script_id: str, order: list[str]) -> str:
+        """The same lines in a new order, as the next version of the script. Each line keeps its clip, so nothing has to be matched again."""
+        old = self.script(script_id)
+        by_id = {s.shot_id: s for s in old["shots"]}
+        if sorted(order) != sorted(by_id):
+            raise ValueError("the new order must name every shot of the script exactly once")
+        new_id_ = new_id("scr")
+        with db.write(self._conn) as c:
+            version = c.execute("SELECT COALESCE(MAX(version), 0) + 1 FROM scripts WHERE project_id = ?", (old["project_id"],)).fetchone()[0]
+            c.execute("INSERT INTO scripts (script_id, project_id, version, match_approved, created_at) VALUES (?,?,?,?,?)",
+                      (new_id_, old["project_id"], version, int(old["match_approved"]), time.time()))
+            for position, shot_id in enumerate(order):
+                fresh = new_id("sht")
+                c.execute("INSERT INTO shots (shot_id, script_id, position, text) VALUES (?,?,?,?)", (fresh, new_id_, position, by_id[shot_id].text))
+                c.execute("INSERT INTO selections (shot_id, status, asset_id, moment_id, t_in, t_out, score, reason, alternates, decided_by, extras) "
+                          "SELECT ?, status, asset_id, moment_id, t_in, t_out, score, reason, alternates, decided_by, extras FROM selections WHERE shot_id = ?", (fresh, shot_id))
+                c.execute("INSERT INTO generations (record_id, shot_id, kind, spec, prompt, compiler_version, provider, model, seed, asset_id, created_at) "
+                          "SELECT record_id || ?, ?, kind, spec, prompt, compiler_version, provider, model, seed, asset_id, created_at FROM generations WHERE shot_id = ?",
+                          (f"-v{version}", fresh, shot_id))
+        return new_id_
+
     def script(self, script_id: str) -> dict | None:
         row = self._conn.execute("SELECT * FROM scripts WHERE script_id = ?", (script_id,)).fetchone()
         if row is None:

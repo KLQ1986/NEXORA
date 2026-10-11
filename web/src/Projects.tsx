@@ -302,7 +302,8 @@ function Detail({ id, back }: { id: string; back: () => void }) {
                     {Object.entries(latest.qc.checks).map(([name, ok]) => <li key={name} className={ok ? "" : "text-tally"}>{ok ? "Đạt" : "Không đạt"}: {name}</li>)}
                     {latest.qc.gaps > 0 && <li className="text-cue">Có {latest.qc.gaps} câu đang dùng nền trơn vì thiếu hình</li>}
                   </ul>
-                  <p className="tc mb-4 text-mute">Dài {timecode(latest.qc.duration)}, {FORMATS[latest.qc.format ?? "landscape"]}{latest.qc.music ? ", có nhạc nền" : ""}</p>
+                  <p className="tc mb-1 text-mute">Dài {timecode(latest.qc.duration)}, {FORMATS[latest.qc.format ?? "landscape"]}{latest.qc.music ? ", có nhạc nền" : ""}</p>
+                  <p className="mb-4 text-sm"><a className="underline underline-offset-2" href={`/api/v1/renders/${latest.render_id}/edl`} download>Tải danh sách cắt (EDL)</a> <span className="text-mute">để dựng tiếp trong DaVinci Resolve từ file gốc</span></p>
                   {(latest.qc.findings ?? []).length > 0 && (
                     <div className="mb-4">
                       <h3 className="mb-1 font-semibold">Nên xem lại</h3>

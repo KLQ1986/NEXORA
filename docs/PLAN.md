@@ -159,7 +159,13 @@ Giao diện (mục 22):
 - [x] Hệ thống: thêm bảng năng lực và tuỳ chọn thông báo
 - [x] Dự án: ô ghi chú khi từ chối bản dựng, danh sách các bản dựng trước
 
-Chưa làm so với thiết kế: lọc, chấm điểm và bộ sưu tập trong Thư viện; sắp lại thứ tự cảnh trên Dòng thời gian; xuất sang DaVinci Resolve; luồng sự kiện trực tiếp (giao diện đang hỏi lại định kỳ); chọn mô hình theo từng loại việc (hiện chỉ có một mô hình thị giác và một mô hình chỉ mục).
+Năm điểm cuối so với thiết kế, đã xây (123 test đạt) và đã thử trên trình duyệt với dữ liệu thật trừ khi ghi khác:
+
+- [x] Thư viện: chấm sao, bộ sưu tập, lọc theo loại, bộ sưu tập và số sao
+- [x] Dòng thời gian: đổi vị trí câu; kịch bản lên phiên bản mới, mỗi câu giữ nguyên clip đã chọn
+- [x] Danh sách cắt (EDL, CMX 3600) trỏ về file gốc để dựng tiếp trong DaVinci Resolve. Chưa nhập thử vào Resolve; mã thời gian nguồn tính theo 30 khung/giây và bắt đầu từ 0
+- [x] Luồng thay đổi trực tiếp: màn hình tự làm mới ngay khi có thay đổi (đo được khoảng 0,1 đến 0,6 giây), vẫn giữ hỏi lại định kỳ làm dự phòng
+- [x] Chọn mô hình theo loại việc trong `nexora.toml` (`judge_model`, `writer_model`); mới có test tự động, chưa chạy với hai mô hình khác nhau
 
 ### Lát 1 — Lõi chạy việc
 

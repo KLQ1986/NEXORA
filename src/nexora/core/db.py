@@ -218,6 +218,8 @@ MIGRATIONS = [
     ("projects", "narration_dir", "TEXT"),
     ("projects", "budget_cap", "REAL"),
     ("renders", "review", "TEXT"),
+    ("assets", "rating", "INTEGER NOT NULL DEFAULT 0"),
+    ("assets", "collections", "TEXT NOT NULL DEFAULT '[]'"),
     ("stages", "lane", "TEXT NOT NULL DEFAULT 'interactive'"),
     ("selections", "extras", "TEXT NOT NULL DEFAULT '{}'"),
 ]

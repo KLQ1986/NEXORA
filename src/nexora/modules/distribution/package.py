@@ -25,9 +25,45 @@ def srt(shots: list[dict]) -> str:
     return "\n".join(out)
 
 
+def _tc(seconds: float, fps: int) -> str:
+    frames = int(round(seconds * fps))
+    return f"{frames // (3600 * fps):02d}:{frames // (60 * fps) % 60:02d}:{frames // fps % 60:02d}:{frames % fps:02d}"
+
+
+def edl(title: str, shots: list[dict], *, fps: int = 30) -> str:
+    """The cut as a CMX 3600 edit decision list, which DaVinci Resolve and other editors import: one event per shot, pointing at
+    the original footage and the range used, so that finishing starts from the camera files and not from NEXORA's render."""
+    lines, at = [f"TITLE: {title}", "FCM: NON-DROP FRAME", ""], 0.0
+    for n, shot in enumerate(shots, 1):
+        d = shot["duration"]
+        if shot.get("path"):
+            src = shot.get("t_in") or 0.0
+            lines.append(f"{n:03d}  AX       V     C        {_tc(src, fps)} {_tc(src + d, fps)} {_tc(at, fps)} {_tc(at + d, fps)}")
+            lines.append(f"* FROM CLIP NAME: {Path(shot['path']).name}")
+            lines.append(f"* SOURCE FILE: {shot['path']}")
+        else:
+            lines.append(f"{n:03d}  BL       V     C        {_tc(0, fps)} {_tc(d, fps)} {_tc(at, fps)} {_tc(at + d, fps)}")
+        lines.append(f"* COMMENT: {shot['text']}")
+        at += d
+    return "\n".join(lines) + "\n"
+
+
 class Distribution:
     def __init__(self, projects: ProjectStore, assets: AssetStore, adapters: AdapterRegistry, export_dir: str | Path):
         self._projects, self._assets, self._adapters, self._exports = projects, assets, adapters, Path(export_dir)
+
+    def export_edl(self, render_id: str) -> Path:
+        render = self._projects.render(render_id)
+        project = self._projects.project(render["project_id"])
+        shots = []
+        for shot in render["qc"].get("shots", []):
+            path = str(self._assets.path_of(self._assets.original(shot["asset_id"]))) if shot.get("asset_id") else None
+            shots.append({**shot, "path": path})
+        folder = self._exports / render_id
+        folder.mkdir(parents=True, exist_ok=True)
+        out = folder / "cut.edl"
+        out.write_text(edl(project["title"], shots), encoding="utf-8")
+        return out
 
     def build_package(self, render_id: str, *, title: str | None = None, description: str | None = None) -> dict:
         render = self._projects.render(render_id)

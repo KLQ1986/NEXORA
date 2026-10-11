@@ -11,6 +11,8 @@ class Config:
     ollama_host: str = "http://127.0.0.1:11434"
     vision_model: str = "qwen2.5vl:7b"
     embed_model: str = "bge-m3"
+    judge_model: str = ""
+    writer_model: str = ""
     voice: str = "Linh"
     match_threshold: float = 0.52
     segment_seconds: float = 12.0
@@ -38,6 +40,8 @@ port = 8600                       # the Web UI and API listen on 127.0.0.1 at th
 ollama_host = "http://127.0.0.1:11434"
 vision_model = "qwen2.5vl:7b"     # sees frames: describes footage, judges candidates, finds the subject
 embed_model = "bge-m3"            # turns text into vectors for search
+judge_model = ""                  # judges candidates and finds the subject; empty means the vision model
+writer_model = ""                 # drafts scripts and search words; empty means the vision model
 voice = "Linh"                    # a voice of the macOS `say` command
 match_threshold = 0.52            # how alike a moment must be to a script line to be considered (0 to 1)
 segment_seconds = 12.0            # the length of footage described as one moment

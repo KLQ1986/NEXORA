@@ -62,6 +62,7 @@ function Moments({ asset, t, seek }: { asset: Asset; t: number; seek: (s: number
 function Player({ asset, start, others }: { asset: Asset; start?: number; others: Asset[] }) {
   const [other, setOther] = useState("");
   const [sync, setSync] = useState<string | null>(null);
+  const [tags, setTags] = useState<string | null>(null);
   const video = useRef<HTMLVideoElement>(null);
   const [t, setT] = useState(0);
   const seek = (s: number) => { if (video.current) { video.current.currentTime = s; video.current.play().catch(() => {}); } };
@@ -96,6 +97,19 @@ function Player({ asset, start, others }: { asset: Asset; start?: number; others
           {sync && <p className="mt-1 text-sm text-mute">{sync}</p>}
         </div>
       )}
+      <div className="grid gap-2">
+        <div className="flex items-center gap-3"><span className="font-semibold" id="rate">Bạn chấm</span>
+          <div className="flex gap-1" role="radiogroup" aria-labelledby="rate">
+            {[1, 2, 3, 4, 5].map((n) => <button key={n} type="button" role="radio" aria-checked={asset.rating === n} aria-label={`${n} sao`} onClick={() => post(`/api/v1/assets/${asset.asset_id}`, { rating: asset.rating === n ? 0 : n }, "PATCH")}
+              className={`h-6 w-6 rounded-sm border text-xs ${n <= asset.rating ? "border-ink bg-ink text-canvas" : "border-line text-mute hover:border-mute"}`}>{n}</button>)}
+          </div>
+        </div>
+        <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); post(`/api/v1/assets/${asset.asset_id}`, { collections: (tags ?? asset.collections.join(", ")).split(",") }, "PATCH").then(() => setTags(null)); }}>
+          <label htmlFor="tags" className="sr-only">Bộ sưu tập</label>
+          <input id="tags" value={tags ?? asset.collections.join(", ")} onChange={(e) => setTags(e.target.value)} placeholder="Bộ sưu tập, cách nhau bằng dấu phẩy: Hội An, cà phê" className="min-w-0 flex-1 rounded border border-line bg-canvas px-2 py-1.5 placeholder:text-mute/70" />
+          <button type="submit" disabled={tags === null} className="rounded border border-line px-3 py-1.5 text-sm font-medium hover:border-mute disabled:opacity-40">Lưu</button>
+        </form>
+      </div>
       <Moments asset={asset} t={t} seek={seek} />
       <p className="break-all text-xs text-mute">{asset.path}</p>
     </aside>
@@ -111,6 +125,11 @@ export default function Library() {
   const search = async () => { if (!q.trim()) { setHits(null); return; } const r = await call<{ hits: Hit[] }>(`/api/v1/library/search?q=${encodeURIComponent(q.trim())}`); setHits(r.hits); };
   const assets = data?.assets ?? [];
   const current = assets.find((a) => a.asset_id === picked) ?? null;
+  const [kind, setKind] = useState("");
+  const [group, setGroup] = useState("");
+  const [least, setLeast] = useState(0);
+  const groups = [...new Set(assets.flatMap((a) => a.collections))].sort();
+  const shown = assets.filter((a) => (!kind || a.kind === kind) && (!group || a.collections.includes(group)) && a.rating >= least);
   return (
     <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
       <section className="min-w-0 flex-1 overflow-y-auto p-6">
@@ -122,6 +141,16 @@ export default function Library() {
           <Button onClick={search} disabled={!q.trim()}>Tìm cảnh</Button>
         </form>
         <AddFootage onDone={reload} />
+        {assets.length > 0 && (
+          <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+            <div className="flex gap-1" role="radiogroup" aria-label="Loại nguyên liệu">
+              {([["", "Tất cả"], ["video", "Video"], ["image", "Ảnh"], ["audio", "Nhạc"]] as const).map(([k, name]) => <button key={k} type="button" role="radio" aria-checked={kind === k} onClick={() => setKind(k)} className={`rounded border px-2.5 py-1 ${kind === k ? "border-ink bg-raised font-medium" : "border-line text-mute hover:text-ink"}`}>{name}</button>)}
+            </div>
+            {groups.length > 0 && <><label htmlFor="group" className="sr-only">Bộ sưu tập</label><select id="group" value={group} onChange={(e) => setGroup(e.target.value)} className="rounded border border-line bg-canvas px-2 py-1"><option value="">Mọi bộ sưu tập</option>{groups.map((g) => <option key={g}>{g}</option>)}</select></>}
+            <label className="flex items-center gap-2 text-mute"><input type="checkbox" checked={least > 0} onChange={(e) => setLeast(e.target.checked ? 4 : 0)} />Chỉ footage bạn chấm từ 4 sao</label>
+            <span className="tc text-mute">{shown.length} trên {assets.length}</span>
+          </div>
+        )}
         {hits && (
           <div className="mt-5">
             <h2 className="mb-2 font-semibold">{hits.length ? `${hits.length} cảnh khớp với “${q}”` : `Không có cảnh nào khớp với “${q}”`}</h2>
@@ -144,7 +173,7 @@ export default function Library() {
           <p className="mt-10 max-w-md text-mute">Thư viện đang trống. Dán đường dẫn tới một video hoặc cả thư mục footage vào ô phía trên để hệ thống bắt đầu xem và ghi nhớ chúng.</p>
         )}
         <ul className="mt-5 divide-y divide-line border-y border-line">
-          {assets.map((a) => (
+          {shown.map((a) => (
             <li key={a.asset_id}>
               <button type="button" onClick={() => { setPicked(a.asset_id); setStart(undefined); }} aria-pressed={picked === a.asset_id}
                       className={`grid w-full grid-cols-[112px_1fr] items-center gap-4 px-2 py-3 text-left transition-colors sm:grid-cols-[112px_minmax(0,1fr)_minmax(140px,36%)] ${picked === a.asset_id ? "bg-surface" : "hover:bg-surface/60"}`}>

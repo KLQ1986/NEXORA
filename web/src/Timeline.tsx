@@ -59,6 +59,7 @@ export default function Timeline({ project: p, reload, rerender, busy }: { proje
   const sel = current.shot.selection;
   const act = async (path: string, body?: unknown) => { setNote(null); await post(`/api/v1/shots/${current.shot.shot_id}/${path}`, body).catch((e) => setNote((e as Error).message)); reload(); };
   const cropped = p.format !== "landscape";
+  const move = async (by: number) => { const ids = p.shots.map((s) => s.shot_id); const j = current.i + by; [ids[current.i], ids[j]] = [ids[j], ids[current.i]]; setNote(null); await post(`/api/v1/projects/${p.project_id}/reorder`, { shot_ids: ids }).catch((e) => setNote((e as Error).message)); setPicked(j); reload(); };
   const seen = rendered?.[current.i]?.focus_x;
   const length = sel && sel.t_in != null && sel.t_out != null ? sel.t_out - sel.t_in : 0;
   const slip = (by: number) => { if (!sel || sel.t_in == null || sel.t_out == null) return; const a = Math.max(0, Math.min(sel.t_in + by, Math.max(0, (sel.asset?.duration ?? sel.t_out) - length))); act("trim", { t_in: a, t_out: a + length }); };
@@ -157,6 +158,15 @@ export default function Timeline({ project: p, reload, rerender, busy }: { proje
           {findings.filter((f) => f.shot === current.i + 1).map((f, k) => (
             <div key={k} className="mt-4 border-l-2 border-cue pl-3"><p>{f.check}: {f.text}</p><p className="text-sm text-mute">{f.fix}</p></div>
           ))}
+          {items.length > 1 && (
+            <div className="mt-4">
+              <p className="mb-1 text-sm font-medium" id="move">Đổi vị trí câu này</p>
+              <div className="flex gap-1" role="group" aria-labelledby="move">
+                <button type="button" disabled={current.i === 0} onClick={() => move(-1)} className="rounded border border-line px-2 py-1 text-sm hover:border-mute disabled:opacity-40">Lên trước một câu</button>
+                <button type="button" disabled={current.i === items.length - 1} onClick={() => move(1)} className="rounded border border-line px-2 py-1 text-sm hover:border-mute disabled:opacity-40">Lùi sau một câu</button>
+              </div>
+            </div>
+          )}
           {current.stale && <p className="mt-4 text-sm text-cue">Cảnh này đã đổi sau bản dựng gần nhất. Video phía trên vẫn là bản cũ.</p>}
         </aside>
       </div>

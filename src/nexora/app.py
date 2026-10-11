@@ -160,7 +160,8 @@ def build_from_config(config, **overrides) -> System:
     from nexora.adapters.openmontage import OpenMontageStock
     from nexora.adapters.voice import SayVoice
     return build(config.data_dir, min_free_bytes=int(config.min_free_gb * 1024**3), segment_seconds=config.segment_seconds, judge=config.judge,
-                 model=OllamaAdapter(host=config.ollama_host, vision_model=config.vision_model, embed_model=config.embed_model),
+                 model=OllamaAdapter(host=config.ollama_host, vision_model=config.vision_model, embed_model=config.embed_model,
+                                     judge_model=config.judge_model, writer_model=config.writer_model),
                  voice=SayVoice(), voice_name=config.voice, match_threshold=config.match_threshold,
                  stock=OpenMontageStock(config.openmontage_repo), desktop=DesktopNotifier(), **overrides)
 

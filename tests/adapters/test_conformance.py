@@ -23,3 +23,14 @@ def test_adapter_describes_itself_and_rejects_bad_requests(cls, operation, tmp_p
     if cap.runs == "cloud":
         with pytest.raises(AdapterError):
             registry.submit(cap.name, Request(operation, privacy_class=PrivacyClass.LOCAL_ONLY))
+
+
+def test_the_model_adapter_sends_each_kind_of_work_to_the_model_chosen_for_it():
+    from nexora.adapters.ollama import OllamaAdapter
+    from nexora.core.adapter import Request
+    one = OllamaAdapter()
+    assert one.model_for(Request("chat", params={"prompt": "x"})) == one.vision_model                 # nothing chosen: one model does all
+    many = OllamaAdapter(vision_model="see", judge_model="judge", writer_model="write")
+    assert many.model_for(Request("describe", params={"prompt": "x"})) == "see"
+    assert many.model_for(Request("describe", params={"prompt": "x", "task": "focus"})) == "judge"
+    assert many.model_for(Request("chat", params={"prompt": "x"})) == "write"

@@ -6,7 +6,7 @@ export type Asset = {
   asset_id: string; name: string; path: string; online: boolean; size: number; duplicate_of: string | null;
   duration: number | null; width: number | null; height: number | null; frame_rate: number | null; has_audio: boolean | null;
   usable_ranges: number[][]; black_ranges: number[][]; frozen_ranges: number[][];
-  thumbnail_url: string | null; proxy_url: string | null; ingest: Run | null; understand: Run | null; still: boolean; kind: string; mean_db: number | null; angles: { asset_id: string; offset: number }[];
+  thumbnail_url: string | null; proxy_url: string | null; ingest: Run | null; understand: Run | null; still: boolean; kind: string; mean_db: number | null; rating: number; collections: string[]; angles: { asset_id: string; offset: number }[];
 };
 
 export async function call<T>(url: string, init?: RequestInit): Promise<T> {
@@ -16,6 +16,16 @@ export async function call<T>(url: string, init?: RequestInit): Promise<T> {
     throw new Error(body.detail ?? `Yêu cầu thất bại (${res.status})`);
   }
   return res.json();
+}
+
+const CHANGED = "nexora:changed";
+/** One connection for the whole page. If it cannot be opened, screens still refresh on their timers. */
+export function listenForChanges() {
+  try {
+    const source = new EventSource("/api/v1/events/stream");
+    let first = true;
+    source.onmessage = () => { if (first) { first = false; return; } window.dispatchEvent(new Event(CHANGED)); };
+  } catch { /* polling alone is enough */ }
 }
 
 /** Poll an endpoint. Refreshes every `ms`; `reload` forces one now. */
@@ -31,7 +41,9 @@ export function usePoll<T>(url: string, ms = 2000) {
     alive.current = true;
     reload();
     const id = setInterval(reload, ms);
-    return () => { alive.current = false; clearInterval(id); };
+    const now = () => reload();
+    window.addEventListener(CHANGED, now);         // the server says something changed: refresh at once, do not wait for the next poll
+    return () => { alive.current = false; clearInterval(id); window.removeEventListener(CHANGED, now); };
   }, [reload, ms]);
   return { data, error, reload };
 }
@@ -80,5 +92,7 @@ export type Project = { project_id: string; title: string; created_at: number; f
   script: { script_id: string; version: number; match_approved: boolean } | null; shots: Shot[]; match: Run | null; render: Run | null; renders: RenderItem[];
   generate: Run | null; generators: { image: boolean; video: boolean }; auto_accept: boolean; style: string | null; narration_dir: string | null; own_takes: number[]; budget_cap: number | null; spent: number };
 export type AgentTask = { task_id: string; project_id: string; goal: string; status: string; step: string; created_at: number; log: { at: number; role: string; text: string }[] };
-export const post = <T,>(url: string, body?: unknown, method = "POST") => call<T>(url, { method, body: body === undefined ? undefined : JSON.stringify(body) });
+/** Every change the operator makes refreshes the open screens at once. */
+export const post = <T,>(url: string, body?: unknown, method = "POST") =>
+  call<T>(url, { method, body: body === undefined ? undefined : JSON.stringify(body) }).then((r) => { window.dispatchEvent(new Event(CHANGED)); return r; });
 Object.assign(STAGE_NAMES, { segments: "Chia đoạn", summarise: "Tóm tắt", match: "Chọn clip", narration: "Đọc lời dẫn", assemble: "Ghép và kiểm tra" });

@@ -1,7 +1,7 @@
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
-import { usePoll, type Run } from "./api";
+import { listenForChanges, usePoll, type Run } from "./api";
 import Costs from "./Costs";
 import Home from "./Home";
 import Library from "./Library";
@@ -52,4 +52,5 @@ function App() {
   );
 }
 
+listenForChanges();
 createRoot(document.getElementById("root")!).render(<StrictMode><App /></StrictMode>);

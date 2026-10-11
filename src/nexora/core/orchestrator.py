@@ -180,6 +180,11 @@ class Orchestrator:
         with db.write(self._conn) as c:
             c.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, value))
 
+    def change_mark(self) -> list[int]:
+        """A value that differs whenever anything was recorded: the newest event and notification."""
+        row = self._conn.execute("SELECT (SELECT COALESCE(MAX(event_id), 0) FROM events), (SELECT COALESCE(MAX(notification_id), 0) FROM notifications)").fetchone()
+        return [row[0], row[1]]
+
     def record_call(self, entry: dict) -> None:
         with db.write(self._conn) as c:
             c.execute("INSERT INTO calls (at, adapter, operation, runs, seconds, ok, error_code, attempt_id, units, cost) VALUES (?,?,?,?,?,?,?,?,?,?)",
