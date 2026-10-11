@@ -1,7 +1,7 @@
 import { megabytes, REASONS, stageName, timecode, usePoll, type AgentTask, type Stage } from "./api";
 import { StageRail } from "./parts";
 
-type Item = { run_id: string; pipeline: string; name: string; link: string; status: string; held: boolean; stage_key: string | null; reason?: string | null; stages?: Stage[] };
+type Item = { gaps?: number; run_id: string; pipeline: string; name: string; link: string; status: string; held: boolean; stage_key: string | null; reason?: string | null; stages?: Stage[] };
 type HomeData = {
   attention: Item[]; running: Item[]; gaps: { project_id: string; title: string; gaps: number }[];
   offline_volumes: { volume_id: string; mount_path: string; files: number }[]; problems: { name: string; detail: string; fix: string | null }[];
@@ -42,7 +42,7 @@ export default function Home({ go }: { go: (to: string) => void }) {
             <ul className="divide-y divide-line border-y border-line">
               {d.attention.map((i) => (
                 <li key={i.run_id}><a href={i.link} onClick={open(i.link)} className="grid gap-x-6 px-2 py-3 hover:bg-surface/60 sm:grid-cols-[minmax(0,1fr)_auto]">
-                  <span className="min-w-0 truncate font-medium">{i.name}</span><span className={i.status === "failed" ? "text-tally" : "text-cue"}>{ASK[i.status]?.(i) ?? i.status}</span></a></li>
+                  <span className="min-w-0 truncate font-medium">{i.name}</span><span className={i.status === "failed" ? "text-tally" : "text-cue"}>{ASK[i.status]?.(i) ?? i.status}{i.gaps ? `, còn ${i.gaps} câu chưa có hình` : ""}</span></a></li>
               ))}
               {d.gaps.map((g) => (
                 <li key={g.project_id}><a href={`/du-an/${g.project_id}`} onClick={open(`/du-an/${g.project_id}`)} className="grid gap-x-6 px-2 py-3 hover:bg-surface/60 sm:grid-cols-[minmax(0,1fr)_auto]">

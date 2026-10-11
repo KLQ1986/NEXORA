@@ -278,6 +278,9 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             script = system.projects.current_script(p["project_id"])
             missing = sum(1 for s in system.projects.selections(script["script_id"]) if s.status == "gap") if script else 0
             reviewing = any(a["link"] == f"/du-an/{p['project_id']}" for a in attention)     # the review already brings the operator there
+            for a in attention:
+                if a["link"] == f"/du-an/{p['project_id']}" and a["pipeline"] == "sourcing.match":
+                    a["gaps"] = missing                      # said once, on the line that already takes the operator there
             if missing and not reviewing and not system.projects.renders(p["project_id"]):
                 gaps.append({"project_id": p["project_id"], "title": p["title"], "gaps": missing})
         assets = system.assets.assets()

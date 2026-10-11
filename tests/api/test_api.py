@@ -196,7 +196,7 @@ def test_home_usage_capabilities_and_period_budgets(tmp_path):
 
     home = client.get("/api/v1/home").json()
     assert [(a["name"], a["status"], a["link"]) for a in home["attention"]] == [("Chợ", "waiting_review", f"/du-an/{pid}")]
-    assert home["gaps"] == [{"project_id": pid, "title": "Chợ", "gaps": 1}] and home["counts"]["videos"] == 1 and home["counts"]["moments"] == 10
+    assert home["attention"][0]["gaps"] == 1 and home["gaps"] == [] and home["counts"]["videos"] == 1 and home["counts"]["moments"] == 10
     caps = {c["pipeline"]: c for c in client.get("/api/v1/capabilities").json()["pipelines"]}
     assert caps["edit.render"]["available"] and caps["sourcing.generate"]["available"]
 
