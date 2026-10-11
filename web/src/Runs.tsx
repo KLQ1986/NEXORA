@@ -68,7 +68,7 @@ export default function Runs() {
                 ))}
               </div>
               <StageRail stages={r.stages} />
-              <p className="text-sm md:text-right"><StatusText status={r.status} /></p>
+              <p className="text-sm md:text-right">{r.held ? <span className="text-mute">Chờ tới giờ phân tích</span> : <StatusText status={r.status} />}</p>
               {open === r.run_id && <RunDetail id={r.run_id} pipeline={r.pipeline} reload={reload} />}
             </li>
           );

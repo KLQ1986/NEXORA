@@ -139,7 +139,7 @@ Ghi nhận về chất lượng, để dành cho giai đoạn tối ưu (ngườ
 - [x] Giờ phân tích footage: chỉ cho việc nặng chạy trong khung giờ đã chọn
 - [x] Ngân sách theo dự án cho việc sinh hình trả tiền
 
-Đã chạy trên trình duyệt bằng server thử dùng mô hình giả: trợ lý làm trọn một video qua hai lần duyệt; giữ việc phân tích ngoài khung giờ trong khi việc nhập vẫn chạy; huỷ một lần chạy; trỏ lại nơi chứa footage sau khi thư mục đổi chỗ; lưu ngân sách. Lệnh `backup` và `restore` đã chạy trên dữ liệu thử. Trợ lý chưa chạy với mô hình thật.
+Đã chạy trên trình duyệt bằng server thử dùng mô hình giả: trợ lý làm trọn một video qua hai lần duyệt; giữ việc phân tích ngoài khung giờ trong khi việc nhập vẫn chạy; huỷ một lần chạy; trỏ lại nơi chứa footage sau khi thư mục đổi chỗ; lưu ngân sách. Lệnh `backup` và `restore` đã chạy trên dữ liệu thử. Trợ lý đã chạy một lần với mô hình thật trên giao diện: viết 5 câu, tìm đủ clip cho cả 5, dựng bản 56 giây, kiểm tra tự động đạt, qua hai lần duyệt. Ghi nhận cho giai đoạn tối ưu: câu do mô hình viết quá dài (mỗi cảnh 10 đến 14 giây), phần kiểm tra bản dựng đã cảnh báo cả 5 cảnh.
 
 ### Lát 1 — Lõi chạy việc
 

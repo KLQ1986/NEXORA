@@ -18,8 +18,14 @@ class RegisterRequest(BaseModel):
 
 
 def run_view(system, run_id: str) -> dict:
+    from nexora.core.schedule import in_window
     info = system.orch.run_info(run_id)
+    stages = system.orch.stages(run_id)
+    # Footage analysis that could run but is kept for the operator's chosen hours: waiting, not working.
+    held = (info["pipeline_id"] == "library.understand" and not in_window(system.orch.setting("background_window", ""))
+            and any(s.status.value == "ready" for s in stages) and not any(s.status.value == "running" for s in stages))
     return {
+        "held": held,
         "run_id": run_id,
         "pipeline": info["pipeline_id"],
         "subject_ref": info["subject_ref"],
