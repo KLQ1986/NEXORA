@@ -2,68 +2,114 @@
 @import "@fontsource/be-vietnam-pro/400.css";
 @import "@fontsource/be-vietnam-pro/500.css";
 @import "@fontsource/be-vietnam-pro/600.css";
+@import "@fontsource/be-vietnam-pro/700.css";
 
-/* The palette of a grading suite: neutral greys so the picture is judged, not the chrome.
-   Amber is reserved for one meaning only — this needs the operator. */
+/* NEXORA Studio — a dark post-production suite.
+   Near-black chrome so the picture is what you judge. Violet is the brand and the primary action,
+   cyan marks what the AI saw or proposed, and amber keeps its one meaning: this waits for you. */
 @theme {
-  --color-canvas: #191b1c;
-  --color-surface: #212425;
-  --color-raised: #2b2f31;
-  --color-line: #363b3e;
-  --color-ink: #edebe6;
-  --color-mute: #9a9e9b;
-  --color-faint: #6c7173;
-  --color-cue: #f2b33d;
-  --color-tally: #ec5a5f;
-  --color-proof: #57b98d;
+  --color-canvas: #090a0d;
+  --color-surface: #101217;
+  --color-raised: #171a21;
+  --color-overlay: #1e222b;
+  --color-line: #22262f;
+  --color-edge: #343a48;
+  --color-field: #0b0c10;
+  --color-ink: #eef0f5;
+  --color-mute: #949bab;
+  --color-faint: #5e6576;
+  --color-accent: #8b7bff;
+  --color-accent-deep: #6a55f5;
+  --color-ai: #38d9d0;
+  --color-cue: #f5b544;
+  --color-tally: #f2606c;
+  --color-proof: #3ecf8e;
   --font-sans: "Be Vietnam Pro", system-ui, sans-serif;
+  --font-mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
 }
 
 html, body, #root { height: 100%; }
-body { background: var(--color-canvas); color: var(--color-ink); font-family: var(--font-sans); font-size: 14px; line-height: 1.55;
-       -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+body {
+  background: var(--color-canvas); color: var(--color-ink); font-family: var(--font-sans); font-size: 14px; line-height: 1.55;
+  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
+}
 .tc { font-variant-numeric: tabular-nums; letter-spacing: 0.01em; }
-:focus-visible { outline: 2px solid var(--color-cue); outline-offset: 2px; border-radius: 4px; }
-::selection { background: color-mix(in srgb, var(--color-cue) 35%, transparent); }
-.hatch { background-image: repeating-linear-gradient(135deg, #5a5e62 0 2px, transparent 2px 6px); }
-.dots { background-image: radial-gradient(#8b8f93 1px, transparent 1.2px); background-size: 5px 5px; }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: 0; }
+.eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; color: var(--color-faint); }
+:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: 6px; }
+::selection { background: color-mix(in srgb, var(--color-accent) 40%, transparent); }
+.hatch { background-image: repeating-linear-gradient(135deg, #3a3f4c 0 2px, transparent 2px 7px); }
+.hatch-cue { background-image: repeating-linear-gradient(135deg, color-mix(in srgb, var(--color-cue) 30%, transparent) 0 2px, transparent 2px 8px); }
+.dots { background-image: radial-gradient(#7d8494 1px, transparent 1.2px); background-size: 5px 5px; }
 
-/* One look for everything the operator types into or presses, whatever utility classes a screen adds. */
 @layer base {
-  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea {
-    border-radius: 6px; border: 1px solid var(--color-line); background: var(--color-surface); color: var(--color-ink);
-    transition: border-color 120ms, background-color 120ms;
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]), select, textarea {
+    border-radius: 8px; border: 1px solid var(--color-edge); background: var(--color-field); color: var(--color-ink);
+    transition: border-color 140ms, background-color 140ms, box-shadow 140ms;
   }
-  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select { min-height: 36px; }
-  input:hover, select:hover, textarea:hover { border-color: var(--color-faint); }
-  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--color-ink); background: var(--color-canvas); }
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]), select { min-height: 36px; }
+  input:hover, select:hover, textarea:hover { border-color: #454c5c; }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: color-mix(in srgb, var(--color-accent) 70%, transparent); background: var(--color-canvas);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 18%, transparent); }
   input::placeholder, textarea::placeholder { color: var(--color-faint); }
-  input[type="checkbox"] { accent-color: var(--color-ink); width: 15px; height: 15px; }
+  input[type="checkbox"] { accent-color: var(--color-accent); width: 15px; height: 15px; }
+  input[type="range"] { accent-color: var(--color-accent); }
+  input[type="color"] { border-radius: 8px; border: 1px solid var(--color-edge); background: var(--color-field); }
+  select { padding-right: 28px; appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 20 20' fill='none' stroke='%23949bab' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 8 4 4 4-4'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 9px center; }
   button { cursor: pointer; }
   button:disabled { cursor: default; }
-  h1, h2, h3 { letter-spacing: -0.01em; }
+  h1, h2, h3 { letter-spacing: -0.015em; }
   table th { font-weight: 500; }
-  /* A grid cell never grows past its track because of long content inside it. */
+  details > summary::-webkit-details-marker { display: none; }
   main .grid > * { min-width: 0; }
   ::-webkit-scrollbar { width: 10px; height: 10px; }
-  ::-webkit-scrollbar-thumb { background: var(--color-raised); border-radius: 8px; border: 2px solid var(--color-canvas); }
-  ::-webkit-scrollbar-thumb:hover { background: var(--color-line); }
+  ::-webkit-scrollbar-thumb { background: var(--color-overlay); border-radius: 8px; border: 2px solid var(--color-canvas); }
+  ::-webkit-scrollbar-thumb:hover { background: var(--color-edge); }
   ::-webkit-scrollbar-track { background: transparent; }
 }
 
-/* Plain bordered buttons written inline on older screens share the look of the Button component. */
 @layer components {
-  .panel { background: var(--color-surface); border: 1px solid var(--color-line); border-radius: 10px; }
+  .panel { background: var(--color-surface); border: 1px solid var(--color-line); border-radius: 14px; }
+  .panel-raised { background: var(--color-raised); border: 1px solid var(--color-line); border-radius: 12px; }
   .rows > * + * { border-top: 1px solid var(--color-line); }
-  .filmstrip { display: flex; gap: 2px; overflow: hidden; border-radius: 4px; background: #000; }
+  .filmstrip { display: flex; gap: 2px; overflow: hidden; background: #000; }
   .filmstrip > * { min-width: 0; }
+  /* The brand: a violet-to-cyan edge used once per screen, on the thing that matters most. */
+  .glow { position: relative; isolation: isolate; }
+  .glow::before { content: ""; position: absolute; inset: -1px; border-radius: inherit; padding: 1px; z-index: -1; pointer-events: none;
+    background: linear-gradient(135deg, color-mix(in srgb, var(--color-accent) 75%, transparent), transparent 40%, transparent 60%, color-mix(in srgb, var(--color-ai) 60%, transparent));
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
+  .ai-card { background: linear-gradient(180deg, color-mix(in srgb, var(--color-ai) 7%, var(--color-surface)), var(--color-surface)); border: 1px solid color-mix(in srgb, var(--color-ai) 22%, var(--color-line)); border-radius: 12px; }
+  .cue-card { background: linear-gradient(180deg, color-mix(in srgb, var(--color-cue) 8%, var(--color-surface)), var(--color-surface)); border: 1px solid color-mix(in srgb, var(--color-cue) 35%, var(--color-line)); border-radius: 14px; }
+  .chip { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: 6px; font-size: 11.5px; font-weight: 500;
+    background: color-mix(in srgb, #000 55%, transparent); color: var(--color-ink); backdrop-filter: blur(6px); white-space: nowrap; }
+  .seg { display: inline-flex; padding: 3px; gap: 2px; border-radius: 10px; background: var(--color-canvas); border: 1px solid var(--color-line); }
+  .seg > button { height: 28px; padding: 0 11px; border-radius: 7px; font-size: 13px; color: var(--color-mute); transition: background-color 120ms, color 120ms; white-space: nowrap; }
+  .seg > button:hover { color: var(--color-ink); }
+  .seg > button[aria-checked="true"], .seg > button[aria-selected="true"] { background: var(--color-overlay); color: var(--color-ink); font-weight: 500; box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 1px 2px rgba(0,0,0,0.4); }
+  .link { color: var(--color-mute); text-decoration: underline; text-decoration-color: var(--color-edge); text-underline-offset: 3px; }
+  .link:hover { color: var(--color-ink); text-decoration-color: var(--color-mute); }
+  .field-label { display: block; margin-bottom: 6px; font-size: 12.5px; font-weight: 500; color: var(--color-mute); }
 }
-main button.rounded.border.border-line { border-radius: 6px; }
-/* The System screen: independent cards flowing into two columns. */
-.cards > div { break-inside: avoid; margin-bottom: 20px; padding: 20px; background: var(--color-surface); border: 1px solid var(--color-line); border-radius: 10px; }
-.cards > p { break-inside: avoid; margin-bottom: 20px; }
-.cards input:not([type="checkbox"]), .cards select { background: var(--color-canvas); }
+
+/* The canvas carries a faint light from the top left, like a monitor in a dark suite. */
+.backdrop { background:
+  radial-gradient(1200px 500px at 15% -10%, color-mix(in srgb, var(--color-accent) 9%, transparent), transparent 60%),
+  radial-gradient(900px 400px at 100% 0%, color-mix(in srgb, var(--color-ai) 5%, transparent), transparent 60%),
+  var(--color-canvas); }
+.brand-button { background: linear-gradient(135deg, var(--color-accent) 0%, var(--color-accent-deep) 100%); color: white;
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.08) inset, 0 6px 20px -6px color-mix(in srgb, var(--color-accent) 70%, transparent); }
+.brand-button:hover:not(:disabled) { filter: brightness(1.08); }
+.brand-button:disabled { background: var(--color-raised); color: var(--color-faint); box-shadow: none; }
+
+/* Fields that sit inside a framed editor carry no frame of their own. */
+.bare, .bare:hover, .bare:focus { border-color: transparent !important; box-shadow: none !important; background: transparent !important; outline: none !important; }
 
 @keyframes rise { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
-.rise { animation: rise 220ms ease-out both; }
+.rise { animation: rise 240ms ease-out both; }
+@keyframes shimmer { from { background-position: -200% 0; } to { background-position: 200% 0; } }
+.working { background: linear-gradient(90deg, var(--color-accent) 0%, var(--color-ai) 50%, var(--color-accent) 100%); background-size: 200% 100%; animation: shimmer 1.8s linear infinite; }
+@keyframes ping { 0% { transform: scale(1); opacity: .7; } 80%, 100% { transform: scale(2.4); opacity: 0; } }
+.ping::after { content: ""; position: absolute; inset: 0; border-radius: 9999px; background: inherit; animation: ping 1.6s cubic-bezier(0,0,.2,1) infinite; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }

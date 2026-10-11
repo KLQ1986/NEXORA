@@ -12,3 +12,6 @@ spike/report/clips/
 .playwright-mcp/
 review.png
 *.png
+
+# graphify output and cache (rebuilt from the sources)
+graphify-out/

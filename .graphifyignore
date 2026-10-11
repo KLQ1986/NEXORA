@@ -1,0 +1,29 @@
+# What graphify may read when it builds or updates the graph of NEXORA.
+# .gitignore is applied first (data/, reference/, .venv/, footage, *.png); this file only excludes more.
+
+# graphify's own files: output, cache, hooks and this file
+graphify-out/
+.graphify*
+.graphifyignore
+
+# tool and agent state, not part of the product
+.git/
+.claude/
+.playwright-mcp/
+.pytest_cache/
+.import_linter_cache/
+
+# built or installed, not written here
+web/dist/
+web/node_modules/
+node_modules/
+__pycache__/
+uv.lock
+package-lock.json
+
+# the early spike: throwaway measurements and their output
+spike/
+
+# superseded designs and the binary copy of the current one (the v4.0 HTML stays)
+AI_Video_Factory_System_Design_v3.*
+*.docx
