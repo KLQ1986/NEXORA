@@ -69,7 +69,7 @@ export default function Timeline({ project: p, reload, rerender, busy }: { proje
 
   return (
     <div className="grid gap-4">
-      <div className="grid gap-4 lg:h-[min(54vh,540px)] lg:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="grid gap-4 lg:h-[min(50vh,560px)] lg:grid-cols-[minmax(0,1fr)_380px]">
         <div className="flex min-h-0 flex-col">
           {rendered
             ? <video ref={video} key={latest.url} src={latest.url} controls onTimeUpdate={(e) => setNow(e.currentTarget.currentTime)} className="min-h-0 w-full flex-1 rounded-md bg-black object-contain" />
@@ -107,7 +107,7 @@ export default function Timeline({ project: p, reload, rerender, busy }: { proje
                     </div>
                   </div>
                 )}
-                {sel?.reason && <p className="mt-3 break-words text-sm text-mute">Vì sao chọn: {sel.reason}</p>}
+                {sel?.reason && <details className="group mt-3 text-[13px] text-mute"><summary className="cursor-pointer list-none break-words"><span className="line-clamp-3 group-open:line-clamp-none">Vì sao chọn: {sel.reason}</span><span className="text-faint underline underline-offset-2 group-open:hidden">Xem đầy đủ</span></summary></details>}
               </>
             )}
           {!current.gap && sel && sel.angles.length > 0 && (

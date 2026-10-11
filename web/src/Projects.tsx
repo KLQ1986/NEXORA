@@ -182,7 +182,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
             </div>
             {next && <Button kind="primary" disabled={busy || (next.label === "Lưu kịch bản" && !(text ?? "").trim())} onClick={next.go}>{next.label}</Button>}
           </>}>
-      <ol className={`mb-7 grid max-w-3xl grid-cols-5 gap-1.5 ${tab === "board" ? "hidden" : ""}`} aria-label="Các bước làm video">
+      <ol className={`mb-7 grid max-w-3xl grid-cols-5 gap-1.5 ${tab === "work" ? "" : "hidden"}`} aria-label="Các bước làm video">
         {STEPS.map((label, i) => (
           <li key={label} aria-current={i === step ? "step" : undefined}>
             <div className={`h-1 rounded-full ${i < step ? "bg-proof" : i === step ? ((i === 2 || i === 4) ? "bg-cue" : "bg-ink") : "bg-line"}`} />
@@ -403,13 +403,13 @@ export default function Projects({ sub, go }: { sub: string | null; go: (to: str
           return (
             <li key={p.project_id}>
               <a href={`/du-an/${p.project_id}`} onClick={(e) => { e.preventDefault(); go(`/du-an/${p.project_id}`); }}
-                 className="panel grid items-center gap-x-6 gap-y-3 p-3 transition-colors hover:border-faint md:grid-cols-[minmax(0,5fr)_minmax(0,4fr)_auto]">
-                <Filmstrip shots={p.shots} height={64} />
-                <div className="min-w-0">
+                 className="panel grid items-center gap-x-6 gap-y-3 p-3 transition-colors hover:border-faint sm:grid-cols-[minmax(0,1fr)_auto] xl:grid-cols-[minmax(0,5fr)_minmax(0,4fr)_auto]">
+                <div className="sm:col-span-2 xl:col-span-1"><Filmstrip shots={p.shots} height={64} /></div>
+                <div className="min-w-0 sm:pl-1">
                   <p className="truncate text-[15px] font-medium">{p.title}</p>
                   <p className="tc truncate text-[13px] text-mute">{p.shots.length ? `${p.shots.length} câu` : "Chưa có kịch bản"}, {FORMATS[p.format] ?? p.format}{latest ? `, bản dựng ${timecode(latest.qc.duration)}` : ""}{task ? ", trợ lý đang làm" : ""}</p>
                 </div>
-                <div className="flex items-center gap-4 md:justify-end md:pr-2"><Steps step={st.step} tone={st.tone} /><span className="w-36 md:text-right"><Tag tone={st.tone}>{st.label}</Tag></span></div>
+                <div className="flex items-center gap-4 sm:justify-end sm:pr-2"><Steps step={st.step} tone={st.tone} /><span className="sm:w-36 sm:text-right"><Tag tone={st.tone}>{st.label}</Tag></span></div>
               </a>
             </li>
           );

@@ -95,7 +95,7 @@ export function Page({ title, note, actions, back, children, wide = false, flush
         </div>
         {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
       </header>
-      <div className={`min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden ${flush ? "" : "px-4 py-6 md:px-8 md:py-7"}`}><div className={`rise min-w-0 ${flush ? "h-full" : wide ? "" : "max-w-6xl"}`}>{children}</div></div>
+      <div className={`min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden ${flush ? "" : "px-4 py-6 md:px-8 md:py-7"}`}><div className={`rise min-w-0 ${flush ? "h-full" : wide ? "max-w-[1800px]" : "max-w-[1400px]"}`}>{children}</div></div>
     </section>
   );
 }
@@ -143,5 +143,5 @@ export function Filmstrip({ shots, height = 56, numbered = false }: { shots: Sho
 
 /** The five stages of a video, filled up to where the project stands. */
 export function Steps({ step, tone }: { step: number; tone: string }) {
-  return <div className="flex gap-1" role="img" aria-label={`Đã qua ${Math.min(step, 5)} trên 5 công đoạn`}>{[0, 1, 2, 3, 4].map((i) => <span key={i} className={`h-1 w-6 rounded-full ${i < step ? "bg-proof" : i === step ? (tone === "cue" ? "bg-cue" : tone === "tally" ? "bg-tally" : "bg-ink") : "bg-line"}`} />)}</div>;
+  return <div className="flex gap-1" role="img" aria-label={`Đã qua ${Math.min(step, 5)} trên 5 công đoạn`}>{[0, 1, 2, 3, 4].map((i) => <span key={i} className={`h-1 w-5 rounded-full ${i < step ? "bg-proof" : i === step ? (tone === "cue" ? "bg-cue" : tone === "tally" ? "bg-tally" : "bg-ink") : "bg-line"}`} />)}</div>;
 }

@@ -61,15 +61,15 @@ export default function Home({ go }: { go: (to: string) => void }) {
 
         <Section title="Dự án gần đây" actions={<Button kind="quiet" size="sm" onClick={() => go("/du-an")}>Tất cả dự án</Button>}>
           {projects && projects.length === 0 && <p className="panel px-4 py-6 text-mute">Chưa có dự án nào. Mỗi dự án là một video: bạn viết kịch bản, hệ thống tìm clip trong kho footage rồi dựng thành video có lời dẫn và phụ đề.</p>}
-          <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {(projects ?? []).slice(0, 6).map((p) => {
+          <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+            {(projects ?? []).slice(0, 8).map((p) => {
               const st = projectState(p);
               return (
                 <li key={p.project_id}><a href={`/du-an/${p.project_id}`} onClick={open(`/du-an/${p.project_id}`)} className="panel group block overflow-hidden transition-colors hover:border-faint">
                   <Filmstrip shots={p.shots} height={84} />
                   <div className="px-4 py-3">
                     <p className="truncate font-medium">{p.title}</p>
-                    <div className="mt-2 flex items-center justify-between gap-3"><Steps step={st.step} tone={st.tone} /><Tag tone={st.tone}>{st.label}</Tag></div>
+                    <div className="mt-2.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2"><Steps step={st.step} tone={st.tone} /><Tag tone={st.tone}>{st.label}</Tag></div>
                   </div>
                 </a></li>
               );
