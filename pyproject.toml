@@ -1,0 +1,40 @@
+[project]
+name = "nexora"
+version = "0.1.0"
+description = "NEXORA: a local-first, AI-assisted video production system for one operator"
+requires-python = ">=3.12,<3.13"
+dependencies = []
+
+[dependency-groups]
+dev = ["pytest>=8", "import-linter>=2"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/nexora"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+# Dependency rules of the layered architecture (design v4.0, section 4.4).
+[tool.importlinter]
+root_package = "nexora"
+
+[[tool.importlinter.contracts]]
+name = "Layers: a layer may import lower layers, never higher ones"
+type = "layers"
+layers = ["nexora.api", "nexora.adapters", "nexora.modules", "nexora.core"]
+
+[[tool.importlinter.contracts]]
+name = "Domain modules do not import each other"
+type = "independence"
+modules = [
+    "nexora.modules.planning",
+    "nexora.modules.library",
+    "nexora.modules.sourcing",
+    "nexora.modules.edit",
+    "nexora.modules.quality",
+    "nexora.modules.distribution",
+]

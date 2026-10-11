@@ -1,0 +1,12 @@
+[
+ {"name": "L1_a_0030", "video": "footage/a_hoian_market.webm", "start": 29, "end": 37},
+ {"name": "L3_a_0054", "video": "footage/a_hoian_market.webm", "start": 54, "end": 62},
+ {"name": "L3_a_0137", "video": "footage/a_hoian_market.webm", "start": 137, "end": 143},
+ {"name": "L3_a_0206", "video": "footage/a_hoian_market.webm", "start": 126, "end": 134},
+ {"name": "L4_a_0119", "video": "footage/a_hoian_market.webm", "start": 79, "end": 87},
+ {"name": "L6_b_0250", "video": "footage/b_moka_coffee.webm", "start": 170, "end": 182},
+ {"name": "L8_c_0046", "video": "footage/c_banh_trung.webm", "start": 46, "end": 58},
+ {"name": "L8_c_0136", "video": "footage/c_banh_trung.webm", "start": 96, "end": 108},
+ {"name": "L9_c_0412", "video": "footage/c_banh_trung.webm", "start": 252, "end": 260},
+ {"name": "L9_c_0514", "video": "footage/c_banh_trung.webm", "start": 312, "end": 326}
+]

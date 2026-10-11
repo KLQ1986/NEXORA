@@ -1,0 +1,17 @@
+{
+  "note": "Written from the video titles only, before any frame was viewed. Lines 11 and 12 are expected to have no matching footage (gap test).",
+  "lines": [
+    {"id": 1,  "text": "Chợ Hội An buổi sáng tấp nập người mua kẻ bán."},
+    {"id": 2,  "text": "Những sạp rau củ tươi xanh bày kín lối đi."},
+    {"id": 3,  "text": "Người bán hàng trao hàng và nhận tiền từ khách."},
+    {"id": 4,  "text": "Cá và hải sản tươi được bày bán trên sạp."},
+    {"id": 5,  "text": "Hạt cà phê được xay bằng cối xay tay."},
+    {"id": 6,  "text": "Cà phê bắt đầu trào lên ở ngăn trên của ấm moka."},
+    {"id": 7,  "text": "Cà phê nóng được rót ra tách."},
+    {"id": 8,  "text": "Người bán đập trứng vào khuôn nóng trên xe hàng rong."},
+    {"id": 9,  "text": "Chiếc bánh trứng vừa chín được lấy ra và trao cho khách."},
+    {"id": 10, "text": "Con đường mòn xuyên rừng lúc chạng vạng."},
+    {"id": 11, "text": "Một chiếc thuyền đánh cá ra khơi lúc bình minh."},
+    {"id": 12, "text": "Cận cảnh bàn tay gõ trên bàn phím máy tính."}
+  ]
+}

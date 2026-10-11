@@ -1,0 +1,26 @@
+{
+  "method": "Khung hình trích bằng FFmpeg (0,5 khung/giây cho lượt xem thô, 2 khung/giây cho lượt xem kỹ), model nhìn hình là Claude trong phiên làm việc này. Không dùng âm thanh.",
+  "selections": [
+    {"line": 1, "video": "a_hoian_market.webm", "t_in": 31.0, "t_out": 35.5, "confidence": "cao", "reason": "Toàn cảnh sân chợ có dù che, sạp hoa quả, người đi chợ xách túi đi lại.", "alternates": [[36.0, 41.0]]},
+    {"line": 2, "video": "a_hoian_market.webm", "t_in": 0.0, "t_out": 6.0, "confidence": "cao", "reason": "Các rổ rau củ và trái cây nhiều màu bày sát lối đi; lưu ý có cả trái cây chứ không chỉ rau.", "alternates": [[108.0, 111.0], [76.0, 78.0]]},
+    {"line": 3, "video": "a_hoian_market.webm", "t_in": 57.5, "t_out": 60.0, "confidence": "thấp", "reason": "Người mua đeo túi chéo đưa tay về phía người bán đang cầm vật gì đó; có vẻ là trao đổi nhưng máy quay di chuyển, hình nhoè, không thấy rõ tiền.", "alternates": [[128.0, 131.0]]},
+    {"line": 4, "video": "a_hoian_market.webm", "t_in": 81.5, "t_out": 83.5, "confidence": "cao", "reason": "Cận cảnh các mâm cá tươi xếp trên sạp. Đoạn rõ chỉ dài 2 giây.", "alternates": [[92.0, 98.0]]},
+    {"line": 5, "video": "b_moka_coffee.webm", "t_in": 30.0, "t_out": 35.0, "confidence": "cao", "reason": "Tay quay cối xay cà phê, góc ngang. Phương án khác là góc từ trên xuống thấy hạt trong cối.", "alternates": [[16.0, 23.0]]},
+    {"line": 6, "video": "b_moka_coffee.webm", "t_in": 175.0, "t_out": 181.5, "confidence": "cao", "reason": "Nhìn từ trên xuống ngăn trên của ấm moka: cà phê bắt đầu rỉ ra ở trụ giữa khoảng 2:55,5 và chảy thành dòng từ 2:57.", "alternates": [[180.0, 190.0]]},
+    {"line": 7, "video": "b_moka_coffee.webm", "t_in": 262.0, "t_out": 270.0, "confidence": "cao", "reason": "Dòng cà phê được rót vào tách trắng.", "alternates": [[240.0, 252.0]]},
+    {"line": 8, "video": "c_banh_trung.webm", "t_in": 102.0, "t_out": 106.0, "confidence": "trung bình", "reason": "Tay người bán cầm quả trứng nhỏ (có vẻ trứng cút) phía trên khuôn nhiều lỗ đang nóng. Độ phân giải thấp nên không thấy rõ khoảnh khắc trứng rơi xuống.", "alternates": [[48.0, 54.0]]},
+    {"line": 9, "video": "c_banh_trung.webm", "t_in": 292.0, "t_out": 304.0, "confidence": "trung bình", "reason": "Người bán gắp bánh trứng từ khuôn ra hộp xốp. Câu này cần hai cảnh: phần 'trao cho khách' nằm ở 5:20-5:25 (cầm hộp đưa ra) và không rõ bằng. Có một cảnh trao hàng rất rõ ở 4:14-4:18 nhưng đó là bánh tráng nướng gói giấy, không phải bánh trứng.", "alternates": [[320.0, 325.5], [254.0, 258.0]]},
+    {"line": 10, "video": "d_trail_dusk.webm", "t_in": 72.0, "t_out": 84.0, "confidence": "cao", "reason": "Đường đất đỏ giữa hàng cây, trời tím hồng lúc chạng vạng; đoạn cuối video thấy rõ mặt đường nhất.", "alternates": [[0.0, 10.0]]},
+    {"line": 11, "gap": true, "reason": "Không có footage nào có thuyền hay biển. Đề xuất: quay thêm, lấy stock, hoặc bỏ câu."},
+    {"line": 12, "gap": true, "reason": "Không có footage nào có bàn phím hay máy tính. Đề xuất: quay thêm hoặc lấy stock."}
+  ],
+  "findings": [
+    "Video chợ Hội An dài 5:15 nhưng chỉ có hình tới khoảng 2:25; phần còn lại là khung đen. Hệ thống cần phát hiện phần không dùng được ngay lúc nhập liệu.",
+    "Video pha cà phê có watermark ở 2 giây đầu và bảng chữ kết thúc từ 4:54; hai đoạn này phải bị loại khỏi ứng viên.",
+    "Đọc được chữ trên biển hiệu xe hàng rong ('BÁNH TRÁNG NƯỚNG', 'BÁNH TRỨNG') ngay khung đầu của video C, đủ để biết ngữ cảnh mà không cần âm thanh.",
+    "Lượt xem thô 0,5 khung/giây đủ để định vị đoạn; để bắt đúng khoảnh khắc (cà phê bắt đầu trào, đập trứng) phải xem lại ở 2 khung/giây.",
+    "Hành động ngắn và nhỏ trong khung hình rộng (trao tiền, đập trứng cút) là chỗ yếu: thấy được 'có vẻ đang làm gì' nhưng không chắc.",
+    "Một câu kịch bản có hai hành động (lấy bánh ra, trao cho khách) cần hai cảnh; thiết kế hiện giả định mỗi câu một nhu cầu hình.",
+    "Hai câu không có footage (thuyền đánh cá, bàn phím) đều được nhận ra là khoảng trống, không bị gán đại một clip."
+  ]
+}

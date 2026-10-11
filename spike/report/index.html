@@ -1,0 +1,69 @@
+<!DOCTYPE html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NEXORA — Kết quả thử nghiệm khớp kịch bản</title><style>
+:root{--fg:#1d2733;--bg:#fff;--mut:#5f6b78;--line:#d8dee5;--hi:#1e7b46;--mid:#9a6a00;--lo:#b3342d;--card:#f6f8fa}
+@media (prefers-color-scheme:dark){:root{--fg:#e6e9ec;--bg:#15181c;--mut:#9aa3ad;--line:#353b43;--hi:#5fc98c;--mid:#e0b04a;--lo:#f0827a;--card:#1d2127}}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.55 -apple-system,"Segoe UI",Helvetica,Arial,sans-serif}
+main{max-width:960px;margin:0 auto;padding:24px 16px 64px}h1{font-size:1.5rem}h2{font-size:1.05rem;margin:0 0 6px}
+section{border:1px solid var(--line);border-radius:8px;padding:14px;margin:14px 0;background:var(--card)}
+video{width:100%;max-width:460px;border-radius:6px;background:#000}img{max-width:100%;border-radius:6px}
+.main{display:flex;flex-direction:column;gap:8px}.alts{display:flex;flex-wrap:wrap;gap:12px}.alt{flex:1 1 240px;max-width:300px}.alt p{margin:6px 0 4px;color:var(--mut);font-size:.9rem}
+.tag{font-weight:600}.c-hi{color:var(--hi)}.c-mid{color:var(--mid)}.c-lo,.gapt{color:var(--lo)}.grade{color:var(--mut)}
+table{border-collapse:collapse;width:100%}td,th{border:1px solid var(--line);padding:5px 8px;text-align:left}.tw{overflow-x:auto}code{font-size:.9em}
+</style></head><body><main>
+<h1>Kết quả thử nghiệm khớp kịch bản với footage</h1>
+<p>Khung hình trích bằng FFmpeg (0,5 khung/giây cho lượt xem thô, 2 khung/giây cho lượt xem kỹ), model nhìn hình là Claude trong phiên làm việc này. Không dùng âm thanh.</p>
+<p>Footage thử: 4 video, tổng 17:11.9, tải từ Wikimedia Commons (giấy phép trong <code>footage/SOURCES.json</code>). 12 câu kịch bản được viết từ tên video, trước khi xem bất kỳ khung hình nào; câu 11 và 12 cố ý không có footage.</p>
+<div class="tw"><table><tr><th>Video</th><th>Độ dài</th><th>Khung hình</th><th>Số khung đã trích</th><th>Thời gian trích</th></tr><tr><td>a_hoian_market.webm</td><td>5:14.8</td><td>1920×1080</td><td>157</td><td>8.0 s</td></tr><tr><td>b_moka_coffee.webm</td><td>5:01.5</td><td>1920×1080</td><td>151</td><td>11.2 s</td></tr><tr><td>c_banh_trung.webm</td><td>5:30.3</td><td>1280×720</td><td>165</td><td>10.7 s</td></tr><tr><td>d_trail_dusk.webm</td><td>1:25.3</td><td>1920×906</td><td>43</td><td>2.8 s</td></tr></table></div>
+<section><h2>Câu 1: Chợ Hội An buổi sáng tấp nập người mua kẻ bán.</h2>
+<p><span class="tag c-hi">Độ tin cậy: cao</span> <code>a_hoian_market.webm</code> · 0:31.0 → 0:35.5 (4.5 giây)</p>
+<div class="main"><video controls muted preload="metadata" src="clips/L01.mp4"></video><img src="clips/L01.jpg" alt="khung hình của đoạn được chọn"></div>
+<p>Toàn cảnh sân chợ có dù che, sạp hoa quả, người đi chợ xách túi đi lại.</p>
+<div class="alts"><div class="alt"><p>Dự phòng 1: 0:36.0 → 0:41.0</p><video controls muted preload="metadata" src="clips/L01_alt1.mp4"></video></div></div>
+<p class="grade">Chấm: ☐ đúng &nbsp; ☐ dùng phương án dự phòng &nbsp; ☐ sai</p></section><section><h2>Câu 2: Những sạp rau củ tươi xanh bày kín lối đi.</h2>
+<p><span class="tag c-hi">Độ tin cậy: cao</span> <code>a_hoian_market.webm</code> · 0:00.0 → 0:06.0 (6.0 giây)</p>
+<div class="main"><video controls muted preload="metadata" src="clips/L02.mp4"></video><img src="clips/L02.jpg" alt="khung hình của đoạn được chọn"></div>
+<p>Các rổ rau củ và trái cây nhiều màu bày sát lối đi; lưu ý có cả trái cây chứ không chỉ rau.</p>
+<div class="alts"><div class="alt"><p>Dự phòng 1: 1:48.0 → 1:51.0</p><video controls muted preload="metadata" src="clips/L02_alt1.mp4"></video></div><div class="alt"><p>Dự phòng 2: 1:16.0 → 1:18.0</p><video controls muted preload="metadata" src="clips/L02_alt2.mp4"></video></div></div>
+<p class="grade">Chấm: ☐ đúng &nbsp; ☐ dùng phương án dự phòng &nbsp; ☐ sai</p></section><section><h2>Câu 3: Người bán hàng trao hàng và nhận tiền từ khách.</h2>
+<p><span class="tag c-lo">Độ tin cậy: thấp</span> <code>a_hoian_market.webm</code> · 0:57.5 → 1:00.0 (2.5 giây)</p>
+<div class="main"><video controls muted preload="metadata" src="clips/L03.mp4"></video><img src="clips/L03.jpg" alt="khung hình của đoạn được chọn"></div>
+<p>Người mua đeo túi chéo đưa tay về phía người bán đang cầm vật gì đó; có vẻ là trao đổi nhưng máy quay di chuyển, hình nhoè, không thấy rõ tiền.</p>
+<div class="alts"><div class="alt"><p>Dự phòng 1: 2:08.0 → 2:11.0</p><video controls muted preload="metadata" src="clips/L03_alt1.mp4"></video></div></div>
+<p class="grade">Chấm: ☐ đúng &nbsp; ☐ dùng phương án dự phòng &nbsp; ☐ sai</p></section><section><h2>Câu 4: Cá và hải sản tươi được bày bán trên sạp.</h2>
+<p><span class="tag c-hi">Độ tin cậy: cao</span> <code>a_hoian_market.webm</code> · 1:21.5 → 1:23.5 (2.0 giây)</p>
+<div class="main"><video controls muted preload="metadata" src="clips/L04.mp4"></video><img src="clips/L04.jpg" alt="khung hình của đoạn được chọn"></div>
+<p>Cận cảnh các mâm cá tươi xếp trên sạp. Đoạn rõ chỉ dài 2 giây.</p>
+<div class="alts"><div class="alt"><p>Dự phòng 1: 1:32.0 → 1:38.0</p><video controls muted preload="metadata" src="clips/L04_alt1.mp4"></video></div></div>
+<p class="grade">Chấm: ☐ đúng &nbsp; ☐ dùng phương án dự phòng &nbsp; ☐ sai</p></section><section><h2>Câu 5: Hạt cà phê được xay bằng cối xay tay.</h2>
+<p><span class="tag c-hi">Độ tin cậy: cao</span> <code>b_moka_coffee.webm</code> · 0:30.0 → 0:35.0 (5.0 giây)</p>
+<div class="main"><video controls muted preload="metadata" src="clips/L05.mp4"></video><img src="clips/L05.jpg" alt="khung hình của đoạn được chọn"></div>
+<p>Tay quay cối xay cà phê, góc ngang. Phương án khác là góc từ trên xuống thấy hạt trong cối.</p>
+<div class="alts"><div class="alt"><p>Dự phòng 1: 0:16.0 → 0:23.0</p><video controls muted preload="metadata" src="clips/L05_alt1.mp4"></video></div></div>
+<p class="grade">Chấm: ☐ đúng &nbsp; ☐ dùng phương án dự phòng &nbsp; ☐ sai</p></section><section><h2>Câu 6: Cà phê bắt đầu trào lên ở ngăn trên của ấm moka.</h2>
+<p><span class="tag c-hi">Độ tin cậy: cao</span> <code>b_moka_coffee.webm</code> · 2:55.0 → 3:01.5 (6.5 giây)</p>
+<div class="main"><video controls muted preload="metadata" src="clips/L06.mp4"></video><img src="clips/L06.jpg" alt="khung hình của đoạn được chọn"></div>
+<p>Nhìn từ trên xuống ngăn trên của ấm moka: cà phê bắt đầu rỉ ra ở trụ giữa khoảng 2:55,5 và chảy thành dòng từ 2:57.</p>
+<div class="alts"><div class="alt"><p>Dự phòng 1: 3:00.0 → 3:10.0</p><video controls muted preload="metadata" src="clips/L06_alt1.mp4"></video></div></div>
+<p class="grade">Chấm: ☐ đúng &nbsp; ☐ dùng phương án dự phòng &nbsp; ☐ sai</p></section><section><h2>Câu 7: Cà phê nóng được rót ra tách.</h2>
+<p><span class="tag c-hi">Độ tin cậy: cao</span> <code>b_moka_coffee.webm</code> · 4:22.0 → 4:30.0 (8.0 giây)</p>
+<div class="main"><video controls muted preload="metadata" src="clips/L07.mp4"></video><img src="clips/L07.jpg" alt="khung hình của đoạn được chọn"></div>
+<p>Dòng cà phê được rót vào tách trắng.</p>
+<div class="alts"><div class="alt"><p>Dự phòng 1: 4:00.0 → 4:12.0</p><video controls muted preload="metadata" src="clips/L07_alt1.mp4"></video></div></div>
+<p class="grade">Chấm: ☐ đúng &nbsp; ☐ dùng phương án dự phòng &nbsp; ☐ sai</p></section><section><h2>Câu 8: Người bán đập trứng vào khuôn nóng trên xe hàng rong.</h2>
+<p><span class="tag c-mid">Độ tin cậy: trung bình</span> <code>c_banh_trung.webm</code> · 1:42.0 → 1:46.0 (4.0 giây)</p>
+<div class="main"><video controls muted preload="metadata" src="clips/L08.mp4"></video><img src="clips/L08.jpg" alt="khung hình của đoạn được chọn"></div>
+<p>Tay người bán cầm quả trứng nhỏ (có vẻ trứng cút) phía trên khuôn nhiều lỗ đang nóng. Độ phân giải thấp nên không thấy rõ khoảnh khắc trứng rơi xuống.</p>
+<div class="alts"><div class="alt"><p>Dự phòng 1: 0:48.0 → 0:54.0</p><video controls muted preload="metadata" src="clips/L08_alt1.mp4"></video></div></div>
+<p class="grade">Chấm: ☐ đúng &nbsp; ☐ dùng phương án dự phòng &nbsp; ☐ sai</p></section><section><h2>Câu 9: Chiếc bánh trứng vừa chín được lấy ra và trao cho khách.</h2>
+<p><span class="tag c-mid">Độ tin cậy: trung bình</span> <code>c_banh_trung.webm</code> · 4:52.0 → 5:04.0 (12.0 giây)</p>
+<div class="main"><video controls muted preload="metadata" src="clips/L09.mp4"></video><img src="clips/L09.jpg" alt="khung hình của đoạn được chọn"></div>
+<p>Người bán gắp bánh trứng từ khuôn ra hộp xốp. Câu này cần hai cảnh: phần &#x27;trao cho khách&#x27; nằm ở 5:20-5:25 (cầm hộp đưa ra) và không rõ bằng. Có một cảnh trao hàng rất rõ ở 4:14-4:18 nhưng đó là bánh tráng nướng gói giấy, không phải bánh trứng.</p>
+<div class="alts"><div class="alt"><p>Dự phòng 1: 5:20.0 → 5:25.5</p><video controls muted preload="metadata" src="clips/L09_alt1.mp4"></video></div><div class="alt"><p>Dự phòng 2: 4:14.0 → 4:18.0</p><video controls muted preload="metadata" src="clips/L09_alt2.mp4"></video></div></div>
+<p class="grade">Chấm: ☐ đúng &nbsp; ☐ dùng phương án dự phòng &nbsp; ☐ sai</p></section><section><h2>Câu 10: Con đường mòn xuyên rừng lúc chạng vạng.</h2>
+<p><span class="tag c-hi">Độ tin cậy: cao</span> <code>d_trail_dusk.webm</code> · 1:12.0 → 1:24.0 (12.0 giây)</p>
+<div class="main"><video controls muted preload="metadata" src="clips/L10.mp4"></video><img src="clips/L10.jpg" alt="khung hình của đoạn được chọn"></div>
+<p>Đường đất đỏ giữa hàng cây, trời tím hồng lúc chạng vạng; đoạn cuối video thấy rõ mặt đường nhất.</p>
+<div class="alts"><div class="alt"><p>Dự phòng 1: 0:00.0 → 0:10.0</p><video controls muted preload="metadata" src="clips/L10_alt1.mp4"></video></div></div>
+<p class="grade">Chấm: ☐ đúng &nbsp; ☐ dùng phương án dự phòng &nbsp; ☐ sai</p></section><section class="gap"><h2>Câu 11: Một chiếc thuyền đánh cá ra khơi lúc bình minh.</h2><p class="tag gapt">Khoảng trống: không có footage phù hợp</p><p>Không có footage nào có thuyền hay biển. Đề xuất: quay thêm, lấy stock, hoặc bỏ câu.</p></section><section class="gap"><h2>Câu 12: Cận cảnh bàn tay gõ trên bàn phím máy tính.</h2><p class="tag gapt">Khoảng trống: không có footage phù hợp</p><p>Không có footage nào có bàn phím hay máy tính. Đề xuất: quay thêm hoặc lấy stock.</p></section>
+<section><h2>Những điều rút ra</h2><ul><li>Video chợ Hội An dài 5:15 nhưng chỉ có hình tới khoảng 2:25; phần còn lại là khung đen. Hệ thống cần phát hiện phần không dùng được ngay lúc nhập liệu.</li><li>Video pha cà phê có watermark ở 2 giây đầu và bảng chữ kết thúc từ 4:54; hai đoạn này phải bị loại khỏi ứng viên.</li><li>Đọc được chữ trên biển hiệu xe hàng rong (&#x27;BÁNH TRÁNG NƯỚNG&#x27;, &#x27;BÁNH TRỨNG&#x27;) ngay khung đầu của video C, đủ để biết ngữ cảnh mà không cần âm thanh.</li><li>Lượt xem thô 0,5 khung/giây đủ để định vị đoạn; để bắt đúng khoảnh khắc (cà phê bắt đầu trào, đập trứng) phải xem lại ở 2 khung/giây.</li><li>Hành động ngắn và nhỏ trong khung hình rộng (trao tiền, đập trứng cút) là chỗ yếu: thấy được &#x27;có vẻ đang làm gì&#x27; nhưng không chắc.</li><li>Một câu kịch bản có hai hành động (lấy bánh ra, trao cho khách) cần hai cảnh; thiết kế hiện giả định mỗi câu một nhu cầu hình.</li><li>Hai câu không có footage (thuyền đánh cá, bàn phím) đều được nhận ra là khoảng trống, không bị gán đại một clip.</li></ul></section>
+</main></body></html>
