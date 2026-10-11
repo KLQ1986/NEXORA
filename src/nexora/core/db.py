@@ -118,6 +118,44 @@ CREATE TABLE IF NOT EXISTS moment_vectors (
     moment_id TEXT PRIMARY KEY,
     vector    BLOB NOT NULL
 );
+CREATE TABLE IF NOT EXISTS projects (
+    project_id TEXT PRIMARY KEY,
+    title      TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS scripts (
+    script_id      TEXT PRIMARY KEY,
+    project_id     TEXT NOT NULL REFERENCES projects(project_id),
+    version        INTEGER NOT NULL,
+    match_approved INTEGER NOT NULL DEFAULT 0,
+    created_at     REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS shots (
+    shot_id   TEXT PRIMARY KEY,
+    script_id TEXT NOT NULL REFERENCES scripts(script_id),
+    position  INTEGER NOT NULL,
+    text      TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS selections (
+    shot_id    TEXT PRIMARY KEY REFERENCES shots(shot_id),
+    status     TEXT NOT NULL,
+    asset_id   TEXT,
+    moment_id  TEXT,
+    t_in       REAL,
+    t_out      REAL,
+    score      REAL,
+    reason     TEXT,
+    alternates TEXT NOT NULL DEFAULT '[]',
+    decided_by TEXT NOT NULL DEFAULT 'system'
+);
+CREATE TABLE IF NOT EXISTS renders (
+    render_id  TEXT PRIMARY KEY,
+    project_id TEXT NOT NULL,
+    script_id  TEXT NOT NULL,
+    path       TEXT NOT NULL,
+    qc         TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL

@@ -26,8 +26,23 @@ class FakeModel(Adapter):
             return Result(outputs={"text": "Video thử nghiệm."})
         vectors = []
         for text in request.inputs["texts"]:
-            v = [0.0] * 32
+            v = [0.0] * 512
             for word in text.lower().split():
-                v[int(hashlib.md5(word.encode()).hexdigest(), 16) % 32] += 1.0
+                v[int(hashlib.md5(word.encode()).hexdigest(), 16) % 512] += 1.0
             vectors.append(v)
         return Result(outputs={"vectors": vectors})
+
+
+class FakeVoice(Adapter):
+    """Writes silence whose length follows the number of words, like speech would."""
+
+    def describe(self) -> Capability:
+        return Capability(name="voice", operations=("speak",), runs="local")
+
+    def submit(self, request: Request) -> Result:
+        import wave
+        seconds = max(1.0, 0.3 * len(request.inputs["text"].split()))
+        with wave.open(request.params["out"], "wb") as w:
+            w.setnchannels(1); w.setsampwidth(2); w.setframerate(48000)
+            w.writeframes(b"\x00\x00" * int(48000 * seconds))
+        return Result(outputs={"duration": seconds}, files=(request.params["out"],))

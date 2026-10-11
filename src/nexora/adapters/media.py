@@ -62,13 +62,17 @@ class FFmpegAdapter(Adapter):
         return ffmpeg_capabilities()
 
     def describe(self) -> Capability:
-        return Capability(name="ffmpeg", operations=("blackdetect", "freezedetect", "proxy", "thumbnail", "frames"), runs="local", supports_cancel=True)
+        return Capability(name="ffmpeg", operations=("blackdetect", "freezedetect", "proxy", "thumbnail", "frames", "segment", "concat"), runs="local", supports_cancel=True)
 
     def submit(self, request: Request) -> Result:
+        timeout = request.deadline_seconds or 3600
+        if request.operation == "concat":
+            return self._concat(request.inputs["paths"], request.params, timeout)
+        if request.operation == "segment" and not request.inputs.get("path"):
+            return self._segment(None, request.params, timeout)
         src = Path(request.inputs["path"])
         if not src.is_file():
             raise AdapterError(ErrorCode.MISSING_INPUT, f"{src} does not exist")
-        timeout = request.deadline_seconds or 3600
         return getattr(self, f"_{request.operation}")(src, request.params, timeout)
 
     def _run(self, args: list[str], timeout: float, what: str):
@@ -129,6 +133,44 @@ class FFmpegAdapter(Adapter):
         self._run(["-y", "-i", str(src), "-vf", f"fps={fps},scale={int(params.get('width', 448))}:-2", "-q:v", "4", str(out_dir / "f_%05d.jpg")],
                   timeout, "frames")
         return Result(outputs={"frames": [str(p) for p in sorted(out_dir.glob("f_*.jpg"))], "fps": fps})
+
+    def _segment(self, src: Path | None, params: dict, timeout: float) -> Result:
+        """One timeline item as a self-contained clip: picture conformed to the output format, caption overlay, audio.
+        Without a source it is a plain card (used for a gap). Every segment has the same format, so they join without re-encoding."""
+        out, d = Path(params["out"]), float(params["duration"])
+        w, h, fps = int(params.get("width", 1280)), int(params.get("height", 720)), int(params.get("fps", 30))
+        args = ["-y"]
+        if src is None:
+            args += ["-f", "lavfi", "-i", f"color=c=0x1e2021:s={w}x{h}:r={fps}:d={d}"]
+        else:
+            args += ["-ss", str(params.get("t_in", 0.0)), "-t", str(d), "-i", str(src)]
+        chain = f"[0:v]scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps={fps},tpad=stop_mode=clone:stop_duration={d}[base]"
+        n = 1
+        if params.get("overlay"):
+            args += ["-loop", "1", "-i", str(params["overlay"])]
+            chain += f";[base][{n}:v]overlay=0:0[v]"; n += 1
+        else:
+            chain += ";[base]null[v]"
+        if params.get("audio"):
+            args += ["-i", str(params["audio"])]
+        else:
+            args += ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"]
+        chain += f";[{n}:a]aresample=48000,apad[a]"
+        partial = out.with_name(out.stem + ".partial" + out.suffix)
+        self._run([*args, "-filter_complex", chain, "-map", "[v]", "-map", "[a]", "-t", str(d), "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+                   "-pix_fmt", "yuv420p", "-c:a", "aac", "-ar", "48000", "-ac", "2", "-b:a", "160k", str(partial)], timeout, "segment")
+        partial.replace(out)
+        return Result(files=(str(out),))
+
+    def _concat(self, paths: list[str], params: dict, timeout: float) -> Result:
+        out = Path(params["out"])
+        listing = out.with_suffix(".txt")
+        listing.write_text("".join(f"file '{p}'\n" for p in paths), encoding="utf-8")
+        partial = out.with_name(out.stem + ".partial" + out.suffix)
+        self._run(["-y", "-f", "concat", "-safe", "0", "-i", str(listing), "-c:v", "copy", "-af", "loudnorm=I=-16:TP=-1.5:LRA=11",
+                   "-c:a", "aac", "-ar", "48000", "-b:a", "160k", "-movflags", "+faststart", str(partial)], timeout, "concat")
+        partial.replace(out); listing.unlink(missing_ok=True)
+        return Result(files=(str(out),))
 
     def _thumbnail(self, src: Path, params: dict, timeout: float) -> Result:
         out = Path(params["out"])
