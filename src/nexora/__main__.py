@@ -135,7 +135,7 @@ def main() -> None:
         web = Path(__file__).resolve().parents[2] / "web" / "dist"
         port = args.port or config.port
         print(f"NEXORA: http://127.0.0.1:{port}" + ("" if web.is_dir() else "  (Web UI not built: run `npm run build` in web/)"))
-        uvicorn.run(create_app(system, web_dir=web, config=config), host="127.0.0.1", port=port, log_level="warning")
+        uvicorn.run(create_app(system, web_dir=web, config=config), host="127.0.0.1", port=port, log_level="warning", timeout_graceful_shutdown=2)
 
 
 if __name__ == "__main__":
