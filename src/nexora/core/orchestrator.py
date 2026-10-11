@@ -140,6 +140,10 @@ class Orchestrator:
     def runs(self) -> list[str]:
         return [r[0] for r in self._conn.execute("SELECT run_id FROM runs ORDER BY created_at DESC, run_id DESC")]
 
+    def runs_for_subject(self, subject_ref: str) -> list[str]:
+        rows = self._conn.execute("SELECT run_id FROM runs WHERE subject_ref = ? ORDER BY created_at DESC, run_id DESC", (subject_ref,))
+        return [r[0] for r in rows]
+
     def pipeline_of(self, run_id: str) -> str:
         return self._conn.execute("SELECT pipeline_id FROM runs WHERE run_id = ?", (run_id,)).fetchone()[0]
 

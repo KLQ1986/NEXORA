@@ -35,3 +35,33 @@ def test_registering_a_path_that_does_not_exist_is_rejected(client_and_system, t
 def test_an_unknown_run_is_not_found(client_and_system):
     client, _ = client_and_system
     assert client.get("/api/v1/runs/run_missing").status_code == 404
+
+
+def test_registering_a_folder_ingests_every_video_in_it(client_and_system, tmp_path):
+    from tests.conftest import make_video
+    client, system = client_and_system
+    folder = tmp_path / "shoot"; folder.mkdir()
+    make_video(folder / "a.mp4", picture=1); make_video(folder / "b.mp4", picture=1); (folder / "notes.txt").write_text("x")
+    r = client.post("/api/v1/assets/register", json={"path": str(folder)})
+    assert r.status_code == 202 and len(r.json()["registered"]) == 2
+
+
+def test_library_lists_assets_with_what_the_screen_needs_and_serves_their_media(client_and_system, clip_with_black_tail):
+    client, system = client_and_system
+    client.post("/api/v1/assets/register", json={"path": str(clip_with_black_tail)})
+    while system.worker.run_once():
+        pass
+    item = client.get("/api/v1/library").json()["assets"][0]
+    assert item["name"] == "tail.mp4" and item["ingest"]["status"] == "succeeded" and item["online"] is True
+    assert item["duration"] > 3 and len(item["black_ranges"]) == 1 and len(item["ingest"]["stages"]) == 5
+    thumb = client.get(item["thumbnail_url"])
+    assert thumb.status_code == 200 and thumb.headers["content-type"] == "image/jpeg"
+    part = client.get(item["proxy_url"], headers={"Range": "bytes=0-99"})
+    assert part.status_code == 206 and len(part.content) == 100
+    assert client.get("/media/ver_missing").status_code == 404
+
+
+def test_environment_reports_tools_and_free_disk(client_and_system):
+    client, _ = client_and_system
+    env = client.get("/api/v1/environment").json()
+    assert env["ffmpeg"]["filters"]["blackdetect"] is True and env["disk"]["free_bytes"] > 0

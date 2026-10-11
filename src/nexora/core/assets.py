@@ -129,8 +129,9 @@ class AssetStore:
             c.execute("UPDATE asset_versions SET metadata = ? WHERE version_id = ?", (json.dumps(current), version_id))
 
     # ------------------------------------------------------------------ reads
-    def version(self, version_id: str) -> AssetVersion:
-        return _version(self._conn.execute("SELECT * FROM asset_versions WHERE version_id = ?", (version_id,)).fetchone())
+    def version(self, version_id: str) -> AssetVersion | None:
+        row = self._conn.execute("SELECT * FROM asset_versions WHERE version_id = ?", (version_id,)).fetchone()
+        return _version(row) if row else None
 
     def versions(self, asset_id: str) -> list[AssetVersion]:
         return [_version(r) for r in self._conn.execute("SELECT * FROM asset_versions WHERE asset_id = ? ORDER BY seq", (asset_id,))]

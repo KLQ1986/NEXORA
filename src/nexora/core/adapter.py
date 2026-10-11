@@ -86,6 +86,10 @@ class Adapter(ABC):
     @abstractmethod
     def submit(self, request: Request) -> Result: ...
 
+    def environment(self) -> dict | None:
+        """What this adapter found on the machine, for the environment check; None if it has nothing to report."""
+        return None
+
     def estimate(self, request: Request) -> Usage:
         return Usage(measured=False)
 
@@ -111,6 +115,10 @@ class AdapterRegistry:
 
     def describe(self) -> list[Capability]:
         return [a.describe() for a in self._adapters.values()]
+
+    def environment(self) -> dict:
+        found = {name: a.environment() for name, a in self._adapters.items()}
+        return {name: value for name, value in found.items() if value is not None}
 
     def submit(self, name: str, request: Request) -> Result:
         adapter = self._adapters.get(name)

@@ -58,6 +58,9 @@ def ffmpeg_capabilities() -> dict:
 
 
 class FFmpegAdapter(Adapter):
+    def environment(self) -> dict:
+        return ffmpeg_capabilities()
+
     def describe(self) -> Capability:
         return Capability(name="ffmpeg", operations=("blackdetect", "freezedetect", "proxy", "thumbnail"), runs="local", supports_cancel=True)
 

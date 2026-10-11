@@ -59,10 +59,16 @@ def main() -> None:
     elif args.command == "env":
         print(json.dumps(ffmpeg_capabilities(), indent=2))
     elif args.command == "serve":
+        import threading
+
         import uvicorn
 
         from nexora.api.app import create_app
-        uvicorn.run(create_app(system), host="127.0.0.1", port=args.port)
+        # One command runs everything: the worker on its own thread, the API and Web UI on the loopback address.
+        threading.Thread(target=system.worker.run_forever, name="nexora-worker", daemon=True).start()
+        web = Path(__file__).resolve().parents[2] / "web" / "dist"
+        print(f"NEXORA: http://127.0.0.1:{args.port}" + ("" if web.is_dir() else "  (Web UI not built: run `npm run build` in web/)"))
+        uvicorn.run(create_app(system, web_dir=web), host="127.0.0.1", port=args.port, log_level="warning")
 
 
 if __name__ == "__main__":
