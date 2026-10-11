@@ -114,7 +114,8 @@ class Edit:
                                                        params={"out": str(segment), "t_in": t_in, "duration": duration, "overlay": str(caption),
                                                                "audio": line["audio"], "fill": fill, **FORMAT}))
             out.append({"shot_id": shot.shot_id, "file": str(segment), "duration": duration, "gap": not has_picture, "text": shot.text,
-                        "asset_id": sel.asset_id if has_picture else None, "t_in": t_in})
+                        "asset_id": sel.asset_id if has_picture else None, "t_in": t_in, "chosen_in": sel.t_in if has_picture else None,
+                        "own_voice": bool(line.get("own_voice"))})
             ctx.heartbeat()
         return {"segments": out}
 
@@ -140,6 +141,7 @@ class Edit:
               "has_audio": probe["has_audio"], "shot_durations": [s["duration"] for s in segments], "gaps": sum(1 for s in segments if s["gap"]),
               "format": project["format"], "music": bool(music), "mean_db": loud["mean_db"], "max_db": loud["max_db"],
               "findings": self._reviewer(segments) if self._reviewer else [],
-              "shots": [{"text": s["text"], "duration": s["duration"], "gap": s["gap"]} for s in segments]}
+              "shots": [{"text": s["text"], "duration": s["duration"], "gap": s["gap"], "asset_id": s.get("asset_id"), "t_in": s.get("chosen_in"),
+                         "own_voice": s.get("own_voice", False)} for s in segments]}
         render_id = self._projects.add_render(script["project_id"], ctx.subject_ref, str(out), qc)
         return {"render_id": render_id, "qc_passed": qc["passed"]}

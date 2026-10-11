@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { post, timecode, usePoll, type Candidate, type Project, type RenderItem, type Shot } from "./api";
 import Board from "./Board";
 import { Button, StageRail } from "./parts";
+import Timeline from "./Timeline";
 
 function Clip({ url, tIn, tOut, poster }: { url: string | null; tIn: number; tOut: number; poster: string | null }) {
   const ref = useRef<HTMLVideoElement>(null);
@@ -52,8 +53,8 @@ function ShotRow({ shot, n, locked, changed }: { shot: Shot; n: number; locked: 
       <div>
         {sel && sel.status !== "gap" && sel.asset && sel.t_in != null && sel.t_out != null ? (
           <>
-            <Clip url={sel.asset.proxy_url} tIn={sel.t_in} tOut={sel.t_out} poster={sel.frame_url} />
-            <p className="tc mt-1 truncate text-xs text-mute">{sel.asset.name}, {timecode(sel.t_in)} đến {timecode(sel.t_out)}{sel.decided_by === "operator" ? ", bạn chọn" : ""}</p>
+            <Clip url={sel.asset.proxy_url} tIn={sel.t_in} tOut={sel.t_out} poster={sel.frame_url ?? sel.asset.thumbnail_url} />
+            <p className="tc mt-1 truncate text-xs text-mute">{sel.asset.name}{sel.asset.still ? ", ảnh tĩnh" : `, ${timecode(sel.t_in)} đến ${timecode(sel.t_out)}`}{sel.decided_by === "operator" ? ", bạn chọn" : ""}</p>
           </>
         ) : <div className={`grid aspect-video place-items-center rounded-sm text-sm ${sel?.status === "gap" ? "border border-dashed border-cue text-cue" : "bg-raised text-mute"}`}>{sel?.status === "gap" ? "Thiếu hình" : "Chưa có clip"}</div>}
       </div>
@@ -74,7 +75,7 @@ function TimelineStrip({ shots }: { shots: Shot[] }) {
         {items.map(({ s, d }, i) => (
           <div key={s.shot_id} role="listitem" title={`${i + 1}. ${s.text}`} style={{ width: `${(d / total) * 100}%` }}
                className={`relative min-w-0 ${s.selection?.status === "gap" || !s.selection ? "hatch bg-raised" : "bg-black"}`}>
-            {s.selection?.frame_url && s.selection.status !== "gap" && <img src={s.selection.frame_url} alt="" className="h-full w-full object-cover opacity-90" />}
+            {s.selection && s.selection.status !== "gap" && (s.selection.frame_url ?? s.selection.asset?.thumbnail_url) && <img src={(s.selection.frame_url ?? s.selection.asset?.thumbnail_url)!} alt="" className="h-full w-full object-cover opacity-90" />}
             <span className="tc absolute left-1 top-0.5 rounded-sm bg-canvas/80 px-1 text-[11px]">{i + 1}</span>
           </div>
         ))}
@@ -118,7 +119,8 @@ function Detail({ id, back }: { id: string; back: () => void }) {
   const [topic, setTopic] = useState("");
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [tab, setTab] = useState<"work" | "board">("work");
+  const [tab, setTab] = useState<"work" | "timeline" | "board">("work");
+  const [takes, setTakes] = useState<string | null>(null);
   const [music, setMusic] = useState<string | null>(null);
   const [style, setStyle] = useState<string | null>(null);
   useEffect(() => { if (p && text === null) setText(p.shots.map((s) => s.text).join("\n")); }, [p, text]);
@@ -148,14 +150,15 @@ function Detail({ id, back }: { id: string; back: () => void }) {
       </ol>
       {note && <p className="mb-4 text-tally">{note}</p>}
       <div className="mb-6 flex gap-1 border-b border-line" role="tablist">
-        {([["work", "Làm video"], ["board", "Bảng theo dõi"]] as const).map(([key, label]) => (
+        {([["work", "Làm video"], ["timeline", "Dòng thời gian"], ["board", "Bảng theo dõi"]] as const).map(([key, label]) => (
           <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)}
                   className={`-mb-px border-b-2 px-3 py-2 ${tab === key ? "border-ink font-medium" : "border-transparent text-mute hover:text-ink"}`}>{label}</button>
         ))}
       </div>
       {tab === "board" && <Board project={p} />}
+      {tab === "timeline" && <Timeline project={p} reload={reload} busy={busy} rerender={() => run(() => post(`/api/v1/projects/${id}/render`))} />}
 
-      <div className={`grid max-w-6xl gap-10 ${tab === "board" ? "hidden" : ""}`}>
+      <div className={`grid max-w-6xl gap-10 ${tab === "work" ? "" : "hidden"}`}>
         <div className="flex flex-wrap items-end gap-6">
           <div>
             <p className="mb-1 font-medium" id="format-label">Khung hình</p>
@@ -176,6 +179,15 @@ function Detail({ id, back }: { id: string; back: () => void }) {
             <Button disabled={busy || music === null || (music ?? "") === (p.music_path ?? "")} onClick={() => run(() => post(`/api/v1/projects/${id}`, { music_path: (music ?? "").trim() || null }, "PATCH"))}>Lưu nhạc</Button>
           </form>
         </div>
+        <form className="flex max-w-3xl flex-wrap items-end gap-2" onSubmit={(e) => { e.preventDefault(); run(() => post(`/api/v1/projects/${id}`, { narration_dir: (takes ?? "").trim() || null }, "PATCH")); }}>
+          <div className="min-w-0 flex-1">
+            <label htmlFor="takes" className="mb-1 block font-medium">Lời dẫn bạn tự thu</label>
+            <input id="takes" value={takes ?? p.narration_dir ?? ""} onChange={(e) => setTakes(e.target.value)} placeholder="Thư mục chứa file thu âm đặt tên theo số câu: 1.wav, 2.m4a (để trống nếu dùng giọng máy)"
+                   className="w-full rounded border border-line bg-canvas px-3 py-1.5 placeholder:text-mute/70" />
+          </div>
+          <Button disabled={busy || takes === null || (takes ?? "") === (p.narration_dir ?? "")} onClick={() => run(() => post(`/api/v1/projects/${id}`, { narration_dir: (takes ?? "").trim() || null }, "PATCH"))}>Lưu thư mục</Button>
+          {p.narration_dir && <p className="w-full text-sm text-mute">{p.own_takes.length ? `Đã có bản thu cho câu ${p.own_takes.join(", ")}. Các câu còn lại dùng giọng máy.` : "Chưa thấy file thu âm nào trong thư mục này. Mọi câu đang dùng giọng máy."}</p>}
+        </form>
         <div>
           <h2 className="mb-1 text-lg font-semibold">Kịch bản</h2>
           <p className="mb-2 text-mute">Mỗi dòng là một câu lời dẫn. Hệ thống tìm một clip cho từng câu.</p>

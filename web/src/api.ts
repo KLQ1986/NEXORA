@@ -6,7 +6,7 @@ export type Asset = {
   asset_id: string; name: string; path: string; online: boolean; size: number; duplicate_of: string | null;
   duration: number | null; width: number | null; height: number | null; frame_rate: number | null; has_audio: boolean | null;
   usable_ranges: number[][]; black_ranges: number[][]; frozen_ranges: number[][];
-  thumbnail_url: string | null; proxy_url: string | null; ingest: Run | null; understand: Run | null;
+  thumbnail_url: string | null; proxy_url: string | null; ingest: Run | null; understand: Run | null; still: boolean;
 };
 
 export async function call<T>(url: string, init?: RequestInit): Promise<T> {
@@ -60,7 +60,7 @@ export const REASONS: Record<string, string> = {
 };
 
 export type Moment = { moment_id: string; asset_id: string; t_start: number; t_end: number; text: string; source: string; score: number | null; frame_url: string | null; title?: string | null };
-export type AssetBrief = { asset_id: string; name: string; proxy_url: string | null; duration: number | null };
+export type AssetBrief = { asset_id: string; name: string; proxy_url: string | null; duration: number | null; still: boolean; thumbnail_url: string | null };
 export type Hit = Moment & { asset: AssetBrief };
 export type Candidate = { moment_id: string; t_in: number; t_out: number; score: number; reason: string; frame_url: string; asset: AssetBrief };
 export type Selection = { status: string; t_in: number | null; t_out: number | null; score: number | null; reason: string | null; decided_by: string;
@@ -71,11 +71,11 @@ export type Finding = { check: string; shot: number; severity: string; text: str
 export type Package = { title: string; description: string; thumbnails: string[]; thumbnail: string; folder: string; synthetic_content: boolean; captions: string; video: string };
 export type RenderItem = { render_id: string; created_at: number; url: string; package: Package | null;
   qc: { passed: boolean; checks: Record<string, boolean>; duration: number; gaps: number; findings?: Finding[]; format?: string; music?: boolean;
-        shots?: { text: string; duration: number; gap: boolean }[] } };
+        shots?: { text: string; duration: number; gap: boolean; asset_id?: string | null; t_in?: number | null; own_voice?: boolean }[] } };
 export type BoardEvent = { at: number; kind: string; pipeline: string; stage_key: string | null; actor: string; payload: Record<string, unknown> };
 export type Notice = { notification_id: number; kind: string; run_id: string; stage_key: string | null; reason: string | null; created_at: number; read_at: number | null; pipeline: string | null };
 export type Project = { project_id: string; title: string; created_at: number; format: string; music_path: string | null;
   script: { script_id: string; version: number; match_approved: boolean } | null; shots: Shot[]; match: Run | null; render: Run | null; renders: RenderItem[];
-  generate: Run | null; generators: { image: boolean; video: boolean }; auto_accept: boolean; style: string | null };
+  generate: Run | null; generators: { image: boolean; video: boolean }; auto_accept: boolean; style: string | null; narration_dir: string | null; own_takes: number[] };
 export const post = <T,>(url: string, body?: unknown, method = "POST") => call<T>(url, { method, body: body === undefined ? undefined : JSON.stringify(body) });
 Object.assign(STAGE_NAMES, { segments: "Chia đoạn", summarise: "Tóm tắt", match: "Chọn clip", narration: "Đọc lời dẫn", assemble: "Ghép và kiểm tra" });

@@ -164,6 +164,18 @@ class Orchestrator:
         with db.write(self._conn) as c:
             c.execute("UPDATE notifications SET read_at = ? WHERE read_at IS NULL", (time.time(),))
 
+    def notifications_after(self, notification_id: int) -> list[dict]:
+        rows = self._conn.execute("SELECT * FROM notifications WHERE notification_id > ? ORDER BY notification_id", (notification_id,))
+        return [dict(r) for r in rows]
+
+    def setting(self, key: str, default: str | None = None) -> str | None:
+        row = self._conn.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+        return row[0] if row else default
+
+    def set_setting(self, key: str, value: str) -> None:
+        with db.write(self._conn) as c:
+            c.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, value))
+
     def kill_switch(self) -> bool:
         row = self._conn.execute("SELECT value FROM settings WHERE key = ?", (KILL_SWITCH,)).fetchone()
         return bool(row and row[0] == "1")

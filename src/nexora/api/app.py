@@ -8,6 +8,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 VIDEO_EXT = {".mp4", ".mov", ".m4v", ".mkv", ".avi", ".mts", ".webm", ".ogv"}
+IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp"}
+AUDIO_EXT = ("wav", "m4a", "mp3", "aiff")
 
 
 class RegisterRequest(BaseModel):
@@ -44,7 +46,8 @@ def asset_view(system, asset: dict) -> dict:
         "frame_rate": probe.get("frame_rate"), "has_audio": probe.get("has_audio"),
         "usable_ranges": meta.get("usable_ranges", []), "black_ranges": meta.get("black_ranges", []),
         "frozen_ranges": meta.get("frozen_ranges", []),
-        "thumbnail_url": f"/media/{by_role['thumbnail'].version_id}" if "thumbnail" in by_role else None,
+        "still": bool(probe.get("still")),
+        "thumbnail_url": f"/media/{by_role['thumbnail'].version_id}" if "thumbnail" in by_role else f"/media/{original.version_id}" if probe.get("still") else None,
         "proxy_url": f"/media/{by_role['proxy'].version_id}" if "proxy" in by_role else None,
         "ingest": next((run_view(system, r) for r in runs if system.orch.pipeline_of(r) == "library.ingest"), None),
         "understand": next((run_view(system, r) for r in runs if system.orch.pipeline_of(r) == "library.understand"), None),
@@ -58,7 +61,7 @@ def create_app(system, *, web_dir: str | Path | None = None) -> FastAPI:
     def register_asset(body: RegisterRequest):
         root = Path(body.path).expanduser()
         if root.is_dir():
-            files = sorted(f for f in root.rglob("*") if f.suffix.lower() in VIDEO_EXT and not f.name.startswith("."))
+            files = sorted(f for f in root.rglob("*") if f.suffix.lower() in VIDEO_EXT | IMAGE_EXT and not f.name.startswith("."))
         elif root.is_file():
             files = [root]
         else:
@@ -101,7 +104,12 @@ def create_app(system, *, web_dir: str | Path | None = None) -> FastAPI:
 
     @app.get("/api/v1/control")
     def control():
-        return {"kill_switch": system.orch.kill_switch()}
+        return {"kill_switch": system.orch.kill_switch(), "desktop_notifications": system.orch.setting("desktop_notifications", "1") == "1"}
+
+    @app.post("/api/v1/control/desktop-notifications")
+    def desktop_notifications(body: dict):
+        system.orch.set_setting("desktop_notifications", "1" if body.get("on") else "0")
+        return control()
 
     @app.post("/api/v1/control/kill-switch")
     def kill_switch(body: dict):
@@ -134,7 +142,9 @@ def create_app(system, *, web_dir: str | Path | None = None) -> FastAPI:
         original = versions["original"]
         return {"asset_id": asset_id, "name": system.assets.path_of(original).name,
                 "proxy_url": f"/media/{versions['proxy'].version_id}" if "proxy" in versions else None,
-                "duration": original.metadata.get("probe", {}).get("duration")}
+                "duration": original.metadata.get("probe", {}).get("duration"), "still": bool(original.metadata.get("probe", {}).get("still")),
+                "thumbnail_url": f"/media/{versions['thumbnail'].version_id}" if "thumbnail" in versions
+                else f"/media/{original.version_id}" if original.metadata.get("probe", {}).get("still") else None}
 
     @app.get("/api/v1/library/search")
     def search(q: str, limit: int = 24):
@@ -189,7 +199,12 @@ def create_app(system, *, web_dir: str | Path | None = None) -> FastAPI:
                 "shots": shots, "match": latest_run(script["script_id"], "sourcing.match") if script else None,
                 "render": latest_run(script["script_id"], "edit.render") if script else None, "renders": renders,
                 "generate": latest_run(script["script_id"], "sourcing.generate") if script else None, "generators": system.generation.available(),
-                "auto_accept": bool(project.get("auto_accept"))}
+                "auto_accept": bool(project.get("auto_accept")), "own_takes": own_takes(project, len(shots))}
+
+    def own_takes(project: dict, lines: int) -> list[int]:
+        """The line numbers for which the operator has put a recording in the narration folder (1.wav, 2.m4a, ...)."""
+        folder = Path(project.get("narration_dir") or "/nonexistent")
+        return [n for n in range(1, lines + 1) if any((folder / f"{n}.{ext}").is_file() for ext in AUDIO_EXT)]
 
     def need_project(project_id: str) -> dict:
         project = system.projects.project(project_id)
@@ -313,7 +328,9 @@ def create_app(system, *, web_dir: str | Path | None = None) -> FastAPI:
         need_project(project_id)
         if body.get("music_path") and not Path(str(body["music_path"])).expanduser().is_file():
             raise HTTPException(404, "Không tìm thấy file nhạc ở đường dẫn này")
-        fields = {k: (str(Path(str(v)).expanduser()) if k == "music_path" and v else v) for k, v in body.items()}
+        if body.get("narration_dir") and not Path(str(body["narration_dir"])).expanduser().is_dir():
+            raise HTTPException(404, "Không tìm thấy thư mục này")
+        fields = {k: (str(Path(str(v)).expanduser()) if k in ("music_path", "narration_dir") and v else v) for k, v in body.items()}
         system.projects.update_project(project_id, **fields)
         return project_view(need_project(project_id))
 

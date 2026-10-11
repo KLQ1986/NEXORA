@@ -2,6 +2,7 @@
 import pytest
 
 from nexora.app import build
+from nexora.core.adapter import Adapter, Capability, Result
 from nexora.core.states import RunStatus, StageStatus
 
 from tests.conftest import make_video
@@ -249,3 +250,34 @@ def test_a_recording_by_the_operator_replaces_the_synthetic_voice_for_that_line(
     assert qc["shot_durations"][1] == pytest.approx(5.4, abs=0.1)                  # the length of the recording decides the length of the shot
     assert qc["shot_durations"][0] < 3 and qc["mean_db"] > -40                     # line 1 keeps the synthetic voice; line 2 is audible
 
+
+
+class FakeDesktop(Adapter):
+    def __init__(self):
+        self.shown = []
+
+    def describe(self):
+        return Capability(name="desktop", operations=("notify",), runs="local")
+
+    def submit(self, request):
+        self.shown.append(request.inputs["text"])
+        return Result()
+
+
+def test_the_desktop_is_told_when_work_waits_for_the_operator_and_stays_quiet_when_turned_off(tmp_path):
+    from nexora.app import announce
+    desk = FakeDesktop()
+    system = build(tmp_path / "data", model=FakeModel(), voice=FakeVoice(), segment_seconds=2.0, desktop=desk)
+    system.library.ingest(make_video(tmp_path / "footage.mp4", picture=20)); drain(system)
+    seen = announce(system, 0)
+    assert desk.shown == []                                                        # footage finishing its ingest interrupts nobody
+    pid = system.planning.create_project("Chợ")
+    script = system.planning.save_script(pid, ["cá tươi trên sạp"])
+    system.sourcing.start_match(script); drain(system)
+    seen = announce(system, seen)
+    assert desk.shown == ["Chọn clip đang chờ bạn duyệt."]
+    assert announce(system, seen) == seen and len(desk.shown) == 1                 # each notification is shown once
+    system.orch.set_setting("desktop_notifications", "0")
+    system.sourcing.approve(system.orch.runs_for_subject(script)[0]); system.edit.start_render(script); drain(system)
+    announce(system, seen)
+    assert len(desk.shown) == 1

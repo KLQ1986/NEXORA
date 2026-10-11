@@ -97,3 +97,26 @@ def test_a_video_can_be_made_end_to_end_through_the_api(tmp_path):
     video = client.get(view["renders"][0]["url"], headers={"Range": "bytes=0-9"})
     assert video.status_code == 206
     assert client.post(f"/api/v1/projects/{pid}/render/decision", json={"approve": True}).json()["render"]["status"] == "succeeded"
+
+
+def test_photographs_recorded_takes_and_desktop_notifications_are_reachable_through_the_api(tmp_path):
+    import subprocess
+    from PIL import Image
+    from tests.fakes import FakeModel, FakeVoice
+    system = build(tmp_path / "data", model=FakeModel(), voice=FakeVoice(), segment_seconds=2.0)
+    client = TestClient(create_app(system))
+    folder = tmp_path / "photos"; folder.mkdir()
+    Image.new("RGB", (800, 600), (40, 90, 160)).save(folder / "one.png")
+    assert len(client.post("/api/v1/assets/register", json={"path": str(folder)}).json()["registered"]) == 1
+    [None for _ in iter(system.worker.run_once, False)]
+    asset = client.get("/api/v1/library").json()["assets"][0]
+    assert asset["still"] and client.get(asset["thumbnail_url"]).status_code == 200
+
+    pid = client.post("/api/v1/projects", json={"title": "Giọng tôi", "lines": ["cá tươi trên sạp", "chợ rau củ"]}).json()["project_id"]
+    assert client.patch(f"/api/v1/projects/{pid}", json={"narration_dir": str(tmp_path / "missing")}).status_code == 404
+    takes = tmp_path / "takes"; takes.mkdir()
+    subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=220:duration=2", str(takes / "2.wav")], check=True)
+    assert client.patch(f"/api/v1/projects/{pid}", json={"narration_dir": str(takes)}).json()["own_takes"] == [2]
+
+    assert client.get("/api/v1/control").json()["desktop_notifications"] is True
+    assert client.post("/api/v1/control/desktop-notifications", json={"on": False}).json()["desktop_notifications"] is False

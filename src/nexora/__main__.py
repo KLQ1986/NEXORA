@@ -3,6 +3,7 @@ import argparse
 import json
 from pathlib import Path
 
+from nexora.adapters.desktop import DesktopNotifier
 from nexora.adapters.media import ffmpeg_capabilities
 from nexora.adapters.ollama import OllamaAdapter
 from nexora.adapters.openmontage import OpenMontageStock
@@ -28,7 +29,7 @@ def main() -> None:
     p = sub.add_parser("serve", help="start the API on the loopback address")
     p.add_argument("--port", type=int, default=8600)
     args = parser.parse_args()
-    system = build(args.data, model=OllamaAdapter(), voice=SayVoice(), match_threshold=0.52, stock=OpenMontageStock())
+    system = build(args.data, model=OllamaAdapter(), voice=SayVoice(), match_threshold=0.52, stock=OpenMontageStock(), desktop=DesktopNotifier())
 
     if args.command == "ingest":
         for given in args.paths:
@@ -80,6 +81,15 @@ def main() -> None:
         from nexora.api.app import create_app
         # One command runs everything: the worker on its own thread, the API and Web UI on the loopback address.
         threading.Thread(target=system.worker.run_forever, name="nexora-worker", daemon=True).start()
+
+        def announcer():
+            import time
+            from nexora.app import announce
+            seen = max((n["notification_id"] for n in system.orch.notifications(limit=1)), default=0)     # nothing from before this start
+            while True:
+                seen = announce(system, seen)
+                time.sleep(3)
+        threading.Thread(target=announcer, name="nexora-announcer", daemon=True).start()
         web = Path(__file__).resolve().parents[2] / "web" / "dist"
         print(f"NEXORA: http://127.0.0.1:{args.port}" + ("" if web.is_dir() else "  (Web UI not built: run `npm run build` in web/)"))
         uvicorn.run(create_app(system, web_dir=web), host="127.0.0.1", port=args.port, log_level="warning")

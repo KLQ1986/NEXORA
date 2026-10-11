@@ -11,7 +11,7 @@ const NEEDS: Record<string, string> = {
 
 export default function System() {
   const { data: env } = usePoll<Env>("/api/v1/environment", 15000);
-  const { data: control, reload } = usePoll<{ kill_switch: boolean }>("/api/v1/control", 3000);
+  const { data: control, reload } = usePoll<{ kill_switch: boolean; desktop_notifications: boolean }>("/api/v1/control", 3000);
   const toggle = async () => { await call("/api/v1/control/kill-switch", { method: "POST", body: JSON.stringify({ on: !control?.kill_switch }) }); reload(); };
   const { data: runs } = usePoll<Run[]>("/api/v1/runs", 10000);
   const spent = (runs ?? []).reduce((sum, r) => sum + r.cost, 0);
@@ -28,6 +28,12 @@ export default function System() {
             <Button kind={control?.kill_switch ? "primary" : "danger"} onClick={toggle}>{control?.kill_switch ? "Cho chạy lại" : "Dừng khẩn cấp"}</Button>
             <span className={control?.kill_switch ? "text-cue" : "text-mute"}>{control?.kill_switch ? "Đang dừng" : "Đang hoạt động bình thường"}</span>
           </div>
+        </div>
+        <div>
+          <h2 className="mb-2 text-base font-semibold">Thông báo trên máy Mac</h2>
+          <label className="flex max-w-xl items-start gap-2"><input type="checkbox" className="mt-1" checked={control?.desktop_notifications ?? false}
+            onChange={async (e) => { await call("/api/v1/control/desktop-notifications", { method: "POST", body: JSON.stringify({ on: e.target.checked }) }); reload(); }} />
+            <span>Báo ở góc màn hình khi có việc chờ bạn duyệt, bị dừng, thất bại, hoặc khi video dựng xong.<span className="block text-mute">Nhập và phân tích footage xong thì không báo.</span></span></label>
         </div>
         <div>
           <h2 className="mb-2 text-base font-semibold">Chi phí mô hình</h2>

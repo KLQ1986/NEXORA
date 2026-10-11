@@ -56,9 +56,29 @@ def fill_gap_from_stock(system: "System", shot_id: str, query: str) -> dict:
     return {"found": True, "asset_id": asset_id, "run_id": run_id, "rights": rights}
 
 
+PIPELINE_NAMES = {"library.ingest": "Nhập footage", "library.ingest_image": "Nhập ảnh", "library.understand": "Hiểu nội dung footage",
+                  "sourcing.match": "Chọn clip", "sourcing.generate": "Sinh hình bằng AI", "edit.render": "Dựng video"}
+ANNOUNCE = {"waiting_review": "đang chờ bạn duyệt", "blocked": "đang dừng và cần bạn xử lý", "failed": "thất bại", "succeeded": "đã xong"}
+QUIET = frozenset({"library.ingest", "library.ingest_image", "library.understand"})   # finishing these needs nobody's attention
+
+
+def announce(system: "System", after: int) -> int:
+    """Send every notification newer than `after` to the desktop, when the operator has turned that on. Returns the newest id seen."""
+    for n in system.orch.notifications_after(after):
+        after = n["notification_id"]
+        pipeline = (system.orch.run_info(n["run_id"]) or {}).get("pipeline_id")
+        if system.orch.setting("desktop_notifications", "1") != "1" or n["kind"] not in ANNOUNCE or (n["kind"] == "succeeded" and pipeline in QUIET):
+            continue
+        try:
+            system.adapters.submit("desktop", Request("notify", inputs={"title": "NEXORA", "text": f"{PIPELINE_NAMES.get(pipeline, pipeline)} {ANNOUNCE[n['kind']]}."}))
+        except Exception:                # a notification that cannot be shown must never disturb the work
+            pass
+    return after
+
+
 def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Adapter | None = None,
           segment_seconds: float = 12.0, voice: Adapter | None = None, match_threshold: float = 0.5, judge: bool = True,
-          generators: list[Adapter] | None = None, stock: Adapter | None = None) -> System:
+          generators: list[Adapter] | None = None, stock: Adapter | None = None, desktop: Adapter | None = None) -> System:
     """`model` is the adapter for vision, reasoning and embeddings; without one, footage is ingested but not understood."""
     data_dir = Path(data_dir).resolve()          # tools resolve relative paths differently; keep every path absolute
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -87,6 +107,8 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     edit.register(registry)
     if stock is not None:
         adapters.register(stock)
+    if desktop is not None:
+        adapters.register(desktop)
     for generator in generators or []:
         adapters.register(generator)
     generation = Generation(orch, projects, assets, adapters, data_dir / "media")

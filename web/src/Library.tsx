@@ -19,7 +19,7 @@ function AddFootage({ onDone }: { onDone: () => void }) {
   return (
     <form className="flex flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); submit(); }}>
       <label htmlFor="path" className="sr-only">Đường dẫn tới video hoặc thư mục</label>
-      <input id="path" value={path} onChange={(e) => setPath(e.target.value)} placeholder="Đường dẫn tới video hoặc thư mục, ví dụ /Volumes/Footage/DaLat"
+      <input id="path" value={path} onChange={(e) => setPath(e.target.value)} placeholder="Đường dẫn tới video, ảnh hoặc thư mục, ví dụ /Volumes/Footage/DaLat"
              className="min-w-0 flex-1 rounded border border-line bg-canvas px-3 py-1.5 placeholder:text-mute/70" />
       <Button kind="primary" disabled={busy || !path.trim()} onClick={submit}>Thêm footage</Button>
       {note && <p className={`w-full text-sm ${note.ok ? "text-mute" : "text-tally"}`}>{note.text}</p>}
@@ -69,8 +69,9 @@ function Player({ asset, start }: { asset: Asset; start?: number }) {
     <aside className="flex w-full flex-col gap-4 overflow-y-auto border-t border-line bg-surface p-5 lg:w-[460px] lg:shrink-0 lg:border-l lg:border-t-0">
       {asset.proxy_url
         ? <video ref={video} key={asset.proxy_url} src={asset.proxy_url} controls className="aspect-video w-full rounded bg-black" onTimeUpdate={(e) => setT(e.currentTarget.currentTime)} />
+        : asset.still && asset.thumbnail_url ? <img src={asset.thumbnail_url} alt="" className="aspect-video w-full rounded bg-black object-contain" />
         : <div className="grid aspect-video w-full place-items-center rounded bg-canvas text-mute">Bản xem chưa sẵn sàng</div>}
-      <RangeStrip asset={asset} tall playhead={t} onSeek={seek} />
+      {!asset.still && <RangeStrip asset={asset} tall playhead={t} onSeek={seek} />}
       <div>
         <h2 className="break-all text-base font-semibold">{asset.name}</h2>
         <p className="tc text-mute">{asset.width}×{asset.height}, {asset.frame_rate ? `${Math.round(asset.frame_rate)} khung/giây, ` : ""}{megabytes(asset.size)}, {asset.has_audio ? "có âm thanh" : "không có âm thanh"}</p>
@@ -136,7 +137,7 @@ export default function Library() {
                 <div className="min-w-0">
                   <p className="truncate font-medium">{a.name}</p>
                   <p className="tc text-sm text-mute">
-                    {a.duration ? timecode(a.duration) : "Đang xử lý"}{a.width ? `, ${a.width}×${a.height}` : ""}
+                    {a.still ? "Ảnh tĩnh" : a.duration ? timecode(a.duration) : "Đang xử lý"}{a.width ? `, ${a.width}×${a.height}` : ""}
                     {a.ingest && a.ingest.status !== "succeeded" && <>, <StatusText status={a.ingest.status} /></>}
                   </p>
                 </div>
