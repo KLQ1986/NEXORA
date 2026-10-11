@@ -115,6 +115,27 @@ Giới hạn cần biết: đồng bộ máy quay cần cả hai clip có âm th
 
 Chưa làm được vì đang chờ: chạy các phần cần mô hình thật trên giao diện (mô hình đang tạm dừng), và các mục bị chặn ở bảng trên.
 
+### Chạy thử MVP bằng mô hình thật trên giao diện, 2026-10-11
+
+Một video dọc 5 câu làm trọn trên giao diện với `qwen2.5vl:7b` và `bge-m3`: chọn clip có chấm bằng khung hình (3 câu có clip, 2 câu báo thiếu hình), lấp một chỗ thiếu bằng clip stock có giấy phép, chèn hình theo từ, dựng 720×1280 dài 17 giây, kiểm tra tự động đạt, duyệt, tạo gói xuất bản. Một dự án 2 câu khác được tự duyệt vì cả hai clip đều đạt 10/10. Một ảnh thật được nhập và mô tả.
+
+Ghi nhận về chất lượng, để dành cho giai đoạn tối ưu (người vận hành yêu cầu hoàn thiện nền tảng trước):
+
+- Câu "Những chiếc bánh trứng vàng ruộm vừa ra lò" bị báo thiếu hình dù kho có video làm bánh trứng.
+- Hỏi mô hình vị trí chủ thể bằng một con số thì nó luôn trả lời 50. Đã đổi sang hỏi "trái, giữa, phải" (đúng 3 trên 3 ảnh thử). Trong video thật, 4 cảnh thì 1 cảnh lệch trái, 3 cảnh ở giữa; chưa chấm đúng sai.
+- Khi nạp, `qwen2.5vl:7b` chiếm 13 GB RAM.
+
+### Việc nền tảng còn thiếu (làm trước khi tối ưu từng tính năng)
+
+- [ ] File cấu hình: mô hình, giọng đọc, ngưỡng khớp, cổng, thư mục dữ liệu (hiện ghi cứng trong `__main__.py`)
+- [ ] Sao lưu và khôi phục cơ sở dữ liệu cùng dữ liệu dẫn xuất
+- [ ] Quản lý dung lượng: dọn các đoạn dựng, bản dựng cũ và bộ đệm; gắn lại ổ đĩa đã đổi chỗ trên giao diện
+- [ ] Trang chi tiết một lần chạy: từng lần thử, lỗi, sự kiện, thời gian từng bước
+- [ ] Nhật ký có cấu trúc và số đo thời gian từng bước
+- [ ] Hai luồng chạy riêng cho việc nặng (mô hình) và việc nhẹ (FFmpeg), để dựng video không phải chờ phân tích footage
+- [ ] Lệnh kiểm tra sức khoẻ hệ thống và tự khởi động cùng máy
+- [ ] Tài liệu chạy và vận hành (README)
+
 ### Lát 1 — Lõi chạy việc
 
 Mục thiết kế: 5, 6, 7.
