@@ -10,6 +10,7 @@ from pydantic import BaseModel
 VIDEO_EXT = {".mp4", ".mov", ".m4v", ".mkv", ".avi", ".mts", ".webm", ".ogv"}
 IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp"}
 AUDIO_EXT = ("wav", "m4a", "mp3", "aiff")
+MUSIC_EXT = {".mp3", ".wav", ".m4a", ".aiff", ".flac"}
 
 
 class RegisterRequest(BaseModel):
@@ -46,7 +47,7 @@ def asset_view(system, asset: dict) -> dict:
         "frame_rate": probe.get("frame_rate"), "has_audio": probe.get("has_audio"),
         "usable_ranges": meta.get("usable_ranges", []), "black_ranges": meta.get("black_ranges", []),
         "frozen_ranges": meta.get("frozen_ranges", []),
-        "still": bool(probe.get("still")),
+        "still": bool(probe.get("still")), "kind": asset.get("kind"), "mean_db": probe.get("mean_db"),
         "thumbnail_url": f"/media/{by_role['thumbnail'].version_id}" if "thumbnail" in by_role else f"/media/{original.version_id}" if probe.get("still") else None,
         "proxy_url": f"/media/{by_role['proxy'].version_id}" if "proxy" in by_role else None,
         "ingest": next((run_view(system, r) for r in runs if system.orch.pipeline_of(r) == "library.ingest"), None),
@@ -61,7 +62,7 @@ def create_app(system, *, web_dir: str | Path | None = None) -> FastAPI:
     def register_asset(body: RegisterRequest):
         root = Path(body.path).expanduser()
         if root.is_dir():
-            files = sorted(f for f in root.rglob("*") if f.suffix.lower() in VIDEO_EXT | IMAGE_EXT and not f.name.startswith("."))
+            files = sorted(f for f in root.rglob("*") if f.suffix.lower() in VIDEO_EXT | IMAGE_EXT | MUSIC_EXT and not f.name.startswith("."))
         elif root.is_file():
             files = [root]
         else:

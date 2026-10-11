@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { post, timecode, usePoll, type Candidate, type Project, type RenderItem, type Shot } from "./api";
+import { post, timecode, usePoll, type Asset, type Candidate, type Project, type RenderItem, type Shot } from "./api";
 import Board from "./Board";
 import { Button, StageRail } from "./parts";
 import Timeline from "./Timeline";
@@ -123,6 +123,8 @@ function Detail({ id, back }: { id: string; back: () => void }) {
   const [takes, setTakes] = useState<string | null>(null);
   const [music, setMusic] = useState<string | null>(null);
   const [style, setStyle] = useState<string | null>(null);
+  const { data: lib } = usePoll<{ assets: Asset[] }>("/api/v1/library", 30000);
+  const tracks = (lib?.assets ?? []).filter((a) => a.kind === "audio" && a.online);
   useEffect(() => { if (p && text === null) setText(p.shots.map((s) => s.text).join("\n")); }, [p, text]);
   if (!p) return <section className="p-6 text-mute">Đang mở dự án</section>;
   const run = async (fn: () => Promise<unknown>) => { setBusy(true); setNote(null); try { await fn(); } catch (e) { setNote((e as Error).message); } setBusy(false); reload(); };
@@ -173,9 +175,10 @@ function Detail({ id, back }: { id: string; back: () => void }) {
           <form className="flex min-w-0 flex-1 items-end gap-2" onSubmit={(e) => { e.preventDefault(); run(() => post(`/api/v1/projects/${id}`, { music_path: (music ?? "").trim() || null }, "PATCH")); }}>
             <div className="min-w-0 flex-1">
               <label htmlFor="music" className="mb-1 block font-medium">Nhạc nền</label>
-              <input id="music" value={music ?? p.music_path ?? ""} onChange={(e) => setMusic(e.target.value)} placeholder="Đường dẫn tới file nhạc bạn có quyền dùng (để trống nếu không cần)"
+              <input id="music" list="tracks" value={music ?? p.music_path ?? ""} onChange={(e) => setMusic(e.target.value)} placeholder="Chọn nhạc trong thư viện hoặc dán đường dẫn tới file nhạc bạn có quyền dùng"
                      className="w-full rounded border border-line bg-canvas px-3 py-1.5 placeholder:text-mute/70" />
             </div>
+            <datalist id="tracks">{tracks.map((a) => <option key={a.asset_id} value={a.path}>{`${a.name}, ${timecode(a.duration)}`}</option>)}</datalist>
             <Button disabled={busy || music === null || (music ?? "") === (p.music_path ?? "")} onClick={() => run(() => post(`/api/v1/projects/${id}`, { music_path: (music ?? "").trim() || null }, "PATCH"))}>Lưu nhạc</Button>
           </form>
         </div>

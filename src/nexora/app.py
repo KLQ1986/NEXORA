@@ -56,10 +56,10 @@ def fill_gap_from_stock(system: "System", shot_id: str, query: str) -> dict:
     return {"found": True, "asset_id": asset_id, "run_id": run_id, "rights": rights}
 
 
-PIPELINE_NAMES = {"library.ingest": "Nhập footage", "library.ingest_image": "Nhập ảnh", "library.understand": "Hiểu nội dung footage",
+PIPELINE_NAMES = {"library.ingest": "Nhập footage", "library.ingest_image": "Nhập ảnh", "library.ingest_audio": "Nhập nhạc", "library.understand": "Hiểu nội dung footage",
                   "sourcing.match": "Chọn clip", "sourcing.generate": "Sinh hình bằng AI", "edit.render": "Dựng video"}
 ANNOUNCE = {"waiting_review": "đang chờ bạn duyệt", "blocked": "đang dừng và cần bạn xử lý", "failed": "thất bại", "succeeded": "đã xong"}
-QUIET = frozenset({"library.ingest", "library.ingest_image", "library.understand"})   # finishing these needs nobody's attention
+QUIET = frozenset({"library.ingest", "library.ingest_image", "library.ingest_audio", "library.understand"})   # finishing these needs nobody's attention
 
 
 def announce(system: "System", after: int) -> int:

@@ -19,7 +19,7 @@ function AddFootage({ onDone }: { onDone: () => void }) {
   return (
     <form className="flex flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); submit(); }}>
       <label htmlFor="path" className="sr-only">Đường dẫn tới video hoặc thư mục</label>
-      <input id="path" value={path} onChange={(e) => setPath(e.target.value)} placeholder="Đường dẫn tới video, ảnh hoặc thư mục, ví dụ /Volumes/Footage/DaLat"
+      <input id="path" value={path} onChange={(e) => setPath(e.target.value)} placeholder="Đường dẫn tới video, ảnh, nhạc hoặc thư mục, ví dụ /Volumes/Footage/DaLat"
              className="min-w-0 flex-1 rounded border border-line bg-canvas px-3 py-1.5 placeholder:text-mute/70" />
       <Button kind="primary" disabled={busy || !path.trim()} onClick={submit}>Thêm footage</Button>
       {note && <p className={`w-full text-sm ${note.ok ? "text-mute" : "text-tally"}`}>{note.text}</p>}
@@ -137,7 +137,7 @@ export default function Library() {
                 <div className="min-w-0">
                   <p className="truncate font-medium">{a.name}</p>
                   <p className="tc text-sm text-mute">
-                    {a.still ? "Ảnh tĩnh" : a.duration ? timecode(a.duration) : "Đang xử lý"}{a.width ? `, ${a.width}×${a.height}` : ""}
+                    {a.still ? "Ảnh tĩnh" : a.kind === "audio" && a.duration ? `Nhạc, ${timecode(a.duration)}` : a.duration ? timecode(a.duration) : "Đang xử lý"}{a.width ? `, ${a.width}×${a.height}` : ""}
                     {a.ingest && a.ingest.status !== "succeeded" && <>, <StatusText status={a.ingest.status} /></>}
                   </p>
                 </div>

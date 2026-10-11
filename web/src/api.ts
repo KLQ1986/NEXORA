@@ -6,7 +6,7 @@ export type Asset = {
   asset_id: string; name: string; path: string; online: boolean; size: number; duplicate_of: string | null;
   duration: number | null; width: number | null; height: number | null; frame_rate: number | null; has_audio: boolean | null;
   usable_ranges: number[][]; black_ranges: number[][]; frozen_ranges: number[][];
-  thumbnail_url: string | null; proxy_url: string | null; ingest: Run | null; understand: Run | null; still: boolean;
+  thumbnail_url: string | null; proxy_url: string | null; ingest: Run | null; understand: Run | null; still: boolean; kind: string; mean_db: number | null;
 };
 
 export async function call<T>(url: string, init?: RequestInit): Promise<T> {

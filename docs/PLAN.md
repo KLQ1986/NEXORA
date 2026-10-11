@@ -88,6 +88,21 @@ Các bước 1–10 của bảng trên đã có bản chạy được; bước 1
 
 **Lỗi do thử trên giao diện phát hiện và đã sửa:** bước ghép cuối hỏng khi thư mục dữ liệu là đường dẫn tương đối.
 
+### Lượt xây thứ ba, 2026-10-11
+
+Đã xây, có test tự động (102 test đạt) và đã chạy trên trình duyệt, trừ khi ghi khác:
+
+| Tính năng | Kiểm chứng |
+|---|---|
+| Màn hình Dòng thời gian trong dự án: các hàng Hình, Lời dẫn, Phụ đề, Nhạc theo đúng tỷ lệ thời gian; đầu phát đi theo video; bấm cảnh để nhảy tới; trượt đoạn lấy sớm hoặc muộn hơn; đổi sang cảnh khác; báo cảnh đã đổi mà chưa dựng lại; dựng lại ngay tại đó | Chạy trên trình duyệt với dự án 6 câu |
+| Thông báo của macOS khi có việc chờ duyệt, bị dừng, thất bại, hoặc video dựng xong; bật tắt ở mục Hệ thống | Test tự động. Chưa nhìn tận mắt thông báo hiện lên màn hình |
+| Ảnh tĩnh làm nguyên liệu, khi dựng có chuyển động đẩy máy chậm | Test tự động. Chưa thử trên giao diện vì nhập ảnh sẽ gọi mô hình thị giác, đang tạm dừng |
+| Lời dẫn tự thu: đặt file `1.wav`, `2.m4a` theo số câu trong một thư mục; câu nào có file thì dùng giọng thu, câu còn lại dùng giọng máy | Test tự động. Ô nhập đã có trên giao diện, chưa thử với bản thu thật |
+| Nhạc trong thư viện: nhập file nhạc, đo độ dài và độ lớn, chọn trong dự án | Chạy trên trình duyệt với một file âm thử |
+| Sửa lỗi: video ngắn hơn 3 giây trước đây không ghép được | Test tự động |
+
+Còn lại chưa xây: reframe theo chủ thể, đồng bộ nhiều máy quay, đổi hình theo từ khoá trong câu. Các mục bị chặn giữ nguyên như bảng ở trên.
+
 ### Lát 1 — Lõi chạy việc
 
 Mục thiết kế: 5, 6, 7.

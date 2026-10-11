@@ -21,9 +21,12 @@ INGEST = PipelineDefinition("library.ingest", "1", [
 
 MIN_USABLE_SECONDS = 0.1
 IMAGE_EXT = frozenset({".jpg", ".jpeg", ".png", ".webp"})
+AUDIO_EXT = frozenset({".mp3", ".wav", ".m4a", ".aiff", ".flac"})
 
 # A photograph: no proxy and no time ranges. It is its own thumbnail.
 INGEST_IMAGE = PipelineDefinition("library.ingest_image", "1", [StageDef("checksum"), StageDef("measure", depends_on=("checksum",))])
+# Music: its length and how loud it is, so that a track can be chosen for a cut without opening it.
+INGEST_AUDIO = PipelineDefinition("library.ingest_audio", "1", [StageDef("checksum"), StageDef("listen", depends_on=("checksum",))])
 
 
 def usable_ranges(duration: float, black: list[list[float]]) -> list[list[float]]:
@@ -54,6 +57,7 @@ class Library:
                           on_success=(lambda run_id, asset_id: self.understand(asset_id)) if self._understanding else None)
         registry.register(INGEST_IMAGE, {"checksum": self._checksum, "measure": self._measure},
                           on_success=(lambda run_id, asset_id: self.understand(asset_id)) if self._understanding else None)
+        registry.register(INGEST_AUDIO, {"checksum": self._checksum, "listen": self._listen})
         if self._understanding:
             from nexora.modules.library.understand import UNDERSTAND
             registry.register(UNDERSTAND, self._understanding.handlers())
@@ -71,11 +75,13 @@ class Library:
         path = Path(path)
         if not path.is_file():
             raise FileNotFoundError(path)
-        image = path.suffix.lower() in IMAGE_EXT
-        asset_id, version_id = self._assets.create_asset(path, kind="image" if image else "video", origin=origin,
+        image, audio = path.suffix.lower() in IMAGE_EXT, path.suffix.lower() in AUDIO_EXT
+        asset_id, version_id = self._assets.create_asset(path, kind="image" if image else "audio" if audio else "video", origin=origin,
                                                        privacy_class="local_only" if origin == "self_shot" else "cloud_allowed")
         if rights:
             self._assets.update_metadata(version_id, rights=rights)
+        if audio:
+            return asset_id, self._orch.submit_run(INGEST_AUDIO, subject_ref=asset_id, idempotency_key=f"ingest:{asset_id}")
         if image:
             return asset_id, self._orch.submit_run(INGEST_IMAGE, subject_ref=asset_id, idempotency_key=f"ingest:{asset_id}")
         run_id = self._orch.submit_run(INGEST, subject_ref=asset_id, idempotency_key=f"ingest:{asset_id}")
@@ -105,6 +111,16 @@ class Library:
         if duplicate_of:
             self._assets.update_metadata(original.version_id, duplicate_of=duplicate_of)
         return {"checksum": checksum, "duplicate_of": duplicate_of}
+
+    def _listen(self, ctx):
+        if self._is_duplicate(ctx):
+            return {"skipped": "duplicate"}
+        original, path = self._source(ctx)
+        duration = self._adapters.submit("ffprobe", Request("duration", inputs={"path": str(path)}, attempt_id=ctx.claim.attempt_id)).outputs["duration"]
+        loud = self._adapters.submit("ffmpeg", Request("loudness", inputs={"path": str(path)}, attempt_id=ctx.claim.attempt_id)).outputs
+        heard = {"duration": round(float(duration), 2), "has_audio": True, "audio_only": True, "mean_db": loud["mean_db"], "max_db": loud["max_db"]}
+        self._assets.update_metadata(original.version_id, probe=heard)
+        return heard
 
     def _measure(self, ctx):
         if self._is_duplicate(ctx):
