@@ -86,3 +86,18 @@ class FakeVideoGen(Adapter):
         subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-loop", "1", "-i", request.inputs["first_frame"], "-t", str(d),
                         "-vf", "scale=640:360,fps=25", "-pix_fmt", "yuv420p", request.params["out"]], check=True)
         return Result(outputs={"provider": "fake", "model": "fake-video-1"}, files=(request.params["out"],), usage=Usage(units=d, cost=0.1 * d))
+
+
+class FakeStock(Adapter):
+    def describe(self) -> Capability:
+        return Capability(name="stock", operations=("search",), runs="cloud")
+
+    def submit(self, request: Request) -> Result:
+        import subprocess
+        from pathlib import Path
+        out = Path(request.params["out_dir"]); out.mkdir(parents=True, exist_ok=True)
+        clip = out / "stock_clip.mp4"
+        subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=25:duration=6",
+                        "-pix_fmt", "yuv420p", str(clip)], check=True)
+        return Result(outputs={"clips": [{"source": "archive_org", "source_url": "https://example.org/clip", "license": "Public Domain", "creator": "", "path": str(clip)}],
+                               "raw": {}}, files=(str(clip),))

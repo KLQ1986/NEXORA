@@ -59,12 +59,15 @@ class Library:
             return None
         return self._orch.submit_run(UNDERSTAND, subject_ref=asset_id, idempotency_key=None if force else f"understand:{asset_id}")
 
-    def ingest(self, path: str | Path) -> tuple[str, str]:
-        """Register a file and start its ingest run. Ingesting the same file again returns the same asset and run."""
+    def ingest(self, path: str | Path, *, origin: str = "self_shot", rights: dict | None = None) -> tuple[str, str]:
+        """Register a file and start its ingest run. Ingesting the same file again returns the same asset and run.
+        `rights` records where licensed material came from and under which terms."""
         path = Path(path)
         if not path.is_file():
             raise FileNotFoundError(path)
-        asset_id, _ = self._assets.create_asset(path, kind="video", origin="self_shot")
+        asset_id, version_id = self._assets.create_asset(path, kind="video", origin=origin, privacy_class="local_only" if origin == "self_shot" else "cloud_allowed")
+        if rights:
+            self._assets.update_metadata(version_id, rights=rights)
         run_id = self._orch.submit_run(INGEST, subject_ref=asset_id, idempotency_key=f"ingest:{asset_id}")
         return asset_id, run_id
 

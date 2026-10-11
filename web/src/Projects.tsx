@@ -12,6 +12,9 @@ function Clip({ url, tIn, tOut, poster }: { url: string | null; tIn: number; tOu
 
 function ShotRow({ shot, n, locked, changed }: { shot: Shot; n: number; locked: boolean; changed: () => void }) {
   const sel = shot.selection;
+  const [query, setQuery] = useState("");
+  const [stock, setStock] = useState<string | null>(null);
+  const findStock = async () => { setStock("Đang tìm trên các kho miễn phí"); try { const r = await post<{ found: boolean }>(`/api/v1/shots/${shot.shot_id}/stock`, { query }); setStock(r.found ? null : "Không tìm thấy clip nào. Thử từ khoá tiếng Anh khác."); } catch (e) { setStock((e as Error).message); } changed(); };
   const act = async (path: string, body?: unknown) => { await post(`/api/v1/shots/${shot.shot_id}/${path}`, body).catch(() => {}); changed(); };
   return (
     <li className="grid gap-4 py-4 md:grid-cols-[2rem_minmax(0,1fr)_280px]">
@@ -20,7 +23,15 @@ function ShotRow({ shot, n, locked, changed }: { shot: Shot; n: number; locked: 
         <p className="text-base">{shot.text}</p>
         {!sel && <p className="mt-1 text-sm text-mute">Chưa tìm clip cho câu này.</p>}
         {sel?.status === "gap" && <p className="mt-1 text-sm text-cue">Chưa có hình cho câu này. Video sẽ hiện một nền trơn kèm phụ đề, cho tới khi bạn quay thêm, thêm footage, hoặc sửa câu.</p>}
-        {sel && sel.status !== "gap" && <p className="mt-1 text-sm text-mute">Vì sao chọn: {sel.reason}</p>}
+        {sel && sel.status !== "gap" && <p className="mt-1 break-words text-sm text-mute">Vì sao chọn: {sel.reason}</p>}
+        {sel?.status === "gap" && !locked && (
+          <form className="mt-2 flex max-w-xl flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); if (query.trim()) findStock(); }}>
+            <label htmlFor={`stock-${shot.shot_id}`} className="sr-only">Từ khoá tìm clip stock</label>
+            <input id={`stock-${shot.shot_id}`} value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Từ khoá tiếng Anh, ví dụ: fishing boat at sea" className="min-w-0 flex-1 rounded border border-line bg-canvas px-3 py-1.5 placeholder:text-mute/70" />
+            <Button disabled={!query.trim()} onClick={findStock}>Tìm clip stock miễn phí</Button>
+            {stock && <p className="w-full text-sm text-mute">{stock}</p>}
+          </form>
+        )}
         {sel && sel.alternates.length > 0 && !locked && (
           <div className="mt-3">
             <p className="mb-1 text-sm text-mute">Phương án khác</p>

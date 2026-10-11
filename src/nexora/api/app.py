@@ -275,6 +275,18 @@ def create_app(system, *, web_dir: str | Path | None = None) -> FastAPI:
         system.sourcing.mark_gap(shot_id)
         return {"ok": True}
 
+    @app.post("/api/v1/shots/{shot_id}/stock")
+    def stock(shot_id: str, body: dict):
+        from nexora.app import fill_gap_from_stock
+        from nexora.core.adapter import AdapterError
+        query = str(body.get("query", "")).strip()
+        if not query:
+            raise HTTPException(422, "Cần từ khoá để tìm clip stock")
+        try:
+            return fill_gap_from_stock(system, shot_id, query)
+        except AdapterError as err:
+            raise HTTPException(503, f"Không tìm được clip stock: {err.message}")
+
     @app.post("/api/v1/shots/{shot_id}/trim")
     def trim(shot_id: str, body: dict):
         system.sourcing.trim(shot_id, float(body["t_in"]), float(body["t_out"]))

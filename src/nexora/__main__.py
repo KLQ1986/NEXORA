@@ -5,6 +5,7 @@ from pathlib import Path
 
 from nexora.adapters.media import ffmpeg_capabilities
 from nexora.adapters.ollama import OllamaAdapter
+from nexora.adapters.openmontage import OpenMontageStock
 from nexora.adapters.voice import SayVoice
 from nexora.app import build
 
@@ -27,7 +28,7 @@ def main() -> None:
     p = sub.add_parser("serve", help="start the API on the loopback address")
     p.add_argument("--port", type=int, default=8600)
     args = parser.parse_args()
-    system = build(args.data, model=OllamaAdapter(), voice=SayVoice(), match_threshold=0.52)
+    system = build(args.data, model=OllamaAdapter(), voice=SayVoice(), match_threshold=0.52, stock=OpenMontageStock())
 
     if args.command == "ingest":
         for given in args.paths:

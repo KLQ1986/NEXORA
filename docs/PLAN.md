@@ -68,7 +68,23 @@ Các bước 1–10 của bảng trên đã có bản chạy được; bước 1
 
 **Số đo với mô hình cục bộ (12 câu của thử nghiệm):** lựa chọn đầu đúng đoạn 2/10 câu; đúng trong ba phương án đầu 7/10; một trong hai câu không có footage bị gán nhầm clip. Kém rõ so với lần Claude tự xem khung hình trong thử nghiệm. Hiểu bốn video (17 phút) mất khoảng 25 phút.
 
-**Chưa có so với thiết kế v4.0:** dây chuyền A (hoạt hình sinh bằng AI) hoàn toàn chưa làm; nhạc nền và trộn âm; reframe và đồng bộ nhiều máy; dựng thô theo transcript và nhận dạng giọng nói; chuẩn hoá HDR; bước chấm ứng viên bằng keyframe và định vị điểm vào/ra bằng lấy mẫu dày; canh hình theo từ khoá; xem lại cả video; đăng lên nền tảng và số liệu; ảnh tĩnh, thư viện nhạc, giọng của người vận hành; thông báo; tự chấp nhận theo độ tin cậy; màn hình Board riêng, Timeline preview và Costs; tích hợp OpenMontage.
+**Đã thêm ở lượt xây thứ hai (97 test đạt):** bước chấm ứng viên bằng khung hình thật và canh clip vào khung hình đúng nhất; video dọc 9:16 và vuông; nhạc nền tự hạ dưới lời dẫn; kiểm tra âm lượng; rà soát bản dựng (thiếu hình, nhịp, lặp, mở đầu); thông báo; gói xuất bản (video, phụ đề SRT, ba ảnh đại diện, tiêu đề, mô tả, ghi công, cờ nội dung tổng hợp); tự duyệt theo độ tin cậy; màn hình Bảng theo dõi có xem lại quá trình, dải timeline, hộp thông báo; dây chuyền sinh hình bằng AI (ảnh tĩnh duyệt trước, bộ dựng prompt, seed, giới hạn độ dài clip, ghi chi phí); lấy clip stock miễn phí qua OpenMontage chạy trong tiến trình riêng; nâng cấp cấu trúc cơ sở dữ liệu cũ.
+
+**Số đo sau khi có bước chấm bằng khung hình:** 7/12 câu đúng (trước đó 2/10 lựa chọn đầu đúng), cả hai câu không có footage đều được báo thiếu; khớp 12 câu mất 7 phút với mô hình cục bộ.
+
+**Chưa có so với thiết kế v4.0, và lý do:**
+
+| Phần | Vì sao chưa |
+|---|---|
+| Sinh ảnh và video thật bằng AI | Dây chuyền đã có và đã test với nhà cung cấp giả lập; cần khoá API của một nhà cung cấp thật |
+| Đăng lên nền tảng, thu số liệu, thí nghiệm | Cần tài khoản, khoá API và audit của nền tảng |
+| Chuẩn hoá video HDR | Cần cài bản FFmpeg đầy đủ hơn |
+| Dựng thô theo transcript, nhận dạng giọng nói | Cần cài thêm mô hình nhận dạng giọng nói |
+| Reframe bám chủ thể, đồng bộ nhiều máy quay | Chưa làm; video dọc hiện cắt giữa khung |
+| Canh hình theo từ khoá và phách nhạc | Chưa làm |
+| Ảnh tĩnh làm nguyên liệu, hiểu thư viện nhạc, giọng của người vận hành | Chưa làm |
+| Khớp khẩu hình, nâng độ phân giải, huấn luyện mô hình nhân vật | Chưa làm; phụ thuộc dây chuyền sinh hình thật |
+| Thông báo của macOS, kênh nhắn tin | Chưa làm; hiện chỉ có hộp thông báo trong giao diện |
 
 **Lỗi do thử trên giao diện phát hiện và đã sửa:** bước ghép cuối hỏng khi thư mục dữ liệu là đường dẫn tương đối.
 

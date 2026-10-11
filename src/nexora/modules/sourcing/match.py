@@ -143,6 +143,17 @@ class Sourcing:
         rest = [a for i, a in enumerate(sel.alternates) if i != alternate] + old
         self._projects.set_selection(shot_id, status="accepted" if sel.status == "accepted" else "proposed", alternates=rest, decided_by="operator", **_fields(chosen))
 
+    def use_asset(self, shot_id: str, asset_id: str, *, reason: str, seconds: float | None = None) -> None:
+        """Fill a shot with a whole asset from another strategy (stock or generation); it still goes through review."""
+        shot_text = next(s.text for sc in [self._projects.script(self._script_of(shot_id))] for s in sc["shots"] if s.shot_id == shot_id)
+        need = seconds or needed_seconds(shot_text)
+        old = self._projects.selection(shot_id)
+        self._projects.set_selection(shot_id, status="proposed", asset_id=asset_id, t_in=0.0, t_out=need, reason=reason,
+                                     alternates=old.alternates if old else [], decided_by="operator")
+
+    def _script_of(self, shot_id: str) -> str:
+        return self._projects._conn.execute("SELECT script_id FROM shots WHERE shot_id = ?", (shot_id,)).fetchone()[0]
+
     def mark_gap(self, shot_id: str) -> None:
         sel = self._projects.selection(shot_id)
         keep = ([{"moment_id": sel.moment_id, "asset_id": sel.asset_id, "t_in": sel.t_in, "t_out": sel.t_out, "score": sel.score, "reason": sel.reason}] if sel and sel.moment_id else []) + (sel.alternates if sel else [])

@@ -188,3 +188,26 @@ def test_confidence_based_acceptance_skips_the_review_only_when_every_selection_
     run2 = system.sourcing.start_match(script2)
     drain(system)
     assert system.orch.run_status(run2) is RunStatus.WAITING_REVIEW          # a gap always goes to the operator
+
+
+def test_a_gap_is_filled_with_licensed_stock_that_enters_the_library_with_its_rights(tmp_path):
+    from nexora.app import fill_gap_from_stock
+    from tests.fakes import FakeStock
+    system = build(tmp_path / "data", model=FakeModel(), voice=FakeVoice(), segment_seconds=2.0, stock=FakeStock())
+    system.library.ingest(make_video(tmp_path / "footage.mp4", picture=20)); drain(system)
+    pid = system.planning.create_project("Biển")
+    script = system.planning.save_script(pid, ["cá tươi trên sạp", "bàn phím máy tính"])
+    run = system.sourcing.start_match(script); drain(system)
+    gap = system.projects.selections(script)[1]
+    assert gap.status == "gap"
+    out = fill_gap_from_stock(system, gap.shot_id, "keyboard typing")
+    drain(system)                                                                  # the stock clip is ingested and understood like any footage
+    filled = system.projects.selections(script)[1]
+    assert out["found"] and filled.status == "proposed" and "Public Domain" in filled.reason
+    asset = next(a for a in system.assets.assets() if a["asset_id"] == filled.asset_id)
+    assert asset["origin"] == "licensed" and system.assets.original(filled.asset_id).metadata["rights"]["license"] == "Public Domain"
+    system.sourcing.approve(run)
+    system.edit.start_render(script); drain(system)
+    render = system.projects.renders(pid)[0]
+    assert render["qc"]["gaps"] == 0
+    assert system.distribution.build_package(render["render_id"])["credits"] == ["licensed"]
