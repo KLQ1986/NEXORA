@@ -152,3 +152,33 @@ def test_inserts_framing_and_camera_angles_are_reachable_through_the_api(tmp_pat
     mute = client.post("/api/v1/assets/register", json={"path": str(make_video(tmp_path / "m.mp4", picture=4))}).json()["asset_id"]
     drain()
     assert client.post("/api/v1/assets/sync", json={"a": a, "b": mute}).status_code == 409
+
+
+def test_the_operator_can_inspect_a_run_see_and_clean_storage_back_up_and_check_the_system(tmp_path):
+    from tests.conftest import make_video
+    from tests.fakes import FakeModel, FakeVoice
+    system = build(tmp_path / "data", model=FakeModel(), voice=FakeVoice(), segment_seconds=2.0)
+    client = TestClient(create_app(system))
+    drain = lambda: [None for _ in iter(system.worker.run_once, False)]
+    run_id = client.post("/api/v1/assets/register", json={"path": str(make_video(tmp_path / "f.mp4", picture=20))}).json()["run_id"]; drain()
+    detail = client.get(f"/api/v1/runs/{run_id}/detail").json()
+    assert [a["stage_key"] for a in detail["attempts"]][0] == "checksum" and all(a["seconds"] is not None for a in detail["attempts"])
+    assert detail["events"][0]["kind"] == "run.submitted"
+
+    pid = client.post("/api/v1/projects", json={"title": "Dọn", "lines": ["cá tươi trên sạp"]}).json()["project_id"]
+    client.post(f"/api/v1/projects/{pid}/match"); drain(); client.post(f"/api/v1/projects/{pid}/match/approve")
+    client.post(f"/api/v1/projects/{pid}/render"); drain()
+    stores = {s["key"]: s for s in client.get("/api/v1/storage").json()["stores"]}
+    assert stores["segments"]["bytes"] > 0 and stores["renders"]["files"] == 1 and stores["orphan_renders"]["files"] == 0
+    assert client.post("/api/v1/storage/clean", json={"keys": ["renders"]}).status_code == 422          # a project's render is never a cache
+    assert client.post("/api/v1/storage/clean", json={"keys": ["segments", "orphan_renders"]}).json()["freed_bytes"] == stores["segments"]["bytes"]
+    assert client.get(client.get(f"/api/v1/projects/{pid}").json()["renders"][0]["url"]).status_code == 200
+    client.post(f"/api/v1/projects/{pid}/render"); drain()                                               # the cache rebuilds itself
+    assert client.get(f"/api/v1/projects/{pid}").json()["renders"][0]["qc"]["passed"]
+
+    assert client.post("/api/v1/storage/backup").json()["size"] > 0
+    storage = client.get("/api/v1/storage").json()
+    assert len(storage["backups"]) == 1 and storage["volumes"][0]["online"]
+    assert client.post(f"/api/v1/volumes/{storage['volumes'][0]['volume_id']}/relink", json={"mount": str(tmp_path / "gone")}).status_code == 404
+    names = [c["name"] for c in client.get("/api/v1/doctor").json()["checks"]]
+    assert "Cơ sở dữ liệu" in names and "Công cụ ffmpeg" in names

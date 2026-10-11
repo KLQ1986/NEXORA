@@ -125,16 +125,17 @@ Ghi nhận về chất lượng, để dành cho giai đoạn tối ưu (ngườ
 - Hỏi mô hình vị trí chủ thể bằng một con số thì nó luôn trả lời 50. Đã đổi sang hỏi "trái, giữa, phải" (đúng 3 trên 3 ảnh thử). Trong video thật, 4 cảnh thì 1 cảnh lệch trái, 3 cảnh ở giữa; chưa chấm đúng sai.
 - Khi nạp, `qwen2.5vl:7b` chiếm 13 GB RAM.
 
-### Việc nền tảng còn thiếu (làm trước khi tối ưu từng tính năng)
+### Nền tảng, lượt 2026-10-11 (113 test đạt)
 
-- [ ] File cấu hình: mô hình, giọng đọc, ngưỡng khớp, cổng, thư mục dữ liệu (hiện ghi cứng trong `__main__.py`)
-- [ ] Sao lưu và khôi phục cơ sở dữ liệu cùng dữ liệu dẫn xuất
-- [ ] Quản lý dung lượng: dọn các đoạn dựng, bản dựng cũ và bộ đệm; gắn lại ổ đĩa đã đổi chỗ trên giao diện
-- [ ] Trang chi tiết một lần chạy: từng lần thử, lỗi, sự kiện, thời gian từng bước
-- [ ] Nhật ký có cấu trúc và số đo thời gian từng bước
-- [ ] Hai luồng chạy riêng cho việc nặng (mô hình) và việc nhẹ (FFmpeg), để dựng video không phải chờ phân tích footage
-- [ ] Lệnh kiểm tra sức khoẻ hệ thống và tự khởi động cùng máy
-- [ ] Tài liệu chạy và vận hành (README)
+- [x] File cấu hình `nexora.toml` (`init-config` ghi ra mẫu; thiết lập gõ sai bị từ chối khi khởi động)
+- [x] Sao lưu cơ sở dữ liệu mỗi lần khởi động và theo nút bấm; lệnh `restore` giữ lại bản bị thay
+- [x] Quản lý dung lượng ở mục Hệ thống: xem từng loại dữ liệu, dọn dữ liệu tạm, trỏ lại nơi chứa footage
+- [x] Chi tiết một lần chạy ở mục Tiến trình: từng lần thử, thời gian, lỗi; huỷ lần chạy
+- [x] Nhật ký `data/logs/stages.jsonl`: mỗi bước một dòng
+- [x] Hai luồng chạy: phân tích footage (nền) tách khỏi chọn clip và dựng video
+- [x] Lệnh `doctor` và mục Kiểm tra hệ thống trên giao diện
+- [x] `README.md`: cài đặt, lệnh, cấu trúc, cách tự khởi động cùng máy
+- [ ] Chưa làm: lớp tác tử (multi-agent), hàng đợi theo lịch, ngân sách theo dự án trên giao diện
 
 ### Lát 1 — Lõi chạy việc
 

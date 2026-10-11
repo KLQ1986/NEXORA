@@ -1,21 +1,21 @@
 """Command line: python -m nexora [--data DIR] <command>."""
 import argparse
 import json
+from dataclasses import replace
 from pathlib import Path
 
-from nexora.adapters.desktop import DesktopNotifier
 from nexora.adapters.media import ffmpeg_capabilities
-from nexora.adapters.ollama import OllamaAdapter
-from nexora.adapters.openmontage import OpenMontageStock
-from nexora.adapters.voice import SayVoice
-from nexora.app import build
+from nexora.app import build_from_config, doctor
+from nexora.config import TEMPLATE, Config
+from nexora.core import backup as backups
 
 VIDEO_EXT = {".mp4", ".mov", ".m4v", ".mkv", ".avi", ".mts", ".webm", ".ogv"}
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="nexora")
-    parser.add_argument("--data", default="data", help="data directory (database and managed media)")
+    parser.add_argument("--config", default="nexora.toml", help="settings file (optional)")
+    parser.add_argument("--data", default=None, help="data directory; overrides the settings file")
     sub = parser.add_subparsers(dest="command", required=True)
     p = sub.add_parser("ingest", help="register files or folders and start their ingest runs")
     p.add_argument("paths", nargs="+")
@@ -27,9 +27,37 @@ def main() -> None:
     sub.add_parser("assets", help="list assets")
     sub.add_parser("env", help="check the environment")
     p = sub.add_parser("serve", help="start the API on the loopback address")
-    p.add_argument("--port", type=int, default=8600)
+    p.add_argument("--port", type=int, default=None)
+    sub.add_parser("doctor", help="check everything this installation needs")
+    sub.add_parser("backup", help="copy the database into the backups folder")
+    p = sub.add_parser("restore", help="put a backup in place of the database (stop the server first)")
+    p.add_argument("file")
+    sub.add_parser("init-config", help="write a nexora.toml with every setting and its default")
     args = parser.parse_args()
-    system = build(args.data, model=OllamaAdapter(), voice=SayVoice(), match_threshold=0.52, stock=OpenMontageStock(), desktop=DesktopNotifier())
+    if args.command == "init-config":
+        target = Path(args.config)
+        if target.exists():
+            raise SystemExit(f"{target} already exists")
+        target.write_text(TEMPLATE, encoding="utf-8")
+        print(f"wrote {target}")
+        return
+    config = Config.load(args.config)
+    if args.data:
+        config = replace(config, data_dir=args.data)
+    if args.command == "restore":                 # before anything opens the database
+        kept = backups.restore(args.file, Path(config.data_dir).resolve() / "nexora.db")
+        print(f"restored {args.file}; the database it replaced is kept as {kept.name}")
+        return
+    system = build_from_config(config)
+    if args.command == "doctor":
+        problems = 0
+        for check in doctor(system, config):
+            print(f"{'ok  ' if check['ok'] else 'opt ' if check['optional'] else 'MISS'}  {check['name']}: {check['detail']}" + (f"\n      {check['fix']}" if check["fix"] else ""))
+            problems += not check["ok"] and not check["optional"]
+        raise SystemExit(1 if problems else 0)
+    if args.command == "backup":
+        print(backups.backup(system.data_dir / "nexora.db", system.data_dir / "backups", keep=config.backups_kept))
+        return
 
     if args.command == "ingest":
         for given in args.paths:
@@ -80,7 +108,11 @@ def main() -> None:
 
         from nexora.api.app import create_app
         # One command runs everything: the worker on its own thread, the API and Web UI on the loopback address.
-        threading.Thread(target=system.worker.run_forever, name="nexora-worker", daemon=True).start()
+        # A backup at every start: cheap, and the moment before new work is the moment a copy is worth most.
+        backups.backup(system.data_dir / "nexora.db", system.data_dir / "backups", keep=config.backups_kept)
+        system.worker.recover()
+        for worker in system.workers:
+            threading.Thread(target=worker.run_forever, kwargs={"recover": False}, name=f"nexora-{worker.worker_id}", daemon=True).start()
 
         def announcer():
             import time
@@ -91,8 +123,9 @@ def main() -> None:
                 time.sleep(3)
         threading.Thread(target=announcer, name="nexora-announcer", daemon=True).start()
         web = Path(__file__).resolve().parents[2] / "web" / "dist"
-        print(f"NEXORA: http://127.0.0.1:{args.port}" + ("" if web.is_dir() else "  (Web UI not built: run `npm run build` in web/)"))
-        uvicorn.run(create_app(system, web_dir=web), host="127.0.0.1", port=args.port, log_level="warning")
+        port = args.port or config.port
+        print(f"NEXORA: http://127.0.0.1:{port}" + ("" if web.is_dir() else "  (Web UI not built: run `npm run build` in web/)"))
+        uvicorn.run(create_app(system, web_dir=web, config=config), host="127.0.0.1", port=port, log_level="warning")
 
 
 if __name__ == "__main__":

@@ -14,6 +14,7 @@ class StageDef:
     gate: bool = False            # needs a human review before it counts as succeeded
     max_attempts: int = 3
     timeout_seconds: float = 3600.0
+    lane: str = "interactive"     # "background" for long batch work, so that it never holds up what the operator is waiting for
 
 
 @dataclass(frozen=True)

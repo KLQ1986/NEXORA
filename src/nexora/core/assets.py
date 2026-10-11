@@ -68,6 +68,11 @@ class AssetStore:
     def volume_online(self, volume_id: str) -> bool:
         return Path(self._mount(volume_id)).is_dir()
 
+    def volumes(self) -> list[dict]:
+        """Every place footage lives, whether it can be reached now, and how many files depend on it."""
+        rows = self._conn.execute("SELECT v.*, (SELECT COUNT(*) FROM asset_versions a WHERE a.volume_id = v.volume_id) AS files FROM volumes v ORDER BY v.created_at")
+        return [{**dict(r), "online": Path(r["mount_path"]).is_dir()} for r in rows]
+
     def relink_volume(self, volume_id: str, mount_path: str | Path) -> None:
         with db.write(self._conn) as c:
             c.execute("UPDATE volumes SET mount_path = ? WHERE volume_id = ?", (str(_abs(mount_path)), volume_id))

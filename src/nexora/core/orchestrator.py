@@ -99,6 +99,10 @@ class Orchestrator:
         rows = self._conn.execute("SELECT * FROM attempts WHERE stage_id = ? ORDER BY number", (stage_id,))
         return [_attempt(r) for r in rows]
 
+    def attempt_rows(self, stage_id: str) -> list[dict]:
+        """Attempts with their times and error text, for the run detail screen."""
+        return [dict(r) for r in self._conn.execute("SELECT * FROM attempts WHERE stage_id = ? ORDER BY number", (stage_id,))]
+
     def events(self, run_id: str) -> list[Event]:
         rows = self._conn.execute("SELECT * FROM events WHERE run_id = ? ORDER BY event_id", (run_id,))
         return [Event(r["kind"], r["stage_id"], r["attempt_id"], json.loads(r["payload"] or "{}"), r["actor"], r["occurred_at"])
@@ -205,14 +209,15 @@ class Orchestrator:
             for position, s in enumerate(pipeline.stages):
                 status = StageStatus.PENDING if s.depends_on else StageStatus.READY
                 c.execute("INSERT INTO stages (stage_id, run_id, position, stage_key, depends_on, status, effect_class, costly, "
-                          "gate, max_attempts, timeout_seconds) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                          "gate, max_attempts, timeout_seconds, lane) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                           (new_id("stg", now), run_id, position, s.key, json.dumps(list(s.depends_on)), status, s.effect_class,
-                           int(s.costly), int(s.gate), s.max_attempts, s.timeout_seconds))
+                           int(s.costly), int(s.gate), s.max_attempts, s.timeout_seconds, s.lane))
             self._event(c, run_id, "run.submitted", now, payload={"pipeline": pipeline.pipeline_id, "version": pipeline.version})
             return run_id
 
-    def claim_next(self, worker_id: str, *, now: float | None = None) -> Claim | None:
-        """Claim the next runnable stage, or return None. One write transaction: one claimer wins."""
+    def claim_next(self, worker_id: str, *, now: float | None = None, lanes: frozenset[str] | None = None) -> Claim | None:
+        """Claim the next runnable stage, or return None. One write transaction: one claimer wins.
+        A worker given `lanes` takes only stages of those lanes."""
         now = time.time() if now is None else now
         with db.write(self._conn) as c:
             killed = self.kill_switch()
@@ -222,6 +227,8 @@ class Orchestrator:
                 "ORDER BY r.priority DESC, r.created_at, s.position", (now,)).fetchall()
             for row in rows:
                 stage = _stage(row)
+                if lanes is not None and row["lane"] not in lanes:
+                    continue
                 if killed and (stage.costly or stage.effect_class is not EffectClass.PURE):
                     continue
                 reason = self._guard(stage) if self._guard else None

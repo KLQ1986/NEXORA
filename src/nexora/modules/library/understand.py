@@ -12,9 +12,9 @@ from nexora.core.pipeline import PipelineDefinition, StageDef
 
 UNDERSTAND = PipelineDefinition("library.understand", "1", [
     StageDef("segments"),
-    StageDef("describe", depends_on=("segments",), timeout_seconds=6 * 3600),
-    StageDef("summarise", depends_on=("describe",)),
-    StageDef("index", depends_on=("summarise",)),
+    StageDef("describe", depends_on=("segments",), timeout_seconds=6 * 3600, lane="background"),
+    StageDef("summarise", depends_on=("describe",), lane="background"),
+    StageDef("index", depends_on=("summarise",), lane="background"),
 ])
 
 PROMPT_VERSION = "v1"

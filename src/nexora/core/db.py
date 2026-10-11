@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS stages (
     outputs         TEXT,
     blocked_reason  TEXT,
     next_retry_at   REAL,
+    lane            TEXT NOT NULL DEFAULT 'interactive',
     UNIQUE (run_id, stage_key)
 );
 CREATE INDEX IF NOT EXISTS stages_by_status ON stages(status);
@@ -199,6 +200,7 @@ MIGRATIONS = [
     ("projects", "auto_accept", "INTEGER NOT NULL DEFAULT 0"),
     ("projects", "style", "TEXT"),
     ("projects", "narration_dir", "TEXT"),
+    ("stages", "lane", "TEXT NOT NULL DEFAULT 'interactive'"),
     ("selections", "extras", "TEXT NOT NULL DEFAULT '{}'"),
 ]
 

@@ -1,5 +1,7 @@
 """Composition root: builds the system from its parts. The only place that knows every layer."""
+import json
 import os
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -39,6 +41,7 @@ class System:
     edit: Edit
     distribution: Distribution
     generation: Generation
+    workers: list = None            # one worker per lane, for a long-running server
 
 
 def fill_gap_from_stock(system: "System", shot_id: str, query: str) -> dict:
@@ -78,7 +81,7 @@ def announce(system: "System", after: int) -> int:
 
 def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Adapter | None = None,
           segment_seconds: float = 12.0, voice: Adapter | None = None, match_threshold: float = 0.5, judge: bool = True,
-          generators: list[Adapter] | None = None, stock: Adapter | None = None, desktop: Adapter | None = None) -> System:
+          generators: list[Adapter] | None = None, stock: Adapter | None = None, desktop: Adapter | None = None, voice_name: str = "Linh") -> System:
     """`model` is the adapter for vision, reasoning and embeddings; without one, footage is ingested but not understood."""
     data_dir = Path(data_dir).resolve()          # tools resolve relative paths differently; keep every path absolute
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -103,7 +106,7 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     planning = Planning(projects, assets, index, adapters)
     sourcing = Sourcing(orch, projects, index, threshold=match_threshold, adapters=adapters, judge=judge and model is not None)
     sourcing.register(registry)
-    edit = Edit(orch, projects, assets, adapters, data_dir / "media", voice=voice is not None, reviewer=review_cut, model=model is not None)
+    edit = Edit(orch, projects, assets, adapters, data_dir / "media", voice=voice is not None, voice_name=voice_name, reviewer=review_cut, model=model is not None)
     edit.register(registry)
     if stock is not None:
         adapters.register(stock)
@@ -114,5 +117,56 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     generation = Generation(orch, projects, assets, adapters, data_dir / "media")
     generation.register(registry)
     distribution = Distribution(projects, assets, adapters, data_dir / "exports")
-    worker = Worker(orch, registry, worker_id=f"worker-{os.getpid()}")
-    return System(data_dir, orch, assets, adapters, registry, worker, library, index, projects, planning, sourcing, edit, distribution, generation)
+    (data_dir / "logs").mkdir(exist_ok=True)
+
+    def log(entry: dict) -> None:
+        """One line per stage that ran: what, how long, how it ended. Plain JSON so that any tool can read it."""
+        with open(data_dir / "logs" / "stages.jsonl", "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+    worker = Worker(orch, registry, worker_id=f"worker-{os.getpid()}", log=log)
+    # Long footage analysis has its own worker, so that a render or a match the operator is waiting for never queues behind it.
+    workers = [Worker(orch, registry, worker_id=f"{lane}-{os.getpid()}", lanes=frozenset({lane}), log=log) for lane in ("interactive", "background")]
+    return System(data_dir, orch, assets, adapters, registry, worker, library, index, projects, planning, sourcing, edit, distribution, generation, workers)
+
+
+def build_from_config(config, **overrides) -> System:
+    """The system as one installation's settings describe it, with the real tools of this machine."""
+    from nexora.adapters.desktop import DesktopNotifier
+    from nexora.adapters.ollama import OllamaAdapter
+    from nexora.adapters.openmontage import OpenMontageStock
+    from nexora.adapters.voice import SayVoice
+    return build(config.data_dir, min_free_bytes=int(config.min_free_gb * 1024**3), segment_seconds=config.segment_seconds, judge=config.judge,
+                 model=OllamaAdapter(host=config.ollama_host, vision_model=config.vision_model, embed_model=config.embed_model),
+                 voice=SayVoice(), voice_name=config.voice, match_threshold=config.match_threshold,
+                 stock=OpenMontageStock(config.openmontage_repo), desktop=DesktopNotifier(), **overrides)
+
+
+def doctor(system: System, config=None) -> list[dict]:
+    """Everything this installation needs, checked one by one, with what to do about each thing that is missing."""
+    import sqlite3
+    checks = []
+    add = lambda name, ok, detail, fix=None, optional=False: checks.append({"name": name, "ok": bool(ok), "detail": detail, "fix": None if ok else fix, "optional": optional})
+    for tool in ("ffmpeg", "ffprobe", "say", "osascript"):
+        add(f"Công cụ {tool}", shutil.which(tool), shutil.which(tool) or "không tìm thấy", f"Cài {tool} và bảo đảm nó nằm trong PATH." )
+    env = system.adapters.environment()
+    model = env.get("model") or {}
+    add("Ollama đang chạy", model.get("running"), "có kết nối" if model.get("running") else "không kết nối được", "Mở ứng dụng Ollama hoặc chạy `ollama serve`.")
+    for wanted, have in (model.get("models") or {}).items():
+        add(f"Mô hình {wanted}", have, "đã tải" if have else "chưa tải", f"Chạy `ollama pull {wanted}`.")
+    voices = (env.get("voice") or {}).get("vietnamese_voices", [])
+    add("Giọng đọc tiếng Việt", voices, ", ".join(voices) or "không có", "Tải một giọng tiếng Việt trong Cài đặt > Trợ năng > Nội dung được đọc.")
+    missing = [k for k, ok in (env.get("ffmpeg") or {}).get("filters", {}).items() if not ok]
+    add("Bộ lọc FFmpeg", not missing, "đủ" if not missing else f"thiếu {', '.join(missing)}", "Cài bản FFmpeg đầy đủ hơn nếu cần chuyển HDR hoặc vẽ chữ bằng FFmpeg.", optional=True)
+    free = shutil.disk_usage(system.data_dir).free
+    add("Ổ đĩa", free > 5 * 1024**3, f"còn trống {free / 1024**3:.0f} GB", "Giải phóng dung lượng hoặc dọn bộ đệm ở mục Hệ thống.")
+    conn = sqlite3.connect(system.data_dir / "nexora.db")
+    try:
+        state = conn.execute("PRAGMA integrity_check").fetchone()[0]
+    finally:
+        conn.close()
+    add("Cơ sở dữ liệu", state == "ok", state, "Khôi phục từ một bản sao lưu: `python -m nexora restore <file>`.")
+    if config:
+        repo = __import__("pathlib").Path(config.openmontage_repo).expanduser()
+        add("OpenMontage (tìm clip stock)", repo.is_dir(), str(repo) if repo.is_dir() else "không tìm thấy", f"Đặt OpenMontage ở {repo} hoặc sửa openmontage_repo trong nexora.toml.")
+    return checks

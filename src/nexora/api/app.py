@@ -56,7 +56,7 @@ def asset_view(system, asset: dict) -> dict:
     }
 
 
-def create_app(system, *, web_dir: str | Path | None = None) -> FastAPI:
+def create_app(system, *, web_dir: str | Path | None = None, config=None) -> FastAPI:
     app = FastAPI(title="NEXORA", version="0.1.0")
 
     @app.post("/api/v1/assets/register", status_code=202)
@@ -95,6 +95,64 @@ def create_app(system, *, web_dir: str | Path | None = None) -> FastAPI:
         if system.orch.run_info(run_id) is None:
             raise HTTPException(404, f"no such run: {run_id}")
         return run_view(system, run_id)
+
+    @app.get("/api/v1/runs/{run_id}/detail")
+    def run_detail(run_id: str):
+        """Everything that happened in a run: each attempt with how long it took and how it ended, and the events in order."""
+        if system.orch.run_info(run_id) is None:
+            raise HTTPException(404, "no such run")
+        keys = {s.stage_id: s.stage_key for s in system.orch.stages(run_id)}
+        attempts = []
+        for stage in system.orch.stages(run_id):
+            for row in system.orch.attempt_rows(stage.stage_id):
+                attempts.append({"stage_key": stage.stage_key, "number": row["number"], "outcome": row["outcome"], "worker": row["worker_id"],
+                                 "started_at": row["started_at"], "seconds": round(row["ended_at"] - row["started_at"], 2) if row["ended_at"] else None,
+                                 "error_code": row["error_code"], "error_message": row["error_message"]})
+        events = [{"at": e.occurred_at, "kind": e.kind, "stage_key": keys.get(e.stage_id), "actor": e.actor, "payload": e.payload} for e in system.orch.events(run_id)]
+        return {**run_view(system, run_id), "attempts": sorted(attempts, key=lambda a: a["started_at"]), "events": events}
+
+    @app.post("/api/v1/runs/{run_id}/cancel")
+    def cancel_run(run_id: str):
+        if system.orch.run_info(run_id) is None:
+            raise HTTPException(404, "no such run")
+        system.orch.cancel_run(run_id)
+        return run_view(system, run_id)
+
+    def renders_in_use() -> set[str]:
+        return {r["path"] for p in system.projects.projects() for r in system.projects.renders(p["project_id"])}
+
+    @app.get("/api/v1/storage")
+    def storage_usage():
+        from nexora.core import backup, storage
+        return {"stores": storage.usage(system.data_dir / "media", renders_in_use=renders_in_use()), "backups": backup.backups(system.data_dir / "backups"),
+                "volumes": system.assets.volumes()}
+
+    @app.post("/api/v1/storage/clean")
+    def storage_clean(body: dict):
+        from nexora.core import storage
+        try:
+            return {"freed_bytes": storage.clean(system.data_dir / "media", list(body.get("keys", [])), renders_in_use=renders_in_use())}
+        except ValueError as err:
+            raise HTTPException(422, str(err))
+
+    @app.post("/api/v1/storage/backup")
+    def storage_backup():
+        from nexora.core import backup
+        made = backup.backup(system.data_dir / "nexora.db", system.data_dir / "backups", keep=config.backups_kept if config else 7)
+        return {"name": made.name, "size": made.stat().st_size}
+
+    @app.post("/api/v1/volumes/{volume_id}/relink")
+    def relink_volume(volume_id: str, body: dict):
+        mount = Path(str(body.get("mount", ""))).expanduser()
+        if not mount.is_dir():
+            raise HTTPException(404, "Không tìm thấy thư mục này")
+        system.assets.relink_volume(volume_id, mount)
+        return {"volumes": system.assets.volumes()}
+
+    @app.get("/api/v1/doctor")
+    def run_doctor():
+        from nexora.app import doctor
+        return {"checks": doctor(system, config)}
 
     @app.post("/api/v1/stages/{stage_id}/resume")
     def resume_stage(stage_id: str):
