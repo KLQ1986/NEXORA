@@ -1,4 +1,6 @@
 """The minimal API of slice 2."""
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -300,3 +302,44 @@ def test_settings_templates_watch_folders_privacy_retry_notes_and_similar_moment
     failed = next(s for s in system.orch.stages(run) if s.status is StageStatus.FAILED)
     assert client.post(f"/api/v1/stages/{failed.stage_id}/retry").status_code == 200
     assert next(s for s in system.orch.stages(run) if s.stage_id == failed.stage_id).status is StageStatus.READY
+
+
+def test_structured_script_brand_profile_ideas_draft_and_health_notices(tmp_path):
+    from nexora.app import watch_health
+    from tests.conftest import make_video
+    from tests.fakes import FakeModel, FakeVoice
+    system = build(tmp_path / "data", model=FakeModel(), voice=FakeVoice(), segment_seconds=2.0)
+    client = TestClient(create_app(system))
+    drain = lambda: [None for _ in iter(system.worker.run_once, False)]
+    footage = tmp_path / "card"; footage.mkdir()
+    client.post("/api/v1/assets/register", json={"path": str(make_video(footage / "f.mp4", picture=20))}); drain()
+
+    ideas = client.post("/api/v1/ideas").json()["ideas"]
+    assert [i["title"] for i in ideas] == ["Cá tươi trên sạp buổi sớm", "Tàu vũ trụ"]                 # an idea with a stated risk goes last, whatever its score
+    assert ideas[0]["scores"]["co_hinh"] >= 3 and ideas[1]["scores"]["co_hinh"] == 1                  # coverage is measured, not taken from the model
+    assert client.get("/api/v1/ideas").json()["ideas"] == ideas
+
+    pid = client.post("/api/v1/projects", json={"title": "Có cấu trúc", "lines": ["# Mở đầu", "con đường mòn", "# Ở chợ", "hàng hoá bày bán"]}).json()["project_id"]
+    shots = client.get(f"/api/v1/projects/{pid}").json()["shots"]
+    assert [(s["scene"], s["text"]) for s in shots] == [("Mở đầu", "con đường mòn"), ("Ở chợ", "hàng hoá bày bán")]
+    client.patch(f"/api/v1/shots/{shots[1]['shot_id']}", json={"brief": "cá tươi trên sạp", "screen_text": "Chợ sáng"})
+    client.post(f"/api/v1/projects/{pid}/match"); drain()
+    after = client.get(f"/api/v1/projects/{pid}").json()["shots"]
+    assert after[1]["brief"] == "cá tươi trên sạp" and after[1]["selection"]["status"] == "proposed" and "cá tươi" in after[1]["selection"]["reason"]   # the picture note found the clip
+    kept = client.put(f"/api/v1/projects/{pid}/script", json={"lines": ["# Ở chợ", "hàng hoá bày bán", "con đường mòn"]}).json()["shots"]
+    assert kept[0]["brief"] == "cá tươi trên sạp" and kept[0]["screen_text"] == "Chợ sáng"            # notes follow a line into the next version
+
+    templates = client.get("/api/v1/settings").json()["templates"]
+    templates[0].update(caption_scale=1.3, caption_position="top", pronounce={"sạp": "quầy"})
+    client.post("/api/v1/settings", json={"templates": templates})
+    assert json.loads(client.post(f"/api/v1/projects/{pid}/template", json={"name": templates[0]["name"]}).json()["profile"])["caption_position"] == "top"
+    client.post(f"/api/v1/projects/{pid}/match"); drain(); client.post(f"/api/v1/projects/{pid}/match/approve")
+    client.post(f"/api/v1/projects/{pid}/render"); drain()
+    assert client.get(f"/api/v1/projects/{pid}").json()["renders"][0]["qc"]["draft"] is False
+
+    assert watch_health(system, min_free_bytes=0) == []
+    (footage / "f.mp4").rename(tmp_path / "f.mp4"); footage.rmdir()                                   # the card is pulled out
+    assert [k.split(":")[0] for k in watch_health(system, min_free_bytes=0)] == ["volume_offline"] and watch_health(system, min_free_bytes=0) == []
+    assert client.get("/api/v1/notifications").json()["items"][0]["kind"] == "volume_offline"
+    client.post(f"/api/v1/projects/{pid}/render"); drain()
+    assert client.get(f"/api/v1/projects/{pid}").json()["renders"][0]["qc"]["draft"] is True          # cut from proxies while the originals are away

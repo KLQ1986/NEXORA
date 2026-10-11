@@ -80,13 +80,16 @@ class Edit:
             if not self._voice:
                 lines.append({"shot_id": shot.shot_id, "audio": None, "duration": round(max(2.0, len(shot.text.split()) / WORDS_PER_SECOND), 2)})
                 continue
-            out = self._media / "narration" / f"{_key(shot.text, voice)}.wav"
+            spoken = shot.text
+            for written, said in (json.loads(project.get("profile") or "{}").get("pronounce") or {}).items():
+                spoken = spoken.replace(written, said)             # the brand's pronunciation dictionary: written form, spoken form
+            out = self._media / "narration" / f"{_key(spoken, voice)}.wav"
             if out.is_file():
                 import wave
                 with wave.open(str(out)) as w:
                     duration = w.getnframes() / w.getframerate()
             else:
-                duration = self._adapters.submit("voice", Request("speak", inputs={"text": shot.text}, params={"out": str(out), "voice": voice},
+                duration = self._adapters.submit("voice", Request("speak", inputs={"text": spoken}, params={"out": str(out), "voice": voice},
                                                                  attempt_id=ctx.claim.attempt_id)).outputs["duration"]
             lines.append({"shot_id": shot.shot_id, "audio": str(out), "duration": round(float(duration), 2)})
         return {"lines": lines}
@@ -131,18 +134,22 @@ class Edit:
         project = self._projects.project(script["project_id"])
         FORMAT = FORMATS.get(project["format"], FORMATS["landscape"])
         fill = "fit" if project["format"] == "landscape" else "cover"
+        profile = json.loads(project.get("profile") or "{}")
+        look = {"scale": float(profile.get("caption_scale") or 1.0), "position": profile.get("caption_position") or "bottom", "colour": profile.get("caption_colour")}
         durations = {l["shot_id"]: l for l in ctx.inputs["narration"]["lines"]}
-        out = []
+        out, draft = [], False
         for shot in script["shots"]:
             line, sel = durations[shot.shot_id], self._projects.selection(shot.shot_id)
             duration = round(line["duration"] + PAD_SECONDS, 2)
-            caption = self._media / "captions" / f"{_key(shot.text, FORMAT)}.png"
+            words = shot.screen_text or shot.text
+            caption = self._media / "captions" / f"{_key(words, FORMAT, look)}.png"
             if not caption.is_file():
-                self._adapters.submit("graphics", Request("caption", inputs={"text": shot.text}, params={"out": str(caption), **FORMAT}))
+                self._adapters.submit("graphics", Request("caption", inputs={"text": words}, params={"out": str(caption), **FORMAT, **look}))
             has_picture = sel is not None and sel.status != "gap" and sel.asset_id
             inserts, focus = [], 0.5
             if has_picture:
                 path, checksum, t_in = self._source(sel.asset_id, sel.t_in, duration)
+                draft = draft or not self._assets.path_of(self._assets.original(sel.asset_id)).is_file()      # cut from the proxy: good to judge, not to publish
                 focus = self._focus(sel, path, checksum, t_in, duration) if fill == "cover" else 0.5
                 for ins in sel.extras.get("inserts", []):
                     at = round(ins["at"] * line["duration"], 2)
@@ -150,9 +157,9 @@ class Edit:
                         continue
                     ipath, isum, iin = self._source(ins["asset_id"], ins["t_in"], duration - at)
                     inserts.append({"path": ipath, "t_in": iin, "at": at, "checksum": isum, "keyword": ins["keyword"]})
-                key = _key(checksum, t_in, duration, shot.text, line["audio"], FORMAT, fill, focus, [(i["checksum"], i["t_in"], i["at"]) for i in inserts])
+                key = _key(checksum, t_in, duration, words, look, line["audio"], FORMAT, fill, focus, [(i["checksum"], i["t_in"], i["at"]) for i in inserts])
             else:
-                path, t_in, key = None, 0.0, _key("gap", duration, shot.text, line["audio"], FORMAT)
+                path, t_in, key = None, 0.0, _key("gap", duration, words, look, line["audio"], FORMAT)
             segment = self._media / "segments" / f"{key}.mp4"
             if not segment.is_file():                                   # unchanged shots are reused, not rendered again
                 self._adapters.submit("ffmpeg", Request("segment", inputs={"path": path}, attempt_id=ctx.claim.attempt_id,
@@ -163,7 +170,7 @@ class Edit:
                         "own_voice": bool(line.get("own_voice")), "focus_x": focus if fill == "cover" else None,
                         "inserts": [{"keyword": i["keyword"], "at": i["at"]} for i in inserts]})
             ctx.heartbeat()
-        return {"segments": out}
+        return {"segments": out, "draft": draft}
 
     def _assemble(self, ctx):
         script = self._projects.script(ctx.subject_ref)
@@ -185,7 +192,7 @@ class Edit:
         }
         qc = {"passed": all(checks.values()), "checks": checks, "width": probe["width"], "height": probe["height"], "duration": probe["duration"],
               "has_audio": probe["has_audio"], "shot_durations": [s["duration"] for s in segments], "gaps": sum(1 for s in segments if s["gap"]),
-              "format": project["format"], "music": bool(music), "mean_db": loud["mean_db"], "max_db": loud["max_db"],
+              "format": project["format"], "music": bool(music), "draft": bool(ctx.inputs["segments"].get("draft")), "mean_db": loud["mean_db"], "max_db": loud["max_db"],
               "findings": self._reviewer(segments) if self._reviewer else [],
               "shots": [{"text": s["text"], "duration": s["duration"], "gap": s["gap"], "asset_id": s.get("asset_id"), "t_in": s.get("chosen_in"),
                          "own_voice": s.get("own_voice", False), "focus_x": s.get("focus_x"), "inserts": s.get("inserts", [])} for s in segments]}

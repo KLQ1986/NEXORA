@@ -9,6 +9,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from nexora.core.adapter import AdapterError
+
 VIDEO_EXT = {".mp4", ".mov", ".m4v", ".mkv", ".avi", ".mts", ".webm", ".ogv"}
 IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp"}
 AUDIO_EXT = ("wav", "m4a", "mp3", "aiff")
@@ -237,7 +239,9 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             system.orch.set_setting("watch_folders", json.dumps(folders, ensure_ascii=False))
         if "templates" in body:
             clean = [{"name": str(t["name"]).strip(), "format": t.get("format") if t.get("format") in ("landscape", "portrait", "square") else "landscape", "voice": str(t.get("voice") or ""),
-                      "music_gain": max(0.05, min(1.0, float(t.get("music_gain") or 0.35))), "auto_accept": bool(t.get("auto_accept"))} for t in body["templates"] if str(t.get("name", "")).strip()]
+                      "music_gain": max(0.05, min(1.0, float(t.get("music_gain") or 0.35))), "auto_accept": bool(t.get("auto_accept")),
+                      "caption_scale": max(0.7, min(1.6, float(t.get("caption_scale") or 1.0))), "caption_position": t.get("caption_position") if t.get("caption_position") in ("top", "middle", "bottom") else "bottom",
+                      "pronounce": {str(k).strip(): str(v).strip() for k, v in (t.get("pronounce") or {}).items() if str(k).strip() and str(v).strip()}} for t in body["templates"] if str(t.get("name", "")).strip()]
             system.orch.set_setting("templates", json.dumps(clean, ensure_ascii=False))
         return get_settings()
 
@@ -248,7 +252,9 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         chosen = next((t for t in templates(system) if t["name"] == body.get("name")), None)
         if chosen is None:
             raise HTTPException(404, "Không có mẫu này")
-        system.projects.update_project(project_id, template=chosen["name"], format=chosen["format"], voice=chosen["voice"] or None, music_gain=chosen["music_gain"], auto_accept=int(chosen["auto_accept"]))
+        system.projects.update_project(project_id, template=chosen["name"], format=chosen["format"], voice=chosen["voice"] or None, music_gain=chosen["music_gain"], auto_accept=int(chosen["auto_accept"]),
+                                       profile=json.dumps({"caption_scale": chosen.get("caption_scale", 1.0), "caption_position": chosen.get("caption_position", "bottom"),
+                                                           "pronounce": chosen.get("pronounce", {})}, ensure_ascii=False))
         return project_view(need_project(project_id))
 
     @app.post("/api/v1/stages/{stage_id}/resume")
@@ -468,7 +474,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         shots = []
         for shot in (script["shots"] if script else []):
             sel = system.projects.selection(shot.shot_id)
-            item = {"shot_id": shot.shot_id, "position": shot.position, "text": shot.text, "selection": None, "keyframe_url": None, "generation": None}
+            item = {"shot_id": shot.shot_id, "position": shot.position, "text": shot.text, "scene": shot.scene, "brief": shot.brief, "screen_text": shot.screen_text, "selection": None, "keyframe_url": None, "generation": None}
             keys = system.projects.generations(shot.shot_id, kind="keyframe")
             if keys:
                 item["keyframe_url"] = f"/media/{system.assets.original(keys[-1]['asset_id']).version_id}"
@@ -639,6 +645,24 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
     def set_focus(shot_id: str, body: dict):
         system.sourcing.set_focus(shot_id, body.get("x"))
         return {"ok": True}
+
+    @app.patch("/api/v1/shots/{shot_id}")
+    def annotate_shot(shot_id: str, body: dict):
+        system.projects.annotate_shot(shot_id, brief=body.get("brief"), screen_text=body.get("screen_text"))
+        return {"ok": True}
+
+    @app.post("/api/v1/ideas")
+    def propose_ideas():
+        try:
+            ideas = system.planning.ideas()
+        except AdapterError as err:
+            raise HTTPException(503, f"Mô hình không trả lời được: {err.message or err.code.value}")
+        system.orch.set_setting("ideas", json.dumps(ideas, ensure_ascii=False))
+        return {"ideas": ideas}
+
+    @app.get("/api/v1/ideas")
+    def last_ideas():
+        return {"ideas": json.loads(system.orch.setting("ideas", "[]"))}
 
     @app.post("/api/v1/projects/{project_id}/reorder")
     def reorder(project_id: str, body: dict):

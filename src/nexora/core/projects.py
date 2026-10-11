@@ -17,6 +17,9 @@ class Shot:
     script_id: str
     position: int
     text: str
+    scene: str | None = None          # the scene this line belongs to
+    brief: str | None = None          # what the picture should show, in the operator's words
+    screen_text: str | None = None    # words on screen, when they differ from what is spoken
 
 
 @dataclass(frozen=True)
@@ -49,7 +52,7 @@ class ProjectStore:
         return project_id
 
     def update_project(self, project_id: str, **fields) -> None:
-        allowed = {k: v for k, v in fields.items() if k in ("title", "format", "music_path", "auto_accept", "style", "narration_dir", "budget_cap", "voice", "music_gain", "template")}
+        allowed = {k: v for k, v in fields.items() if k in ("title", "format", "music_path", "auto_accept", "style", "narration_dir", "budget_cap", "voice", "music_gain", "template", "profile")}
         with db.write(self._conn) as c:
             for key, value in allowed.items():
                 c.execute(f"UPDATE projects SET {key} = ? WHERE project_id = ?", (value, project_id))
@@ -67,9 +70,28 @@ class ProjectStore:
         with db.write(self._conn) as c:
             version = c.execute("SELECT COALESCE(MAX(version), 0) + 1 FROM scripts WHERE project_id = ?", (project_id,)).fetchone()[0]
             c.execute("INSERT INTO scripts (script_id, project_id, version, created_at) VALUES (?,?,?,?)", (script_id, project_id, version, time.time()))
-            for position, text in enumerate(line.strip() for line in lines if line.strip()):
-                c.execute("INSERT INTO shots (shot_id, script_id, position, text) VALUES (?,?,?,?)", (new_id("sht"), script_id, position, text))
+            # A line starting with "#" names a scene; the lines after it belong to that scene. Notes a line carried in the
+            # previous version follow it into the new one, as long as its words are unchanged.
+            before = {r["text"]: r for r in c.execute("SELECT s.text, s.brief, s.screen_text FROM shots s JOIN scripts sc USING (script_id) "
+                                                      "WHERE sc.project_id = ? AND sc.version = ?", (project_id, version - 1))}
+            scene, position = None, 0
+            for text in (line.strip() for line in lines if line.strip()):
+                if text.startswith("#"):
+                    scene = text.lstrip("# ").strip() or None
+                    continue
+                kept = before.get(text)
+                c.execute("INSERT INTO shots (shot_id, script_id, position, text, scene, brief, screen_text) VALUES (?,?,?,?,?,?,?)",
+                          (new_id("sht"), script_id, position, text, scene, kept["brief"] if kept else None, kept["screen_text"] if kept else None))
+                position += 1
         return script_id
+
+    def annotate_shot(self, shot_id: str, *, brief: str | None = None, screen_text: str | None = None) -> None:
+        """Notes on a line that do not change what is spoken, so they do not make a new script version."""
+        with db.write(self._conn) as c:
+            if brief is not None:
+                c.execute("UPDATE shots SET brief = ? WHERE shot_id = ?", (brief.strip() or None, shot_id))
+            if screen_text is not None:
+                c.execute("UPDATE shots SET screen_text = ? WHERE shot_id = ?", (screen_text.strip() or None, shot_id))
 
     def reorder(self, script_id: str, order: list[str]) -> str:
         """The same lines in a new order, as the next version of the script. Each line keeps its clip, so nothing has to be matched again."""
@@ -84,7 +106,9 @@ class ProjectStore:
                       (new_id_, old["project_id"], version, int(old["match_approved"]), time.time()))
             for position, shot_id in enumerate(order):
                 fresh = new_id("sht")
-                c.execute("INSERT INTO shots (shot_id, script_id, position, text) VALUES (?,?,?,?)", (fresh, new_id_, position, by_id[shot_id].text))
+                old_shot = by_id[shot_id]
+                c.execute("INSERT INTO shots (shot_id, script_id, position, text, scene, brief, screen_text) VALUES (?,?,?,?,?,?,?)",
+                          (fresh, new_id_, position, old_shot.text, old_shot.scene, old_shot.brief, old_shot.screen_text))
                 c.execute("INSERT INTO selections (shot_id, status, asset_id, moment_id, t_in, t_out, score, reason, alternates, decided_by, extras) "
                           "SELECT ?, status, asset_id, moment_id, t_in, t_out, score, reason, alternates, decided_by, extras FROM selections WHERE shot_id = ?", (fresh, shot_id))
                 c.execute("INSERT INTO generations (record_id, shot_id, kind, spec, prompt, compiler_version, provider, model, seed, asset_id, created_at) "
@@ -96,7 +120,7 @@ class ProjectStore:
         row = self._conn.execute("SELECT * FROM scripts WHERE script_id = ?", (script_id,)).fetchone()
         if row is None:
             return None
-        shots = [Shot(r["shot_id"], r["script_id"], r["position"], r["text"])
+        shots = [Shot(r["shot_id"], r["script_id"], r["position"], r["text"], r["scene"], r["brief"], r["screen_text"])
                  for r in self._conn.execute("SELECT * FROM shots WHERE script_id = ? ORDER BY position", (script_id,))]
         return {**dict(row), "match_approved": bool(row["match_approved"]), "shots": shots}
 

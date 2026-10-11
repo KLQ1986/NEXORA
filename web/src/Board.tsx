@@ -102,7 +102,7 @@ export default function Board({ project: p }: { project: Project }) {
           <div className="panel max-h-72 overflow-y-auto px-6 py-5 font-[ui-monospace,Menlo,monospace] text-[13px] leading-relaxed">
             <p className="mb-3 text-center tracking-wide text-mute">{p.title}</p>
             {p.shots.length === 0 && <p className="text-center text-faint">Chưa có kịch bản.</p>}
-            {p.shots.map((s, i) => <p key={s.shot_id} className="mb-2.5"><span className="mr-2 text-faint">{String(i + 1).padStart(2, "0")}</span>{s.text}{s.selection?.status === "gap" && <span className="ml-2 text-cue">[thiếu hình]</span>}</p>)}
+            {p.shots.map((s, i) => <p key={s.shot_id} className="mb-2.5">{s.scene && s.scene !== p.shots[i - 1]?.scene && <span className="mb-1.5 mt-3 block uppercase tracking-wide text-mute">{s.scene}</span>}<span className="mr-2 text-faint">{String(i + 1).padStart(2, "0")}</span>{s.text}{s.brief && <span className="block pl-7 text-faint">(hình: {s.brief})</span>}{s.selection?.status === "gap" && <span className="ml-2 text-cue">[thiếu hình]</span>}</p>)}
           </div>
         </Section>
         <Section title="Hoạt động" note={`Chi phí: ${(data?.cost ?? 0).toFixed(2)} USD${(data?.cost ?? 0) === 0 ? ", mọi thứ chạy trên máy" : ""}`}>

@@ -69,7 +69,7 @@ def fill_gap_from_stock(system: "System", shot_id: str, query: str) -> dict:
 
 PIPELINE_NAMES = {"library.ingest": "Nhập footage", "library.ingest_image": "Nhập ảnh", "library.ingest_audio": "Nhập nhạc", "library.understand": "Hiểu nội dung footage",
                   "sourcing.match": "Chọn clip", "sourcing.generate": "Sinh hình bằng AI", "edit.render": "Dựng video"}
-ANNOUNCE = {"gaps": "còn câu chưa có hình", "waiting_review": "đang chờ bạn duyệt", "blocked": "đang dừng và cần bạn xử lý", "failed": "thất bại", "succeeded": "đã xong"}
+ANNOUNCE = {"disk_low": "ổ đĩa sắp đầy", "volume_offline": "không tìm thấy nơi chứa footage", "gaps": "còn câu chưa có hình", "waiting_review": "đang chờ bạn duyệt", "blocked": "đang dừng và cần bạn xử lý", "failed": "thất bại", "succeeded": "đã xong"}
 QUIET = frozenset({"library.ingest", "library.ingest_image", "library.ingest_audio", "library.understand"})   # finishing these needs nobody's attention
 
 
@@ -80,6 +80,8 @@ def announce(system: "System", after: int) -> int:
         pipeline = (system.orch.run_info(n["run_id"]) or {}).get("pipeline_id")
         muted = json.loads(system.orch.setting("notify_off", "[]"))
         quiet = system.orch.setting("quiet_hours", "")
+        if not pipeline and n["kind"] in ("disk_low", "volume_offline"):
+            pipeline = "Máy"
         if (system.orch.setting("desktop_notifications", "1") != "1" or n["kind"] not in ANNOUNCE or n["kind"] in muted
                 or (n["kind"] == "succeeded" and pipeline in QUIET) or (quiet and in_window(quiet))):         # the inbox keeps everything; only the desktop stays silent
             continue
@@ -91,8 +93,8 @@ def announce(system: "System", after: int) -> int:
 
 
 DEFAULT_TEMPLATES = [
-    {"name": "Video ngang có lời dẫn", "format": "landscape", "voice": "", "music_gain": 0.35, "auto_accept": False},
-    {"name": "Video dọc ngắn", "format": "portrait", "voice": "", "music_gain": 0.3, "auto_accept": True},
+    {"name": "Video ngang có lời dẫn", "format": "landscape", "voice": "", "music_gain": 0.35, "auto_accept": False, "caption_scale": 1.0, "caption_position": "bottom", "pronounce": {}},
+    {"name": "Video dọc ngắn", "format": "portrait", "voice": "", "music_gain": 0.3, "auto_accept": True, "caption_scale": 1.15, "caption_position": "middle", "pronounce": {}},
 ]
 MEDIA_EXT = frozenset({".mp4", ".mov", ".m4v", ".mkv", ".avi", ".mts", ".webm", ".jpg", ".jpeg", ".png", ".webp", ".mp3", ".wav", ".m4a", ".aiff", ".flac"})
 
@@ -118,6 +120,21 @@ def scan_watch_folders(system: "System", *, now: float | None = None, settle_sec
                 system.library.ingest(f)
                 taken.append(str(f))
     return taken
+
+
+def watch_health(system: "System", *, min_free_bytes: int = 5 * 1024**3) -> list[str]:
+    """Tell the operator once when the disk runs low or a footage location disappears, and stay quiet until that changes."""
+    now = {"disk_low": shutil.disk_usage(system.data_dir).free < min_free_bytes,
+           **{f"volume_offline:{v['volume_id']}": not v["online"] for v in system.assets.volumes()}}
+    before = json.loads(system.orch.setting("health_state", "{}"))
+    raised = [key for key, bad in now.items() if bad and not before.get(key)]
+    for key in raised:
+        kind, _, volume = key.partition(":")
+        mount = next((v["mount_path"] for v in system.assets.volumes() if v["volume_id"] == volume), None)
+        system.orch.notify(kind, "", reason=mount)
+    if now != before:
+        system.orch.set_setting("health_state", json.dumps(now))
+    return raised
 
 
 def capabilities(system: "System") -> list[dict]:

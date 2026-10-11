@@ -187,7 +187,15 @@ Giao diện đã được thiết kế lại toàn bộ (khung chung, dải phim
 - [x] Thông báo: báo khi kịch bản còn câu thiếu hình
 - [x] Nút dừng khẩn cấp luôn có ở thanh bên
 
-Còn thiếu so với thiết kế, chưa làm: nghiên cứu và chấm điểm ý tưởng (16.1), hồ sơ thương hiệu đầy đủ (16.3; hiện mới có mẫu định dạng đơn giản), kịch bản có cấu trúc cảnh và ghi chú hình (16.2), dựng thô theo lời nói (19.1, cần mô hình nhận dạng tiếng nói), bản dựng nháp từ bản xem khi ổ đĩa gốc không có, thông báo khi ổ đĩa đầy hoặc ổ chứa footage mất kết nối, đăng bài và số liệu (21, cần tài khoản).
+Làm tiếp cùng ngày (127 test đạt, đã bấm thử trên giao diện với mô hình giả):
+
+- [x] Kịch bản có cấu trúc: dòng bắt đầu bằng # là tên cảnh; mỗi câu có ghi chú "hình cần có" (dùng để tìm clip) và "chữ trên màn hình" (thay cho phụ đề); ghi chú đi theo câu sang phiên bản kịch bản mới
+- [x] Hồ sơ thương hiệu trong mẫu định dạng: cỡ và vị trí phụ đề, cách đọc riêng (viết=đọc)
+- [x] Gợi ý ý tưởng có thẻ điểm; điểm "có hình" đo từ kho; ý tưởng có rủi ro xếp sau; giao thẳng cho trợ lý
+- [x] Bản dựng nháp: khi không thấy file gốc, hệ thống cắt từ bản xem và ghi rõ là bản nháp
+- [x] Thông báo khi ổ đĩa sắp đầy hoặc mất nơi chứa footage, mỗi lần đổi trạng thái báo một lần
+
+Chưa làm so với thiết kế: nghiên cứu có nguồn dẫn và kiểm chứng dữ kiện (16.1); bảng màu, kiểu chữ, logo trong hồ sơ thương hiệu (16.3); thời lượng mục tiêu và tín hiệu âm thanh cho từng câu (16.2); dựng thô theo lời nói (19.1, cần mô hình nhận dạng tiếng nói); đăng bài và số liệu (21, cần tài khoản).
 
 ### Lát 1 — Lõi chạy việc
 

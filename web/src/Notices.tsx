@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { post, REASONS, STAGE_NAMES, usePoll, type Notice } from "./api";
 import { Page, Tag } from "./parts";
 
-const KIND: Record<string, string> = { gaps: "Thiếu hình", waiting_review: "Chờ bạn duyệt", blocked: "Đang dừng", failed: "Thất bại", succeeded: "Đã xong" };
+const KIND: Record<string, string> = { disk_low: "Ổ đĩa sắp đầy", volume_offline: "Mất nơi chứa footage", gaps: "Thiếu hình", waiting_review: "Chờ bạn duyệt", blocked: "Đang dừng", failed: "Thất bại", succeeded: "Đã xong" };
 const PIPE: Record<string, string> = { "library.ingest": "Nhập footage", "library.ingest_image": "Nhập ảnh", "library.ingest_audio": "Nhập nhạc", "sourcing.generate": "Sinh hình bằng AI", "library.understand": "Xem và mô tả video", "sourcing.match": "Chọn clip cho kịch bản", "edit.render": "Dựng video" };
 
 const dayOf = (t: number) => { const d = new Date(t * 1000), now = new Date(); const y = new Date(now.getTime() - 86400000);
@@ -15,7 +15,7 @@ export default function Notices() {
   const items = (data?.items ?? []).filter((n) => !only || n.kind !== "succeeded");
   const days: [string, Notice[]][] = [];
   for (const n of items) { const d = dayOf(n.created_at); if (days.length && days[days.length - 1][0] === d) days[days.length - 1][1].push(n); else days.push([d, [n]]); }
-  const tone = (k: string) => (k === "waiting_review" || k === "blocked" || k === "gaps" ? "cue" : k === "failed" ? "tally" : k === "succeeded" ? "proof" : "mute") as "cue" | "tally" | "proof" | "mute";
+  const tone = (k: string) => (k === "waiting_review" || k === "blocked" || k === "gaps" || k === "disk_low" || k === "volume_offline" ? "cue" : k === "failed" ? "tally" : k === "succeeded" ? "proof" : "mute") as "cue" | "tally" | "proof" | "mute";
   const dot = { cue: "bg-cue", tally: "bg-tally", proof: "bg-proof", mute: "bg-faint" };
   return (
     <Page title="Thông báo" note="Bản ghi đầy đủ của mọi việc đã xong, cần bạn duyệt, hoặc bị dừng."
@@ -31,7 +31,7 @@ export default function Notices() {
               {list.map((n) => (
                 <li key={n.notification_id} className={`grid items-center gap-x-3 gap-y-1 px-4 py-2.5 sm:grid-cols-[10px_minmax(0,1fr)_auto_3.5rem] ${n.read_at === null ? "bg-raised/50" : ""}`}>
                   <span className={`hidden h-2 w-2 rounded-full sm:block ${dot[tone(n.kind)]}`} />
-                  <span className={`min-w-0 truncate ${n.read_at === null ? "font-medium" : ""}`}>{n.subject_name && <><a href={n.link ?? "#"} className="hover:underline">{n.subject_name}</a><span className="text-faint">{"  "}</span></>}<span className={n.subject_name ? "text-mute" : ""}>{PIPE[n.pipeline ?? ""] ?? n.pipeline}</span>{n.stage_key ? <span className="text-mute">, bước {(STAGE_NAMES[n.stage_key] ?? n.stage_key).toLowerCase()}</span> : null}{n.reason ? <span className="text-mute"> ({n.kind === "gaps" ? `${n.reason} câu chưa có hình` : REASONS[n.reason] ?? n.reason})</span> : null}</span>
+                  <span className={`min-w-0 truncate ${n.read_at === null ? "font-medium" : ""}`}>{n.subject_name && <><a href={n.link ?? "#"} className="hover:underline">{n.subject_name}</a><span className="text-faint">{"  "}</span></>}<span className={n.subject_name ? "text-mute" : ""}>{PIPE[n.pipeline ?? ""] ?? n.pipeline ?? (n.kind === "volume_offline" ? n.reason : "Máy này")}</span>{n.stage_key ? <span className="text-mute">, bước {(STAGE_NAMES[n.stage_key] ?? n.stage_key).toLowerCase()}</span> : null}{n.reason && n.kind !== "volume_offline" ? <span className="text-mute"> ({n.kind === "gaps" ? `${n.reason} câu chưa có hình` : REASONS[n.reason] ?? n.reason})</span> : null}</span>
                   <Tag tone={tone(n.kind)}>{KIND[n.kind] ?? n.kind}</Tag>
                   <span className="tc text-right text-[13px] text-faint">{new Date(n.created_at * 1000).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}</span>
                 </li>

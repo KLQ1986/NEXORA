@@ -126,12 +126,17 @@ function Preferences() {
                 <label className="flex items-center gap-2">Giọng<select value={t.voice} onChange={(e) => edit(i, { voice: e.target.value })} className="h-8 px-2"><option value="">Theo máy</option>{s.voices.map((v) => <option key={v}>{v}</option>)}</select></label>
                 <label className="flex items-center gap-2">Mức nhạc<input type="number" min="0.05" max="1" step="0.05" value={t.music_gain} onChange={(e) => edit(i, { music_gain: Number(e.target.value) })} className="tc h-8 w-20 px-2" /></label>
                 <label className="flex items-center gap-2"><input type="checkbox" checked={t.auto_accept} onChange={(e) => edit(i, { auto_accept: e.target.checked })} />Tự duyệt clip</label>
+                <label className="flex items-center gap-2">Cỡ phụ đề<select value={String(t.caption_scale ?? 1)} onChange={(e) => edit(i, { caption_scale: Number(e.target.value) })} className="h-8 px-2"><option value="0.85">Nhỏ</option><option value="1">Vừa</option><option value="1.15">Lớn</option><option value="1.3">Rất lớn</option></select></label>
+                <label className="flex items-center gap-2">Vị trí phụ đề<select value={t.caption_position ?? "bottom"} onChange={(e) => edit(i, { caption_position: e.target.value })} className="h-8 px-2"><option value="bottom">Dưới</option><option value="middle">Giữa</option><option value="top">Trên</option></select></label>
               </div>
+              <label className="mt-2 grid gap-1 text-[13px]"><span className="text-mute">Cách đọc riêng, mỗi dòng một cặp viết=đọc</span>
+                <textarea rows={2} defaultValue={Object.entries(t.pronounce ?? {}).map(([k, v]) => `${k}=${v}`).join("\n")} placeholder="NEXORA=nếch xô ra"
+                          onBlur={(e) => edit(i, { pronounce: Object.fromEntries(e.target.value.split("\n").map((l) => l.split("=")).filter((x) => x.length === 2).map(([k, v]) => [k, v])) })} className="p-2" /></label>
             </li>
           ))}
         </ul>
         <div className="mt-3 flex flex-wrap gap-2">
-          <Button onClick={() => setDraft([...list, { name: "Mẫu mới", format: "landscape", voice: "", music_gain: 0.35, auto_accept: false }])}>Thêm mẫu</Button>
+          <Button onClick={() => setDraft([...list, { name: "Mẫu mới", format: "landscape", voice: "", music_gain: 0.35, auto_accept: false, caption_scale: 1, caption_position: "bottom", pronounce: {} }])}>Thêm mẫu</Button>
           <Button kind="primary" disabled={draft === null} onClick={() => save({ templates: list }, "Đã lưu các mẫu.").then(() => setDraft(null))}>Lưu các mẫu</Button>
         </div>
       </div>

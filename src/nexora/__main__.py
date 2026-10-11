@@ -126,10 +126,11 @@ def main() -> None:
 
         def watch():
             import time
-            from nexora.app import scan_watch_folders
+            from nexora.app import scan_watch_folders, watch_health
             while True:
                 try:
                     scan_watch_folders(system)
+                    watch_health(system)
                 except Exception as err:
                     print(f"watch folders: {err!r}")
                 time.sleep(20)

@@ -99,11 +99,12 @@ class Sourcing:
         confident: list[int] = []
         for shot in self._projects.script(ctx.subject_ref)["shots"]:
             need = needed_seconds(shot.text)
-            hits = self._index.search(shot.text, limit=self._alternates + 1, min_score=self._threshold, exclude=frozenset(used))
+            wanted = f"{shot.text} {shot.brief}" if shot.brief else shot.text            # what is said, plus what the operator asked to see
+            hits = self._index.search(wanted, limit=self._alternates + 1, min_score=self._threshold, exclude=frozenset(used))
             verdicts: dict[str, tuple[int, str]] = {}
             if self._judge and hits:
                 for hit in hits:
-                    verdicts[hit.moment.moment_id] = self._look(shot.text, hit)
+                    verdicts[hit.moment.moment_id] = self._look(shot.brief or shot.text, hit)
                     ctx.heartbeat()
                 hits = sorted((h for h in hits if verdicts[h.moment.moment_id][0] >= self._judge_pass),
                               key=lambda h: (verdicts[h.moment.moment_id][0], h.score), reverse=True)

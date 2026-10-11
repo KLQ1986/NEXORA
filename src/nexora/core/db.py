@@ -155,7 +155,10 @@ CREATE TABLE IF NOT EXISTS shots (
     shot_id   TEXT PRIMARY KEY,
     script_id TEXT NOT NULL REFERENCES scripts(script_id),
     position  INTEGER NOT NULL,
-    text      TEXT NOT NULL
+    text      TEXT NOT NULL,
+    scene     TEXT,
+    brief     TEXT,
+    screen_text TEXT
 );
 CREATE TABLE IF NOT EXISTS selections (
     shot_id    TEXT PRIMARY KEY REFERENCES shots(shot_id),
@@ -219,6 +222,10 @@ MIGRATIONS = [
     ("projects", "budget_cap", "REAL"),
     ("renders", "review", "TEXT"),
     ("assets", "note", "TEXT"),
+    ("shots", "scene", "TEXT"),
+    ("shots", "brief", "TEXT"),
+    ("shots", "screen_text", "TEXT"),
+    ("projects", "profile", "TEXT"),
     ("projects", "voice", "TEXT"),
     ("projects", "music_gain", "REAL"),
     ("projects", "template", "TEXT"),

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { post, projectState, timecode, usePoll, type AgentTask, type Asset, type Settings, type Candidate, type Project, type RenderItem, type Shot } from "./api";
+import { post, projectState, scriptText, timecode, usePoll, type Idea, type AgentTask, type Asset, type Settings, type Candidate, type Project, type RenderItem, type Shot } from "./api";
 import Board from "./Board";
 import { Button, Filmstrip, Icon, Page, Section, StageRail, Steps, Tag } from "./parts";
 import Timeline from "./Timeline";
@@ -11,8 +11,11 @@ function Clip({ url, tIn, tOut, poster }: { url: string | null; tIn: number; tOu
   return <video ref={ref} key={`${url}${tIn}`} src={`${url}#t=${tIn},${tOut}`} poster={poster ?? undefined} muted playsInline controls preload="metadata" className="aspect-video w-full rounded-sm bg-black" />;
 }
 
-function ShotRow({ shot, n, locked, changed }: { shot: Shot; n: number; locked: boolean; changed: () => void }) {
+function ShotRow({ shot, n, locked, changed, heading }: { shot: Shot; n: number; locked: boolean; changed: () => void; heading?: string | null }) {
   const sel = shot.selection;
+  const [brief, setBrief] = useState<string | null>(null);
+  const [screen, setScreen] = useState<string | null>(null);
+  const saveNotes = async () => { await post(`/api/v1/shots/${shot.shot_id}`, { brief: brief ?? shot.brief ?? "", screen_text: screen ?? shot.screen_text ?? "" }, "PATCH").catch(() => {}); setBrief(null); setScreen(null); changed(); };
   const [query, setQuery] = useState("");
   const [stock, setStock] = useState<string | null>(null);
   const findStock = async () => { setStock("Đang tìm trên các kho miễn phí"); try { const r = await post<{ found: boolean }>(`/api/v1/shots/${shot.shot_id}/stock`, { query }); setStock(r.found ? null : "Không tìm thấy clip nào. Thử từ khoá tiếng Anh khác."); } catch (e) { setStock((e as Error).message); } changed(); };
@@ -21,7 +24,16 @@ function ShotRow({ shot, n, locked, changed }: { shot: Shot; n: number; locked: 
     <li className="grid gap-5 py-5 md:grid-cols-[1.75rem_minmax(0,1fr)_300px]">
       <span className="tc grid h-6 w-6 place-items-center rounded-full bg-raised text-[12px] text-mute">{n}</span>
       <div className="min-w-0">
+        {heading && <p className="mb-1 text-[12px] font-medium text-faint">{heading}</p>}
         <p className="text-[15px] leading-relaxed">{shot.text}</p>
+        <details className="mt-1.5 text-[13px]" open={brief !== null || screen !== null}>
+          <summary className="cursor-pointer text-mute hover:text-ink">{shot.brief || shot.screen_text ? `Ghi chú: ${[shot.brief && `hình cần có “${shot.brief}”`, shot.screen_text && `chữ trên màn hình “${shot.screen_text}”`].filter(Boolean).join(", ")}` : "Thêm ghi chú hình hoặc chữ trên màn hình"}</summary>
+          <form className="mt-2 grid max-w-xl gap-2" onSubmit={(e) => { e.preventDefault(); saveNotes(); }}>
+            <label className="grid gap-1"><span className="text-mute">Hình cần có (dùng để tìm clip khi lời dẫn không tả hình)</span><input value={brief ?? shot.brief ?? ""} onChange={(e) => setBrief(e.target.value)} placeholder="Ví dụ: cận cảnh bàn tay rót cà phê" className="px-3" /></label>
+            <label className="grid gap-1"><span className="text-mute">Chữ trên màn hình (để trống thì hiện đúng lời dẫn)</span><input value={screen ?? shot.screen_text ?? ""} onChange={(e) => setScreen(e.target.value)} placeholder="Ví dụ: Hội An, 6 giờ sáng" className="px-3" /></label>
+            <div><Button size="sm" disabled={brief === null && screen === null} onClick={saveNotes}>Lưu ghi chú</Button></div>
+          </form>
+        </details>
         {!sel && <p className="mt-1 text-sm text-mute">Chưa tìm clip cho câu này.</p>}
         {sel?.status === "gap" && <p className="mt-1 text-sm text-cue">Chưa có hình cho câu này. Video sẽ hiện một nền trơn kèm phụ đề, cho tới khi bạn quay thêm, thêm footage, hoặc sửa câu.</p>}
         {sel && sel.status !== "gap" && <details className="group mt-1.5 text-[13px] text-mute"><summary className="cursor-pointer list-none break-words"><span className="line-clamp-2 group-open:line-clamp-none">Vì sao chọn: {sel.reason}</span><span className="text-faint underline underline-offset-2 group-open:hidden">Xem đầy đủ</span></summary></details>}
@@ -111,6 +123,7 @@ function PackagePanel({ render, reload }: { render: RenderItem; reload: () => vo
   );
 }
 
+const CRITERIA: Record<string, string> = { hop_khan_gia: "Hợp người xem", co_hinh: "Có hình trong kho", moi_la: "Mới lạ", de_lam: "Dễ làm" };
 const TASK_STATES: Record<string, string> = { working: "Đang làm", waiting_operator: "Chờ bạn", done: "Xong", failed: "Dừng vì lỗi" };
 
 /** What the producer agent did for this project, role by role, in the order it happened. */
@@ -146,13 +159,13 @@ function Detail({ id, back }: { id: string; back: () => void }) {
   const tracks = (lib?.assets ?? []).filter((a) => a.kind === "audio" && a.online);
   const { data: prefs } = usePoll<Settings>("/api/v1/settings", 30000);
   const cut = useRef<HTMLVideoElement>(null);
-  const stored = p ? p.shots.map((s) => s.text).join("\n") : null;
+  const stored = p ? scriptText(p.shots) : null;
   const last = useRef<string | null>(null);
   // The editor follows the stored script (after a reorder on the timeline, for example) unless the operator has typed something not yet saved.
   useEffect(() => { if (stored === null) return; if (text === null || text.trim() === (last.current ?? "").trim()) setText(stored); last.current = stored; }, [stored]);
   if (!p) return <Page title="Dự án" back={{ label: "Dự án", onClick: back }}><p className="text-mute">Đang mở dự án</p></Page>;
   const run = async (fn: () => Promise<unknown>) => { setBusy(true); setNote(null); try { await fn(); } catch (e) { setNote((e as Error).message); } setBusy(false); reload(); };
-  const saved = p.shots.map((s) => s.text).join("\n");
+  const saved = scriptText(p.shots);
   const dirty = text !== null && text.trim() !== saved.trim();
   const matching = p.match && ["queued", "running"].includes(p.match.status);
   const reviewing = p.match?.status === "waiting_review";
@@ -199,7 +212,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
 
       <div className={`grid items-start gap-8 xl:grid-cols-[minmax(0,1fr)_340px] ${tab === "work" ? "" : "hidden"}`}>
         <div className="grid min-w-0 gap-10">
-          <Section title="Kịch bản" note="Mỗi dòng là một câu lời dẫn. Hệ thống tìm một clip cho từng câu.">
+          <Section title="Kịch bản" note="Mỗi dòng là một câu lời dẫn; hệ thống tìm một clip cho từng câu. Dòng bắt đầu bằng dấu # là tên một cảnh.">
             <textarea value={text ?? ""} onChange={(e) => setText(e.target.value)} rows={Math.max(5, (text ?? "").split("\n").length + 1)} aria-label="Kịch bản"
                       className="w-full p-4 text-[15px] leading-[1.9]" placeholder="Chợ Hội An buổi sáng tấp nập người mua kẻ bán." />
             <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -221,7 +234,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
                      </>}>
               {p.shots.some((s) => s.selection) && <div className="mb-1"><TimelineStrip shots={p.shots} /></div>}
               <ol className="rows border-y border-line">
-                {p.shots.map((s, i) => <ShotRow key={s.shot_id} shot={s} n={i + 1} locked={!!rendering} changed={reload} />)}
+                {p.shots.map((s, i) => <ShotRow key={s.shot_id} shot={s} n={i + 1} locked={!!rendering} changed={reload} heading={s.scene && s.scene !== p.shots[i - 1]?.scene ? s.scene : null} />)}
               </ol>
             </Section>
           )}
@@ -238,6 +251,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
                 <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
                   <video ref={cut} key={latest.url} src={latest.url} controls className={`w-full rounded-md bg-black ${latest.qc.format === "portrait" ? "mx-auto aspect-[9/16] max-h-[70vh] w-auto" : latest.qc.format === "square" ? "aspect-square max-h-[70vh]" : "aspect-video"}`} />
                   <div className="min-w-0">
+                    {latest.qc.draft && <p className="panel mb-4 border-cue/40 px-4 py-3 text-cue">Bản nháp: một số cảnh được cắt từ bản xem vì không tìm thấy file gốc. Cắm lại ổ chứa footage rồi dựng lại để có bản cuối.</p>}
                     <div className="panel rows mb-4">
                       {Object.entries(latest.qc.checks).map(([name, ok]) => <p key={name} className="flex items-center justify-between gap-3 px-4 py-2.5"><span>{name}</span><Tag tone={ok ? "proof" : "tally"}>{ok ? "Đạt" : "Không đạt"}</Tag></p>)}
                       {latest.qc.gaps > 0 && <p className="flex items-center justify-between gap-3 px-4 py-2.5"><span>Câu dùng nền trơn vì thiếu hình</span><Tag tone="cue">{latest.qc.gaps}</Tag></p>}
@@ -369,7 +383,10 @@ export default function Projects({ sub, go }: { sub: string | null; go: (to: str
   const [title, setTitle] = useState("");
   const [goal, setGoal] = useState("");
   const [format, setFormat] = useState("landscape");
-  const [mode, setMode] = useState<"none" | "new" | "agent">("none");
+  const [mode, setMode] = useState<"none" | "new" | "agent" | "ideas">("none");
+  const { data: ideas, reload: reloadIdeas } = usePoll<{ ideas: Idea[] }>("/api/v1/ideas", 60000);
+  const [thinking, setThinking] = useState(false);
+  const propose = async () => { setThinking(true); setAgentNote(null); try { await post("/api/v1/ideas"); } catch (e) { setAgentNote((e as Error).message); } setThinking(false); reloadIdeas(); };
   const { data: agent, reload: reloadAgent } = usePoll<{ tasks: AgentTask[] }>("/api/v1/agent/tasks", 4000);
   const [agentNote, setAgentNote] = useState<string | null>(null);
   if (sub) return <Detail key={sub} id={sub} back={() => go("/du-an")} />;
@@ -383,7 +400,7 @@ export default function Projects({ sub, go }: { sub: string | null; go: (to: str
   );
   return (
     <Page title="Dự án" note="Mỗi dự án là một video, từ kịch bản tới bản dựng đã duyệt."
-          actions={<><Button onClick={() => setMode(mode === "agent" ? "none" : "agent")}><Icon name="spark" />Giao cho trợ lý</Button><Button kind="primary" onClick={() => setMode(mode === "new" ? "none" : "new")}><Icon name="plus" />Dự án mới</Button></>}>
+          actions={<><Button kind="quiet" onClick={() => setMode(mode === "ideas" ? "none" : "ideas")}>Gợi ý ý tưởng</Button><Button onClick={() => setMode(mode === "agent" ? "none" : "agent")}><Icon name="spark" />Giao cho trợ lý</Button><Button kind="primary" onClick={() => setMode(mode === "new" ? "none" : "new")}><Icon name="plus" />Dự án mới</Button></>}>
       {mode === "new" && (
         <form className="panel rise mb-8 max-w-3xl p-5" onSubmit={(e) => { e.preventDefault(); if (title.trim()) create(); }}>
           <label htmlFor="title" className="mb-1.5 block font-medium">Tên video</label>
@@ -403,6 +420,31 @@ export default function Projects({ sub, go }: { sub: string | null; go: (to: str
           </div>
           {agentNote && <p className="mt-2 text-tally">{agentNote}</p>}
         </form>
+      )}
+      {mode === "ideas" && (
+        <div className="panel rise mb-8 p-5">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <div><h2 className="text-[15px] font-semibold">Ý tưởng làm được từ kho footage</h2><p className="text-[13px] text-mute">Mô hình đề xuất; điểm “có hình” được đo từ kho, không lấy theo ý mô hình. Ý tưởng có rủi ro xếp sau.</p></div>
+            <Button disabled={thinking} onClick={propose}>{thinking ? "Đang nghĩ" : (ideas?.ideas.length ? "Gợi ý lại" : "Gợi ý ý tưởng")}</Button>
+          </div>
+          {agentNote && <p className="mb-2 text-tally">{agentNote}</p>}
+          {ideas && ideas.ideas.length === 0 && !thinking && <p className="text-mute">Chưa có gợi ý nào. Kho cần có footage đã được mô tả.</p>}
+          <ul className="grid gap-3 lg:grid-cols-2">
+            {(ideas?.ideas ?? []).map((it) => (
+              <li key={it.title} className="rounded-md border border-line p-4">
+                <p className="font-medium">{it.title}</p><p className="mb-3 text-[13px] text-mute">{it.summary}</p>
+                <dl className="mb-3 grid grid-cols-2 gap-x-5 gap-y-1.5 text-[13px]">
+                  {Object.entries(CRITERIA).map(([key, name]) => (
+                    <div key={key} className="flex items-center justify-between gap-2"><dt className="text-mute">{name}</dt>
+                      <dd className="flex gap-0.5" aria-label={`${it.scores[key]} trên 5`}>{[1, 2, 3, 4, 5].map((n) => <span key={n} className={`h-1.5 w-3 rounded-full ${n <= (it.scores[key] ?? 0) ? "bg-ink" : "bg-line"}`} />)}</dd></div>
+                  ))}
+                </dl>
+                {it.risk && <p className="mb-3 text-[13px] text-cue">Rủi ro: {it.risk}</p>}
+                <Button size="sm" onClick={async () => { const t = await post<AgentTask>("/api/v1/agent/tasks", { goal: `${it.title}. ${it.summary}`, format }); reloadAgent(); reload(); go(`/du-an/${t.project_id}`); }}><Icon name="spark" size={14} />Giao cho trợ lý làm</Button>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
       {data && data.length === 0 && <p className="panel max-w-2xl px-5 py-8 text-mute">Chưa có dự án nào. Bấm Dự án mới để tự viết kịch bản, hoặc Giao cho trợ lý để nó viết và dựng bản đầu tiên từ kho footage của bạn.</p>}
       <ul className="grid gap-3">
