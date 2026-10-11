@@ -41,6 +41,7 @@ class FFprobeAdapter(Adapter):
 
 
 _BLACK = __import__("re").compile(r"black_start:([\d.]+)\s+black_end:([\d.]+)")
+_FREEZE = __import__("re").compile(r"freeze_(start|end): ([\d.]+)")
 HDR_TRANSFERS = frozenset({"smpte2084", "arib-std-b67"})
 
 
@@ -58,7 +59,7 @@ def ffmpeg_capabilities() -> dict:
 
 class FFmpegAdapter(Adapter):
     def describe(self) -> Capability:
-        return Capability(name="ffmpeg", operations=("blackdetect", "proxy", "thumbnail"), runs="local", supports_cancel=True)
+        return Capability(name="ffmpeg", operations=("blackdetect", "freezedetect", "proxy", "thumbnail"), runs="local", supports_cancel=True)
 
     def submit(self, request: Request) -> Result:
         src = Path(request.inputs["path"])
@@ -79,13 +80,28 @@ class FFmpegAdapter(Adapter):
         ranges = [[round(float(a), 3), round(float(b), 3)] for a, b in _BLACK.findall(done.stderr)]
         return Result(outputs={"black_ranges": ranges})
 
+    def _freezedetect(self, src: Path, params: dict, timeout: float) -> Result:
+        done = self._run(["-i", str(src), "-vf", f"freezedetect=n=-60dB:d={params.get('min_duration', 2.0)}", "-an", "-f", "null", "-"],
+                         timeout, "freezedetect")
+        ranges, start = [], None
+        for kind, value in _FREEZE.findall(done.stderr):
+            if kind == "start":
+                start = float(value)
+            elif start is not None:
+                ranges.append([round(start, 3), round(float(value), 3)]); start = None
+        if start is not None:                                   # frozen until the end of the file
+            ranges.append([round(start, 3), None])
+        return Result(outputs={"frozen_ranges": ranges})
+
     def _proxy(self, src: Path, params: dict, timeout: float) -> Result:
         out = Path(params["out"])
         height = int(params.get("max_height", 720))
         partial = out.with_name(out.stem + ".partial" + out.suffix)     # written under another name, renamed when complete
         common = ["-y", "-i", str(src), "-vf", f"scale=-2:'min({height},ih)'", "-pix_fmt", "yuv420p", "-fps_mode", "cfr"]
-        audio = ["-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(partial)]
-        encoders = [["-c:v", params.get("encoder", "h264_videotoolbox"), "-b:v", "3M"], ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23"]]
+        audio = ["-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", str(partial)]
+        bitrate = params.get("video_bitrate", "1200k")
+        encoders = [["-c:v", params.get("encoder", "h264_videotoolbox"), "-b:v", bitrate],
+                    ["-c:v", "libx264", "-preset", "veryfast", "-b:v", bitrate, "-maxrate", bitrate, "-bufsize", "2400k"]]
         last = None
         for encoder in encoders:
             try:

@@ -23,7 +23,7 @@ class System:
     library: Library
 
 
-def build(data_dir: str | Path) -> System:
+def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3) -> System:
     data_dir = Path(data_dir)
     data_dir.mkdir(parents=True, exist_ok=True)
     db_path = data_dir / "nexora.db"
@@ -32,7 +32,7 @@ def build(data_dir: str | Path) -> System:
     adapters.register(FFprobeAdapter())
     adapters.register(FFmpegAdapter())
     registry = PipelineRegistry()
-    library = Library(orch, assets, adapters, data_dir / "media")
+    library = Library(orch, assets, adapters, data_dir / "media", min_free_bytes=min_free_bytes)
     library.register(registry)
     worker = Worker(orch, registry, worker_id=f"worker-{os.getpid()}")
     return System(data_dir, orch, assets, adapters, registry, worker, library)

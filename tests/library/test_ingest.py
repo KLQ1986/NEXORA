@@ -74,3 +74,23 @@ def test_a_missing_source_fails_the_run_with_a_clear_code(system, tmp_path):
     gone.unlink()
     drain(system)
     assert system.orch.run_status(run_id) is RunStatus.FAILED
+
+
+def test_ingest_blocks_before_the_proxy_when_the_disk_is_nearly_full(tmp_path, plain_clip):
+    system = build(tmp_path / "data", min_free_bytes=10**18)          # more than any disk has
+    asset_id, run_id = system.library.ingest(plain_clip)
+    drain(system)
+    proxy = next(s for s in system.orch.stages(run_id) if s.stage_key == "proxy")
+    assert proxy.status.value == "blocked" and proxy.blocked_reason == "insufficient_storage"
+    assert system.orch.run_status(run_id) is RunStatus.BLOCKED
+
+
+def test_frozen_stretches_are_recorded_but_stay_usable(system, tmp_path):
+    import subprocess
+    src = tmp_path / "frozen.mp4"
+    subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=25:duration=2",
+                    "-vf", "tpad=stop_mode=clone:stop_duration=3", "-pix_fmt", "yuv420p", str(src)], check=True)
+    asset_id, _ = system.library.ingest(src)
+    drain(system)
+    meta = system.assets.original(asset_id).metadata
+    assert len(meta["frozen_ranges"]) == 1 and meta["usable_ranges"] == [[0.0, pytest.approx(5.0, abs=0.2)]]

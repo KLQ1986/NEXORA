@@ -20,10 +20,11 @@ class ErrorCode(StrEnum):
     OUTPUT_INVALID = "output_invalid"
     CANCELLED = "cancelled"
     INTERNAL = "internal"
+    INSUFFICIENT_STORAGE = "insufficient_storage"
 
 
 RETRYABLE = frozenset({ErrorCode.RATE_LIMITED, ErrorCode.UNAVAILABLE, ErrorCode.TIMEOUT, ErrorCode.OUTPUT_INVALID, ErrorCode.INTERNAL})
-NEEDS_OPERATOR = frozenset({ErrorCode.AUTH, ErrorCode.QUOTA_EXHAUSTED})   # the stage is blocked, not retried
+NEEDS_OPERATOR = frozenset({ErrorCode.AUTH, ErrorCode.QUOTA_EXHAUSTED, ErrorCode.INSUFFICIENT_STORAGE})   # the stage is blocked, not retried
 
 
 class AdapterError(Exception):

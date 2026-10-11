@@ -3,6 +3,7 @@
 The original is never modified. Everything derived from it — proxy, thumbnail, measurements — is a
 new asset version or metadata on the original version.
 """
+import shutil
 from pathlib import Path
 
 from nexora.core.adapter import AdapterError, AdapterRegistry, ErrorCode, Request
@@ -34,8 +35,10 @@ def usable_ranges(duration: float, black: list[list[float]]) -> list[list[float]
 
 
 class Library:
-    def __init__(self, orch: Orchestrator, assets: AssetStore, adapters: AdapterRegistry, media_dir: str | Path):
+    def __init__(self, orch: Orchestrator, assets: AssetStore, adapters: AdapterRegistry, media_dir: str | Path,
+                 *, min_free_bytes: int = 2 * 1024**3):
         self._orch, self._assets, self._adapters = orch, assets, adapters
+        self._min_free = min_free_bytes
         self._media = Path(media_dir)
         self._media.mkdir(parents=True, exist_ok=True)
         assets.add_volume("managed", self._media, kind="internal")
@@ -91,14 +94,19 @@ class Library:
             return {"skipped": "duplicate"}
         original, path = self._source(ctx)
         black = self._adapters.submit("ffmpeg", Request("blackdetect", inputs={"path": str(path)}, attempt_id=ctx.claim.attempt_id)).outputs["black_ranges"]
-        ranges = usable_ranges(ctx.inputs["probe"]["duration"], black)
-        self._assets.update_metadata(original.version_id, black_ranges=black, usable_ranges=ranges)
-        return {"black_ranges": black, "usable_ranges": ranges}
+        duration = ctx.inputs["probe"]["duration"]
+        frozen = self._adapters.submit("ffmpeg", Request("freezedetect", inputs={"path": str(path)}, attempt_id=ctx.claim.attempt_id)).outputs["frozen_ranges"]
+        frozen = [[a, duration if b is None else b] for a, b in frozen]
+        ranges = usable_ranges(duration, black)          # a frozen picture is recorded, not excluded: a still shot can be wanted
+        self._assets.update_metadata(original.version_id, black_ranges=black, frozen_ranges=frozen, usable_ranges=ranges)
+        return {"black_ranges": black, "frozen_ranges": frozen, "usable_ranges": ranges}
 
     def _proxy(self, ctx):
         if self._is_duplicate(ctx):
             return {"skipped": "duplicate"}
         original, path = self._source(ctx)
+        if shutil.disk_usage(self._media).free < self._min_free:
+            raise AdapterError(ErrorCode.INSUFFICIENT_STORAGE, f"less than {self._min_free} bytes free for derived media")
         out = self._derived_path(original, "_proxy.mp4")
         self._adapters.submit("ffmpeg", Request("proxy", inputs={"path": str(path)}, params={"out": str(out), "max_height": 720},
                                                attempt_id=ctx.claim.attempt_id))

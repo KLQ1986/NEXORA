@@ -41,3 +41,18 @@ def test_capabilities_report_which_filters_this_build_has():
     caps = ffmpeg_capabilities()
     assert caps["filters"]["blackdetect"] is True and caps["filters"]["scale"] is True
     assert isinstance(caps["filters"]["zscale"], bool)
+
+
+def test_freezedetect_reports_a_frozen_stretch(tmp_path):
+    import subprocess
+    src = tmp_path / "frozen.mp4"
+    subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=25:duration=2",
+                    "-vf", "tpad=stop_mode=clone:stop_duration=3", "-pix_fmt", "yuv420p", str(src)], check=True)
+    out = FFmpegAdapter().submit(Request("freezedetect", inputs={"path": str(src)})).outputs
+    assert len(out["frozen_ranges"]) == 1 and out["frozen_ranges"][0][0] == pytest.approx(2.0, abs=0.3)
+
+
+def test_proxy_bitrate_is_modest(plain_clip, tmp_path):
+    out = tmp_path / "p.mp4"
+    FFmpegAdapter().submit(Request("proxy", inputs={"path": str(plain_clip)}, params={"out": str(out)}))
+    assert out.stat().st_size < 2 * 1_500_000 / 8 * 1.5          # two seconds at well under 1.5 Mbit/s plus overhead
