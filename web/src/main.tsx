@@ -6,6 +6,7 @@ import Costs from "./Costs";
 import Home from "./Home";
 import Library from "./Library";
 import Notices from "./Notices";
+import Plan from "./Plan";
 import Projects from "./Projects";
 import Runs from "./Runs";
 import System from "./System";
@@ -15,6 +16,7 @@ const PAGES = [
   { path: "/", label: "Tổng quan", icon: "home", view: null, group: 0 },
   { path: "/du-an", label: "Dự án", icon: "clapper", view: null, group: 0 },
   { path: "/thu-vien", label: "Thư viện", icon: "film", view: Library, group: 0 },
+  { path: "/ke-hoach", label: "Kế hoạch", icon: "calendar", view: Plan, group: 0 },
   { path: "/tien-trinh", label: "Tiến trình", icon: "pulse", view: Runs, group: 1 },
   { path: "/chi-phi", label: "Chi phí", icon: "coins", view: Costs, group: 1 },
   { path: "/thong-bao", label: "Thông báo", icon: "bell", view: Notices, group: 1 },

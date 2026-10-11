@@ -14,7 +14,10 @@ def review_cut(shots: list[dict]) -> list[dict]:
     for i, s in enumerate(shots):
         if s["gap"]:
             add("Thiếu hình", i, "cao", "Câu này không có clip nên video hiện nền trơn.", "Thêm footage, đổi sang phương án khác, hoặc sửa câu.")
-        if s.get("is_fact") and not s.get("source"):
+        check = (s.get("fact_check") or {}).get("verdict") if s.get("is_fact") else None
+        if check == "contradicted":
+            add("Dữ kiện", i, "cao", f"Câu này trái với nguồn “{s['fact_check'].get('source')}”.", "Sửa câu cho đúng với nguồn, hoặc tìm nguồn khác.")
+        elif s.get("is_fact") and not s.get("source"):
             add("Dữ kiện", i, "cao", "Câu này nêu một dữ kiện nhưng chưa gắn nguồn nào.", "Gắn một nguồn trong phần Nguồn tham khảo của dự án, hoặc sửa câu.")
         if s["duration"] > MAX_SHOT:
             add("Nhịp", i, "vừa", f"Cảnh dài {s['duration']:.1f} giây, dễ làm người xem chán.", "Tách câu thành hai câu ngắn hơn.")

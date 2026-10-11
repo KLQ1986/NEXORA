@@ -10,6 +10,7 @@ WORDS = ["chợ rau củ", "cá tươi trên sạp", "pha cà phê", "con đư�
 class FakeModel(Adapter):
     def __init__(self):
         self.calls = {"describe": 0, "chat": 0, "embed": 0}
+        self.answers = {}            # what to answer a chat by its task: a dict, or a function of the request
 
     def describe(self) -> Capability:
         return Capability(name="model", operations=("describe", "chat", "embed"), runs="local")
@@ -27,6 +28,9 @@ class FakeModel(Adapter):
             index = request.params.get("index", 0)
             return Result(outputs={"json": {"mo_ta": f"Đoạn {index}: {WORDS[index % len(WORDS)]}.", "chu_the": [WORDS[index % len(WORDS)]],
                                             "hanh_dong": [], "boi_canh": "ngoài trời", "chu_tren_hinh": "", "co_canh": "trung"}})
+        if request.operation == "chat" and request.params.get("task") in self.answers:
+            answer = self.answers[request.params["task"]]
+            return Result(outputs={"json": answer(request) if callable(answer) else answer})
         if request.operation == "chat":
             if request.params.get("json"):
                 return Result(outputs={"json": {"tom_tat": "Video thử nghiệm.", "chu_de": ["thử nghiệm"], "tieu_de": "Video thử",
@@ -106,3 +110,20 @@ class FakeStock(Adapter):
                         "-pix_fmt", "yuv420p", str(clip)], check=True)
         return Result(outputs={"clips": [{"source": "archive_org", "source_url": "https://example.org/clip", "license": "Public Domain", "creator": "", "path": str(clip)}],
                                "raw": {}}, files=(str(clip),))
+
+
+class FakeWeb(Adapter):
+    """Pages by address, so that reading a source needs no network."""
+
+    def __init__(self, pages: dict):
+        self.pages = pages
+
+    def describe(self) -> Capability:
+        return Capability(name="web", operations=("read",), runs="cloud")
+
+    def submit(self, request: Request) -> Result:
+        from nexora.core.adapter import AdapterError, ErrorCode
+        url = request.inputs["url"]
+        if url not in self.pages:
+            raise AdapterError(ErrorCode.INVALID_REQUEST, "the page answered 404")
+        return Result(outputs={"title": "", "publisher": "", "date": "", **self.pages[url], "url": url})

@@ -4,6 +4,9 @@ It sits above the domain modules and uses only what the operator could do throug
 fill a gap, start a render. Each role speaks in the task's log, so every decision can be read afterwards. It never
 passes a human gate on its own: at a review it stops and waits.
 
+The roles are bounded: the critic is heard once and the writer answers once, the researcher reads only the pages the
+operator named, and a task that has taken more steps than any real one needs is stopped rather than left to wander.
+
 It is a state machine advanced by `tick()`, never a long-running call, so it survives restarts and holds no worker.
 """
 import json
@@ -19,7 +22,11 @@ QUERY_PROMPT = (
     "Chỉ trả về JSON với khoá tu_khoa."
 )
 WRITER, SCOUT, STOCK, EDITOR, LEAD = "Biên kịch", "Tìm hình", "Tìm stock", "Dựng phim", "Điều phối"
+RESEARCHER, CRITIC, CHECKER = "Nghiên cứu", "Phản biện", "Kiểm chứng"
 MAX_STOCK_FILLS = 3
+MAX_REVISIONS = 1            # the writer answers the critic once; a second round rarely pays for itself
+MAX_SOURCES = 5
+MAX_STEPS = 40               # no task needs this many moves; one that reaches it is going round in circles
 SCHEMA = """CREATE TABLE IF NOT EXISTS agent_tasks (
     task_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, goal TEXT NOT NULL, status TEXT NOT NULL, step TEXT NOT NULL,
     options TEXT NOT NULL, log TEXT NOT NULL DEFAULT '[]', created_at REAL NOT NULL, updated_at REAL NOT NULL)"""
@@ -38,12 +45,14 @@ class Producer:
         return self._db.get()
 
     # ------------------------------------------------------------------ tasks
-    def start(self, goal: str, *, title: str | None = None, format: str = "landscape", lines: int = 5, use_stock: bool = True) -> str:
+    def start(self, goal: str, *, title: str | None = None, format: str = "landscape", lines: int = 5, use_stock: bool = True,
+              urls: list[str] | None = None, critique: bool = True) -> str:
         project_id = self._planning.create_project(title or goal[:60], format=format)
         task_id, now = new_id("tsk"), time.time()
         with db.write(self._conn) as c:
             c.execute("INSERT INTO agent_tasks (task_id, project_id, goal, status, step, options, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
-                      (task_id, project_id, goal, "working", "write", json.dumps({"lines": lines, "use_stock": use_stock}), now, now))
+                      (task_id, project_id, goal, "working", "research" if urls else "write",
+                       json.dumps({"lines": lines, "use_stock": use_stock, "urls": list(urls or [])[:MAX_SOURCES], "critique": critique, "steps": 0, "revisions": 0}), now, now))
         self._say(task_id, LEAD, f"Nhận việc: {goal}")
         return task_id
 
@@ -61,6 +70,13 @@ class Producer:
             log.append({"at": time.time(), "role": role, "text": text})
             c.execute("UPDATE agent_tasks SET log = ?, updated_at = ? WHERE task_id = ?", (json.dumps(log, ensure_ascii=False), time.time(), task_id))
 
+    def _count(self, task_id: str, key: str) -> int:
+        with db.write(self._conn) as c:
+            options = json.loads(c.execute("SELECT options FROM agent_tasks WHERE task_id = ?", (task_id,)).fetchone()[0])
+            options[key] = options.get(key, 0) + 1
+            c.execute("UPDATE agent_tasks SET options = ? WHERE task_id = ?", (json.dumps(options), task_id))
+        return options[key]
+
     def _move(self, task_id: str, *, step: str | None = None, status: str | None = None) -> None:
         with db.write(self._conn) as c:
             if step:
@@ -74,7 +90,11 @@ class Producer:
         moved = 0
         for row in self._conn.execute("SELECT task_id FROM agent_tasks WHERE status IN ('working', 'waiting_operator')").fetchall():
             try:
-                moved += bool(self.advance(row[0]))
+                if self.advance(row[0]):
+                    moved += 1
+                    if self._count(row[0], "steps") > MAX_STEPS and self.task(row[0])["status"] == "working":
+                        self._say(row[0], LEAD, f"Dừng lại: việc này đã đi quá {MAX_STEPS} bước mà chưa xong.")
+                        self._move(row[0], status="failed")
             except AdapterError as err:
                 self._say(row[0], LEAD, f"Dừng lại vì công cụ báo lỗi: {err.message or err.code.value}")
                 self._move(row[0], status="failed")
@@ -89,6 +109,19 @@ class Producer:
         step, project_id = task["step"], task["project_id"]
         script = self._projects.current_script(project_id)
 
+        if step == "research":
+            read = 0
+            for url in task["options"].get("urls", []):
+                try:
+                    source = self._planning.read_source(project_id, url)
+                    self._say(task_id, RESEARCHER, f"Đã đọc “{source['title']}” ({source['publisher']}).")
+                    read += 1
+                except AdapterError as err:
+                    self._say(task_id, RESEARCHER, f"Không đọc được {url}: {err.message or err.code.value}")
+            self._say(task_id, RESEARCHER, f"Có {read} nguồn để đối chiếu dữ kiện.")
+            self._move(task_id, step="write")
+            return True
+
         if step == "write":
             lines = self._planning.draft_script(task["goal"], lines=task["options"]["lines"])
             if not lines:
@@ -97,6 +130,32 @@ class Producer:
                 return True
             self._planning.save_script(project_id, lines)
             self._say(task_id, WRITER, f"Viết {len(lines)} câu, chỉ dùng những gì kho footage đang có.")
+            self._move(task_id, step="critique" if task["options"].get("critique", True) else "facts")
+            return True
+
+        if step == "critique":
+            notes = self._planning.critique(project_id)
+            if not notes:
+                self._say(task_id, CRITIC, "Không có điểm nào cần sửa.")
+            else:
+                self._say(task_id, CRITIC, f"Nêu {len(notes)} điểm: " + " ".join(f"({i}) {n['issue']}" for i, n in enumerate(notes, 1)))
+                if task["options"].get("revisions", 0) < MAX_REVISIONS:
+                    self._count(task_id, "revisions")
+                    revised = self._planning.revise(project_id)
+                    self._say(task_id, WRITER, "Đã viết lại theo nhận xét, thành phiên bản kịch bản mới." if revised else "Giữ nguyên kịch bản: bản viết lại không khác bản cũ.")
+            self._move(task_id, step="facts")
+            return True
+
+        if step == "facts":
+            facts = self._planning.find_facts(project_id)
+            if facts:
+                results = self._planning.check_facts(project_id)
+                good = sum(r["verdict"] == "supported" for r in results)
+                wrong = [r for r in results if r["verdict"] == "contradicted"]
+                self._say(task_id, CHECKER, f"{len(results)} câu nêu dữ kiện: {good} câu có nguồn xác nhận, {len(wrong)} câu trái với nguồn, {len(results) - good - len(wrong)} câu chưa có nguồn nào nhắc tới."
+                                            + "".join(f" Trái nguồn: “{r['text']}”." for r in wrong))
+            else:
+                self._say(task_id, CHECKER, "Kịch bản không có câu nào nêu dữ kiện cần kiểm chứng.")
             self._move(task_id, step="source")
             return True
 

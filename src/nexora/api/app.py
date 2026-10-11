@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from nexora.core.adapter import AdapterError
+from nexora.core.adapter import AdapterError, ErrorCode
 
 VIDEO_EXT = {".mp4", ".mov", ".m4v", ".mkv", ".avi", ".mts", ".webm", ".ogv"}
 IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp"}
@@ -400,7 +400,9 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         if not goal:
             raise HTTPException(422, "Hãy mô tả video bạn muốn làm")
         task_id = system.producer.start(goal, format=body.get("format") if body.get("format") in ("landscape", "portrait", "square") else "landscape",
-                                        lines=max(2, min(12, int(body.get("lines", 5)))), use_stock=bool(body.get("use_stock", True)))
+                                        lines=max(2, min(12, int(body.get("lines", 5)))), use_stock=bool(body.get("use_stock", True)),
+                                        urls=[u for u in (str(u).strip() for u in body.get("urls") or []) if u.lower().startswith(("http://", "https://"))],
+                                        critique=bool(body.get("critique", True)))
         return system.producer.task(task_id)
 
     @app.post("/api/v1/control/desktop-notifications")
@@ -478,7 +480,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         for shot in (script["shots"] if script else []):
             sel = system.projects.selection(shot.shot_id)
             item = {"shot_id": shot.shot_id, "position": shot.position, "text": shot.text, "scene": shot.scene, "brief": shot.brief, "screen_text": shot.screen_text, "target_seconds": shot.target_seconds, "sound_cue": shot.sound_cue,
-                    "is_fact": shot.is_fact, "source": shot.source, "selection": None, "keyframe_url": None, "generation": None}
+                    "is_fact": shot.is_fact, "source": shot.source, "fact_check": shot.fact_check, "selection": None, "keyframe_url": None, "generation": None}
             keys = system.projects.generations(shot.shot_id, kind="keyframe")
             if keys:
                 item["keyframe_url"] = f"/media/{system.assets.original(keys[-1]['asset_id']).version_id}"
@@ -495,7 +497,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         renders = [{"render_id": r["render_id"], "script_id": r["script_id"], "created_at": r["created_at"], "qc": r["qc"], "review": r["review"],
                     "url": f"/api/v1/renders/{r['render_id']}/file", "package": system.distribution.package(r["render_id"])}
                    for r in system.projects.renders(project["project_id"])]
-        return {**project, "script": {"script_id": script["script_id"], "version": script["version"], "match_approved": script["match_approved"]} if script else None,
+        return {**project, "script": {"script_id": script["script_id"], "version": script["version"], "match_approved": script["match_approved"], "critique": script["critique"]} if script else None,
                 "shots": shots, "match": latest_run(script["script_id"], "sourcing.match") if script else None,
                 "render": latest_run(script["script_id"], "edit.render") if script else None, "renders": renders,
                 "generate": latest_run(script["script_id"], "sourcing.generate") if script else None, "generators": system.generation.available(),
@@ -657,6 +659,74 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
                                       **{k: body[k] for k in ("target_seconds", "sound_cue", "is_fact", "source") if k in body})
         return {"ok": True}
 
+    def planning_call(work):
+        """Run a planning step that leans on a tool, and say plainly why it could not be done."""
+        try:
+            return work()
+        except AdapterError as err:
+            if err.code is ErrorCode.AUTH:
+                raise HTTPException(409, "Chế độ riêng tư đang bật nên hệ thống không đọc trang web. Tắt ở mục Hệ thống, hoặc tự nhập nguồn.")
+            raise HTTPException(503 if err.code in (ErrorCode.UNAVAILABLE, ErrorCode.TIMEOUT) else 422, f"Không làm được: {err.message or err.code.value}")
+        except KeyError as err:
+            raise HTTPException(409, f"Máy này chưa có công cụ {err.args[0]} cho việc này")
+
+    @app.post("/api/v1/projects/{project_id}/sources/read")
+    def read_source(project_id: str, body: dict):
+        need_project(project_id)
+        url = str(body.get("url", "")).strip()
+        if not url.lower().startswith(("http://", "https://")):
+            raise HTTPException(422, "Địa chỉ phải bắt đầu bằng http:// hoặc https://")
+        planning_call(lambda: system.planning.read_source(project_id, url))
+        return project_view(need_project(project_id))
+
+    @app.post("/api/v1/projects/{project_id}/facts/find")
+    def find_facts(project_id: str):
+        current_script_id(project_id)
+        found = planning_call(lambda: system.planning.find_facts(project_id))
+        return {**project_view(need_project(project_id)), "found": len(found)}
+
+    @app.post("/api/v1/projects/{project_id}/facts/check")
+    def check_facts(project_id: str):
+        current_script_id(project_id)
+        planning_call(lambda: system.planning.check_facts(project_id))
+        return project_view(need_project(project_id))
+
+    @app.post("/api/v1/projects/{project_id}/critique")
+    def critique_script(project_id: str):
+        current_script_id(project_id)
+        planning_call(lambda: system.planning.critique(project_id))
+        return project_view(need_project(project_id))
+
+    @app.post("/api/v1/projects/{project_id}/revise")
+    def revise_script(project_id: str):
+        current_script_id(project_id)
+        revised = planning_call(lambda: system.planning.revise(project_id))
+        return {**project_view(need_project(project_id)), "revised": bool(revised)}
+
+    @app.get("/api/v1/radar")
+    def radar():
+        topics = json.loads(system.orch.setting("radar_topics", "[]"))
+        return {**planning_call(lambda: system.planning.radar(topics)), "topics": topics}
+
+    @app.post("/api/v1/radar/topics")
+    def radar_topics(body: dict):
+        topics = list(dict.fromkeys(t for t in (str(t).strip() for t in body.get("topics") or []) if t))[:20]
+        system.orch.set_setting("radar_topics", json.dumps(topics, ensure_ascii=False))
+        return radar()
+
+    @app.get("/api/v1/calendar")
+    def calendar():
+        """The editorial calendar: every project with the day it is meant to go out and how far along it is."""
+        rows = []
+        for p in system.projects.projects():
+            script = system.projects.current_script(p["project_id"])
+            renders = system.projects.renders(p["project_id"])
+            approved = next((r for r in renders if (r["review"] or {}).get("approved")), None)
+            stage = ("Đã có gói xuất bản" if approved and system.distribution.package(approved["render_id"]) else "Bản dựng đã duyệt" if approved
+                     else "Chờ duyệt bản dựng" if renders else "Đã chọn clip" if script and script["match_approved"] else "Có kịch bản" if script else "Mới có ý tưởng")
+            rows.append({"project_id": p["project_id"], "title": p["title"], "format": p["format"], "due_date": p.get("due_date"), "stage": stage, "ready": bool(approved)})
+        return {"projects": rows, "today": time.strftime("%Y-%m-%d")}
+
     @app.post("/api/v1/ideas")
     def propose_ideas():
         try:
@@ -716,6 +786,12 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         if body.get("narration_dir") and not Path(str(body["narration_dir"])).expanduser().is_dir():
             raise HTTPException(404, "Không tìm thấy thư mục này")
         fields = {k: (str(Path(str(v)).expanduser()) if k in ("music_path", "narration_dir") and v else v) for k, v in body.items()}
+        if "due_date" in fields:
+            day = str(fields["due_date"] or "").strip()
+            try:
+                fields["due_date"] = time.strftime("%Y-%m-%d", time.strptime(day, "%Y-%m-%d")) if day else None
+            except ValueError:
+                raise HTTPException(422, "Ngày phải có dạng năm-tháng-ngày, ví dụ 2026-10-20")
         if "research" in fields:                 # sources: where a claim comes from, who published it, when, and the passage that supports it
             # A source link is shown as a link, so only web addresses are kept: anything else (a javascript: address, for example) is dropped.
             web = lambda url: url if url.lower().startswith(("http://", "https://")) else ""

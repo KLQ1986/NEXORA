@@ -168,7 +168,7 @@ class Edit:
                                                                "audio": line["audio"], "fill": fill, "focus_x": focus, "inserts": inserts, **FORMAT}))
             out.append({"shot_id": shot.shot_id, "file": str(segment), "duration": duration, "gap": not has_picture, "text": shot.text,
                         "asset_id": sel.asset_id if has_picture else None, "t_in": t_in, "chosen_in": sel.t_in if has_picture else None,
-                        "is_fact": shot.is_fact, "source": shot.source, "sound_cue": shot.sound_cue,
+                        "is_fact": shot.is_fact, "source": shot.source, "fact_check": shot.fact_check, "sound_cue": shot.sound_cue,
                         "own_voice": bool(line.get("own_voice")), "focus_x": focus if fill == "cover" else None,
                         "inserts": [{"keyword": i["keyword"], "at": i["at"]} for i in inserts]})
             ctx.heartbeat()
@@ -197,6 +197,6 @@ class Edit:
               "format": project["format"], "music": bool(music), "draft": bool(ctx.inputs["segments"].get("draft")), "mean_db": loud["mean_db"], "max_db": loud["max_db"],
               "findings": self._reviewer(segments) if self._reviewer else [],
               "shots": [{"text": s["text"], "duration": s["duration"], "gap": s["gap"], "asset_id": s.get("asset_id"), "t_in": s.get("chosen_in"),
-                         "is_fact": s.get("is_fact", False), "source": s.get("source"), "sound_cue": s.get("sound_cue"), "own_voice": s.get("own_voice", False), "focus_x": s.get("focus_x"), "inserts": s.get("inserts", [])} for s in segments]}
+                         "is_fact": s.get("is_fact", False), "source": s.get("source"), "fact_check": s.get("fact_check"), "sound_cue": s.get("sound_cue"), "own_voice": s.get("own_voice", False), "focus_x": s.get("focus_x"), "inserts": s.get("inserts", [])} for s in segments]}
         render_id = self._projects.add_render(script["project_id"], ctx.subject_ref, str(out), qc)
         return {"render_id": render_id, "qc_passed": qc["passed"]}

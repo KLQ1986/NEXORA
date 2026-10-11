@@ -33,7 +33,7 @@ def test_the_producer_carries_a_goal_to_a_cut_and_stops_at_each_human_gate(tmp_p
     sels = system.projects.selections(system.projects.current_script(task["project_id"])["script_id"])
     # Stock was fetched for the gap, watched, and withdrawn again: the clip that came back does not show a keyboard.
     assert [s.status for s in sels] == ["proposed", "gap"] and "không có đoạn nào" in sels[1].reason and "Clip stock" in sels[1].reason
-    assert [e["role"] for e in task["log"]] == ["Điều phối", "Biên kịch", "Tìm hình", "Tìm hình", "Tìm stock", "Điều phối"]
+    assert [e["role"] for e in task["log"]] == ["Điều phối", "Biên kịch", "Phản biện", "Kiểm chứng", "Tìm hình", "Tìm hình", "Tìm stock", "Điều phối"]
 
     script = system.projects.current_script(task["project_id"])["script_id"]
     system.sourcing.approve(system.orch.runs_for_subject(script)[0])

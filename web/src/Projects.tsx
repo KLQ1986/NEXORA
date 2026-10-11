@@ -4,6 +4,8 @@ import Board from "./Board";
 import { Button, Empty, Filmstrip, Icon, Meter, Page, Section, Seg, StageRail, Steps, Tabs, Tag, TimeChip } from "./parts";
 import Timeline from "./Timeline";
 
+const VERDICT: Record<string, [string, "proof" | "tally" | "cue"]> = { supported: ["Nguồn xác nhận", "proof"], contradicted: ["Trái với nguồn", "tally"], not_found: ["Chưa có căn cứ", "cue"] };
+
 function Clip({ url, tIn, tOut, poster }: { url: string | null; tIn: number; tOut: number; poster: string | null }) {
   const ref = useRef<HTMLVideoElement>(null);
   useEffect(() => { const v = ref.current; if (!v) return; const tick = () => { if (v.currentTime >= tOut) v.currentTime = tIn; }; v.addEventListener("timeupdate", tick); return () => v.removeEventListener("timeupdate", tick); }, [tIn, tOut, url]);
@@ -90,7 +92,10 @@ function ShotRow({ shot, n, locked, changed, heading, sources = [] }: { shot: Sh
                     <label className="flex items-center gap-2"><input type="checkbox" checked={shot.is_fact} onChange={(e) => note({ is_fact: e.target.checked })} />Câu này nêu một dữ kiện</label>
                     {shot.is_fact && (sources.length ? <select aria-label="Nguồn của dữ kiện" value={shot.source ?? ""} onChange={(e) => note({ source: e.target.value })} className="h-8 pl-2"><option value="">Chưa gắn nguồn</option>{sources.map((src) => <option key={src.title}>{src.title}</option>)}</select>
                       : <span className="text-cue">Thêm nguồn ở bảng Nguồn tham khảo bên phải rồi gắn vào đây.</span>)}
+                    {shot.is_fact && shot.fact_check && <Tag tone={VERDICT[shot.fact_check.verdict][1]}>{VERDICT[shot.fact_check.verdict][0]}</Tag>}
                   </div>
+                  {shot.is_fact && shot.fact_check && (shot.fact_check.quote || shot.fact_check.note) && (
+                    <p className="border-l-2 border-edge pl-2 text-[12.5px] text-mute">{shot.fact_check.quote && <>“{shot.fact_check.quote}” </>}{shot.fact_check.source && <span className="text-faint">({shot.fact_check.source}) </span>}{shot.fact_check.note}</p>)}
                 </form>
               </details>
             </div>
@@ -252,6 +257,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
     : null;
   const field = "field-label";
   const card = "panel grid gap-4 p-4";
+  const facts = (p?.shots ?? []).filter((s) => s.is_fact);
   return (
     <Page title={p.title} back={{ label: "Tất cả dự án", onClick: back }} wide
           note={<span className="flex flex-wrap items-center gap-x-3 gap-y-1"><Tag tone={st.tone}>{st.label}</Tag><span className="flex items-center gap-1.5"><Icon name="captions" size={13} />{p.shots.length} câu</span>
@@ -285,6 +291,18 @@ function Detail({ id, back }: { id: string; back: () => void }) {
               </form>
             </div>
             {dirty && p.script && <p className="mt-2 text-[12.5px] text-mute">Lưu sẽ tạo phiên bản kịch bản mới; các clip đã chọn cho phiên bản cũ không áp dụng nữa.</p>}
+            {p.script && !dirty && (
+              <div className="mt-3 rounded-xl border border-line bg-raised/30 px-4 py-3 text-[13px]">
+                <div className="flex flex-wrap items-center gap-2"><Icon name="eye" size={15} className="text-ai" /><span className="font-medium">Phản biện kịch bản</span>
+                  <span className="text-faint">{p.script.critique == null ? "Chưa xin nhận xét cho phiên bản này." : p.script.critique.length ? `${p.script.critique.length} điểm nên sửa` : "Không có điểm nào cần sửa."}</span>
+                  <span className="ml-auto flex gap-2">
+                    <Button size="sm" kind="ai" disabled={busy} onClick={() => run(() => post(`/api/v1/projects/${id}/critique`))}>{p.script.critique == null ? "Xin nhận xét" : "Nhận xét lại"}</Button>
+                    {!!p.script.critique?.length && <Button size="sm" disabled={busy || !!rendering} title="Tạo phiên bản kịch bản mới; clip của những câu bị đổi phải tìm lại" onClick={() => run(async () => { const r = await post<{ revised: boolean }>(`/api/v1/projects/${id}/revise`); if (!r.revised) setNote("Bản viết lại không khác bản cũ nên kịch bản được giữ nguyên."); setText(null); })}>Viết lại theo nhận xét</Button>}
+                  </span></div>
+                {!!p.script.critique?.length && <ul className="mt-2 grid gap-1.5">{p.script.critique.map((c, i) => (
+                  <li key={i} className="flex gap-2.5"><span className="mono w-14 shrink-0 text-faint">{c.line ? `Câu ${c.line}` : "Cả bài"}</span><span className="min-w-0">{c.issue}{c.fix && <span className="text-mute"> {c.fix}</span>}</span></li>))}</ul>}
+              </div>
+            )}
           </Section>
 
           {p.script && (
@@ -401,6 +419,8 @@ function Detail({ id, back }: { id: string; back: () => void }) {
               </div>
               <p className="mt-1.5 text-[12px] text-faint">{!p.narration_dir ? "Đặt tên file theo số câu. Câu nào không có file thì dùng giọng máy." : p.own_takes.length ? `Đã có bản thu cho câu ${p.own_takes.join(", ")}. Các câu còn lại dùng giọng máy.` : "Chưa thấy file thu âm nào trong thư mục này."}</p>
             </form>
+            <div><label htmlFor="due" className={field}>Ngày dự định đăng</label>
+              <input id="due" type="date" defaultValue={p.due_date ?? ""} key={p.due_date ?? "none"} onChange={(e) => patch({ due_date: e.target.value })} className="mono mt-1.5 h-9 w-full px-3" /></div>
             <label className="flex items-start gap-2.5 rounded-lg border border-line bg-raised/50 p-3"><input type="checkbox" className="mt-0.5" checked={p.auto_accept} disabled={busy} onChange={(e) => patch({ auto_accept: e.target.checked ? 1 : 0 })} />
               <span className="text-[13px]">Tự duyệt clip<span className="block text-[12px] text-faint">Chỉ khi mọi câu đều có clip và mô hình chấm chắc chắn.</span></span></label>
           </div>
@@ -415,8 +435,17 @@ function Detail({ id, back }: { id: string; back: () => void }) {
                   <p className="text-mute">{[src.publisher, src.date].filter(Boolean).join(", ")}</p>{src.passage && <p className="mt-0.5 border-l-2 border-edge pl-2 text-mute">“{src.passage}”</p>}</li>
               ))}
             </ul>
+            <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); const f = e.currentTarget; const url = String(new FormData(f).get("url") ?? "").trim(); if (url) run(async () => { await post(`/api/v1/projects/${id}/sources/read`, { url }); f.reset(); }); }}>
+              <input name="url" type="url" aria-label="Địa chỉ trang web cần đọc" placeholder="Dán địa chỉ bài viết để hệ thống đọc" className="min-w-0 flex-1 px-3" />
+              <Button type="submit" disabled={busy} title="Chỉ địa chỉ này được gửi ra ngoài máy"><Icon name="globe" size={14} />Đọc</Button>
+            </form>
+            {p.script && <div className="flex flex-wrap gap-2 border-t border-line pt-3">
+              <Button size="sm" kind="ai" disabled={busy} onClick={() => run(async () => { const r = await post<{ found: number }>(`/api/v1/projects/${id}/facts/find`); if (!r.found) setNote("Không thấy câu nào nêu dữ kiện cần kiểm chứng."); })}>Tìm câu nêu dữ kiện</Button>
+              <Button size="sm" disabled={busy || !p.shots.some((s) => s.is_fact)} title={p.shots.some((s) => s.is_fact) ? "So từng câu nêu dữ kiện với các nguồn ở trên" : "Chưa có câu nào được đánh dấu là dữ kiện"} onClick={() => run(() => post(`/api/v1/projects/${id}/facts/check`))}>Đối chiếu với nguồn</Button>
+              {facts.length > 0 && <p className="w-full text-[12px] text-faint">{facts.length} câu nêu dữ kiện: {facts.filter((s) => s.fact_check?.verdict === "supported").length} có nguồn xác nhận, {facts.filter((s) => s.fact_check?.verdict === "contradicted").length} trái nguồn, {facts.filter((s) => !s.fact_check || s.fact_check.verdict === "not_found").length} chưa có căn cứ.</p>}
+            </div>}
             <details className="group">
-              <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[13px] text-accent"><Icon name="plus" size={14} />Thêm nguồn</summary>
+              <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[13px] text-accent"><Icon name="plus" size={14} />Tự nhập một nguồn</summary>
               <form className="mt-3 grid gap-2" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); const src = Object.fromEntries(["title", "publisher", "date", "url", "passage"].map((k) => [k, String(f.get(k) ?? "")])); if (!src.title.trim()) return; patch({ research: [...p.research, src] }); e.currentTarget.reset(); }}>
                 <input name="title" aria-label="Tên nguồn" placeholder="Tên nguồn, ví dụ: Niên giám thống kê 2025" className="px-3" />
                 <div className="flex gap-2"><input name="publisher" aria-label="Nơi xuất bản" placeholder="Nơi xuất bản" className="min-w-0 flex-1 px-3" /><input name="date" aria-label="Ngày" placeholder="Ngày" className="w-24 px-3" /></div>
@@ -485,10 +514,11 @@ export default function Projects({ sub, go }: { sub: string | null; go: (to: str
   const propose = async () => { setThinking(true); setAgentNote(null); try { await post("/api/v1/ideas"); } catch (e) { setAgentNote((e as Error).message); } setThinking(false); reloadIdeas(); };
   const { data: agent, reload: reloadAgent } = usePoll<{ tasks: AgentTask[] }>("/api/v1/agent/tasks", 4000);
   const [agentNote, setAgentNote] = useState<string | null>(null);
+  const [urls, setUrls] = useState("");
   useEffect(() => { if (!sub && new URLSearchParams(window.location.search).has("moi")) setMode("new"); }, [sub, window.location.search]);
   if (sub) return <Detail key={sub} id={sub} back={() => go("/du-an")} />;
   const create = async () => { const p = await post<Project>("/api/v1/projects", { title: title.trim(), format }); setTitle(""); reload(); go(`/du-an/${p.project_id}`); };
-  const assign = async () => { setAgentNote(null); try { const t = await post<AgentTask>("/api/v1/agent/tasks", { goal: goal.trim(), format }); setGoal(""); reloadAgent(); reload(); go(`/du-an/${t.project_id}`); } catch (err) { setAgentNote((err as Error).message); } };
+  const assign = async () => { setAgentNote(null); try { const t = await post<AgentTask>("/api/v1/agent/tasks", { goal: goal.trim(), format, urls: urls.split("\n").map((u) => u.trim()).filter(Boolean) }); setGoal(""); setUrls(""); reloadAgent(); reload(); go(`/du-an/${t.project_id}`); } catch (err) { setAgentNote((err as Error).message); } };
   const working = new Map((agent?.tasks ?? []).filter((t) => t.status === "working" || t.status === "waiting_operator").map((t) => [t.project_id, t]));
   const setLook = (v: "grid" | "list") => { setView(v); try { localStorage.setItem("nx.projects.view", v); } catch { /* fine */ } };
   const formats = <Seg label="Khung hình" value={format} onChange={setFormat} items={Object.entries(FORMATS) as [string, string][]} />;
@@ -519,6 +549,9 @@ export default function Projects({ sub, go }: { sub: string | null; go: (to: str
             <input id="goal" autoFocus value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="Ví dụ: một phút về buổi sáng ở chợ Hội An" className="h-10 min-w-0 flex-1 px-3" />
             {formats}<Button kind="primary" disabled={!goal.trim()} onClick={assign}>Giao việc</Button>
           </div>
+          <details className="mt-3 text-[13px]"><summary className="cursor-pointer list-none text-accent">Cho trợ lý đọc trước vài bài viết</summary>
+            <textarea value={urls} onChange={(e) => setUrls(e.target.value)} rows={3} aria-label="Địa chỉ các bài viết, mỗi dòng một địa chỉ" placeholder={"Mỗi dòng một địa chỉ, tối đa 5\nhttps://…"} className="mono mt-2 w-full p-2.5 text-[12.5px]" />
+            <p className="mt-1 text-[12px] text-faint">Trợ lý đọc các trang này, rồi đối chiếu những câu nêu dữ kiện trong kịch bản với chúng. Chỉ địa chỉ được gửi ra ngoài máy.</p></details>
           {agentNote && <p className="mt-2 text-tally">{agentNote}</p>}
         </form>
       )}

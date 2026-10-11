@@ -242,6 +242,9 @@ MIGRATIONS = [
     ("assets", "collections", "TEXT NOT NULL DEFAULT '[]'"),
     ("stages", "lane", "TEXT NOT NULL DEFAULT 'interactive'"),
     ("selections", "extras", "TEXT NOT NULL DEFAULT '{}'"),
+    ("shots", "fact_check", "TEXT"),
+    ("scripts", "critique", "TEXT"),
+    ("projects", "due_date", "TEXT"),
 ]
 
 

@@ -204,6 +204,17 @@ Làm tiếp (128 test đạt, đã bấm thử trên giao diện với mô hình
 
 Chưa làm so với thiết kế: hệ thống tự đi tìm nguồn trên mạng (người vận hành hiện tự nhập nguồn); dựng thô theo lời nói (19.1, cần mô hình nhận dạng tiếng nói); đăng bài và số liệu (21, cần tài khoản).
 
+### Hoàn thiện theo từng module, bắt đầu 2026-10-12
+
+Planning (142 test đạt; đã bấm thử trên giao diện với mô hình giả):
+
+- [x] Đọc nguồn từ một địa chỉ web do người vận hành đưa: lấy tên bài, nơi xuất bản, ngày và đoạn mở đầu. Chế độ riêng tư chặn việc này. Hệ thống chưa tự tìm bài trên mạng (cần một dịch vụ tìm kiếm)
+- [x] Tìm câu nêu dữ kiện và đối chiếu với nguồn: mỗi câu nhận kết luận (nguồn xác nhận, trái với nguồn, chưa có căn cứ) kèm đoạn trích. Kết luận mà đoạn trích không có thật trong nguồn thì bị coi là chưa có căn cứ. Câu trái nguồn bị nêu ra khi kiểm tra bản dựng
+- [x] Phản biện kịch bản và viết lại theo nhận xét thành phiên bản mới
+- [x] Lịch biên tập: ngày dự định đăng cho từng dự án, lịch tháng kéo thả, báo video quá ngày
+- [x] Radar cơ hội: footage chưa dùng vào video nào theo chủ đề; chủ đề đang theo dõi được đo bằng số cảnh khớp trong kho. Chưa có tín hiệu xu hướng từ nền tảng (cần tài khoản)
+- [x] Trợ lý có thêm ba vai có giới hạn: Nghiên cứu (đọc tối đa 5 trang được chỉ định), Phản biện (một vòng, biên kịch trả lời một lần), Kiểm chứng. Việc đi quá 40 bước bị dừng
+
 ### Lát 1 — Lõi chạy việc
 
 Mục thiết kế: 5, 6, 7.

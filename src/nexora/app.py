@@ -150,7 +150,8 @@ def capabilities(system: "System") -> list[dict]:
 
 def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Adapter | None = None,
           segment_seconds: float = 12.0, voice: Adapter | None = None, match_threshold: float = 0.5, judge: bool = True,
-          generators: list[Adapter] | None = None, stock: Adapter | None = None, desktop: Adapter | None = None, voice_name: str = "Linh") -> System:
+          generators: list[Adapter] | None = None, stock: Adapter | None = None, desktop: Adapter | None = None, voice_name: str = "Linh",
+          web: Adapter | None = None) -> System:
     """`model` is the adapter for vision, reasoning and embeddings; without one, footage is ingested but not understood."""
     data_dir = Path(data_dir).resolve()          # tools resolve relative paths differently; keep every path absolute
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -184,6 +185,8 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
         adapters.register(stock)
     if desktop is not None:
         adapters.register(desktop)
+    if web is not None:
+        adapters.register(web)
     for generator in generators or []:
         adapters.register(generator)
     generation = Generation(orch, projects, assets, adapters, data_dir / "media")
@@ -213,11 +216,12 @@ def build_from_config(config, **overrides) -> System:
     from nexora.adapters.ollama import OllamaAdapter
     from nexora.adapters.openmontage import OpenMontageStock
     from nexora.adapters.voice import SayVoice
+    from nexora.adapters.web import WebReader
     return build(config.data_dir, min_free_bytes=int(config.min_free_gb * 1024**3), segment_seconds=config.segment_seconds, judge=config.judge,
                  model=OllamaAdapter(host=config.ollama_host, vision_model=config.vision_model, embed_model=config.embed_model,
                                      judge_model=config.judge_model, writer_model=config.writer_model),
                  voice=SayVoice(), voice_name=config.voice, match_threshold=config.match_threshold,
-                 stock=OpenMontageStock(config.openmontage_repo), desktop=DesktopNotifier(), **overrides)
+                 stock=OpenMontageStock(config.openmontage_repo), desktop=DesktopNotifier(), web=WebReader(), **overrides)
 
 
 def doctor(system: System, config=None) -> list[dict]:
