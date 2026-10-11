@@ -15,8 +15,8 @@ from nexora.core.pipeline import PipelineDefinition, PipelineRegistry, StageDef
 from nexora.core.projects import ProjectStore
 
 GENERATE = PipelineDefinition("sourcing.generate", "1", [
-    StageDef("keyframes", costly=True, gate=True),                       # stills first: cheap to produce, cheap to correct
-    StageDef("clips", depends_on=("keyframes",), costly=True, gate=True),
+    StageDef("keyframes", costly=True, gate=True, requires=("image_gen",)),                       # stills first: cheap to produce, cheap to correct
+    StageDef("clips", depends_on=("keyframes",), costly=True, gate=True, requires=("video_gen",)),
 ])
 COMPILER_VERSION = "1"
 WORDS_PER_SECOND = 2.6
@@ -79,6 +79,7 @@ class Generation:
         cap = project.get("budget_cap")
         # A project's budget covers all of its paid work: this run may spend only what earlier runs have left.
         left = None if cap is None else max(0.0, cap - self.spent(project["project_id"]))
+        self._orch.supersede(GENERATE.pipeline_id, script_id)
         return self._orch.submit_run(GENERATE, subject_ref=script_id, budget_cap=left)
 
     def spent(self, project_id: str) -> float:

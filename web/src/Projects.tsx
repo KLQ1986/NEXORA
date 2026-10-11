@@ -141,6 +141,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
   const [music, setMusic] = useState<string | null>(null);
   const [style, setStyle] = useState<string | null>(null);
   const [budget, setBudget] = useState<string | null>(null);
+  const [why, setWhy] = useState("");
   const { data: lib } = usePoll<{ assets: Asset[] }>("/api/v1/library", 30000);
   const tracks = (lib?.assets ?? []).filter((a) => a.kind === "audio" && a.online);
   useEffect(() => { if (p && text === null) setText(p.shots.map((s) => s.text).join("\n")); }, [p, text]);
@@ -313,12 +314,28 @@ function Detail({ id, back }: { id: string; back: () => void }) {
                     </div>
                   )}
                   {renderReview && (
-                    <div className="flex flex-wrap gap-2">
-                      <Button kind="primary" disabled={busy} onClick={() => run(() => post(`/api/v1/projects/${id}/render/decision`, { approve: true }))}>Duyệt bản dựng</Button>
-                      <Button disabled={busy} onClick={() => run(() => post(`/api/v1/projects/${id}/render/decision`, { approve: false }))}>Chưa được, dựng lại</Button>
+                    <div>
+                      <label htmlFor="why" className="mb-1 block font-medium">Ghi chú nếu chưa được</label>
+                      <textarea id="why" value={why} onChange={(e) => setWhy(e.target.value)} rows={2} placeholder="Ví dụ: 0:07 cảnh xay cà phê bị tối, đổi cảnh khác" className="mb-2 w-full max-w-md rounded border border-line bg-canvas p-2 placeholder:text-mute/70" />
+                      <div className="flex flex-wrap gap-2">
+                        <Button kind="primary" disabled={busy} onClick={() => run(() => post(`/api/v1/projects/${id}/render/decision`, { approve: true }))}>Duyệt bản dựng</Button>
+                        <Button disabled={busy} onClick={() => run(async () => { await post(`/api/v1/projects/${id}/render/decision`, { approve: false, comment: why }); setWhy(""); })}>Chưa được, dựng lại</Button>
+                      </div>
                     </div>
                   )}
                   {p.render?.status === "succeeded" && <><p className="mb-4 text-proof">Bạn đã duyệt bản dựng này.</p><PackagePanel render={latest} reload={reload} /></>}
+                  {p.renders.length > 1 && (
+                    <div className="mt-6">
+                      <h3 className="mb-1 font-semibold">Các bản dựng trước</h3>
+                      <ul className="divide-y divide-line border-y border-line">
+                        {p.renders.slice(1, 6).map((r) => (
+                          <li key={r.render_id} className="py-2 text-sm"><a className="underline underline-offset-2" href={r.url} target="_blank" rel="noreferrer">{new Date(r.created_at * 1000).toLocaleString("vi-VN")}</a>
+                            <span className="text-mute">, dài {timecode(r.qc.duration)}{r.review ? (r.review.approved ? ", đã duyệt" : ", không duyệt") : ""}</span>
+                            {r.review?.comment && <p className="text-mute">Ghi chú: {r.review.comment}</p>}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

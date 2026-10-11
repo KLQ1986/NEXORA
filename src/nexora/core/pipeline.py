@@ -14,6 +14,7 @@ class StageDef:
     gate: bool = False            # needs a human review before it counts as succeeded
     max_attempts: int = 3
     timeout_seconds: float = 3600.0
+    requires: tuple[str, ...] = ()   # adapters this stage cannot run without; shown in the capability matrix
     lane: str = "interactive"     # "background" for long batch work, so that it never holds up what the operator is waiting for
 
 
@@ -49,6 +50,9 @@ class PipelineRegistry:
         self._pipelines[pipeline.pipeline_id] = (pipeline, dict(handlers))
         if on_success:
             self._on_success[pipeline.pipeline_id] = on_success
+
+    def pipelines(self) -> list[PipelineDefinition]:
+        return [p for p, _ in self._pipelines.values()]
 
     def on_success(self, pipeline_id: str) -> Callable | None:
         return self._on_success.get(pipeline_id)

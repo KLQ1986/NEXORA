@@ -180,6 +180,27 @@ class Orchestrator:
         with db.write(self._conn) as c:
             c.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, value))
 
+    def record_call(self, entry: dict) -> None:
+        with db.write(self._conn) as c:
+            c.execute("INSERT INTO calls (at, adapter, operation, runs, seconds, ok, error_code, attempt_id, units, cost) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                      (entry["at"], entry["adapter"], entry["operation"], entry["runs"], entry["seconds"], int(entry["ok"]), entry["error_code"],
+                       entry["attempt_id"], entry["units"], entry["cost"]))
+
+    def usage(self, *, since: float = 0.0) -> list[dict]:
+        """What every tool and model was asked to do since `since`: how often, for how long, how often it failed, what it cost."""
+        rows = self._conn.execute("SELECT adapter, operation, runs, COUNT(*) AS calls, SUM(seconds) AS seconds, SUM(1 - ok) AS failures, SUM(cost) AS cost "
+                                  "FROM calls WHERE at >= ? GROUP BY adapter, operation ORDER BY seconds DESC", (since,))
+        return [dict(r) for r in rows]
+
+    def spent_since(self, since: float) -> float:
+        return self._conn.execute("SELECT COALESCE(SUM(cost), 0) FROM cost_records WHERE recorded_at >= ?", (since,)).fetchone()[0]
+
+    def spend_by_day(self, days: int = 14, *, now: float | None = None) -> list[dict]:
+        now = time.time() if now is None else now
+        rows = self._conn.execute("SELECT date(recorded_at, 'unixepoch', 'localtime') AS day, SUM(cost) AS cost FROM cost_records WHERE recorded_at >= ? GROUP BY day ORDER BY day",
+                                  (now - days * 86400,))
+        return [dict(r) for r in rows]
+
     def kill_switch(self) -> bool:
         row = self._conn.execute("SELECT value FROM settings WHERE key = ?", (KILL_SWITCH,)).fetchone()
         return bool(row and row[0] == "1")
@@ -234,6 +255,8 @@ class Orchestrator:
                 reason = self._guard(stage) if self._guard else None
                 if not reason and stage.costly and self._over_budget(c, stage.run_id):
                     reason = "budget_exceeded"
+                if not reason and stage.costly:
+                    reason = self._over_period_budget(c, now)
                 if reason:
                     self._set_status(c, stage, StageStatus.BLOCKED, now, blocked_reason=reason)
                     continue
@@ -373,6 +396,16 @@ class Orchestrator:
                 if stage.status not in TERMINAL and stage.status is not StageStatus.RUNNING:
                     self._set_status(c, stage, StageStatus.CANCELLED, now)
 
+    def supersede(self, pipeline_id: str, subject_ref: str, *, now: float | None = None) -> int:
+        """Before a new run of the same work on the same subject: withdraw the earlier ones that are still waiting on someone.
+        Otherwise an old review nobody will ever answer keeps asking for attention."""
+        withdrawn = 0
+        for run_id in self.runs_for_subject(subject_ref):
+            if self.pipeline_of(run_id) == pipeline_id and self.run_status(run_id) in (RunStatus.WAITING_REVIEW, RunStatus.BLOCKED, RunStatus.QUEUED):
+                self.cancel_run(run_id, now=now)
+                withdrawn += 1
+        return withdrawn
+
     def set_kill_switch(self, on: bool, *, now: float | None = None) -> None:
         with db.write(self._conn) as c:
             c.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -439,6 +472,20 @@ class Orchestrator:
         if stage.status is not status:
             raise ValueError(f"stage {stage_id} is {stage.status}, expected {status}")
         return stage
+
+    @staticmethod
+    def _over_period_budget(c, now: float) -> str | None:
+        """Budgets for the day and the month, set by the operator; a paid stage does not start once one is used up."""
+        t = time.localtime(now)
+        day_start = time.mktime((t.tm_year, t.tm_mon, t.tm_mday, 0, 0, 0, 0, 0, -1))
+        month_start = time.mktime((t.tm_year, t.tm_mon, 1, 0, 0, 0, 0, 0, -1))
+        for key, start, reason in (("budget_day", day_start, "daily_budget_exceeded"), ("budget_month", month_start, "monthly_budget_exceeded")):
+            row = c.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+            if row and row[0] not in (None, ""):
+                spent = c.execute("SELECT COALESCE(SUM(cost), 0) FROM cost_records WHERE recorded_at >= ?", (start,)).fetchone()[0]
+                if spent >= float(row[0]):
+                    return reason
+        return None
 
     @staticmethod
     def _over_budget(c, run_id) -> bool:

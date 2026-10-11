@@ -14,9 +14,9 @@ from nexora.core.pipeline import PipelineDefinition, PipelineRegistry, StageDef
 from nexora.core.projects import ProjectStore
 
 RENDER = PipelineDefinition("edit.render", "1", [
-    StageDef("narration"),
-    StageDef("segments", depends_on=("narration",)),
-    StageDef("assemble", depends_on=("segments",), gate=True),
+    StageDef("narration", requires=("voice",)),
+    StageDef("segments", depends_on=("narration",), requires=("ffmpeg", "graphics")),
+    StageDef("assemble", depends_on=("segments",), gate=True, requires=("ffmpeg", "ffprobe")),
 ])
 FORMATS = {
     "landscape": {"width": 1280, "height": 720, "fps": 30},     # 16:9
@@ -60,6 +60,7 @@ class Edit:
         script = self._projects.script(script_id)
         if not script["match_approved"]:
             raise ValueError("the selections of this script have not been approved yet")
+        self._orch.supersede(RENDER.pipeline_id, script_id)
         return self._orch.submit_run(RENDER, subject_ref=script_id)
 
     def _narration(self, ctx):

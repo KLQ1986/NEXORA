@@ -11,10 +11,10 @@ from nexora.core.index import MomentIndex
 from nexora.core.pipeline import PipelineDefinition, StageDef
 
 UNDERSTAND = PipelineDefinition("library.understand", "1", [
-    StageDef("segments"),
-    StageDef("describe", depends_on=("segments",), timeout_seconds=6 * 3600, lane="background"),
-    StageDef("summarise", depends_on=("describe",), lane="background"),
-    StageDef("index", depends_on=("summarise",), lane="background"),
+    StageDef("segments", requires=("ffmpeg",)),
+    StageDef("describe", depends_on=("segments",), timeout_seconds=6 * 3600, lane="background", requires=("model",)),
+    StageDef("summarise", depends_on=("describe",), lane="background", requires=("model",)),
+    StageDef("index", depends_on=("summarise",), lane="background", requires=("model",)),
 ])
 
 PROMPT_VERSION = "v1"

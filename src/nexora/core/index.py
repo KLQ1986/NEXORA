@@ -101,6 +101,9 @@ class MomentIndex:
         row = self._conn.execute("SELECT * FROM moments WHERE moment_id = ?", (moment_id,)).fetchone()
         return _moment(row) if row else None
 
+    def count(self) -> int:
+        return self._conn.execute("SELECT COUNT(*) FROM moments WHERE level = 'segment'").fetchone()[0]
+
     def moments(self, asset_id: str, *, level: str | None = None) -> list[Moment]:
         rows = self._conn.execute("SELECT * FROM moments WHERE asset_id = ? AND (? IS NULL OR level = ?) ORDER BY t_start, level",
                                   (asset_id, level, level))

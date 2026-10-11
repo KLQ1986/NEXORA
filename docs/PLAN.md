@@ -141,6 +141,26 @@ Ghi nhận về chất lượng, để dành cho giai đoạn tối ưu (ngườ
 
 Đã chạy trên trình duyệt bằng server thử dùng mô hình giả: trợ lý làm trọn một video qua hai lần duyệt; giữ việc phân tích ngoài khung giờ trong khi việc nhập vẫn chạy; huỷ một lần chạy; trỏ lại nơi chứa footage sau khi thư mục đổi chỗ; lưu ngân sách. Lệnh `backup` và `restore` đã chạy trên dữ liệu thử. Trợ lý đã chạy một lần với mô hình thật trên giao diện: viết 5 câu, tìm đủ clip cho cả 5, dựng bản 56 giây, kiểm tra tự động đạt, qua hai lần duyệt. Ghi nhận cho giai đoạn tối ưu: câu do mô hình viết quá dài (mỗi cảnh 10 đến 14 giây), phần kiểm tra bản dựng đã cảnh báo cả 5 cảnh.
 
+### Hoàn thiện Core và giao diện theo thiết kế v4.0, 2026-10-11 (121 test đạt)
+
+Core (mục 5 và 23 của thiết kế):
+
+- [x] Ghi lại mọi lần gọi công cụ và mô hình: việc gì, bao lâu, có lỗi không, tốn bao nhiêu
+- [x] Ngân sách theo ngày và theo tháng; việc trả tiền không bắt đầu khi đã hết
+- [x] Bảng năng lực: mỗi dây chuyền chạy được hay thiếu gì trên máy này
+- [x] Lần chạy mới tự rút lại lần cũ cùng loại còn đang chờ duyệt
+- [x] Tuỳ chọn thông báo: tắt từng loại, giờ không báo
+- [x] Ghi chú khi không duyệt bản dựng, lưu cùng bản dựng đó
+
+Giao diện (mục 22):
+
+- [x] Tổng quan: việc chờ bạn, việc đang chạy, dự án gần đây, hiện trạng kho và máy
+- [x] Chi phí: tiền so với ngân sách, thời gian máy theo từng công cụ
+- [x] Hệ thống: thêm bảng năng lực và tuỳ chọn thông báo
+- [x] Dự án: ô ghi chú khi từ chối bản dựng, danh sách các bản dựng trước
+
+Chưa làm so với thiết kế: lọc, chấm điểm và bộ sưu tập trong Thư viện; sắp lại thứ tự cảnh trên Dòng thời gian; xuất sang DaVinci Resolve; luồng sự kiện trực tiếp (giao diện đang hỏi lại định kỳ); chọn mô hình theo từng loại việc (hiện chỉ có một mô hình thị giác và một mô hình chỉ mục).
+
 ### Lát 1 — Lõi chạy việc
 
 Mục thiết kế: 5, 6, 7.

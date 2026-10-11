@@ -182,3 +182,40 @@ def test_the_operator_can_inspect_a_run_see_and_clean_storage_back_up_and_check_
     assert client.post(f"/api/v1/volumes/{storage['volumes'][0]['volume_id']}/relink", json={"mount": str(tmp_path / "gone")}).status_code == 404
     names = [c["name"] for c in client.get("/api/v1/doctor").json()["checks"]]
     assert "Cơ sở dữ liệu" in names and "Công cụ ffmpeg" in names
+
+
+def test_home_usage_capabilities_and_period_budgets(tmp_path):
+    from tests.conftest import make_video
+    from tests.fakes import FakeImageGen, FakeModel, FakeVideoGen, FakeVoice
+    system = build(tmp_path / "data", model=FakeModel(), voice=FakeVoice(), segment_seconds=2.0, generators=[FakeImageGen(), FakeVideoGen()])
+    client = TestClient(create_app(system))
+    drain = lambda: [None for _ in iter(system.worker.run_once, False)]
+    client.post("/api/v1/assets/register", json={"path": str(make_video(tmp_path / "f.mp4", picture=20))}); drain()
+    pid = client.post("/api/v1/projects", json={"title": "Chợ", "lines": ["cá tươi trên sạp", "bàn phím máy tính"]}).json()["project_id"]
+    client.post(f"/api/v1/projects/{pid}/match"); drain()
+
+    home = client.get("/api/v1/home").json()
+    assert [(a["name"], a["status"], a["link"]) for a in home["attention"]] == [("Chợ", "waiting_review", f"/du-an/{pid}")]
+    assert home["gaps"] == [{"project_id": pid, "title": "Chợ", "gaps": 1}] and home["counts"]["videos"] == 1 and home["counts"]["moments"] == 10
+    caps = {c["pipeline"]: c for c in client.get("/api/v1/capabilities").json()["pipelines"]}
+    assert caps["edit.render"]["available"] and caps["sourcing.generate"]["available"]
+
+    tools = {(t["adapter"], t["operation"]): t for t in client.get("/api/v1/usage").json()["tools_all"]}
+    assert tools[("model", "describe")]["calls"] >= 10 and tools[("ffmpeg", "proxy")]["failures"] == 0     # every call to a tool is on record
+
+    client.post(f"/api/v1/projects/{pid}/match/approve"); client.post(f"/api/v1/projects/{pid}/render"); drain()
+    assert client.post(f"/api/v1/projects/{pid}/render/decision", json={"approve": False, "comment": "0:03 cảnh cá bị rung"}).status_code == 200
+    assert client.get(f"/api/v1/projects/{pid}").json()["renders"][0]["review"]["comment"] == "0:03 cảnh cá bị rung"
+
+    assert client.post("/api/v1/control/settings", json={"budget_day": -1}).status_code == 422
+    assert client.post("/api/v1/control/settings", json={"budget_day": 0, "quiet_hours": "22-7", "notify_off": ["succeeded"]}).json()["budget_day"] == 0
+    client.post(f"/api/v1/projects/{pid}/generate"); drain()
+    run = client.get(f"/api/v1/projects/{pid}").json()["generate"]
+    assert run["stages"][0]["blocked_reason"] == "daily_budget_exceeded"                                    # nothing paid starts once the day's budget is used
+    assert any(a["reason"] == "daily_budget_exceeded" for a in client.get("/api/v1/home").json()["attention"])
+
+
+def test_a_system_without_a_model_says_which_pipelines_it_cannot_run(tmp_path):
+    client = TestClient(create_app(build(tmp_path / "data")))
+    caps = {c["pipeline"]: c for c in client.get("/api/v1/capabilities").json()["pipelines"]}
+    assert caps["library.ingest"]["available"] and caps["sourcing.match"]["missing"] == ["model"] and "voice" in caps["edit.render"]["missing"]

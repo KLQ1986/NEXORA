@@ -134,10 +134,14 @@ class ProjectStore:
                       (render_id, project_id, script_id, path, json.dumps(qc), time.time()))
         return render_id
 
+    def set_render_review(self, render_id: str, *, approved: bool, comment: str | None = None) -> None:
+        with db.write(self._conn) as c:
+            c.execute("UPDATE renders SET review = ? WHERE render_id = ?", (json.dumps({"approved": approved, "comment": comment, "at": time.time()}, ensure_ascii=False), render_id))
+
     def renders(self, project_id: str) -> list[dict]:
         rows = self._conn.execute("SELECT * FROM renders WHERE project_id = ? ORDER BY created_at DESC, render_id DESC", (project_id,))
-        return [{**dict(r), "qc": json.loads(r["qc"])} for r in rows]
+        return [{**dict(r), "qc": json.loads(r["qc"]), "review": json.loads(r["review"]) if r["review"] else None} for r in rows]
 
     def render(self, render_id: str) -> dict | None:
         row = self._conn.execute("SELECT * FROM renders WHERE render_id = ?", (render_id,)).fetchone()
-        return {**dict(row), "qc": json.loads(row["qc"])} if row else None
+        return {**dict(row), "qc": json.loads(row["qc"]), "review": json.loads(row["review"]) if row["review"] else None} if row else None

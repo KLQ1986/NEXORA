@@ -1,5 +1,7 @@
 """The HTTP API (design v4.0, section 25). It holds no business logic: it validates and delegates."""
 import shutil
+import json
+import time
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -155,10 +157,18 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         system.assets.relink_volume(volume_id, mount)
         return {"volumes": system.assets.volumes()}
 
+    checked = {"at": 0.0, "checks": []}
+
+    def health() -> list[dict]:
+        """The system check starts other programs, so its answer is kept for half a minute instead of being asked on every poll."""
+        from nexora.app import doctor
+        if time.time() - checked["at"] > 30:
+            checked.update(at=time.time(), checks=doctor(system, config))
+        return checked["checks"]
+
     @app.get("/api/v1/doctor")
     def run_doctor():
-        from nexora.app import doctor
-        return {"checks": doctor(system, config)}
+        return {"checks": health()}
 
     @app.post("/api/v1/stages/{stage_id}/resume")
     def resume_stage(stage_id: str):
@@ -185,6 +195,107 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             raise HTTPException(422, "Giờ bắt đầu và kết thúc phải là hai số khác nhau từ 0 đến 23")
         system.orch.set_setting("background_window", spec)
         return control()
+
+    @app.post("/api/v1/control/settings")
+    def control_settings(body: dict):
+        """Budgets for the day and month, which notifications reach the desktop, and the hours it stays silent."""
+        from nexora.core.schedule import parse_window
+        for key in ("budget_day", "budget_month"):
+            if key in body:
+                value = body[key]
+                if value not in (None, "") and float(value) < 0:
+                    raise HTTPException(422, "Ngân sách không thể là số âm")
+                system.orch.set_setting(key, "" if value in (None, "") else str(float(value)))
+        if "quiet_hours" in body:
+            try:
+                parse_window(str(body["quiet_hours"] or ""))
+            except ValueError:
+                raise HTTPException(422, "Giờ bắt đầu và kết thúc phải là hai số khác nhau từ 0 đến 23")
+            system.orch.set_setting("quiet_hours", str(body["quiet_hours"] or ""))
+        if "notify_off" in body:
+            system.orch.set_setting("notify_off", json.dumps([k for k in body["notify_off"] if k in ("waiting_review", "blocked", "failed", "succeeded")]))
+        return settings_view()
+
+    def settings_view() -> dict:
+        number = lambda key: float(v) if (v := system.orch.setting(key, "")) not in (None, "") else None
+        return {"budget_day": number("budget_day"), "budget_month": number("budget_month"), "quiet_hours": system.orch.setting("quiet_hours", ""),
+                "notify_off": json.loads(system.orch.setting("notify_off", "[]"))}
+
+    def period_starts() -> tuple[float, float]:
+        t = time.localtime()
+        return time.mktime((t.tm_year, t.tm_mon, t.tm_mday, 0, 0, 0, 0, 0, -1)), time.mktime((t.tm_year, t.tm_mon, 1, 0, 0, 0, 0, 0, -1))
+
+    @app.get("/api/v1/usage")
+    def usage():
+        """The Costs screen: money against budgets, and what every tool and model has been doing."""
+        day, month = period_starts()
+        projects = []
+        for p in system.projects.projects():
+            spent = system.generation.spent(p["project_id"])
+            if spent or p.get("budget_cap") is not None:
+                projects.append({"project_id": p["project_id"], "title": p["title"], "spent": spent, "budget_cap": p.get("budget_cap")})
+        return {**settings_view(), "spent_today": system.orch.spent_since(day), "spent_month": system.orch.spent_since(month), "spent_total": system.orch.spent_since(0),
+                "by_day": system.orch.spend_by_day(), "projects": projects,
+                "tools_today": system.orch.usage(since=day), "tools_all": system.orch.usage()}
+
+    @app.get("/api/v1/capabilities")
+    def capability_matrix():
+        from nexora.app import capabilities
+        return {"pipelines": capabilities(system)}
+
+    @app.get("/api/v1/home")
+    def home():
+        """What needs the operator, what is running, and where things stand."""
+        from nexora.app import capabilities
+        titles = {}
+        for p in system.projects.projects():
+            for sid in system.projects.script_ids(p["project_id"]):
+                titles[sid] = p
+        asset_names = {}
+        attention, running, seen = [], [], set()
+        for run_id in sorted(system.orch.runs(), key=lambda r: system.orch.run_info(r)["created_at"], reverse=True):
+            view = run_view(system, run_id)
+            subject = view["subject_ref"] or ""
+            if (subject, view["pipeline"]) in seen:
+                continue                                  # only the newest run of a piece of work speaks for it
+            seen.add((subject, view["pipeline"]))
+            project = titles.get(subject)
+            if subject and subject not in asset_names and not project and system.assets.asset(subject):
+                asset_names[subject] = system.assets.path_of(system.assets.original(subject)).name
+            name = project["title"] if project else asset_names.get(subject, subject)
+            link = f"/du-an/{project['project_id']}" if project else "/tien-trinh"
+            item = {"run_id": run_id, "pipeline": view["pipeline"], "name": name, "link": link, "status": view["status"], "held": view["held"]}
+            if view["status"] in ("waiting_review", "blocked", "failed"):
+                stage = next((s for s in view["stages"] if s["status"] == view["status"]), None)
+                if view["status"] == "failed" and project and system.projects.current_script(project["project_id"])["script_id"] != subject:
+                    continue                                  # a failure of a script version that has since been replaced
+                attention.append({**item, "stage_key": stage and stage["stage_key"], "reason": stage and stage["blocked_reason"]})
+            elif view["status"] in ("running", "queued"):
+                now = next((s for s in view["stages"] if s["status"] == "running"), None)
+                running.append({**item, "stage_key": now and now["stage_key"], "stages": view["stages"]})
+        gaps = []
+        for p in system.projects.projects():
+            script = system.projects.current_script(p["project_id"])
+            missing = sum(1 for s in system.projects.selections(script["script_id"]) if s.status == "gap") if script else 0
+            reviewing = any(a["link"] == f"/du-an/{p['project_id']}" for a in attention)     # the review already brings the operator there
+            if missing and not reviewing and not system.projects.renders(p["project_id"]):
+                gaps.append({"project_id": p["project_id"], "title": p["title"], "gaps": missing})
+        assets = system.assets.assets()
+        seconds = sum((system.assets.original(a["asset_id"]).metadata.get("probe", {}).get("duration") or 0) for a in assets if a["kind"] == "video")
+        usage_disk = shutil.disk_usage(system.data_dir)
+        day, _ = period_starts()
+        recent = [{"project_id": p["project_id"], "title": p["title"], "created_at": p["created_at"], "renders": len(system.projects.renders(p["project_id"]))}
+                  for p in system.projects.projects()[:5]]
+        return {"attention": attention, "running": running, "gaps": gaps,
+                "offline_volumes": [v for v in system.assets.volumes() if not v["online"]],
+                "problems": [c for c in health() if not c["ok"] and not c["optional"]],
+                "unavailable": [c for c in capabilities(system) if not c["available"]],
+                "agent": [t for t in system.producer.tasks() if t["status"] in ("working", "waiting_operator")],
+                "counts": {"videos": sum(1 for a in assets if a["kind"] == "video"), "photos": sum(1 for a in assets if a["kind"] == "image"),
+                           "music": sum(1 for a in assets if a["kind"] == "audio"), "footage_seconds": seconds, "projects": len(system.projects.projects()),
+                           "moments": system.index.count()},
+                "disk": {"free_bytes": usage_disk.free, "total_bytes": usage_disk.total}, "spent_today": system.orch.spent_since(day),
+                "kill_switch": system.orch.kill_switch(), "recent": recent}
 
     @app.get("/api/v1/agent/tasks")
     def agent_tasks(project_id: str | None = None):
@@ -287,7 +398,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
                                      "angles": angles_of(sel),
                                      "alternates": [{**a, "frame_url": f"/api/v1/moments/{a['moment_id']}/frame", "asset": asset_brief(a["asset_id"])} for a in sel.alternates]}
             shots.append(item)
-        renders = [{"render_id": r["render_id"], "script_id": r["script_id"], "created_at": r["created_at"], "qc": r["qc"],
+        renders = [{"render_id": r["render_id"], "script_id": r["script_id"], "created_at": r["created_at"], "qc": r["qc"], "review": r["review"],
                     "url": f"/api/v1/renders/{r['render_id']}/file", "package": system.distribution.package(r["render_id"])}
                    for r in system.projects.renders(project["project_id"])]
         return {**project, "script": {"script_id": script["script_id"], "version": script["version"], "match_approved": script["match_approved"]} if script else None,
@@ -463,6 +574,9 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         if run is None or run["status"] != "waiting_review":
             raise HTTPException(409, "Chưa có bản dựng nào đang chờ duyệt")
         stage = next(s for s in run["stages"] if s["status"] == "waiting_review")
+        latest = system.projects.renders(project_id)
+        if latest:                                   # the decision and its reason stay with the render they were about
+            system.projects.set_render_review(latest[0]["render_id"], approved=bool(body.get("approve")), comment=str(body.get("comment") or "").strip() or None)
         system.orch.decide_review(stage["stage_id"], approve=bool(body.get("approve")))
         return project_view(need_project(project_id))
 

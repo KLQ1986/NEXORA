@@ -71,6 +71,20 @@ CREATE TABLE IF NOT EXISTS cost_records (
     currency    TEXT NOT NULL,
     recorded_at REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS calls (
+    call_id    INTEGER PRIMARY KEY AUTOINCREMENT,
+    at         REAL NOT NULL,
+    adapter    TEXT NOT NULL,
+    operation  TEXT NOT NULL,
+    runs       TEXT NOT NULL,
+    seconds    REAL NOT NULL,
+    ok         INTEGER NOT NULL,
+    error_code TEXT,
+    attempt_id TEXT,
+    units      REAL NOT NULL DEFAULT 0,
+    cost       REAL NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS calls_by_time ON calls(at);
 CREATE TABLE IF NOT EXISTS volumes (
     volume_id  TEXT PRIMARY KEY,
     name       TEXT NOT NULL,
@@ -162,7 +176,8 @@ CREATE TABLE IF NOT EXISTS renders (
     script_id  TEXT NOT NULL,
     path       TEXT NOT NULL,
     qc         TEXT NOT NULL,
-    created_at REAL NOT NULL
+    created_at REAL NOT NULL,
+    review     TEXT
 );
 CREATE TABLE IF NOT EXISTS notifications (
     notification_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -202,6 +217,7 @@ MIGRATIONS = [
     ("projects", "style", "TEXT"),
     ("projects", "narration_dir", "TEXT"),
     ("projects", "budget_cap", "REAL"),
+    ("renders", "review", "TEXT"),
     ("stages", "lane", "TEXT NOT NULL DEFAULT 'interactive'"),
     ("selections", "extras", "TEXT NOT NULL DEFAULT '{}'"),
 ]

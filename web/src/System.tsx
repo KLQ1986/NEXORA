@@ -31,6 +31,41 @@ function Health() {
   );
 }
 
+const KINDS: [string, string][] = [["waiting_review", "Có việc chờ duyệt"], ["blocked", "Một việc bị dừng"], ["failed", "Một việc thất bại"], ["succeeded", "Một việc xong"]];
+
+function NoticePrefs() {
+  const { data, reload } = usePoll<{ quiet_hours: string; notify_off: string[] }>("/api/v1/usage", 15000);
+  if (!data) return null;
+  const toggle = async (kind: string) => { const off = data.notify_off.includes(kind) ? data.notify_off.filter((k) => k !== kind) : [...data.notify_off, kind]; await post("/api/v1/control/settings", { notify_off: off }); reload(); };
+  return (
+    <div className="ml-6 mt-3 grid max-w-xl gap-3">
+      <div className="flex flex-wrap gap-x-5 gap-y-1">{KINDS.map(([kind, name]) => <label key={kind} className="flex items-center gap-2"><input type="checkbox" checked={!data.notify_off.includes(kind)} onChange={() => toggle(kind)} />{name}</label>)}</div>
+      <form className="flex flex-wrap items-center gap-2" onSubmit={async (e) => { e.preventDefault(); const f = new FormData(e.currentTarget); const a = String(f.get("qf") ?? ""), b = String(f.get("qt") ?? ""); await post("/api/v1/control/settings", { quiet_hours: a !== "" && b !== "" ? `${a}-${b}` : "" }).catch(() => {}); reload(); }}>
+        <label htmlFor="qf">Không báo từ</label><input id="qf" name="qf" type="number" min="0" max="23" defaultValue={data.quiet_hours.split("-")[0] ?? ""} key={`a${data.quiet_hours}`} className="tc w-16 rounded border border-line bg-canvas px-2 py-1.5" />
+        <label htmlFor="qt">giờ đến</label><input id="qt" name="qt" type="number" min="0" max="23" defaultValue={data.quiet_hours.split("-")[1] ?? ""} key={`b${data.quiet_hours}`} className="tc w-16 rounded border border-line bg-canvas px-2 py-1.5" /><span>giờ</span>
+        <button type="submit" className="rounded border border-line px-3 py-1.5 text-sm font-medium hover:border-mute">Lưu</button>
+        <span className="text-mute">{data.quiet_hours ? "Trong giờ này thông báo chỉ nằm ở mục Thông báo." : "Để trống cả hai ô để báo bất cứ lúc nào."}</span>
+      </form>
+    </div>
+  );
+}
+
+const WORK: Record<string, string> = { "library.ingest": "Nhập footage", "library.ingest_image": "Nhập ảnh", "library.ingest_audio": "Nhập nhạc", "library.understand": "Xem và mô tả footage",
+  "sourcing.match": "Chọn clip cho kịch bản", "sourcing.generate": "Sinh hình bằng AI", "edit.render": "Dựng video" };
+const NEED: Record<string, string> = { model: "mô hình thị giác", voice: "giọng đọc", image_gen: "nhà cung cấp sinh ảnh", video_gen: "nhà cung cấp sinh video", ffmpeg: "FFmpeg", ffprobe: "FFprobe", graphics: "bộ vẽ phụ đề" };
+
+function Capabilities() {
+  const { data } = usePoll<{ pipelines: { pipeline: string; available: boolean; missing: string[] }[] }>("/api/v1/capabilities", 30000);
+  return (
+    <div>
+      <h2 className="mb-2 text-base font-semibold">Việc máy này làm được</h2>
+      <ul className="max-w-2xl divide-y divide-line border-y border-line">
+        {(data?.pipelines ?? []).map((p) => <li key={p.pipeline} className="flex justify-between gap-4 px-1 py-2"><span>{WORK[p.pipeline] ?? p.pipeline}</span><span className={p.available ? "text-mute" : "text-cue"}>{p.available ? "Sẵn sàng" : `Thiếu ${p.missing.map((m) => NEED[m] ?? m).join(", ")}`}</span></li>)}
+      </ul>
+    </div>
+  );
+}
+
 function StoragePanel() {
   const { data, reload } = usePoll<Storage>("/api/v1/storage", 20000);
   const [note, setNote] = useState<string | null>(null);
@@ -114,11 +149,13 @@ export default function System() {
         </div>
         <Health />
         <StoragePanel />
+        <Capabilities />
         <div>
           <h2 className="mb-2 text-base font-semibold">Thông báo trên máy Mac</h2>
           <label className="flex max-w-xl items-start gap-2"><input type="checkbox" className="mt-1" checked={control?.desktop_notifications ?? false}
             onChange={async (e) => { await call("/api/v1/control/desktop-notifications", { method: "POST", body: JSON.stringify({ on: e.target.checked }) }); reload(); }} />
             <span>Báo ở góc màn hình khi có việc chờ bạn duyệt, bị dừng, thất bại, hoặc khi video dựng xong.<span className="block text-mute">Nhập và phân tích footage xong thì không báo.</span></span></label>
+          <NoticePrefs />
         </div>
         <div>
           <h2 className="mb-2 text-base font-semibold">Chi phí mô hình</h2>

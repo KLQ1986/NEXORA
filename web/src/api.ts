@@ -55,6 +55,7 @@ export const STATUS_NAMES: Record<string, string> = {
   retry_wait: "Sẽ thử lại", blocked: "Cần bạn xử lý", succeeded: "Xong", skipped: "Bỏ qua", failed: "Thất bại", cancelled: "Đã huỷ",
 };
 export const REASONS: Record<string, string> = {
+  daily_budget_exceeded: "Đã dùng hết ngân sách của hôm nay", monthly_budget_exceeded: "Đã dùng hết ngân sách của tháng này",
   retry_limit: "Đã thử lại hết số lần cho phép", budget_exceeded: "Vượt ngân sách của lần chạy này",
   insufficient_storage: "Ổ đĩa sắp đầy", auth: "Khoá truy cập không hợp lệ", quota_exhausted: "Hết hạn mức của nhà cung cấp",
 };
@@ -70,7 +71,7 @@ export type Shot = { shot_id: string; position: number; text: string; selection:
   generation: { prompt: string; seed: number | null; provider: string } | null };
 export type Finding = { check: string; shot: number; severity: string; text: string; fix: string };
 export type Package = { title: string; description: string; thumbnails: string[]; thumbnail: string; folder: string; synthetic_content: boolean; captions: string; video: string };
-export type RenderItem = { render_id: string; created_at: number; url: string; package: Package | null;
+export type RenderItem = { render_id: string; created_at: number; url: string; package: Package | null; review: { approved: boolean; comment: string | null; at: number } | null;
   qc: { passed: boolean; checks: Record<string, boolean>; duration: number; gaps: number; findings?: Finding[]; format?: string; music?: boolean;
         shots?: { text: string; duration: number; gap: boolean; asset_id?: string | null; t_in?: number | null; own_voice?: boolean; focus_x?: number | null; inserts?: { keyword: string; at: number }[] }[] } };
 export type BoardEvent = { at: number; kind: string; pipeline: string; stage_key: string | null; actor: string; payload: Record<string, unknown> };

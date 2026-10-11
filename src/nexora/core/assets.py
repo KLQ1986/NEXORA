@@ -144,6 +144,10 @@ class AssetStore:
     def original(self, asset_id: str) -> AssetVersion:
         return next(v for v in self.versions(asset_id) if v.role == "original")
 
+    def asset(self, asset_id: str) -> dict | None:
+        row = self._conn.execute("SELECT * FROM assets WHERE asset_id = ?", (asset_id,)).fetchone()
+        return dict(row) if row else None
+
     def assets(self) -> list[dict]:
         return [dict(r) for r in self._conn.execute("SELECT * FROM assets ORDER BY created_at DESC, asset_id DESC")]
 

@@ -73,13 +73,27 @@ def announce(system: "System", after: int) -> int:
     for n in system.orch.notifications_after(after):
         after = n["notification_id"]
         pipeline = (system.orch.run_info(n["run_id"]) or {}).get("pipeline_id")
-        if system.orch.setting("desktop_notifications", "1") != "1" or n["kind"] not in ANNOUNCE or (n["kind"] == "succeeded" and pipeline in QUIET):
+        muted = json.loads(system.orch.setting("notify_off", "[]"))
+        quiet = system.orch.setting("quiet_hours", "")
+        if (system.orch.setting("desktop_notifications", "1") != "1" or n["kind"] not in ANNOUNCE or n["kind"] in muted
+                or (n["kind"] == "succeeded" and pipeline in QUIET) or (quiet and in_window(quiet))):         # the inbox keeps everything; only the desktop stays silent
             continue
         try:
             system.adapters.submit("desktop", Request("notify", inputs={"title": "NEXORA", "text": f"{PIPELINE_NAMES.get(pipeline, pipeline)} {ANNOUNCE[n['kind']]}."}))
         except Exception:                # a notification that cannot be shown must never disturb the work
             pass
     return after
+
+
+def capabilities(system: "System") -> list[dict]:
+    """The capability matrix: for each pipeline, whether this installation can run every stage, and what is missing if not."""
+    have = {c.name for c in system.adapters.describe()}
+    out = []
+    for pipeline in system.registry.pipelines():
+        missing = sorted({r for s in pipeline.stages for r in s.requires if r not in have})
+        out.append({"pipeline": pipeline.pipeline_id, "available": not missing, "missing": missing,
+                    "stages": [{"key": s.key, "requires": list(s.requires), "available": all(r in have for r in s.requires)} for s in pipeline.stages]})
+    return out
 
 
 def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Adapter | None = None,
@@ -96,6 +110,7 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     adapters.register(CaptionAdapter())
     if voice is not None:
         adapters.register(voice)
+    adapters.observer = orch.record_call
     index = MomentIndex(db_path)
     understanding = None
     if model is not None:

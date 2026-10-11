@@ -17,7 +17,7 @@ LOCATE_PROMPT = (
     "Đây là {n} khung hình liên tiếp, đánh số từ 1 đến {n}, của một đoạn video. Câu lời dẫn: \"{line}\".\n"
     "Khung hình số mấy cho thấy rõ nhất điều câu này nói? Chỉ trả về JSON với khoá khung (số từ 1 đến {n})."
 )
-MATCH = PipelineDefinition("sourcing.match", "1", [StageDef("match", gate=True)])
+MATCH = PipelineDefinition("sourcing.match", "1", [StageDef("match", gate=True, requires=("model",))])
 WORDS_PER_SECOND = 2.6
 MIN_SECONDS = 2.5
 AUTO_ACCEPT = 8          # judge points (0-10) every selection must reach for a match to be accepted without review
@@ -51,6 +51,7 @@ class Sourcing:
 
     def start_match(self, script_id: str, *, wait=None) -> str:
         self._projects.set_match_approved(script_id, False)
+        self._orch.supersede(MATCH.pipeline_id, script_id)
         run_id = self._orch.submit_run(MATCH, subject_ref=script_id)
         if wait:
             wait()

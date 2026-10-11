@@ -3,6 +3,7 @@
 An adapter reports; the core decides. An adapter holds no business state, writes no records and
 never decides whether to retry.
 """
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -109,6 +110,7 @@ class AdapterRegistry:
 
     def __init__(self):
         self._adapters: dict[str, Adapter] = {}
+        self.observer = None             # called with a record of every call: what, how long, how it ended, what it cost
 
     def register(self, adapter: Adapter) -> None:
         self._adapters[adapter.describe().name] = adapter
@@ -129,4 +131,13 @@ class AdapterRegistry:
             raise AdapterError(ErrorCode.INVALID_REQUEST, f"{name} does not support {request.operation}")
         if cap.runs == "cloud" and request.privacy_class is PrivacyClass.LOCAL_ONLY:
             raise AdapterError(ErrorCode.INVALID_REQUEST, f"a local-only request may not be sent to cloud adapter {name}")
-        return adapter.submit(request)
+        if self.observer is None:
+            return adapter.submit(request)
+        began, record = time.time(), {"adapter": name, "operation": request.operation, "runs": cap.runs, "attempt_id": request.attempt_id}
+        try:
+            result = adapter.submit(request)
+        except AdapterError as err:
+            self.observer({**record, "at": began, "seconds": time.time() - began, "ok": False, "error_code": err.code.value, "units": 0.0, "cost": 0.0})
+            raise
+        self.observer({**record, "at": began, "seconds": time.time() - began, "ok": True, "error_code": None, "units": result.usage.units, "cost": result.usage.cost})
+        return result

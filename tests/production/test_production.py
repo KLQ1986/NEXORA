@@ -310,3 +310,13 @@ def test_a_vertical_cut_is_framed_by_the_model_unless_the_operator_says_where_th
     system.sourcing.set_focus(shot.shot_id, 0.2)
     system.edit.start_render(script); drain(system)
     assert system.projects.renders(pid)[0]["qc"]["shots"][0]["focus_x"] == 0.2
+
+
+def test_a_new_render_withdraws_the_earlier_one_still_waiting_for_review(system):
+    pid = system.planning.create_project("Hai lần dựng")
+    script = system.planning.save_script(pid, ["cá tươi trên sạp"])
+    system.sourcing.approve(system.sourcing.start_match(script, wait=lambda: drain(system)))
+    first = system.edit.start_render(script); drain(system)
+    assert system.orch.run_status(first) is RunStatus.WAITING_REVIEW
+    second = system.edit.start_render(script); drain(system)
+    assert system.orch.run_status(first) is RunStatus.CANCELLED and system.orch.run_status(second) is RunStatus.WAITING_REVIEW
