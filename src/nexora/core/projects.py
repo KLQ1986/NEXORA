@@ -49,7 +49,7 @@ class ProjectStore:
         return project_id
 
     def update_project(self, project_id: str, **fields) -> None:
-        allowed = {k: v for k, v in fields.items() if k in ("title", "format", "music_path", "auto_accept", "style", "narration_dir")}
+        allowed = {k: v for k, v in fields.items() if k in ("title", "format", "music_path", "auto_accept", "style", "narration_dir", "budget_cap")}
         with db.write(self._conn) as c:
             for key, value in allowed.items():
                 c.execute(f"UPDATE projects SET {key} = ? WHERE project_id = ?", (value, project_id))
@@ -78,6 +78,9 @@ class ProjectStore:
         shots = [Shot(r["shot_id"], r["script_id"], r["position"], r["text"])
                  for r in self._conn.execute("SELECT * FROM shots WHERE script_id = ? ORDER BY position", (script_id,))]
         return {**dict(row), "match_approved": bool(row["match_approved"]), "shots": shots}
+
+    def script_ids(self, project_id: str) -> list[str]:
+        return [r[0] for r in self._conn.execute("SELECT script_id FROM scripts WHERE project_id = ? ORDER BY version", (project_id,))]
 
     def current_script(self, project_id: str) -> dict | None:
         row = self._conn.execute("SELECT script_id FROM scripts WHERE project_id = ? ORDER BY version DESC LIMIT 1", (project_id,)).fetchone()

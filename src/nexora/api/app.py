@@ -164,7 +164,34 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
 
     @app.get("/api/v1/control")
     def control():
-        return {"kill_switch": system.orch.kill_switch(), "desktop_notifications": system.orch.setting("desktop_notifications", "1") == "1"}
+        from nexora.core.schedule import in_window
+        window = system.orch.setting("background_window", "")
+        return {"kill_switch": system.orch.kill_switch(), "desktop_notifications": system.orch.setting("desktop_notifications", "1") == "1",
+                "background_window": window, "background_running_now": in_window(window)}
+
+    @app.post("/api/v1/control/background-window")
+    def background_window(body: dict):
+        from nexora.core.schedule import parse_window
+        spec = str(body.get("window") or "")
+        try:
+            parse_window(spec)
+        except ValueError:
+            raise HTTPException(422, "Giờ bắt đầu và kết thúc phải là hai số khác nhau từ 0 đến 23")
+        system.orch.set_setting("background_window", spec)
+        return control()
+
+    @app.get("/api/v1/agent/tasks")
+    def agent_tasks(project_id: str | None = None):
+        return {"tasks": system.producer.tasks(project_id=project_id)}
+
+    @app.post("/api/v1/agent/tasks", status_code=201)
+    def start_agent_task(body: dict):
+        goal = str(body.get("goal", "")).strip()
+        if not goal:
+            raise HTTPException(422, "Hãy mô tả video bạn muốn làm")
+        task_id = system.producer.start(goal, format=body.get("format") if body.get("format") in ("landscape", "portrait", "square") else "landscape",
+                                        lines=max(2, min(12, int(body.get("lines", 5)))), use_stock=bool(body.get("use_stock", True)))
+        return system.producer.task(task_id)
 
     @app.post("/api/v1/control/desktop-notifications")
     def desktop_notifications(body: dict):
@@ -261,7 +288,8 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
                 "shots": shots, "match": latest_run(script["script_id"], "sourcing.match") if script else None,
                 "render": latest_run(script["script_id"], "edit.render") if script else None, "renders": renders,
                 "generate": latest_run(script["script_id"], "sourcing.generate") if script else None, "generators": system.generation.available(),
-                "auto_accept": bool(project.get("auto_accept")), "own_takes": own_takes(project, len(shots))}
+                "auto_accept": bool(project.get("auto_accept")), "own_takes": own_takes(project, len(shots)),
+                "spent": system.generation.spent(project["project_id"])}
 
     def angles_of(sel) -> list[dict]:
         """Other cameras that recorded the instant this selection shows."""

@@ -75,7 +75,14 @@ class Generation:
 
     def start(self, script_id: str) -> str:
         self._projects.set_match_approved(script_id, False)
-        return self._orch.submit_run(GENERATE, subject_ref=script_id)
+        project = self._projects.project(self._projects.script(script_id)["project_id"])
+        cap = project.get("budget_cap")
+        # A project's budget covers all of its paid work: this run may spend only what earlier runs have left.
+        left = None if cap is None else max(0.0, cap - self.spent(project["project_id"]))
+        return self._orch.submit_run(GENERATE, subject_ref=script_id, budget_cap=left)
+
+    def spent(self, project_id: str) -> float:
+        return sum(self._orch.run_cost(r) for s in self._projects.script_ids(project_id) for r in self._orch.runs_for_subject(s))
 
     def spec_for(self, shot, project: dict) -> PromptSpec:
         return PromptSpec(subject=shot.text, style=project.get("style") or "", aspect=ASPECT.get(project["format"], "16:9"),

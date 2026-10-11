@@ -77,6 +77,7 @@ export type BoardEvent = { at: number; kind: string; pipeline: string; stage_key
 export type Notice = { notification_id: number; kind: string; run_id: string; stage_key: string | null; reason: string | null; created_at: number; read_at: number | null; pipeline: string | null };
 export type Project = { project_id: string; title: string; created_at: number; format: string; music_path: string | null;
   script: { script_id: string; version: number; match_approved: boolean } | null; shots: Shot[]; match: Run | null; render: Run | null; renders: RenderItem[];
-  generate: Run | null; generators: { image: boolean; video: boolean }; auto_accept: boolean; style: string | null; narration_dir: string | null; own_takes: number[] };
+  generate: Run | null; generators: { image: boolean; video: boolean }; auto_accept: boolean; style: string | null; narration_dir: string | null; own_takes: number[]; budget_cap: number | null; spent: number };
+export type AgentTask = { task_id: string; project_id: string; goal: string; status: string; step: string; created_at: number; log: { at: number; role: string; text: string }[] };
 export const post = <T,>(url: string, body?: unknown, method = "POST") => call<T>(url, { method, body: body === undefined ? undefined : JSON.stringify(body) });
 Object.assign(STAGE_NAMES, { segments: "Chia đoạn", summarise: "Tóm tắt", match: "Chọn clip", narration: "Đọc lời dẫn", assemble: "Ghép và kiểm tra" });

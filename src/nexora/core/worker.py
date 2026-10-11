@@ -31,8 +31,10 @@ class StageContext:
 
 
 class Worker:
-    def __init__(self, orch: Orchestrator, registry: PipelineRegistry, *, worker_id: str, lanes: frozenset[str] | None = None, log: Callable[[dict], None] | None = None):
+    def __init__(self, orch: Orchestrator, registry: PipelineRegistry, *, worker_id: str, lanes: frozenset[str] | None = None, log: Callable[[dict], None] | None = None,
+                 allowed: Callable[[], bool] | None = None):
         self._orch, self._registry, self.worker_id, self._lanes, self._log = orch, registry, worker_id, lanes, log
+        self._allowed = allowed                      # asked before each claim; False means "not now" (for example outside the night window)
 
     def recover(self, *, now: float | None = None, is_alive: Callable = lambda attempt: False) -> None:
         """Run once at start-up and on wake, before claiming work."""
@@ -40,6 +42,8 @@ class Worker:
 
     def run_once(self, *, now: float | None = None) -> bool:
         """Claim and run one stage. Returns False when there was nothing to claim."""
+        if self._allowed and not self._allowed():
+            return False
         claim = self._orch.claim_next(self.worker_id, now=now, lanes=self._lanes)
         if claim is None:
             return False

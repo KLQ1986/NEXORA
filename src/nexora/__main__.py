@@ -114,6 +114,16 @@ def main() -> None:
         for worker in system.workers:
             threading.Thread(target=worker.run_forever, kwargs={"recover": False}, name=f"nexora-{worker.worker_id}", daemon=True).start()
 
+        def produce():
+            import time
+            while True:
+                try:
+                    system.producer.tick()
+                except Exception as err:           # the agent must never take the server down
+                    print(f"producer: {err!r}")
+                time.sleep(3)
+        threading.Thread(target=produce, name="nexora-producer", daemon=True).start()
+
         def announcer():
             import time
             from nexora.app import announce

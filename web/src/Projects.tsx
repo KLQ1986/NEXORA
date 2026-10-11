@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { post, timecode, usePoll, type Asset, type Candidate, type Project, type RenderItem, type Shot } from "./api";
+import { post, timecode, usePoll, type AgentTask, type Asset, type Candidate, type Project, type RenderItem, type Shot } from "./api";
 import Board from "./Board";
 import { Button, StageRail } from "./parts";
 import Timeline from "./Timeline";
@@ -111,6 +111,23 @@ function PackagePanel({ render, reload }: { render: RenderItem; reload: () => vo
   );
 }
 
+const TASK_STATES: Record<string, string> = { working: "Đang làm", waiting_operator: "Chờ bạn", done: "Xong", failed: "Dừng vì lỗi" };
+
+/** What the producer agent did for this project, role by role, in the order it happened. */
+function AgentLog({ projectId }: { projectId: string }) {
+  const { data } = usePoll<{ tasks: AgentTask[] }>(`/api/v1/agent/tasks?project_id=${projectId}`, 3000);
+  const task = data?.tasks[0];
+  if (!task) return null;
+  return (
+    <details className="mb-6 max-w-4xl rounded bg-surface px-4 py-3" open={task.status !== "done"}>
+      <summary className="cursor-pointer font-medium">Trợ lý sản xuất: <span className={task.status === "waiting_operator" ? "text-cue" : task.status === "failed" ? "text-tally" : task.status === "done" ? "text-proof" : "text-mute"}>{TASK_STATES[task.status] ?? task.status}</span></summary>
+      <ol className="mt-2 grid gap-1">
+        {task.log.map((e, i) => <li key={i} className="grid grid-cols-[5rem_6.5rem_minmax(0,1fr)] gap-2 text-sm"><span className="tc text-mute">{new Date(e.at * 1000).toLocaleTimeString("vi-VN")}</span><span className="text-mute">{e.role}</span><span>{e.text}</span></li>)}
+      </ol>
+    </details>
+  );
+}
+
 const STEPS = ["Kịch bản", "Chọn clip", "Duyệt clip", "Dựng video", "Duyệt bản dựng"];
 
 function Detail({ id, back }: { id: string; back: () => void }) {
@@ -123,6 +140,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
   const [takes, setTakes] = useState<string | null>(null);
   const [music, setMusic] = useState<string | null>(null);
   const [style, setStyle] = useState<string | null>(null);
+  const [budget, setBudget] = useState<string | null>(null);
   const { data: lib } = usePoll<{ assets: Asset[] }>("/api/v1/library", 30000);
   const tracks = (lib?.assets ?? []).filter((a) => a.kind === "audio" && a.online);
   useEffect(() => { if (p && text === null) setText(p.shots.map((s) => s.text).join("\n")); }, [p, text]);
@@ -151,6 +169,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
         ))}
       </ol>
       {note && <p className="mb-4 text-tally">{note}</p>}
+      <AgentLog projectId={id} />
       <div className="mb-6 flex gap-1 border-b border-line" role="tablist">
         {([["work", "Làm video"], ["timeline", "Dòng thời gian"], ["board", "Bảng theo dõi"]] as const).map(([key, label]) => (
           <button key={key} type="button" role="tab" aria-selected={tab === key} onClick={() => setTab(key)}
@@ -210,6 +229,12 @@ function Detail({ id, back }: { id: string; back: () => void }) {
           <div>
             <h2 className="mb-1 text-lg font-semibold">Sinh hình bằng AI</h2>
             <p className="mb-2 max-w-3xl text-mute">Dùng khi làm phim hoạt hình hoặc khi kho footage không có hình. Hệ thống sinh một ảnh tĩnh cho mỗi câu để bạn duyệt trước, rồi mới sinh video từ ảnh đã duyệt.</p>
+            <form className="mb-3 flex max-w-3xl flex-wrap items-end gap-2" onSubmit={(e) => { e.preventDefault(); run(() => post(`/api/v1/projects/${id}`, { budget_cap: budget === "" ? null : Number(budget) }, "PATCH")); }}>
+              <div><label htmlFor="budget" className="mb-1 block font-medium">Ngân sách cho dự án (USD)</label>
+                <input id="budget" type="number" min="0" step="0.5" value={budget ?? p.budget_cap ?? ""} onChange={(e) => setBudget(e.target.value)} placeholder="Không giới hạn" className="w-44 rounded border border-line bg-canvas px-3 py-1.5 placeholder:text-mute/70" /></div>
+              <Button disabled={busy || budget === null} onClick={() => run(() => post(`/api/v1/projects/${id}`, { budget_cap: budget === "" ? null : Number(budget) }, "PATCH"))}>Lưu ngân sách</Button>
+              <p className="tc pb-1.5 text-mute">Đã tiêu {p.spent.toFixed(2)} USD{p.budget_cap != null ? ` trên ${p.budget_cap.toFixed(2)} USD` : ""}. Hết ngân sách thì việc sinh hình dừng lại chờ bạn.</p>
+            </form>
             {!p.generators.image || !p.generators.video ? (
               <p className="max-w-3xl text-cue">Chưa cấu hình nhà cung cấp sinh ảnh và sinh video, nên chức năng này chưa chạy được. Cần khoá API của một nhà cung cấp để bật.</p>
             ) : (
@@ -217,7 +242,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
                 <form className="mb-3 flex max-w-3xl items-end gap-2" onSubmit={(e) => { e.preventDefault(); run(() => post(`/api/v1/projects/${id}`, { style: (style ?? "").trim() || null }, "PATCH")); }}>
                   <div className="min-w-0 flex-1"><label htmlFor="style" className="mb-1 block font-medium">Phong cách hình</label>
                     <input id="style" value={style ?? p.style ?? ""} onChange={(e) => setStyle(e.target.value)} placeholder="Ví dụ: hoạt hình màu nước, ánh sáng ấm" className="w-full rounded border border-line bg-canvas px-3 py-1.5 placeholder:text-mute/70" /></div>
-                  <Button disabled={busy || style === null}>Lưu phong cách</Button>
+                  <Button disabled={busy || style === null} onClick={() => run(() => post(`/api/v1/projects/${id}`, { style: (style ?? "").trim() || null }, "PATCH"))}>Lưu phong cách</Button>
                 </form>
                 <div className="flex flex-wrap items-center gap-3">
                   <Button disabled={busy || dirty || (!!p.generate && ["queued", "running"].includes(p.generate.status))} onClick={() => run(() => post(`/api/v1/projects/${id}/generate`))}>{p.generate ? "Sinh lại" : "Sinh ảnh cho từng câu"}</Button>
@@ -307,6 +332,10 @@ function Detail({ id, back }: { id: string; back: () => void }) {
 export default function Projects({ sub, go }: { sub: string | null; go: (to: string) => void }) {
   const { data, reload } = usePoll<Project[]>("/api/v1/projects", 5000);
   const [title, setTitle] = useState("");
+  const [goal, setGoal] = useState("");
+  const [format, setFormat] = useState("landscape");
+  const { data: agent, reload: reloadAgent } = usePoll<{ tasks: AgentTask[] }>("/api/v1/agent/tasks", 4000);
+  const [agentNote, setAgentNote] = useState<string | null>(null);
   if (sub) return <Detail key={sub} id={sub} back={() => go("/du-an")} />;
   const create = async () => { const p = await post<Project>("/api/v1/projects", { title: title.trim() }); setTitle(""); reload(); go(`/du-an/${p.project_id}`); };
   return (
@@ -317,6 +346,22 @@ export default function Projects({ sub, go }: { sub: string | null; go: (to: str
         <input id="title" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Tên video mới, ví dụ: Một buổi sáng ở chợ Hội An" className="min-w-0 flex-1 rounded border border-line bg-canvas px-3 py-1.5 placeholder:text-mute/70" />
         <Button kind="primary" disabled={!title.trim()} onClick={create}>Tạo dự án</Button>
       </form>
+      <div className="mb-8 max-w-3xl rounded bg-surface p-4">
+        <h2 className="mb-1 text-base font-semibold">Giao việc cho trợ lý sản xuất</h2>
+        <p className="mb-3 text-mute">Mô tả video bạn muốn. Trợ lý tự viết kịch bản từ kho footage, tìm clip, lấp chỗ thiếu bằng clip stock miễn phí rồi dựng. Nó dừng lại chờ bạn duyệt clip và duyệt bản dựng.</p>
+        <form className="flex flex-wrap gap-2" onSubmit={async (e) => { e.preventDefault(); if (!goal.trim()) return; setAgentNote(null); try { const t = await post<AgentTask>("/api/v1/agent/tasks", { goal: goal.trim(), format }); setGoal(""); reloadAgent(); reload(); go(`/du-an/${t.project_id}`); } catch (err) { setAgentNote((err as Error).message); } }}>
+          <label htmlFor="goal" className="sr-only">Video bạn muốn làm</label>
+          <input id="goal" value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="Ví dụ: một phút về buổi sáng ở chợ Hội An" className="min-w-0 flex-1 rounded border border-line bg-canvas px-3 py-1.5 placeholder:text-mute/70" />
+          <label htmlFor="agent-format" className="sr-only">Khung hình</label>
+          <select id="agent-format" value={format} onChange={(e) => setFormat(e.target.value)} className="rounded border border-line bg-canvas px-2 py-1.5">{Object.entries(FORMATS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
+          <button type="submit" disabled={!goal.trim()} className="rounded border border-line px-3 py-1.5 text-sm font-medium hover:border-mute disabled:opacity-40">Giao việc</button>
+        </form>
+        {agentNote && <p className="mt-2 text-tally">{agentNote}</p>}
+        {(agent?.tasks ?? []).filter((t) => t.status === "working" || t.status === "waiting_operator").map((t) => (
+          <a key={t.task_id} href={`/du-an/${t.project_id}`} onClick={(e) => { e.preventDefault(); go(`/du-an/${t.project_id}`); }} className="mt-2 flex justify-between gap-4 text-sm hover:underline">
+            <span className="min-w-0 truncate">{t.goal}</span><span className={t.status === "waiting_operator" ? "shrink-0 text-cue" : "shrink-0 text-mute"}>{TASK_STATES[t.status]}: {t.log[t.log.length - 1]?.text}</span></a>
+        ))}
+      </div>
       {data && data.length === 0 && <p className="max-w-md text-mute">Chưa có dự án nào. Mỗi dự án là một video: bạn viết kịch bản, hệ thống tìm clip trong kho footage, rồi dựng thành video có lời dẫn và phụ đề.</p>}
       <ul className="max-w-3xl divide-y divide-line border-y border-line">
         {(data ?? []).map((p) => {

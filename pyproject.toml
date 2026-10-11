@@ -33,7 +33,7 @@ root_package = "nexora"
 [[tool.importlinter.contracts]]
 name = "Layers: a layer may import lower layers, never higher ones"
 type = "layers"
-layers = ["nexora.api", "nexora.adapters", "nexora.modules", "nexora.core"]
+layers = ["nexora.api", "nexora.agents", "nexora.adapters", "nexora.modules", "nexora.core"]
 
 [[tool.importlinter.contracts]]
 name = "Domain modules do not import each other"

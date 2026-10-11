@@ -29,7 +29,8 @@ class FakeModel(Adapter):
                                             "hanh_dong": [], "boi_canh": "ngoài trời", "chu_tren_hinh": "", "co_canh": "trung"}})
         if request.operation == "chat":
             if request.params.get("json"):
-                return Result(outputs={"json": {"tom_tat": "Video thử nghiệm.", "chu_de": ["thử nghiệm"], "tieu_de": "Video thử"}})
+                return Result(outputs={"json": {"tom_tat": "Video thử nghiệm.", "chu_de": ["thử nghiệm"], "tieu_de": "Video thử",
+                                                "cau": getattr(self, "script", []), "tu_khoa": "computer keyboard"}})
             return Result(outputs={"text": "Video thử nghiệm."})
         vectors = []
         for text in request.inputs["texts"]:

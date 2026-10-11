@@ -12,7 +12,9 @@ from nexora.core.adapter import Adapter, PrivacyClass, Request
 from nexora.core.assets import AssetStore
 from nexora.core.index import MomentIndex
 from nexora.core.orchestrator import Orchestrator
+from nexora.agents.producer import Producer
 from nexora.core.pipeline import PipelineRegistry
+from nexora.core.schedule import in_window
 from nexora.core.projects import ProjectStore
 from nexora.core.worker import Worker
 from nexora.modules.library.ingest import Library
@@ -42,6 +44,7 @@ class System:
     distribution: Distribution
     generation: Generation
     workers: list = None            # one worker per lane, for a long-running server
+    producer: Producer = None
 
 
 def fill_gap_from_stock(system: "System", shot_id: str, query: str) -> dict:
@@ -126,8 +129,13 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
 
     worker = Worker(orch, registry, worker_id=f"worker-{os.getpid()}", log=log)
     # Long footage analysis has its own worker, so that a render or a match the operator is waiting for never queues behind it.
-    workers = [Worker(orch, registry, worker_id=f"{lane}-{os.getpid()}", lanes=frozenset({lane}), log=log) for lane in ("interactive", "background")]
-    return System(data_dir, orch, assets, adapters, registry, worker, library, index, projects, planning, sourcing, edit, distribution, generation, workers)
+    night_only = lambda: in_window(orch.setting("background_window", ""))          # the operator may keep heavy analysis to chosen hours
+    workers = [Worker(orch, registry, worker_id=f"interactive-{os.getpid()}", lanes=frozenset({"interactive"}), log=log),
+               Worker(orch, registry, worker_id=f"background-{os.getpid()}", lanes=frozenset({"background"}), log=log, allowed=night_only)]
+    system = System(data_dir, orch, assets, adapters, registry, worker, library, index, projects, planning, sourcing, edit, distribution, generation, workers)
+    system.producer = Producer(db_path, orch=orch, projects=projects, planning=planning, sourcing=sourcing, edit=edit, adapters=adapters,
+                               fill_gap=lambda shot_id, query: fill_gap_from_stock(system, shot_id, query))
+    return system
 
 
 def build_from_config(config, **overrides) -> System:

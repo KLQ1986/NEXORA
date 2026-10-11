@@ -77,14 +77,14 @@ function StoragePanel() {
           ))}
         </ul>
       </div>
-      {note && <p className="text-proof">{note}</p>}
+      {note && <p role="status">{note}</p>}
     </>
   );
 }
 
 export default function System() {
   const { data: env } = usePoll<Env>("/api/v1/environment", 15000);
-  const { data: control, reload } = usePoll<{ kill_switch: boolean; desktop_notifications: boolean }>("/api/v1/control", 3000);
+  const { data: control, reload } = usePoll<{ kill_switch: boolean; desktop_notifications: boolean; background_window: string; background_running_now: boolean }>("/api/v1/control", 3000);
   const toggle = async () => { await call("/api/v1/control/kill-switch", { method: "POST", body: JSON.stringify({ on: !control?.kill_switch }) }); reload(); };
   const { data: runs } = usePoll<Run[]>("/api/v1/runs", 10000);
   const spent = (runs ?? []).reduce((sum, r) => sum + r.cost, 0);
@@ -101,6 +101,16 @@ export default function System() {
             <Button kind={control?.kill_switch ? "primary" : "danger"} onClick={toggle}>{control?.kill_switch ? "Cho chạy lại" : "Dừng khẩn cấp"}</Button>
             <span className={control?.kill_switch ? "text-cue" : "text-mute"}>{control?.kill_switch ? "Đang dừng" : "Đang hoạt động bình thường"}</span>
           </div>
+        </div>
+        <div>
+          <h2 className="mb-2 text-base font-semibold">Giờ phân tích footage</h2>
+          <p className="mb-3 max-w-xl text-mute">Xem và mô tả footage là việc nặng nhất của máy. Bạn có thể chỉ cho nó chạy trong một khung giờ, ví dụ ban đêm. Chọn clip và dựng video không bị ảnh hưởng.</p>
+          <form className="flex flex-wrap items-center gap-2" onSubmit={async (e) => { e.preventDefault(); const f = new FormData(e.currentTarget); const a = String(f.get("from") ?? ""), b = String(f.get("to") ?? ""); await post("/api/v1/control/background-window", { window: a !== "" && b !== "" ? `${a}-${b}` : "" }).catch(() => {}); reload(); }}>
+            <label htmlFor="from">Từ</label><input id="from" name="from" type="number" min="0" max="23" defaultValue={control?.background_window.split("-")[0] ?? ""} key={`f${control?.background_window}`} className="tc w-16 rounded border border-line bg-canvas px-2 py-1.5" />
+            <label htmlFor="to">giờ đến</label><input id="to" name="to" type="number" min="0" max="23" defaultValue={control?.background_window.split("-")[1] ?? ""} key={`t${control?.background_window}`} className="tc w-16 rounded border border-line bg-canvas px-2 py-1.5" /><span>giờ</span>
+            <button type="submit" className="rounded border border-line px-3 py-1.5 text-sm font-medium hover:border-mute">Lưu</button>
+            <span className={control?.background_window && !control.background_running_now ? "text-cue" : "text-mute"}>{!control?.background_window ? "Đang cho chạy bất cứ lúc nào. Để trống cả hai ô để giữ như vậy." : control.background_running_now ? "Đang trong khung giờ, việc phân tích được chạy." : "Ngoài khung giờ, việc phân tích đang chờ."}</span>
+          </form>
         </div>
         <Health />
         <StoragePanel />

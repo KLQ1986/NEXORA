@@ -126,6 +126,7 @@ CREATE TABLE IF NOT EXISTS projects (
     auto_accept INTEGER NOT NULL DEFAULT 0,
     style      TEXT,
     narration_dir TEXT,
+    budget_cap REAL,
     music_path TEXT,
     created_at REAL NOT NULL
 );
@@ -200,6 +201,7 @@ MIGRATIONS = [
     ("projects", "auto_accept", "INTEGER NOT NULL DEFAULT 0"),
     ("projects", "style", "TEXT"),
     ("projects", "narration_dir", "TEXT"),
+    ("projects", "budget_cap", "REAL"),
     ("stages", "lane", "TEXT NOT NULL DEFAULT 'interactive'"),
     ("selections", "extras", "TEXT NOT NULL DEFAULT '{}'"),
 ]
