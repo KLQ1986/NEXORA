@@ -100,6 +100,24 @@ CREATE TABLE IF NOT EXISTS asset_versions (
     UNIQUE (volume_id, relative_path)
 );
 CREATE INDEX IF NOT EXISTS versions_by_checksum ON asset_versions(checksum);
+CREATE TABLE IF NOT EXISTS moments (
+    moment_id  TEXT PRIMARY KEY,
+    asset_id   TEXT NOT NULL,
+    level      TEXT NOT NULL,
+    t_start    REAL NOT NULL,
+    t_end      REAL NOT NULL,
+    text       TEXT NOT NULL,
+    data       TEXT NOT NULL DEFAULT '{}',
+    source     TEXT NOT NULL DEFAULT 'model',
+    analyzer   TEXT,
+    created_at REAL NOT NULL,
+    UNIQUE (asset_id, level, t_start, t_end)
+);
+CREATE VIRTUAL TABLE IF NOT EXISTS moments_fts USING fts5(text, moment_id UNINDEXED, tokenize = "unicode61 remove_diacritics 2");
+CREATE TABLE IF NOT EXISTS moment_vectors (
+    moment_id TEXT PRIMARY KEY,
+    vector    BLOB NOT NULL
+);
 CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL

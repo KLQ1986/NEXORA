@@ -36,16 +36,28 @@ def usable_ranges(duration: float, black: list[list[float]]) -> list[list[float]
 
 class Library:
     def __init__(self, orch: Orchestrator, assets: AssetStore, adapters: AdapterRegistry, media_dir: str | Path,
-                 *, min_free_bytes: int = 2 * 1024**3):
+                 *, min_free_bytes: int = 2 * 1024**3, understanding=None):
         self._orch, self._assets, self._adapters = orch, assets, adapters
         self._min_free = min_free_bytes
+        self._understanding = understanding          # None when no model is available
         self._media = Path(media_dir)
         self._media.mkdir(parents=True, exist_ok=True)
         assets.add_volume("managed", self._media, kind="internal")
 
     def register(self, registry: PipelineRegistry) -> None:
         registry.register(INGEST, {"checksum": self._checksum, "probe": self._probe, "usable": self._usable,
-                                   "proxy": self._proxy, "thumbnail": self._thumbnail})
+                                   "proxy": self._proxy, "thumbnail": self._thumbnail},
+                          on_success=(lambda run_id, asset_id: self.understand(asset_id)) if self._understanding else None)
+        if self._understanding:
+            from nexora.modules.library.understand import UNDERSTAND
+            registry.register(UNDERSTAND, self._understanding.handlers())
+
+    def understand(self, asset_id: str, *, force: bool = False) -> str | None:
+        """Start understanding an ingested asset. Duplicates are skipped; `force` starts a new run."""
+        from nexora.modules.library.understand import UNDERSTAND
+        if self._understanding is None or "duplicate_of" in self._assets.original(asset_id).metadata:
+            return None
+        return self._orch.submit_run(UNDERSTAND, subject_ref=asset_id, idempotency_key=None if force else f"understand:{asset_id}")
 
     def ingest(self, path: str | Path) -> tuple[str, str]:
         """Register a file and start its ingest run. Ingesting the same file again returns the same asset and run."""

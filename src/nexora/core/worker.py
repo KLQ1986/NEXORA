@@ -6,6 +6,7 @@ from typing import Callable
 from nexora.core.adapter import NEEDS_OPERATOR, AdapterError, ErrorCode
 from nexora.core.orchestrator import Claim, Orchestrator
 from nexora.core.pipeline import PipelineRegistry
+from nexora.core.states import RunStatus
 
 
 @dataclass
@@ -59,6 +60,9 @@ class Worker:
             self._orch.fail(claim.attempt_id, ErrorCode.INTERNAL.value, retryable=True, message=repr(err), now=end())
         else:
             self._orch.complete(claim.attempt_id, outputs=outputs or {}, now=end())
+            follow_up = self._registry.on_success(self._orch.pipeline_of(claim.run_id))
+            if follow_up and self._orch.run_status(claim.run_id) is RunStatus.SUCCEEDED:
+                follow_up(claim.run_id, ctx.subject_ref)
         return True
 
     def run_forever(self, *, idle_seconds: float = 2.0, stop: Callable[[], bool] = lambda: False) -> None:

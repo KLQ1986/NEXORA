@@ -62,7 +62,7 @@ class FFmpegAdapter(Adapter):
         return ffmpeg_capabilities()
 
     def describe(self) -> Capability:
-        return Capability(name="ffmpeg", operations=("blackdetect", "freezedetect", "proxy", "thumbnail"), runs="local", supports_cancel=True)
+        return Capability(name="ffmpeg", operations=("blackdetect", "freezedetect", "proxy", "thumbnail", "frames"), runs="local", supports_cancel=True)
 
     def submit(self, request: Request) -> Result:
         src = Path(request.inputs["path"])
@@ -119,6 +119,16 @@ class FFmpegAdapter(Adapter):
             raise last
         partial.replace(out)
         return Result(files=(str(out),))
+
+    def _frames(self, src: Path, params: dict, timeout: float) -> Result:
+        """Still frames at a fixed rate; frame k shows time k / fps."""
+        out_dir, fps = Path(params["out_dir"]), float(params.get("fps", 0.5))
+        out_dir.mkdir(parents=True, exist_ok=True)
+        for old in out_dir.glob("f_*.jpg"):
+            old.unlink()
+        self._run(["-y", "-i", str(src), "-vf", f"fps={fps},scale={int(params.get('width', 448))}:-2", "-q:v", "4", str(out_dir / "f_%05d.jpg")],
+                  timeout, "frames")
+        return Result(outputs={"frames": [str(p) for p in sorted(out_dir.glob("f_*.jpg"))], "fps": fps})
 
     def _thumbnail(self, src: Path, params: dict, timeout: float) -> Result:
         out = Path(params["out"])

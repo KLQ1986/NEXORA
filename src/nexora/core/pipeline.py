@@ -38,12 +38,19 @@ class PipelineRegistry:
 
     def __init__(self):
         self._pipelines: dict[str, tuple[PipelineDefinition, dict[str, Callable]]] = {}
+        self._on_success: dict[str, Callable] = {}
 
-    def register(self, pipeline: PipelineDefinition, handlers: dict[str, Callable]) -> None:
+    def register(self, pipeline: PipelineDefinition, handlers: dict[str, Callable], *, on_success: Callable | None = None) -> None:
+        """`on_success(run_id, subject_ref)` is called once a run of this pipeline has succeeded; it may start the next one."""
         missing = [s.key for s in pipeline.stages if s.key not in handlers]
         if missing:
             raise ValueError(f"pipeline {pipeline.pipeline_id} has stages without a handler: {missing}")
         self._pipelines[pipeline.pipeline_id] = (pipeline, dict(handlers))
+        if on_success:
+            self._on_success[pipeline.pipeline_id] = on_success
+
+    def on_success(self, pipeline_id: str) -> Callable | None:
+        return self._on_success.get(pipeline_id)
 
     def definition(self, pipeline_id: str) -> PipelineDefinition:
         return self._pipelines[pipeline_id][0]

@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from nexora.adapters.media import ffmpeg_capabilities
+from nexora.adapters.ollama import OllamaAdapter
 from nexora.app import build
 
 VIDEO_EXT = {".mp4", ".mov", ".m4v", ".mkv", ".avi", ".mts", ".webm", ".ogv"}
@@ -17,13 +18,15 @@ def main() -> None:
     p.add_argument("paths", nargs="+")
     p = sub.add_parser("worker", help="run stages")
     p.add_argument("--drain", action="store_true", help="run until nothing is left, then exit")
+    p = sub.add_parser("understand", help="describe and index every ingested video")
+    p.add_argument("--force", action="store_true")
     sub.add_parser("runs", help="list runs and their stages")
     sub.add_parser("assets", help="list assets")
     sub.add_parser("env", help="check the environment")
     p = sub.add_parser("serve", help="start the API on the loopback address")
     p.add_argument("--port", type=int, default=8600)
     args = parser.parse_args()
-    system = build(args.data)
+    system = build(args.data, model=OllamaAdapter())
 
     if args.command == "ingest":
         for given in args.paths:
@@ -39,6 +42,9 @@ def main() -> None:
                 pass
         else:
             system.worker.run_forever()
+    elif args.command == "understand":
+        for asset in system.assets.assets():
+            print(asset["asset_id"], system.library.understand(asset["asset_id"], force=args.force))
     elif args.command == "runs":
         for run_id in system.orch.runs():
             info = system.orch.run_info(run_id)

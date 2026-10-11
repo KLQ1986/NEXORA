@@ -46,7 +46,8 @@ def asset_view(system, asset: dict) -> dict:
         "frozen_ranges": meta.get("frozen_ranges", []),
         "thumbnail_url": f"/media/{by_role['thumbnail'].version_id}" if "thumbnail" in by_role else None,
         "proxy_url": f"/media/{by_role['proxy'].version_id}" if "proxy" in by_role else None,
-        "ingest": run_view(system, runs[0]) if runs else None,
+        "ingest": next((run_view(system, r) for r in runs if system.orch.pipeline_of(r) == "library.ingest"), None),
+        "understand": next((run_view(system, r) for r in runs if system.orch.pipeline_of(r) == "library.understand"), None),
     }
 
 
