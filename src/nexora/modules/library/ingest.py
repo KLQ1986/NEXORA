@@ -148,6 +148,18 @@ class Library:
         version_id = self._assets.add_version(ctx.subject_ref, out, role="enhanced", parents=[original.version_id], attempt_id=ctx.claim.attempt_id, metadata=wanted)
         return {"enhanced_version_id": version_id, **wanted}
 
+    def measure_unmeasured_music(self) -> list[str]:
+        """Listen again to every music track taken in before tracks were measured for tempo and liveliness. Returns the runs started."""
+        runs = []
+        for asset in self._assets.assets():
+            if asset["kind"] != "audio":
+                continue
+            original = self._assets.original(asset["asset_id"])
+            if "duplicate_of" in original.metadata or original.metadata.get("music") or not self._assets.path_of(original).is_file():
+                continue
+            runs.append(self._orch.submit_run(INGEST_AUDIO, subject_ref=asset["asset_id"], idempotency_key=f"measure-music:{asset['asset_id']}"))
+        return runs
+
     def suggest_music(self, *, seconds: float, energy: str | None = None, limit: int = 3) -> list[dict]:
         """Tracks from the library for a cut of this length: long enough to run under it without looping if possible, not set
         aside, and of the liveliness asked for when one is asked for. Each comes with why it was put where it is."""

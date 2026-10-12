@@ -79,3 +79,16 @@ def test_tempo_and_liveliness_are_measured_from_the_sound(tmp_path):
     client.patch(f"/api/v1/assets/{calm}", json={"rejected": True})
     assert [t["name"] for t in client.get(f"/api/v1/projects/{pid}/music/suggest").json()["tracks"]] == ["nhanh.wav"]
     assert rank([{"duration": 10, "energy": "vừa", "lead_in": 5.0, "rating": 4, "tempo": None}], seconds=30)[0]["why"] == "ngắn hơn video, sẽ lặp 3 lần, nhịp vừa, vào chậm, 5 giây đầu gần như im, bạn chấm 4 sao"
+
+
+def test_tracks_taken_in_before_music_was_measured_are_listened_to_once_more(tmp_path):
+    system = build(tmp_path / "data", voice=FakeVoice())
+    track, _ = system.library.ingest(tone(tmp_path / "cu.wav", seconds=12, bpm=100))
+    drain(system)
+    original = system.assets.original(track)
+    system.assets.update_metadata(original.version_id, music=None)             # as an older version left it
+    assert system.library.suggest_music(seconds=10) == []
+    assert len(system.library.measure_unmeasured_music()) == 1
+    drain(system)
+    assert system.assets.original(track).metadata["music"]["tempo"] in range(96, 105) and system.library.suggest_music(seconds=10)[0]["name"] == "cu.wav"
+    assert system.library.measure_unmeasured_music() == []                     # nothing left to measure

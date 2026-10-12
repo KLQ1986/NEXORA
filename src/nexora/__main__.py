@@ -149,6 +149,7 @@ def main() -> None:
         web = Path(__file__).resolve().parents[2] / "web" / "dist"
         port = args.port or config.port
         print(f"NEXORA: http://127.0.0.1:{port}" + ("" if web.is_dir() else "  (Web UI not built: run `npm run build` in web/)"))
+        system.library.measure_unmeasured_music()        # tracks taken in by an older version are listened to once more
         uvicorn.run(create_app(system, web_dir=web, config=config), host="127.0.0.1", port=port, log_level="warning", timeout_graceful_shutdown=2)
 
 
