@@ -308,6 +308,10 @@ Sự cố trong lượt này: cài `ffmpeg-full` làm Homebrew nâng thư viện
 
 - [x] Adapter Claude đã gọi thật tới API của Anthropic ngày 2026-10-12 bằng khoá của người vận hành: kết nối và xác thực tới nơi, nhưng API từ chối vì khoá chưa gắn với workspace (cần `anthropic_workspace_id`); người vận hành cũng cho biết tài khoản chưa có tiền. Với khoá thứ hai (đã gắn workspace) API nhận khoá và từ chối đúng vì tài khoản hết tiền. Chưa có câu trả lời thật nào từ Claude: việc còn lại duy nhất là nạp tiền cho tài khoản. Hệ thống nay nhận `anthropic_workspace_id`, gọi đúng tên hai kiểu từ chối này (khoá thiếu workspace, hết tiền), và khi mô hình cloud đã chọn không phục vụ được thì việc tự quay về mô hình trên máy, báo một lần ở mục Thông báo. Đã thử đúng tình huống này với khoá thật: câu trả lời đến từ mô hình trên máy
 
+- [x] Kiểm tra kết nối trong `nexora doctor`, hỏi theo cách không tốn tiền: Anthropic (danh sách model) và RunPod (danh sách endpoint). Chạy thật ngày 2026-10-12: cả hai khoá được chấp nhận; tài khoản RunPod chưa có endpoint nào. Lần thử này cũng lộ ra một lỗi thật: cổng vào của RunPod trả 403 (mã 1010) cho chương trình không tự xưng tên, nên adapter RunPod nay gửi kèm tên chương trình
+- [x] Xuất bản dựng sang OpenTimelineIO (`cut.otio`): một clip cho mỗi cảnh trỏ về file gốc, khoảng trống cho câu thiếu hình, hiệu ứng tốc độ, lời dẫn làm tên clip. Chưa mở thử trong Resolve
+- [x] Truy vết một bản dựng: phiên bản kịch bản, với mỗi cảnh là file gốc, mã băm, đoạn dùng, nguồn gốc, các bản dẫn xuất và lần chạy đã tạo ra chúng; với hình sinh bằng AI là prompt, seed, nhà cung cấp
+
 ### Còn lại sau lượt này
 
 Cần thứ ngoài máy này: tài khoản và khoá API của nền tảng (tự đăng, tự lấy số liệu), khoá của nhà cung cấp video AI, khoá Anthropic để chạy thật adapter Claude, dịch vụ tìm kiếm trên toàn bộ web (hiện chỉ tìm trên Wikipedia).

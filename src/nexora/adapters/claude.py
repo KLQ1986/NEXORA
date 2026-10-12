@@ -35,6 +35,21 @@ class ClaudeText(Adapter):
     def environment(self) -> dict:
         return {"model": self._model, "key_present": bool(self._key)}
 
+    def check(self) -> dict:
+        """Whether the key is accepted, asked in a way that costs nothing: the list of models. Says nothing about credit,
+        which the API only reveals when a message is sent."""
+        req = urllib.request.Request(self._host + "/v1/models", headers={"x-api-key": self._key, "anthropic-version": "2023-06-01",
+                                                                         **({"anthropic-workspace-id": self._workspace} if self._workspace else {})})
+        try:
+            with urllib.request.urlopen(req, timeout=20) as r:
+                models = [m.get("id") for m in json.load(r).get("data", [])]
+            return {"ok": True, "detail": f"khoá được chấp nhận; model {self._model} {'có' if self._model in models else 'không có'} trong danh sách"}
+        except urllib.error.HTTPError as err:
+            detail = err.read().decode(errors="replace")
+            return {"ok": False, "detail": "khoá chưa gắn với workspace" if "anthropic-workspace-id" in detail else f"API trả lời {err.code}"}
+        except (urllib.error.URLError, TimeoutError, ConnectionError, ValueError):
+            return {"ok": False, "detail": "không kết nối được tới api.anthropic.com"}
+
     def submit(self, request: Request) -> Result:
         body = {"model": self._model, "max_tokens": int(request.params.get("max_tokens", 500)),
                 "messages": [{"role": "user", "content": request.params["prompt"] + ("\n\nChỉ trả về một đối tượng JSON, không kèm lời giải thích." if request.params.get("json") else "")}]}

@@ -72,6 +72,31 @@ def edl(title: str, shots: list[dict], *, fps: int = 30) -> str:
     return "\n".join(lines) + "\n"
 
 
+def otio(title: str, shots: list[dict], *, fps: int = 30) -> dict:
+    """The cut as an OpenTimelineIO timeline (the .otio JSON form), which Resolve, Premiere and other editors open: one video
+    track with a clip per shot pointing at the original footage and the range used, a gap where a line had no picture, and
+    the line itself as the clip's name and a marker, so the script travels with the cut."""
+    rate = float(fps)
+    time = lambda seconds: {"OTIO_SCHEMA": "RationalTime.1", "rate": rate, "value": float(round(seconds * fps))}
+    span = lambda start, duration: {"OTIO_SCHEMA": "TimeRange.1", "start_time": time(start), "duration": time(duration)}
+    children = []
+    for n, shot in enumerate(shots, 1):
+        if not shot.get("path"):
+            children.append({"OTIO_SCHEMA": "Gap.1", "name": f"{n:02d} {shot['text']}", "source_range": span(0, shot["duration"]), "effects": [], "markers": [], "metadata": {}})
+            continue
+        speed = float(shot.get("speed") or 1.0)
+        children.append({"OTIO_SCHEMA": "Clip.2", "name": f"{n:02d} {shot['text']}", "source_range": span(shot.get("t_in") or 0.0, shot["duration"] * speed),
+                         "effects": [] if speed == 1.0 else [{"OTIO_SCHEMA": "LinearTimeWarp.1", "name": "speed", "effect_name": "LinearTimeWarp", "time_scalar": speed, "metadata": {}}],
+                         "markers": [{"OTIO_SCHEMA": "Marker.2", "name": shot["text"], "color": "PURPLE", "marked_range": span(shot.get("t_in") or 0.0, 0), "metadata": {}}],
+                         "metadata": {"nexora": {k: shot.get(k) for k in ("asset_id", "sound_cue", "live_sound", "focus_x") if shot.get(k) is not None}},
+                         "active_media_reference_key": "DEFAULT_MEDIA",
+                         "media_references": {"DEFAULT_MEDIA": {"OTIO_SCHEMA": "ExternalReference.1", "name": Path(shot["path"]).name, "target_url": Path(shot["path"]).as_uri(),
+                                                                "available_range": None, "available_image_bounds": None, "metadata": {}}}})
+    track = {"OTIO_SCHEMA": "Track.1", "name": "Hình", "kind": "Video", "children": children, "source_range": None, "effects": [], "markers": [], "metadata": {}}
+    return {"OTIO_SCHEMA": "Timeline.1", "name": title, "global_start_time": time(0), "metadata": {"nexora": {"fps": fps}},
+            "tracks": {"OTIO_SCHEMA": "Stack.1", "name": "tracks", "children": [track], "source_range": None, "effects": [], "markers": [], "metadata": {}}}
+
+
 class Distribution:
     def __init__(self, projects: ProjectStore, assets: AssetStore, adapters: AdapterRegistry, export_dir: str | Path):
         self._projects, self._assets, self._adapters, self._exports = projects, assets, adapters, Path(export_dir)
@@ -94,6 +119,38 @@ class Distribution:
         package = {**self.package(render_id), **values}
         (self._exports / render_id / "package.json").write_text(json.dumps(package, ensure_ascii=False, indent=2), encoding="utf-8")
         return package
+
+    def export_otio(self, render_id: str) -> Path:
+        render = self._projects.render(render_id)
+        project = self._projects.project(render["project_id"])
+        shots = [{**shot, "path": str(self._assets.path_of(self._assets.original(shot["asset_id"]))) if shot.get("asset_id") else None} for shot in render["qc"].get("shots", [])]
+        folder = self._exports / render_id
+        folder.mkdir(parents=True, exist_ok=True)
+        out = folder / "cut.otio"
+        out.write_text(json.dumps(otio(project["title"], shots), ensure_ascii=False, indent=2), encoding="utf-8")
+        return out
+
+    def lineage(self, render_id: str) -> dict:
+        """Everything a cut was made from, traced back: the script version, and for each shot the footage, the stretch used, where
+        that footage came from and how it was derived, and for generated pictures the prompt, seed and provider that made them."""
+        render = self._projects.render(render_id)
+        script = self._projects.script(render["script_id"])
+        shots = []
+        for n, (shot, cut) in enumerate(zip(script["shots"], render["qc"].get("shots", [])), 1):
+            entry = {"line": n, "text": shot.text, "duration": cut["duration"], "source": None, "generated": None, "inserts": cut.get("inserts", []), "remote": cut.get("remote", [])}
+            asset = self._assets.asset(cut.get("asset_id") or "")
+            if asset:
+                versions = self._assets.versions(asset["asset_id"])
+                original = next(v for v in versions if v.role == "original")
+                entry["source"] = {"asset_id": asset["asset_id"], "name": self._assets.path_of(original).name, "path": str(self._assets.path_of(original)), "origin": asset["origin"],
+                                   "checksum": original.checksum, "t_in": cut.get("t_in"), "rights": original.metadata.get("rights"),
+                                   "derived": [{"role": v.role, "from": v.parents, "made_by": v.created_by_attempt_id} for v in versions if v.role != "original"]}
+            made = [g for g in self._projects.generations(shot.shot_id) if g["kind"] in ("keyframe", "clip")]
+            if made:
+                entry["generated"] = [{"kind": g["kind"], "prompt": g["prompt"], "seed": g["seed"], "provider": g["provider"], "model": g["model"], "compiler": g["compiler_version"], "quality": g["quality"]} for g in made]
+            shots.append(entry)
+        return {"render_id": render_id, "created_at": render["created_at"], "file": render["path"], "script": {"script_id": script["script_id"], "version": script["version"]},
+                "review": render["review"], "external": bool(render["qc"].get("external")), "shots": shots}
 
     def build_package(self, render_id: str, *, title: str | None = None, description: str | None = None) -> dict:
         render = self._projects.render(render_id)

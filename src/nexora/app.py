@@ -352,6 +352,14 @@ def doctor(system: System, config=None) -> list[dict]:
     add("Giọng đọc tiếng Việt", voices, ", ".join(voices) or "không có", "Tải một giọng tiếng Việt trong Cài đặt > Trợ năng > Nội dung được đọc.")
     missing = [k for k, ok in (env.get("ffmpeg") or {}).get("filters", {}).items() if not ok]
     add("Bộ lọc FFmpeg", not missing, f"đủ ({(env.get('ffmpeg') or {}).get('binary')})" if not missing else f"thiếu {', '.join(missing)}", "Chạy `brew install ffmpeg-full` để có bộ lọc chuyển HDR về SDR; hệ thống tự dùng bản đó khi có.", optional=True)
+    for name, state in system.adapters.checks().items():
+        add(f"Kết nối {name}", state["ok"], state["detail"], "Xem khoá và mã endpoint trong nexora.toml.", optional=True)
+    if config and config.runpod_api_key and not any(n.endswith(".runpod") for n in system.adapters.checks()):
+        from nexora.adapters.runpod import RunPodVideo
+        state = RunPodVideo(config.runpod_api_key, "").check()
+        accepted = "khoá được chấp nhận" in state["detail"]
+        add("Kết nối RunPod", accepted, "khoá được chấp nhận; chưa có mã endpoint nào trong nexora.toml" if accepted else state["detail"],
+            "Xem runpod_api_key trong nexora.toml.", optional=True)
     free = shutil.disk_usage(system.data_dir).free
     add("Ổ đĩa", free > 5 * 1024**3, f"còn trống {free / 1024**3:.0f} GB", "Giải phóng dung lượng hoặc dọn bộ đệm ở mục Hệ thống.")
     conn = sqlite3.connect(system.data_dir / "nexora.db")

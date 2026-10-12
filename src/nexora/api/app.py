@@ -1220,6 +1220,18 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
                 raise HTTPException(422, "Chọn một ảnh của gói và nhập chữ cho nó")
         return system.distribution.set_text(render_id, title=body.get("title"), description=body.get("description"))
 
+    @app.get("/api/v1/renders/{render_id}/otio")
+    def render_otio(render_id: str):
+        if system.projects.render(render_id) is None:
+            raise HTTPException(404, "Không tìm thấy bản dựng")
+        return FileResponse(system.distribution.export_otio(render_id), media_type="application/json", filename="cut.otio")
+
+    @app.get("/api/v1/renders/{render_id}/lineage")
+    def render_lineage(render_id: str):
+        if system.projects.render(render_id) is None:
+            raise HTTPException(404, "Không tìm thấy bản dựng")
+        return system.distribution.lineage(render_id)
+
     @app.get("/api/v1/renders/{render_id}/rights")
     def rights(render_id: str):
         from nexora.app import render_rights

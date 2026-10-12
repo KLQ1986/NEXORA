@@ -167,3 +167,26 @@ def test_a_campaign_shows_what_each_video_brought_and_a_change_is_read_cautiousl
     assert not thin["ready"] and "5 trước và 1 sau" in thin["text"]
     assert client.get("/api/v1/publishing/change", params={"on": "hôm qua"}).status_code == 422
     assert client.delete(f"/api/v1/campaigns/{made['campaign_id']}").json()["campaigns"] == []
+
+
+def test_a_cut_exports_as_an_opentimelineio_timeline_and_its_lineage_can_be_traced(tmp_path):
+    system, _, client, (render,) = packaged(tmp_path, publishers=[])
+    listing = client.get(f"/api/v1/renders/{render}/otio")
+    timeline = listing.json()
+    assert timeline["OTIO_SCHEMA"] == "Timeline.1" and timeline["name"] == "Chợ sáng" and "cut.otio" in listing.headers["content-disposition"]
+    clips = timeline["tracks"]["children"][0]["children"]
+    cut = system.projects.render(render)["qc"]["shots"]
+    assert [c["OTIO_SCHEMA"] for c in clips] == ["Clip.2", "Clip.2"] and clips[0]["name"] == "01 chợ rau củ"
+    assert clips[0]["source_range"]["duration"] == {"OTIO_SCHEMA": "RationalTime.1", "rate": 30.0, "value": float(round(cut[0]["duration"] * 30))}
+    assert clips[0]["source_range"]["start_time"]["value"] == float(round((cut[0]["t_in"] or 0) * 30))
+    assert clips[0]["media_references"]["DEFAULT_MEDIA"]["target_url"].startswith("file://") and clips[0]["media_references"]["DEFAULT_MEDIA"]["target_url"].endswith("a.mp4")
+    from nexora.modules.distribution.package import otio
+    made = otio("x", [{"text": "thiếu hình", "duration": 2.0, "path": None}, {"text": "nhanh", "duration": 2.0, "path": "/f/a.mp4", "t_in": 1.0, "speed": 2.0}])["tracks"]["children"][0]["children"]
+    assert made[0]["OTIO_SCHEMA"] == "Gap.1" and made[1]["effects"][0]["time_scalar"] == 2.0 and made[1]["source_range"]["duration"]["value"] == 120.0      # at double speed, four seconds of source fill two
+
+    trace = client.get(f"/api/v1/renders/{render}/lineage").json()
+    assert trace["script"]["version"] == 1 and trace["review"]["approved"] and [s["line"] for s in trace["shots"]] == [1, 2]
+    source = trace["shots"][0]["source"]
+    assert source["name"] == "a.mp4" and source["origin"] == "self_shot" and len(source["checksum"]) == 64 and {d["role"] for d in source["derived"]} == {"proxy", "thumbnail"}
+    assert all(d["from"] and d["made_by"] for d in source["derived"]) and trace["shots"][0]["generated"] is None
+    assert client.get("/api/v1/renders/rnd_none/lineage").status_code == 404

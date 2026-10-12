@@ -30,6 +30,8 @@ class Pod:
                 body = self.rfile.read(int(self.headers.get("content-length") or 0))
                 if self.headers.get("authorization") != "Bearer rp-key":
                     return self._send(401, {"error": "unauthorized"})
+                if "python-urllib" in (self.headers.get("user-agent") or "").lower():
+                    return self._send(403, {"error": "error code: 1010"})          # as RunPod's front door does to a client that does not name itself
                 if self.path.endswith("/run"):
                     pod.runs.append(json.loads(body)["input"])
                     return self._send(200, {"id": f"job-{len(pod.runs)}", "status": "IN_QUEUE"})
@@ -270,3 +272,23 @@ def test_the_rented_image_endpoint_gets_the_prompt_the_references_and_the_traine
         assert jobs[0]["loras"] == ["https://example.test/mit.safetensors"] and len(jobs[0]["references"]) == 1 and (jobs[0]["prompt"], jobs[0]["seed"], jobs[0]["aspect"]) == ("nxmit an orange cat", 5, "9:16")
     finally:
         server.shutdown()
+
+
+def test_the_connection_check_asks_without_starting_a_job_and_says_whether_the_endpoint_exists(tmp_path):
+    class Rest(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            ok = self.headers.get("authorization") == "Bearer rp-key"
+            self.send_response(200 if ok else 401); self.send_header("content-type", "application/json"); self.end_headers()
+            self.wfile.write(json.dumps([{"id": "ep1", "name": "video"}] if ok else {"error": "no"}).encode())
+        def log_message(self, *a): pass
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Rest)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    rest = f"http://127.0.0.1:{server.server_port}"
+    try:
+        assert RunPodVideo("rp-key", "ep1").check(rest=rest) == {"ok": True, "detail": "khoá được chấp nhận; endpoint ep1 có trên tài khoản"}
+        missing = RunPodVideo("rp-key", "ep9").check(rest=rest)
+        assert not missing["ok"] and "không có trên tài khoản (1 endpoint)" in missing["detail"]
+        assert RunPodVideo("wrong", "ep1").check(rest=rest) == {"ok": False, "detail": "khoá bị từ chối"}
+    finally:
+        server.shutdown()
+    assert RunPodVideo("k", "ep1").check(rest="http://127.0.0.1:9")["detail"] == "không kết nối được tới RunPod"

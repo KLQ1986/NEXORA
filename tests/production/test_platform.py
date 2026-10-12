@@ -64,6 +64,11 @@ def test_the_claude_adapter_speaks_the_messages_api_counts_cost_and_names_its_er
     seen, answers, headers_seen = [], [], []
 
     class Api(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            ok = self.headers.get("x-api-key") == "sk-test"
+            self.send_response(200 if ok else 401); self.send_header("content-type", "application/json"); self.end_headers()
+            self.wfile.write(json.dumps({"data": [{"id": "claude-haiku-5-5"}]} if ok else {"error": {"message": "invalid x-api-key"}}).encode())
+
         def do_POST(self):
             body = json.loads(self.rfile.read(int(self.headers["content-length"])))
             seen.append((self.path, self.headers.get("x-api-key"), self.headers.get("anthropic-version"), body))
@@ -78,6 +83,8 @@ def test_the_claude_adapter_speaks_the_messages_api_counts_cost_and_names_its_er
     try:
         adapter = ClaudeText("sk-test", host=f"http://127.0.0.1:{server.server_port}", input_price=1.0, output_price=5.0)
         assert adapter.describe() == Capability(name="model.claude", operations=("chat",), runs="cloud") and adapter.environment()["key_present"]
+        assert adapter.check() == {"ok": True, "detail": "khoá được chấp nhận; model claude-haiku-5-5 có trong danh sách"} and seen == []          # asked without sending a message
+        assert ClaudeText("wrong", host=f"http://127.0.0.1:{server.server_port}").check() == {"ok": False, "detail": "API trả lời 401"}
         answers.append((200, {"content": [{"type": "text", "text": "```json\n{\"cau\": [\"một\", \"hai\"]}\n```"}], "usage": {"input_tokens": 1000, "output_tokens": 200}, "stop_reason": "end_turn"}))
         result = adapter.submit(Request("chat", params={"prompt": "Viết hai câu.", "json": True, "max_tokens": 300}))
         assert result.outputs["json"] == {"cau": ["một", "hai"]} and result.usage.cost == pytest.approx(0.002) and result.usage.units == 1200

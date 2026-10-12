@@ -121,6 +121,10 @@ class AdapterRegistry:
     def describe(self) -> list[Capability]:
         return [a.describe() for a in self._adapters.values()]
 
+    def checks(self) -> dict:
+        """What each adapter that can test its own connection reports, by adapter name. These make network calls."""
+        return {name: adapter.check() for name, adapter in self._adapters.items() if hasattr(adapter, "check")}
+
     def environment(self) -> dict:
         found = {name: a.environment() for name, a in self._adapters.items()}
         return {name: value for name, value in found.items() if value is not None}

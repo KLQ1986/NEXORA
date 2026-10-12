@@ -45,7 +45,8 @@ class RunPodVideo(Adapter):
 
     def _call(self, method: str, path: str, body: dict | None = None, timeout: float = 60) -> dict:
         req = urllib.request.Request(f"{self._base}{path}", data=json.dumps(body).encode() if body is not None else None, method=method,
-                                     headers={"content-type": "application/json", "authorization": f"Bearer {self._key}"})
+                                     headers={"content-type": "application/json", "authorization": f"Bearer {self._key}", "accept": "application/json",
+                                              "user-agent": "NEXORA/0.1"})         # RunPod's front door answers 403 (code 1010) to a client that does not name itself
         try:
             with urllib.request.urlopen(req, timeout=timeout) as r:
                 return json.load(r)
@@ -56,6 +57,20 @@ class RunPodVideo(Adapter):
             raise AdapterError(ErrorCode.TIMEOUT, "RunPod did not answer in time") from None
         except (urllib.error.URLError, ConnectionError, ValueError) as err:
             raise AdapterError(ErrorCode.UNAVAILABLE, f"RunPod is not reachable: {err}") from None
+
+    def check(self, *, rest: str = "https://rest.runpod.io/v1") -> dict:
+        """Whether RunPod accepts the key and knows this endpoint, asked without starting any job (so without any charge)."""
+        endpoint = self._base.rsplit("/", 1)[-1]
+        req = urllib.request.Request(f"{rest}/endpoints", headers={"authorization": f"Bearer {self._key}", "accept": "application/json", "user-agent": "NEXORA/0.1"})
+        try:
+            with urllib.request.urlopen(req, timeout=20) as r:
+                data = json.load(r)
+        except urllib.error.HTTPError as err:
+            return {"ok": False, "detail": "khoá bị từ chối" if err.code in (401, 403) else f"RunPod trả lời {err.code}"}
+        except (urllib.error.URLError, TimeoutError, ConnectionError, ValueError):
+            return {"ok": False, "detail": "không kết nối được tới RunPod"}
+        known = [e.get("id") for e in (data if isinstance(data, list) else data.get("data", []))]
+        return {"ok": endpoint in known, "detail": f"khoá được chấp nhận; endpoint {endpoint} " + ("có trên tài khoản" if endpoint in known else f"không có trên tài khoản ({len(known)} endpoint)")}
 
     def cancel(self, external_ref: str) -> bool:
         try:
