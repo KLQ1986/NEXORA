@@ -48,21 +48,51 @@ HDR_TRANSFERS = frozenset({"smpte2084", "arib-std-b67"})
 IMAGE_EXT = frozenset({".jpg", ".jpeg", ".png", ".webp"})
 
 
-def ffmpeg_capabilities() -> dict:
+FULL_BUILDS = ("/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg", "/usr/local/opt/ffmpeg-full/bin/ffmpeg")
+# HDR (PQ or HLG, BT.2020) to the SDR every cut is made in: to linear light, to BT.709 primaries, highlights rolled off, back to BT.709 gamma.
+HDR_TO_SDR = "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p"
+
+
+def find_ffmpeg(wanted: str = "") -> str:
+    """The FFmpeg to run: the one named in the settings, else a fuller build if one is installed beside the usual one
+    (it has the filters HDR conversion needs), else whatever `ffmpeg` is on the path."""
+    if wanted:
+        return wanted
+    return next((path for path in FULL_BUILDS if Path(path).is_file()), "ffmpeg")
+
+
+def ffmpeg_capabilities(binary: str = "ffmpeg") -> dict:
     """Which filters and encoders this FFmpeg build has; the first part of the environment check."""
-    filters = run_process(["ffmpeg", "-hide_banner", "-filters"], timeout=30).stdout
-    encoders = run_process(["ffmpeg", "-hide_banner", "-encoders"], timeout=30).stdout
+    filters = run_process([binary, "-hide_banner", "-filters"], timeout=30).stdout
+    encoders = run_process([binary, "-hide_banner", "-encoders"], timeout=30).stdout
     have = {line.split()[1] for line in filters.splitlines() if len(line.split()) > 2}
     enc = {line.split()[1] for line in encoders.splitlines() if len(line.split()) > 2}
     return {
+        "binary": binary,
         "filters": {name: name in have for name in ("blackdetect", "scale", "fps", "zscale", "tonemap", "subtitles", "drawtext", "loudnorm")},
         "encoders": {name: name in enc for name in ("h264_videotoolbox", "hevc_videotoolbox", "libx264")},
     }
 
 
 class FFmpegAdapter(Adapter):
+    def __init__(self, binary: str = ""):
+        self._binary = find_ffmpeg(binary)
+        self._can_tonemap: bool | None = None
+
     def environment(self) -> dict:
-        return ffmpeg_capabilities()
+        return ffmpeg_capabilities(self._binary)
+
+    def _sdr(self, params: dict) -> list[str]:
+        """The filters that bring HDR footage to SDR, when the footage is HDR. Without them HDR footage comes out grey and
+        washed, so a build that cannot do it says so instead of quietly producing that."""
+        if params.get("color_transfer") not in HDR_TRANSFERS:
+            return []
+        if self._can_tonemap is None:
+            have = ffmpeg_capabilities(self._binary)["filters"]
+            self._can_tonemap = have["zscale"] and have["tonemap"]
+        if not self._can_tonemap:
+            raise AdapterError(ErrorCode.UNAVAILABLE, "this footage is HDR and this FFmpeg build cannot convert it: install one with zscale (brew install ffmpeg-full)", retryable=False)
+        return [HDR_TO_SDR]
 
     def describe(self) -> Capability:
         return Capability(name="ffmpeg", operations=("blackdetect", "freezedetect", "proxy", "thumbnail", "frames", "segment", "concat", "loudness", "envelope", "enhance", "silencedetect"), runs="local", supports_cancel=True)
@@ -79,7 +109,7 @@ class FFmpegAdapter(Adapter):
         return getattr(self, f"_{request.operation}")(src, request.params, timeout)
 
     def _run(self, args: list[str], timeout: float, what: str):
-        done = run_process(["ffmpeg", "-hide_banner", "-nostdin", "-nostats", *args], timeout=timeout)
+        done = run_process([self._binary, "-hide_banner", "-nostdin", "-nostats", *args], timeout=timeout)
         if done.returncode != 0:
             raise AdapterError(ErrorCode.INVALID_REQUEST, f"ffmpeg {what} failed: {done.stderr.strip()[-300:]}")
         return done
@@ -107,7 +137,7 @@ class FFmpegAdapter(Adapter):
         out = Path(params["out"])
         height = int(params.get("max_height", 720))
         partial = out.with_name(out.stem + ".partial" + out.suffix)     # written under another name, renamed when complete
-        common = ["-y", "-i", str(src), "-vf", f"scale=-2:'min({height},ih)'", "-pix_fmt", "yuv420p", "-fps_mode", "cfr"]
+        common = ["-y", "-i", str(src), "-vf", ",".join([*self._sdr(params), f"scale=-2:'min({height},ih)'"]), "-pix_fmt", "yuv420p", "-fps_mode", "cfr"]
         audio = ["-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", str(partial)]
         bitrate = params.get("video_bitrate", "1200k")
         encoders = [["-c:v", params.get("encoder", "h264_videotoolbox"), "-b:v", bitrate],
@@ -133,7 +163,7 @@ class FFmpegAdapter(Adapter):
         out_dir.mkdir(parents=True, exist_ok=True)
         for old in out_dir.glob("f_*.jpg"):
             old.unlink()
-        self._run(["-y", "-i", str(src), "-vf", f"fps={fps},scale={int(params.get('width', 448))}:-2", "-q:v", "4", str(out_dir / "f_%05d.jpg")],
+        self._run(["-y", "-i", str(src), "-vf", ",".join([*self._sdr(params), f"fps={fps},scale={int(params.get('width', 448))}:-2"]), "-q:v", "4", str(out_dir / "f_%05d.jpg")],
                   timeout, "frames")
         return Result(outputs={"frames": [str(p) for p in sorted(out_dir.glob("f_*.jpg"))], "fps": fps})
 
@@ -166,6 +196,7 @@ class FFmpegAdapter(Adapter):
                      f"zoompan=z='1+0.08*on/{frames}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={frames}:s={w}x{h}:fps={fps}")
         before = []
         if not still and src is not None:
+            before += self._sdr(params)
             if speed != 1.0:
                 before.append(f"setpts=PTS/{speed}")
             if params.get("stabilise"):
@@ -236,13 +267,13 @@ class FFmpegAdapter(Adapter):
         """A larger or smoother copy of a clip. Upscaling here is a careful resample with a little sharpening, not a learned
         model: it makes footage fill a bigger frame cleanly, it does not invent detail. Smoothing makes in-between frames
         by motion estimation, which suits slow, steady shots and can smear fast ones."""
-        out, filters = Path(params["out"]), []
+        out, filters = Path(params["out"]), list(self._sdr(params))
         if params.get("smooth_fps"):
             filters.append(f"minterpolate=fps={int(params['smooth_fps'])}:mi_mode=mci:mc_mode=aobmc:vsbmc=1")
         factor = int(params.get("upscale") or 1)
         if factor > 1:
             filters.append(f"scale=iw*{factor}:ih*{factor}:flags=lanczos,unsharp=5:5:0.6:5:5:0.0")
-        if not filters:
+        if not params.get("smooth_fps") and factor <= 1:
             raise AdapterError(ErrorCode.INVALID_REQUEST, "nothing to enhance: give upscale or smooth_fps")
         partial = out.with_name(out.stem + ".partial" + out.suffix)
         self._run(["-y", "-i", str(src), "-vf", ",".join(filters), "-c:v", "libx264", "-preset", "medium", "-crf", "17", "-pix_fmt", "yuv420p", "-c:a", "copy", str(partial)], timeout, "enhance")
@@ -275,6 +306,6 @@ class FFmpegAdapter(Adapter):
 
     def _thumbnail(self, src: Path, params: dict, timeout: float) -> Result:
         out = Path(params["out"])
-        self._run(["-y", "-ss", str(params.get("at", 0.0)), "-i", str(src), "-frames:v", "1", "-vf", "scale=-2:'min(360,ih)'",
+        self._run(["-y", "-ss", str(params.get("at", 0.0)), "-i", str(src), "-frames:v", "1", "-vf", ",".join([*self._sdr(params), "scale=-2:'min(360,ih)'"]),
                    "-q:v", "3", str(out)], timeout, "thumbnail")
         return Result(files=(str(out),))

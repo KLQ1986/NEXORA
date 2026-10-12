@@ -639,6 +639,8 @@ function Detail({ id, back }: { id: string; back: () => void }) {
               <input name="url" type="url" aria-label="Địa chỉ trang web cần đọc" placeholder="Dán địa chỉ bài viết để hệ thống đọc" className="min-w-0 flex-1 px-3" />
               <Button type="submit" disabled={busy} title="Chỉ địa chỉ này được gửi ra ngoài máy"><Icon name="globe" size={14} />Đọc</Button>
             </form>
+            <div className="flex flex-wrap items-center gap-2 text-[12.5px] text-faint"><Button size="sm" disabled={busy} title="Chỉ tên dự án được gửi đi làm từ khoá tìm kiếm" onClick={() => run(async () => { const r = await post<{ found: number }>(`/api/v1/projects/${id}/sources/find`, {}); if (!r.found) setNote("Không tìm thấy bài nào trên Wikipedia cho tên dự án này."); })}><Icon name="search" size={14} />Tự tìm nguồn</Button>
+              <span>Tìm trên Wikipedia theo tên dự án rồi đọc tối đa 3 bài.</span></div>
             {p.script && <div className="flex flex-wrap gap-2 border-t border-line pt-3">
               <Button size="sm" kind="ai" disabled={busy} onClick={() => run(async () => { const r = await post<{ found: number }>(`/api/v1/projects/${id}/facts/find`); if (!r.found) setNote("Không thấy câu nào nêu dữ kiện cần kiểm chứng."); })}>Tìm câu nêu dữ kiện</Button>
               <Button size="sm" disabled={busy || !p.shots.some((s) => s.is_fact)} title={p.shots.some((s) => s.is_fact) ? "So từng câu nêu dữ kiện với các nguồn ở trên" : "Chưa có câu nào được đánh dấu là dữ kiện"} onClick={() => run(() => post(`/api/v1/projects/${id}/facts/check`))}>Đối chiếu với nguồn</Button>
@@ -802,10 +804,11 @@ export default function Projects({ sub, go }: { sub: string | null; go: (to: str
   const { data: agent, reload: reloadAgent } = usePoll<{ tasks: AgentTask[] }>("/api/v1/agent/tasks", 4000);
   const [agentNote, setAgentNote] = useState<string | null>(null);
   const [urls, setUrls] = useState("");
+  const [seek, setSeek] = useState(false);
   useEffect(() => { if (!sub && new URLSearchParams(window.location.search).has("moi")) setMode("new"); }, [sub, window.location.search]);
   if (sub) return <Detail key={sub} id={sub} back={() => go("/du-an")} />;
   const create = async () => { const p = await post<Project>("/api/v1/projects", { title: title.trim(), format }); setTitle(""); reload(); go(`/du-an/${p.project_id}`); };
-  const assign = async () => { setAgentNote(null); try { const t = await post<AgentTask>("/api/v1/agent/tasks", { goal: goal.trim(), format, urls: urls.split("\n").map((u) => u.trim()).filter(Boolean) }); setGoal(""); setUrls(""); reloadAgent(); reload(); go(`/du-an/${t.project_id}`); } catch (err) { setAgentNote((err as Error).message); } };
+  const assign = async () => { setAgentNote(null); try { const t = await post<AgentTask>("/api/v1/agent/tasks", { goal: goal.trim(), format, find_sources: seek, urls: urls.split("\n").map((u) => u.trim()).filter(Boolean) }); setGoal(""); setUrls(""); reloadAgent(); reload(); go(`/du-an/${t.project_id}`); } catch (err) { setAgentNote((err as Error).message); } };
   const working = new Map((agent?.tasks ?? []).filter((t) => t.status === "working" || t.status === "waiting_operator").map((t) => [t.project_id, t]));
   const setLook = (v: "grid" | "list") => { setView(v); try { localStorage.setItem("nx.projects.view", v); } catch { /* fine */ } };
   const formats = <Seg label="Khung hình" value={format} onChange={setFormat} items={Object.entries(FORMATS) as [string, string][]} />;
@@ -836,6 +839,7 @@ export default function Projects({ sub, go }: { sub: string | null; go: (to: str
             <input id="goal" autoFocus value={goal} onChange={(e) => setGoal(e.target.value)} placeholder="Ví dụ: một phút về buổi sáng ở chợ Hội An" className="h-10 min-w-0 flex-1 px-3" />
             {formats}<Button kind="primary" disabled={!goal.trim()} onClick={assign}>Giao việc</Button>
           </div>
+          <label className="mt-3 flex items-center gap-2 text-[13px]"><input type="checkbox" checked={seek} onChange={(e) => setSeek(e.target.checked)} />Để trợ lý tự tìm nguồn trên Wikipedia rồi đối chiếu dữ kiện</label>
           <details className="mt-3 text-[13px]"><summary className="cursor-pointer list-none text-accent">Cho trợ lý đọc trước vài bài viết</summary>
             <textarea value={urls} onChange={(e) => setUrls(e.target.value)} rows={3} aria-label="Địa chỉ các bài viết, mỗi dòng một địa chỉ" placeholder={"Mỗi dòng một địa chỉ, tối đa 5\nhttps://…"} className="mono mt-2 w-full p-2.5 text-[12.5px]" />
             <p className="mt-1 text-[12px] text-faint">Trợ lý đọc các trang này, rồi đối chiếu những câu nêu dữ kiện trong kịch bản với chúng. Chỉ địa chỉ được gửi ra ngoài máy.</p></details>

@@ -99,6 +99,8 @@ export type Experiment = { experiment_id: string; question: string; metric: stri
   variants: { publication_id: string; label: string; title: string; target: string; value: number | null }[] };
 export type Publishing = { targets: { target: string; label: string; manual: boolean }[]; publications: Publication[]; due: { publication_id: string; title: string; target: string; mark: number }[];
   experiments: Experiment[]; breakdown: { kind: string; name: string; videos: number; median: number }[] };
+export type Campaign = { campaign_id: string; name: string; metric: string; target: number; starts: string | null; ends: string | null; reached: number; share: number | null; published: number; late: number;
+  pace: { time_gone: number; on_pace: boolean; text: string } | null; videos: { project_id: string; title: string; due_date: string | null; published: boolean; value: number; late: boolean }[] };
 export type Rights = { items: { asset_id: string | null; name: string; origin: string; ok: boolean; note: string }[]; blockers: string[]; disclosures: string[]; clear: boolean; override_reason?: string | null };
 export type EvalRun = { run_id: string; created_at: number; cases: number; first: number; top3: number; config: Record<string, unknown>; change?: { first: number; top3: number; regression: boolean; lost: string[]; config: Record<string, [unknown, unknown]> } };
 export type Package = { rights?: Rights; checks?: Record<string, boolean>; captions_vtt?: string; translations?: Record<string, string>; title: string; description: string; thumbnails: string[]; thumbnail: string; folder: string; synthetic_content: boolean; captions: string; video: string };

@@ -144,7 +144,7 @@ class Library:
         if shutil.disk_usage(self._media).free < self._min_free:
             raise AdapterError(ErrorCode.INSUFFICIENT_STORAGE, f"less than {self._min_free} bytes free for derived media")
         out = self._derived_path(original, f"_enhanced_{wanted.get('upscale', 1)}x_{wanted.get('smooth_fps') or 0}.mp4")
-        self._adapters.submit("ffmpeg", Request("enhance", inputs={"path": str(path)}, params={"out": str(out), **wanted}, attempt_id=ctx.claim.attempt_id))
+        self._adapters.submit("ffmpeg", Request("enhance", inputs={"path": str(path)}, params={"out": str(out), **wanted, "color_transfer": original.metadata.get("probe", {}).get("color_transfer")}, attempt_id=ctx.claim.attempt_id))
         version_id = self._assets.add_version(ctx.subject_ref, out, role="enhanced", parents=[original.version_id], attempt_id=ctx.claim.attempt_id, metadata=wanted)
         return {"enhanced_version_id": version_id, **wanted}
 
@@ -259,7 +259,7 @@ class Library:
         if shutil.disk_usage(self._media).free < self._min_free:
             raise AdapterError(ErrorCode.INSUFFICIENT_STORAGE, f"less than {self._min_free} bytes free for derived media")
         out = self._derived_path(original, "_proxy.mp4")
-        self._adapters.submit("ffmpeg", Request("proxy", inputs={"path": str(path)}, params={"out": str(out), "max_height": 720},
+        self._adapters.submit("ffmpeg", Request("proxy", inputs={"path": str(path)}, params={"out": str(out), "max_height": 720, "color_transfer": original.metadata.get("probe", {}).get("color_transfer")},
                                                attempt_id=ctx.claim.attempt_id))
         version_id = self._assets.add_version(ctx.subject_ref, out, role="proxy", parents=[original.version_id],
                                               attempt_id=ctx.claim.attempt_id, metadata={"max_height": 720})
@@ -275,7 +275,7 @@ class Library:
         start, end = ranges[0]
         out = self._derived_path(original, "_thumb.jpg")
         self._adapters.submit("ffmpeg", Request("thumbnail", inputs={"path": str(path)},
-                                               params={"out": str(out), "at": round(start + (end - start) * 0.1, 3)},
+                                               params={"out": str(out), "at": round(start + (end - start) * 0.1, 3), "color_transfer": original.metadata.get("probe", {}).get("color_transfer")},
                                                attempt_id=ctx.claim.attempt_id))
         version_id = self._assets.add_version(ctx.subject_ref, out, role="thumbnail", parents=[original.version_id],
                                               attempt_id=ctx.claim.attempt_id)

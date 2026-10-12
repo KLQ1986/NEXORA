@@ -25,6 +25,7 @@ class Config:
     pollinations: bool = True
     pollinations_token: str = ""
     publish_folder: str = "~/Movies/NEXORA"
+    ffmpeg_binary: str = ""
     anthropic_api_key: str = ""
     claude_model: str = "claude-haiku-5-5"
     claude_input_price: float = 0.0
@@ -63,6 +64,7 @@ speech_language = "vi"            # the language spoken in the footage
 pollinations = true               # stills from Pollinations (only the prompt leaves this machine); without a token only a few stills at a time
 pollinations_token = ""           # a token from a Pollinations account lifts that limit
 publish_folder = "~/Movies/NEXORA"   # where "publish to folder" puts finished packages; empty turns it off
+ffmpeg_binary = ""                # empty: a fuller build (brew install ffmpeg-full) if installed, else the ffmpeg on the path. HDR footage needs the fuller build
 anthropic_api_key = ""            # a key turns on Claude for text work; the ANTHROPIC_API_KEY environment variable does the same. Footage is never sent
 claude_model = "claude-haiku-5-5"
 claude_input_price = 0.0          # USD per million input tokens, for the cost record; take the figure from your Anthropic price list

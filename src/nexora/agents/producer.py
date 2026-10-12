@@ -46,13 +46,13 @@ class Producer:
 
     # ------------------------------------------------------------------ tasks
     def start(self, goal: str, *, title: str | None = None, format: str = "landscape", lines: int = 5, use_stock: bool = True,
-              urls: list[str] | None = None, critique: bool = True) -> str:
+              urls: list[str] | None = None, critique: bool = True, find_sources: bool = False) -> str:
         project_id = self._planning.create_project(title or goal[:60], format=format)
         task_id, now = new_id("tsk"), time.time()
         with db.write(self._conn) as c:
             c.execute("INSERT INTO agent_tasks (task_id, project_id, goal, status, step, options, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
-                      (task_id, project_id, goal, "working", "research" if urls else "write",
-                       json.dumps({"lines": lines, "use_stock": use_stock, "urls": list(urls or [])[:MAX_SOURCES], "critique": critique, "steps": 0, "revisions": 0}), now, now))
+                      (task_id, project_id, goal, "working", "research" if urls or find_sources else "write",
+                       json.dumps({"lines": lines, "use_stock": use_stock, "urls": list(urls or [])[:MAX_SOURCES], "critique": critique, "find_sources": find_sources, "steps": 0, "revisions": 0}), now, now))
         self._say(task_id, LEAD, f"Nhận việc: {goal}")
         return task_id
 
@@ -118,6 +118,14 @@ class Producer:
                     read += 1
                 except AdapterError as err:
                     self._say(task_id, RESEARCHER, f"Không đọc được {url}: {err.message or err.code.value}")
+            if task["options"].get("find_sources") and read < MAX_SOURCES:
+                try:
+                    found = self._planning.find_sources(project_id, task["goal"], limit=min(3, MAX_SOURCES - read))
+                    for source in found:
+                        self._say(task_id, RESEARCHER, f"Tự tìm và đọc “{source['title']}” ({source['publisher']}).")
+                    read += len(found)
+                except AdapterError as err:
+                    self._say(task_id, RESEARCHER, f"Không tự tìm được nguồn: {err.message or err.code.value}")
             self._say(task_id, RESEARCHER, f"Có {read} nguồn để đối chiếu dữ kiện.")
             self._move(task_id, step="write")
             return True

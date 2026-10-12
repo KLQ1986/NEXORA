@@ -283,11 +283,20 @@ Platform core (177 test đạt; đã bấm thử trên giao diện):
 - [x] Mức tự chủ A0 đến A4. Mức 2 trở lên phải được "kiếm" bằng lịch sử duyệt của chính người vận hành, đọc từ nhật ký sự kiện. Từ chối một bản dựng khi đang ở mức 3 hoặc 4 thì hệ thống tự hạ về mức 2 và báo
 - [x] Mọi adapter (13 cái) đi qua cùng một bài kiểm tra hợp đồng; bốn adapter chạm ra ngoài máy đều bị chế độ riêng tư chặn
 
+### Làm tiếp cùng ngày (183 test đạt)
+
+- [x] Tự tìm nguồn: tìm trên Wikipedia (tiếng Việt trước, rồi tiếng Anh) theo tên dự án hoặc mục tiêu của trợ lý, đọc tối đa 3 bài vào nguồn của dự án. Đã thử với Wikipedia thật. Không tìm trên toàn bộ web
+- [x] Chuyển HDR về SDR ở bản xem, khung hình cho mô hình, ảnh đại diện và bản dựng. Cần bản FFmpeg đầy đủ (`brew install ffmpeg-full`, đã cài); hệ thống tự dùng bản đó khi có. Đã thử với clip HDR10 tự tạo: hình sau chuyển đổi gần hình gốc hơn rõ rệt nhưng còn tối hơn hình gốc, việc chỉnh đường cong để dành cho giai đoạn tối ưu
+- [x] Chiến dịch: nhóm video, mục tiêu, khoảng thời gian, tiến độ so với thời gian đã qua, video quá ngày
+- [x] So trước và sau một thay đổi trong cách làm: chỉ đọc khi mỗi bên có từ 3 video, luôn ghi rõ là không cho biết nguyên nhân
+
+Sự cố trong lượt này: cài `ffmpeg-full` làm Homebrew nâng thư viện x265, khiến `ffmpeg` sẵn có (8.1.2) không chạy được. Đã sửa bằng `brew upgrade ffmpeg` (nay là 9.0.2); toàn bộ test chạy lại đạt trên bản mới.
+
 ### Còn lại sau lượt này
 
-Cần thứ ngoài máy này: tài khoản và khoá API của nền tảng (tự đăng, tự lấy số liệu), khoá của nhà cung cấp video AI, khoá Anthropic để chạy thật adapter Claude, dịch vụ tìm kiếm web (tự tìm nguồn).
+Cần thứ ngoài máy này: tài khoản và khoá API của nền tảng (tự đăng, tự lấy số liệu), khoá của nhà cung cấp video AI, khoá Anthropic để chạy thật adapter Claude, dịch vụ tìm kiếm trên toàn bộ web (hiện chỉ tìm trên Wikipedia).
 
-Cần công cụ chưa có trên máy: mô hình khớp khẩu hình, FFmpeg có bộ lọc zscale (HDR về SDR), công cụ huấn luyện mô hình nhân vật, mô hình phóng to hình.
+Cần công cụ chưa có trên máy: mô hình khớp khẩu hình, công cụ huấn luyện mô hình nhân vật, mô hình phóng to hình.
 
 Chạy thử một lần với mô hình thật (qwen2.5vl:7b) ngày 2026-10-12: vai phản biện chỉ chép lại từng câu thay vì nêu vấn đề (hệ thống nay bỏ những "nhận xét" trùng với câu trong kịch bản), và vai tìm dữ kiện đánh dấu cả bốn câu tả cảnh là dữ kiện. Hai việc chữ này cần mô hình viết tốt hơn mô hình nhìn 7B; đây là lý do có bộ định tuyến mô hình.
 

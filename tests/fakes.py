@@ -119,10 +119,14 @@ class FakeWeb(Adapter):
         self.pages = pages
 
     def describe(self) -> Capability:
-        return Capability(name="web", operations=("read",), runs="cloud")
+        return Capability(name="web", operations=("read", "search"), runs="cloud")
 
     def submit(self, request: Request) -> Result:
         from nexora.core.adapter import AdapterError, ErrorCode
+        if request.operation == "search":
+            words = set(request.inputs["query"].lower().split())
+            hits = [{"title": page.get("title", url), "url": url, "snippet": "", "language": "vi"} for url, page in self.pages.items() if words & set(page.get("title", "").lower().split())]
+            return Result(outputs={"results": (hits + [{"title": "Trang hỏng", "url": "https://example.test/hong", "snippet": "", "language": "vi"}])[:request.params.get("limit", 3)]})
         url = request.inputs["url"]
         if url not in self.pages:
             raise AdapterError(ErrorCode.INVALID_REQUEST, "the page answered 404")

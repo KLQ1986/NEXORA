@@ -195,7 +195,7 @@ def capabilities(system: "System") -> list[dict]:
 def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Adapter | None = None,
           segment_seconds: float = 12.0, voice: Adapter | None = None, match_threshold: float = 0.5, judge: bool = True,
           generators: list[Adapter] | None = None, stock: Adapter | None = None, desktop: Adapter | None = None, voice_name: str = "Linh",
-          web: Adapter | None = None, speech: Adapter | None = None, publishers: list[Adapter] | None = None, cloud_models: list[Adapter] | None = None) -> System:
+          ffmpeg_binary: str = "", web: Adapter | None = None, speech: Adapter | None = None, publishers: list[Adapter] | None = None, cloud_models: list[Adapter] | None = None) -> System:
     """`model` is the adapter for vision, reasoning and embeddings; without one, footage is ingested but not understood."""
     data_dir = Path(data_dir).resolve()          # tools resolve relative paths differently; keep every path absolute
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -203,7 +203,7 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     orch, assets = Orchestrator(db_path), AssetStore(db_path)
     adapters = AdapterRegistry()
     adapters.register(FFprobeAdapter())
-    adapters.register(FFmpegAdapter())
+    adapters.register(FFmpegAdapter(ffmpeg_binary))
     adapters.register(CaptionAdapter())
     if voice is not None:
         adapters.register(voice)
@@ -301,7 +301,7 @@ def build_from_config(config, **overrides) -> System:
     from nexora.adapters.speech import WhisperCpp
     from nexora.adapters.voice import SayVoice
     from nexora.adapters.web import WebReader
-    return build(config.data_dir, min_free_bytes=int(config.min_free_gb * 1024**3), segment_seconds=config.segment_seconds, judge=config.judge,
+    return build(config.data_dir, ffmpeg_binary=config.ffmpeg_binary, min_free_bytes=int(config.min_free_gb * 1024**3), segment_seconds=config.segment_seconds, judge=config.judge,
                  model=OllamaAdapter(host=config.ollama_host, vision_model=config.vision_model, embed_model=config.embed_model,
                                      judge_model=config.judge_model, writer_model=config.writer_model),
                  voice=SayVoice(), voice_name=config.voice, match_threshold=config.match_threshold,
@@ -334,7 +334,7 @@ def doctor(system: System, config=None) -> list[dict]:
     voices = (env.get("voice") or {}).get("vietnamese_voices", [])
     add("Giọng đọc tiếng Việt", voices, ", ".join(voices) or "không có", "Tải một giọng tiếng Việt trong Cài đặt > Trợ năng > Nội dung được đọc.")
     missing = [k for k, ok in (env.get("ffmpeg") or {}).get("filters", {}).items() if not ok]
-    add("Bộ lọc FFmpeg", not missing, "đủ" if not missing else f"thiếu {', '.join(missing)}", "Cài bản FFmpeg đầy đủ hơn nếu cần chuyển HDR hoặc vẽ chữ bằng FFmpeg.", optional=True)
+    add("Bộ lọc FFmpeg", not missing, f"đủ ({(env.get('ffmpeg') or {}).get('binary')})" if not missing else f"thiếu {', '.join(missing)}", "Chạy `brew install ffmpeg-full` để có bộ lọc chuyển HDR về SDR; hệ thống tự dùng bản đó khi có.", optional=True)
     free = shutil.disk_usage(system.data_dir).free
     add("Ổ đĩa", free > 5 * 1024**3, f"còn trống {free / 1024**3:.0f} GB", "Giải phóng dung lượng hoặc dọn bộ đệm ở mục Hệ thống.")
     conn = sqlite3.connect(system.data_dir / "nexora.db")

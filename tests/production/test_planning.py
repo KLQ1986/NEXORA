@@ -190,3 +190,48 @@ def test_sources_facts_critique_radar_and_the_calendar_are_reachable_through_the
     assert (row["due_date"], row["stage"], row["ready"]) == ("2026-10-20", "Có kịch bản", False)
     radar = client.post("/api/v1/radar/topics", json={"topics": ["chợ", "chợ", " "]}).json()
     assert radar["topics"] == ["chợ"] and radar["watched"][0]["verdict"] == "chưa có hình" and client.get("/api/v1/radar").json()["topics"] == ["chợ"]
+
+
+def test_sources_are_found_by_subject_read_in_and_a_page_that_cannot_be_read_is_passed_over(tmp_path):
+    system, model = make(tmp_path)
+    client = TestClient(create_app(system))
+    project = client.post("/api/v1/projects", json={"title": "Chợ Bến Thành", "lines": ["Chợ Bến Thành xây xong năm 1914."]}).json()["project_id"]
+    view = client.post(f"/api/v1/projects/{project}/sources/find", json={}).json()
+    assert view["found"] == 1 and [s["title"] for s in view["research"]] == ["Chợ Bến Thành"]         # the broken page in the results was skipped
+    assert client.post(f"/api/v1/projects/{project}/sources/find", json={"query": "không liên quan gì"}).json()["found"] == 0
+    system.orch.set_setting("privacy_local_only", "1")
+    assert client.post(f"/api/v1/projects/{project}/sources/find", json={}).status_code == 409
+    system.orch.set_setting("privacy_local_only", "0")
+
+    model.script = ["cá tươi trên sạp"]
+    system.library.ingest(make_video(tmp_path / "footage.mp4", picture=8))
+    while system.worker.run_once():
+        pass
+    task_id = system.producer.start("Chợ Bến Thành buổi sáng", find_sources=True, use_stock=False)
+    settle(system)
+    log = system.producer.task(task_id)["log"]
+    assert "Tự tìm và đọc “Chợ Bến Thành”" in log[1]["text"] and log[2]["text"] == "Có 1 nguồn để đối chiếu dữ kiện."
+
+
+def test_the_encyclopedia_search_asks_in_vietnamese_first_and_builds_addresses_that_can_be_read(tmp_path):
+    import json as js
+    asked = []
+
+    class Wiki(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            asked.append(self.path)
+            body = {"query": {"search": [{"title": "Chợ Bến Thành", "snippet": "Một <span class=\"searchmatch\">ngôi chợ</span> ở Sài Gòn"}]}}
+            self.send_response(200); self.send_header("content-type", "application/json"); self.end_headers(); self.wfile.write(js.dumps(body).encode())
+        def log_message(self, *a): pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Wiki)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        reader = WebReader(public_only=False, wiki=f"http://127.0.0.1:{server.server_port}/{{language}}")
+        results = reader.submit(Request("search", inputs={"query": "chợ Bến Thành"}, params={"limit": 2})).outputs["results"]
+        assert [r["language"] for r in results] == ["vi", "en"] and results[0]["snippet"] == "Một ngôi chợ ở Sài Gòn"
+        assert results[0]["url"].endswith("/vi/wiki/Ch%E1%BB%A3_B%E1%BA%BFn_Th%C3%A0nh") and "srsearch=ch" in asked[0] and asked[0].startswith("/vi/w/api.php")
+        with pytest.raises(AdapterError):
+            reader.submit(Request("search", inputs={"query": " "}))
+    finally:
+        server.shutdown()

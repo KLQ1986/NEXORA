@@ -473,7 +473,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         task_id = system.producer.start(goal, format=body.get("format") if body.get("format") in ("landscape", "portrait", "square") else "landscape",
                                         lines=max(2, min(12, int(body.get("lines", 5)))), use_stock=bool(body.get("use_stock", True)),
                                         urls=[u for u in (str(u).strip() for u in body.get("urls") or []) if u.lower().startswith(("http://", "https://"))],
-                                        critique=bool(body.get("critique", True)))
+                                        critique=bool(body.get("critique", True)), find_sources=bool(body.get("find_sources", False)))
         return system.producer.task(task_id)
 
     @app.post("/api/v1/control/desktop-notifications")
@@ -914,6 +914,13 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         planning_call(lambda: system.planning.read_source(project_id, url))
         return project_view(need_project(project_id))
 
+    @app.post("/api/v1/projects/{project_id}/sources/find")
+    def find_sources(project_id: str, body: dict):
+        """Look the subject up in an encyclopedia and read what is found into the project's sources."""
+        project = need_project(project_id)
+        found = planning_call(lambda: system.planning.find_sources(project_id, str(body.get("query") or project["title"]).strip()))
+        return {**project_view(need_project(project_id)), "found": len(found)}
+
     @app.post("/api/v1/projects/{project_id}/facts/find")
     def find_facts(project_id: str):
         current_script_id(project_id)
@@ -1141,6 +1148,30 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         if system.publishing.publication(publication_id) is None:
             raise HTTPException(404, "Không có bản đăng này")
         return system.publishing.forecast(publication_id)
+
+    @app.get("/api/v1/campaigns")
+    def campaigns():
+        return {"campaigns": system.publishing.campaigns()}
+
+    @app.post("/api/v1/campaigns", status_code=201)
+    def save_campaign(body: dict):
+        try:
+            return system.publishing.save_campaign(str(body.get("name", "")), metric=str(body.get("metric") or "views"), target=float(body.get("target") or 0), starts=body.get("starts") or None,
+                                                   ends=body.get("ends") or None, project_ids=[str(p) for p in body.get("projects") or []], campaign_id=body.get("campaign_id") or None)
+        except (TypeError, ValueError):
+            raise HTTPException(422, "Chiến dịch cần tên, một con số mục tiêu không âm và ngày dạng năm-tháng-ngày")
+
+    @app.delete("/api/v1/campaigns/{campaign_id}")
+    def delete_campaign(campaign_id: str):
+        system.publishing.delete_campaign(campaign_id)
+        return campaigns()
+
+    @app.get("/api/v1/publishing/change")
+    def effect_of_change(on: str, metric: str = "views"):
+        try:
+            return system.publishing.effect_of_change(on, metric=metric if metric in ("views", "likes", "comments", "shares", "watch_seconds") else "views")
+        except ValueError:
+            raise HTTPException(422, "Ngày phải có dạng năm-tháng-ngày")
 
     @app.post("/api/v1/experiments", status_code=201)
     def create_experiment(body: dict):

@@ -251,7 +251,10 @@ class Edit:
             inserts, focus = [], 0.5
             if has_picture:
                 path, checksum, t_in = self._source(sel.asset_id, sel.t_in, duration * speed, proxy=preview, exact=live)
-                draft = draft or not self._assets.path_of(self._assets.original(sel.asset_id)).is_file()      # cut from the proxy: good to judge, not to publish
+                source_original = self._assets.original(sel.asset_id)
+                draft = draft or not self._assets.path_of(source_original).is_file()      # cut from the proxy: good to judge, not to publish
+                # Only the camera file can still be HDR: the proxy and an enhanced copy were brought to SDR when they were made.
+                treat["color_transfer"] = source_original.metadata.get("probe", {}).get("color_transfer") if path == str(self._assets.path_of(source_original)) else None
                 focus = self._focus(sel, path, checksum, t_in, duration) if fill == "cover" else 0.5
                 for ins in sel.extras.get("inserts", []):
                     at = round(ins["at"] * line["duration"], 2)

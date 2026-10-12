@@ -138,3 +138,32 @@ def test_titles_are_suggested_with_what_can_be_measured_and_a_frame_becomes_a_po
     assert made.size == base.size and made.convert("L").getextrema()[1] > 240                     # white letters are on it
     assert client.patch(f"/api/v1/renders/{render}/package", json={"poster_text": "x", "base": "khong-co.jpg"}).status_code == 422
     assert client.get(f"/api/v1/renders/{render}/package/poster_1.jpg").status_code == 200
+
+
+def test_a_campaign_shows_what_each_video_brought_and_a_change_is_read_cautiously(tmp_path):
+    system, _, client, renders = packaged(tmp_path, publishers=[], titles=("A", "B", "C", "D", "E", "F", "G"))
+    projects = [system.projects.render(r)["project_id"] for r in renders]
+    now = time.time()
+    day = lambda offset: time.strftime("%Y-%m-%d", time.localtime(now + offset * 86400))
+    for i, (render, views) in enumerate(zip(renders[:6], (100, 110, 90, 300, 320, 280))):
+        pub = client.post(f"/api/v1/renders/{render}/publish", json={"target": "youtube", "url": f"https://youtu.be/{i}"}).json()["publication_id"]
+        published = now - (20 - i * 3) * 86400                       # three old videos, then three recent ones
+        system.publishing._set(pub, published_at=published)
+        system.publishing.add_snapshot(pub, {"views": views}, at=published + 24 * HOUR)
+    client.patch(f"/api/v1/projects/{projects[6]}", json={"due_date": day(-2)})          # planned, overdue, not published
+
+    assert client.post("/api/v1/campaigns", json={"name": " ", "target": 10}).status_code == 422
+    assert client.post("/api/v1/campaigns", json={"name": "Tháng chợ", "target": 10, "starts": "20/10"}).status_code == 422
+    made = client.post("/api/v1/campaigns", json={"name": "Tháng chợ", "target": 2000, "starts": day(-10), "ends": day(10), "projects": [projects[3], projects[4], projects[6], "prj_none", projects[3]]}).json()
+    assert [v["title"] for v in made["videos"]] == ["D", "E", "G"] and made["reached"] == 620 and made["share"] == 0.31 and (made["published"], made["late"]) == (2, 1)
+    assert made["pace"]["time_gone"] == pytest.approx(0.5, abs=0.03) and not made["pace"]["on_pace"] and "chậm hơn" in made["pace"]["text"]
+    edited = client.post("/api/v1/campaigns", json={"campaign_id": made["campaign_id"], "name": "Tháng chợ", "target": 1000, "starts": day(-10), "ends": day(10), "projects": projects[3:6]}).json()
+    assert edited["campaign_id"] == made["campaign_id"] and edited["reached"] == 900 and edited["pace"]["on_pace"] and len(client.get("/api/v1/campaigns").json()["campaigns"]) == 1
+
+    change = client.get("/api/v1/publishing/change", params={"on": day(-12)}).json()
+    assert change["ready"] and (change["before"], change["after"]) == ({"videos": 3, "median": 100}, {"videos": 3, "median": 300}) and change["moved"] == 2.0 and change["clear"]
+    assert "không cho biết nguyên nhân" in change["text"]
+    thin = client.get("/api/v1/publishing/change", params={"on": day(-6)}).json()
+    assert not thin["ready"] and "5 trước và 1 sau" in thin["text"]
+    assert client.get("/api/v1/publishing/change", params={"on": "hôm qua"}).status_code == 422
+    assert client.delete(f"/api/v1/campaigns/{made['campaign_id']}").json()["campaigns"] == []

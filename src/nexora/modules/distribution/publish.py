@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS publications (publication_id TEXT PRIMARY KEY, render
     idempotency_key TEXT NOT NULL UNIQUE, status TEXT NOT NULL, external_ref TEXT, url TEXT, title TEXT, error TEXT, attempts INTEGER NOT NULL DEFAULT 0, manual INTEGER NOT NULL DEFAULT 0,
     created_at REAL NOT NULL, published_at REAL);
 CREATE TABLE IF NOT EXISTS metric_snapshots (snapshot_id TEXT PRIMARY KEY, publication_id TEXT NOT NULL, at REAL NOT NULL, hours REAL NOT NULL, figures TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS campaigns (campaign_id TEXT PRIMARY KEY, name TEXT NOT NULL, metric TEXT NOT NULL, target REAL NOT NULL, starts TEXT, ends TEXT, projects TEXT NOT NULL, created_at REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS experiments (experiment_id TEXT PRIMARY KEY, question TEXT NOT NULL, metric TEXT NOT NULL, variants TEXT NOT NULL, created_at REAL NOT NULL, closed_at REAL, conclusion TEXT);
 """
 PLATFORMS = {"youtube": "YouTube", "tiktok": "TikTok", "facebook": "Facebook", "instagram": "Instagram"}     # no account is connected: the operator uploads and records the address
@@ -218,6 +219,82 @@ class Publishing:
                                ("Độ dài", "Dưới 30 giây" if seconds < 30 else "30 đến 90 giây" if seconds < 90 else "Trên 90 giây"), ("Nơi đăng", labels.get(row["target"], row["target"]))):
                 groups.setdefault((kind, name), []).append(value)
         return [{"kind": kind, "name": name, "videos": len(values), "median": statistics.median(values)} for (kind, name), values in sorted(groups.items())]
+
+    # ------------------------------------------------------------------ campaigns
+    def save_campaign(self, name: str, *, metric: str = "views", target: float = 0, starts: str | None = None, ends: str | None = None,
+                      project_ids: list[str] | None = None, campaign_id: str | None = None) -> dict:
+        """A campaign: a set of videos meant to reach a figure together between two dates."""
+        if not name.strip() or metric not in FIGURES or float(target) < 0:
+            raise ValueError("a campaign needs a name, a known figure and a target that is not negative")
+        for day in (starts, ends):
+            if day:
+                time.strptime(day, "%Y-%m-%d")
+        known = {p["project_id"] for p in self._projects.projects()}
+        projects = [p for p in dict.fromkeys(project_ids or []) if p in known]
+        campaign_id = campaign_id or new_id("cmp")
+        with db.write(self._conn) as c:
+            c.execute("INSERT INTO campaigns (campaign_id, name, metric, target, starts, ends, projects, created_at) VALUES (?,?,?,?,?,?,?,?) "
+                      "ON CONFLICT(campaign_id) DO UPDATE SET name = excluded.name, metric = excluded.metric, target = excluded.target, starts = excluded.starts, ends = excluded.ends, projects = excluded.projects",
+                      (campaign_id, name.strip(), metric, float(target), starts or None, ends or None, json.dumps(projects), time.time()))
+        return self.campaign(campaign_id)
+
+    def campaign(self, campaign_id: str, *, today: str | None = None) -> dict | None:
+        """The campaign with where it stands: what each video has brought so far, what is still to be made, and whether the
+        figure reached so far keeps pace with the days gone."""
+        row = self._conn.execute("SELECT * FROM campaigns WHERE campaign_id = ?", (campaign_id,)).fetchone()
+        if row is None:
+            return None
+        out = {**dict(row), "projects": json.loads(row["projects"])}
+        today = today or time.strftime("%Y-%m-%d")
+        videos, reached = [], 0.0
+        for project_id in out["projects"]:
+            project = self._projects.project(project_id)
+            if project is None:
+                continue
+            pubs = [p for p in self.publications(project_id=project_id) if p["status"] == "published"]
+            value = sum(max((s["figures"].get(out["metric"], 0) for s in p["snapshots"]), default=0) for p in pubs)
+            reached += value
+            videos.append({"project_id": project_id, "title": project["title"], "due_date": project.get("due_date"), "published": bool(pubs), "value": value,
+                           "late": bool(project.get("due_date") and project["due_date"] < today and not pubs)})
+        out.update(videos=videos, reached=reached, share=round(reached / out["target"], 3) if out["target"] else None,
+                   published=sum(v["published"] for v in videos), late=sum(v["late"] for v in videos))
+        pace = None
+        if out["starts"] and out["ends"] and out["target"] and out["starts"] < out["ends"]:
+            day = lambda d: time.mktime(time.strptime(d, "%Y-%m-%d"))
+            gone = min(1.0, max(0.0, (day(today) - day(out["starts"])) / (day(out["ends"]) - day(out["starts"]))))
+            pace = {"time_gone": round(gone, 3), "on_pace": out["share"] >= gone - 0.05,
+                    "text": f"Đã qua {gone:.0%} thời gian, đạt {out['share']:.0%} mục tiêu." + ("" if out["share"] >= gone - 0.05 else " Đang chậm hơn tiến độ đều.")}
+        out["pace"] = pace
+        return out
+
+    def campaigns(self) -> list[dict]:
+        return [self.campaign(r[0]) for r in self._conn.execute("SELECT campaign_id FROM campaigns ORDER BY created_at DESC")]
+
+    def delete_campaign(self, campaign_id: str) -> None:
+        with db.write(self._conn) as c:
+            c.execute("DELETE FROM campaigns WHERE campaign_id = ?", (campaign_id,))
+
+    def effect_of_change(self, changed_on: str, *, metric: str = "views", hours: float = 24) -> dict:
+        """Videos published before a day set against those published from that day on, at the same age. This is the weakest kind
+        of evidence about a change: other things changed too, and the videos differ. It says whether the figures moved, never
+        why; the answer to why is an experiment. With fewer than three videos on a side it gives no reading at all."""
+        cut = time.mktime(time.strptime(changed_on, "%Y-%m-%d"))
+        before, after = [], []
+        for row in self.publications():
+            value = self._at(row, metric, hours) if row["status"] == "published" else None
+            if value is not None:
+                (before if row["published_at"] < cut else after).append(value)
+        out = {"changed_on": changed_on, "metric": metric, "hours": hours, "before": {"videos": len(before), "median": statistics.median(before) if before else None},
+               "after": {"videos": len(after), "median": statistics.median(after) if after else None}}
+        if len(before) < MIN_HISTORY or len(after) < MIN_HISTORY:
+            return {**out, "ready": False, "text": f"Cần ít nhất {MIN_HISTORY} video ở mỗi bên để so; hiện có {len(before)} trước và {len(after)} sau."}
+        moved = (out["after"]["median"] - out["before"]["median"]) / out["before"]["median"] if out["before"]["median"] else None
+        spread = lambda xs: (max(xs) - min(xs)) / (statistics.median(xs) or 1)
+        clear = moved is not None and abs(moved) > max(spread(before), spread(after)) / 2
+        return {**out, "ready": True, "moved": None if moved is None else round(moved, 3), "clear": clear,
+                "text": ("Chưa tính được mức thay đổi vì trung vị trước đó bằng 0." if moved is None else
+                         f"Trung vị {'tăng' if moved >= 0 else 'giảm'} {abs(moved):.0%} sau ngày này. " + ("Mức đổi lớn hơn độ dao động thường thấy giữa các video." if clear else "Mức đổi nằm trong độ dao động thường thấy giữa các video, có thể chỉ là ngẫu nhiên.")
+                         ) + " Con số này không cho biết nguyên nhân; muốn biết thì lập thí nghiệm có hai biến thể."}
 
     # ------------------------------------------------------------------ experiments
     def create_experiment(self, question: str, publication_ids: list[str], *, metric: str = "views", labels: list[str] | None = None) -> dict:

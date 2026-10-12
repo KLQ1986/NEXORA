@@ -110,11 +110,26 @@ class Planning:
         """Read a page the operator names and keep it as a source of the project: who published it, when, and its opening passage.
         Only the address leaves this machine."""
         page = self._adapters.submit("web", Request("read", inputs={"url": url}, privacy_class=PrivacyClass.CLOUD_ALLOWED)).outputs
+        # The passage is the article's running prose: whole sentences, not the coordinates, menus and notes a page opens with.
+        prose = "\n".join(line for line in page["text"].splitlines() if len(line) >= 80 and line.rstrip()[-1:] in ".!?”\"" and "°" not in line[:40]) or page["text"]
         source = {"title": page["title"] or page["url"], "publisher": page["publisher"], "date": page["date"], "url": page["url"],
-                  "passage": page["text"][:PASSAGE_CHARS], "retrieved_at": time.time()}
+                  "passage": prose[:PASSAGE_CHARS], "retrieved_at": time.time()}
         kept = [s for s in self.research(project_id) if s.get("url") != source["url"]]
         self._projects.update_project(project_id, research=json.dumps(kept + [source], ensure_ascii=False))
         return source
+
+    def find_sources(self, project_id: str, query: str, *, limit: int = 3) -> list[dict]:
+        """Look the subject up and read what is found into the project's sources. Only the search words and the addresses found
+        leave this machine. A page that cannot be read is passed over; finding nothing is an answer, not a failure."""
+        from nexora.core.adapter import AdapterError
+        results = self._adapters.submit("web", Request("search", inputs={"query": query}, params={"limit": limit}, privacy_class=PrivacyClass.CLOUD_ALLOWED)).outputs["results"]
+        read = []
+        for result in results:
+            try:
+                read.append(self.read_source(project_id, result["url"]))
+            except AdapterError:
+                continue
+        return read
 
     def find_facts(self, project_id: str) -> list[str]:
         """Mark the lines that state something checkable. A line the operator already marked stays marked."""

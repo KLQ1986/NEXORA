@@ -84,14 +84,41 @@ class _CheckedRedirects(urllib.request.HTTPRedirectHandler):
 
 
 class WebReader(Adapter):
-    def __init__(self, *, public_only: bool = True):
+    def __init__(self, *, public_only: bool = True, wiki: str = "https://{language}.wikipedia.org"):
+        self._wiki = wiki
         self._public_only = public_only          # a test may serve its own page from this machine
         self._opener = urllib.request.build_opener(_CheckedRedirects()) if public_only else urllib.request.build_opener()
 
     def describe(self) -> Capability:
-        return Capability(name="web", operations=("read",), runs="cloud")
+        return Capability(name="web", operations=("read", "search"), runs="cloud")
+
+    def _search(self, request: Request) -> Result:
+        """Look a subject up in Wikipedia, in the languages asked for. An encyclopedia is searched, not the open web: its
+        articles name their own sources, it needs no account, and its answers do not depend on who is asking."""
+        import json
+        from urllib.parse import quote, urlencode
+        query, limit, found = str(request.inputs["query"]).strip(), int(request.params.get("limit", 3)), []
+        if not query:
+            raise AdapterError(ErrorCode.INVALID_REQUEST, "nothing to search for")
+        for language in request.params.get("languages") or ("vi", "en"):
+            url = f"{self._wiki.format(language=language)}/w/api.php?" + urlencode({"action": "query", "list": "search", "srsearch": query, "format": "json", "srlimit": limit})
+            try:
+                with self._opener.open(urllib.request.Request(url, headers={"user-agent": "NEXORA research reader"}), timeout=request.deadline_seconds or 20) as r:
+                    hits = json.load(r).get("query", {}).get("search", [])
+            except TimeoutError:
+                raise AdapterError(ErrorCode.TIMEOUT, "the encyclopedia did not answer in time") from None
+            except (urllib.error.URLError, ConnectionError, ValueError) as err:
+                raise AdapterError(ErrorCode.UNAVAILABLE, f"the encyclopedia is not reachable: {err}") from None
+            for hit in hits:
+                found.append({"title": hit["title"], "url": f"{self._wiki.format(language=language)}/wiki/{quote(hit['title'].replace(' ', '_'))}",
+                              "snippet": re.sub(r"<[^>]+>", "", hit.get("snippet", "")), "language": language})
+            if len(found) >= limit:
+                break
+        return Result(outputs={"results": found[:limit]})
 
     def submit(self, request: Request) -> Result:
+        if request.operation == "search":
+            return self._search(request)
         url = str(request.inputs["url"]).strip()
         if urlparse(url).scheme not in ("http", "https"):
             raise AdapterError(ErrorCode.INVALID_REQUEST, "only http and https addresses can be read")

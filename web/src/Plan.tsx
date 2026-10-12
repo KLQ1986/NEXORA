@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { call, post, timecode, usePoll, type CalendarRow, type Publication, type Publishing, type Radar, type RadarSubject } from "./api";
+import { call, post, timecode, usePoll, type Campaign, type CalendarRow, type Publication, type Publishing, type Radar, type RadarSubject } from "./api";
 import { Button, Empty, Icon, Page, Section, Tabs, Tag } from "./parts";
 
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -176,6 +176,44 @@ function PublicationRow({ p, target, due, picked, pick, reload }: { p: Publicati
 }
 const open_ = (path: string) => { window.history.pushState(null, "", path); window.dispatchEvent(new PopStateEvent("popstate")); };
 
+/** Campaigns: a set of videos meant to reach a figure together, and how far along they are. */
+function Campaigns() {
+  const { data, reload } = usePoll<{ campaigns: Campaign[] }>("/api/v1/campaigns", 20000);
+  const { data: cal } = usePoll<{ projects: CalendarRow[] }>("/api/v1/calendar", 30000);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [note, setNote] = useState<string | null>(null);
+  const [change, setChange] = useState<{ text: string } | null>(null);
+  return (
+    <Section title="Chiến dịch" icon="calendar" note="Một nhóm video cùng hướng tới một con số trong một khoảng thời gian. Tiến độ tính từ số liệu bạn đã ghi.">
+      <ul className="grid gap-3 empty:hidden">
+        {(data?.campaigns ?? []).map((c) => (
+          <li key={c.campaign_id} className="panel p-4 text-[13px]">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1"><span className="font-medium">{c.name}</span><span className="mono text-faint">{c.starts ?? "?"} đến {c.ends ?? "?"}</span>
+              {c.late > 0 && <Tag tone="cue">{c.late} video quá ngày</Tag>}{c.pace && <Tag tone={c.pace.on_pace ? "proof" : "cue"}>{c.pace.on_pace ? "Đúng tiến độ" : "Chậm tiến độ"}</Tag>}
+              <button type="button" className="link ml-auto" onClick={async () => { await call(`/api/v1/campaigns/${c.campaign_id}`, { method: "DELETE" }); reload(); }}>Xoá</button></div>
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-raised"><div className="h-full rounded-full bg-accent" style={{ width: `${Math.min(100, (c.share ?? 0) * 100)}%` }} /></div>
+            <p className="mt-1.5 text-mute"><span className="mono text-ink">{Math.round(c.reached)}</span> trên <span className="mono">{Math.round(c.target)}</span> lượt xem, {c.published} trên {c.videos.length} video đã đăng. {c.pace?.text}</p>
+            <ul className="mt-2 flex flex-wrap gap-2">{c.videos.map((v) => <li key={v.project_id}><button type="button" onClick={() => open_(`/du-an/${v.project_id}`)} className={`rounded-lg border px-2.5 py-1 text-left ${v.late ? "border-cue/40 bg-cue/10" : v.published ? "border-proof/40 bg-proof/10" : "border-line bg-raised/50"}`}>{v.title} <span className="mono text-faint">{v.published ? Math.round(v.value) : v.due_date ?? "chưa có ngày"}</span></button></li>)}</ul>
+          </li>))}
+      </ul>
+      <details className="mt-3 text-[13px]"><summary className="cursor-pointer list-none text-accent">Lập chiến dịch mới</summary>
+        <form className="panel mt-2 grid gap-3 p-4" onSubmit={async (e) => { e.preventDefault(); const f = new FormData(e.currentTarget); setNote(null);
+          try { await post("/api/v1/campaigns", { name: f.get("name"), target: Number(f.get("target") || 0), starts: f.get("starts"), ends: f.get("ends"), projects: picked }); e.currentTarget.reset(); setPicked([]); } catch (err) { setNote((err as Error).message); } reload(); }}>
+          <div className="flex flex-wrap gap-2"><input name="name" aria-label="Tên chiến dịch" placeholder="Tên chiến dịch, ví dụ: Tháng ẩm thực đường phố" className="h-9 min-w-0 flex-1 px-3" />
+            <label className="flex items-center gap-2 text-mute">Mục tiêu<input name="target" type="number" min="0" aria-label="Số lượt xem mục tiêu" className="mono h-9 w-28 px-2" />lượt xem</label></div>
+          <div className="flex flex-wrap items-center gap-2 text-mute"><label className="flex items-center gap-2">Từ<input name="starts" type="date" className="mono h-9 px-2" /></label><label className="flex items-center gap-2">đến<input name="ends" type="date" className="mono h-9 px-2" /></label></div>
+          <div className="flex flex-wrap gap-2">{(cal?.projects ?? []).map((p) => <label key={p.project_id} className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-1.5 ${picked.includes(p.project_id) ? "border-accent/60 bg-accent/[0.08]" : "border-line"}`}><input type="checkbox" checked={picked.includes(p.project_id)} onChange={() => setPicked(picked.includes(p.project_id) ? picked.filter((x) => x !== p.project_id) : [...picked, p.project_id])} />{p.title}</label>)}</div>
+          <div className="flex items-center gap-3"><Button type="submit" kind="primary">Lập chiến dịch</Button>{note && <span className="text-tally">{note}</span>}</div>
+        </form>
+      </details>
+      <form className="mt-4 flex flex-wrap items-center gap-2 border-t border-line pt-4 text-[13px]" onSubmit={async (e) => { e.preventDefault(); const on = String(new FormData(e.currentTarget).get("on") ?? ""); if (on) setChange(await call(`/api/v1/publishing/change?on=${on}`)); }}>
+        <label htmlFor="changed" className="text-mute">Bạn đổi cách làm từ ngày</label><input id="changed" name="on" type="date" className="mono h-8 px-2" /><Button size="sm" type="submit">So trước và sau</Button>
+        {change && <p className="w-full text-mute">{change.text}</p>}
+      </form>
+    </Section>
+  );
+}
+
 function Results() {
   const { data, reload } = usePoll<Publishing>("/api/v1/publishing", 20000);
   const [picked, setPicked] = useState<string[]>([]);
@@ -197,6 +235,7 @@ function Results() {
             <Button size="sm" kind="ai" type="submit" disabled={!question.trim()}>Lập thí nghiệm</Button>
           </form>)}
       </Section>
+      <Campaigns />
       {!!data?.experiments.length && (
         <Section title="Thí nghiệm" icon="sparkles" note="Các biến thể được so ở cùng một tuổi của video, không so tổng số hôm nay.">
           <ul className="grid gap-3">
