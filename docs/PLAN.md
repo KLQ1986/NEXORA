@@ -321,6 +321,9 @@ Sự cố trong lượt này: cài `ffmpeg-full` làm Homebrew nâng thư viện
 
 - [x] Phát hiện chỗ chuyển cảnh trong footage khi nhập (bộ lọc scene của FFmpeg trên bản thu nhỏ); đoạn clip được chọn cho một câu được dời để không vắt qua chỗ cắt, khi cảnh ở một bên đủ dài cho câu đó. Footage đã nhập từ trước chưa có dữ liệu này cho tới khi được nhập lại
 
+- [x] Footage nhập từ trước được dò chỗ chuyển cảnh ở chế độ nền; vạch chuyển cảnh hiện trên thanh thời gian. Chạy trên 6 video thật: 33, 3, 2, 1, 0, 0 chỗ cắt; chưa kiểm bằng mắt, và 1 chỗ cắt cho cả một bộ phim dài có vẻ thấp
+- [x] Thử Reciprocal Rank Fusion (thiết kế nêu) trên bộ 17 mẫu chuẩn thật ngày 2026-10-12, dùng bản sao cơ sở dữ liệu: đúng ngay lần đầu 10/17 và trong ba kết quả đầu 14/17, kém cách đang dùng (12/17 và 17/17). Vì vậy giữ cách đang dùng làm mặc định; RRF còn lại như một lựa chọn (`MomentIndex.fusion`). Bộ mẫu nhỏ và nghiêng về cách đang dùng, nên nên đo lại khi có mẫu do người vận hành tự chọn
+
 ### Còn lại sau lượt này
 
 Cần thứ ngoài máy này: tài khoản và khoá API của nền tảng (tự đăng, tự lấy số liệu), khoá của nhà cung cấp video AI, khoá Anthropic để chạy thật adapter Claude, dịch vụ tìm kiếm trên toàn bộ web (hiện chỉ tìm trên Wikipedia).

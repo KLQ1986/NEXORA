@@ -53,6 +53,7 @@ class MomentIndex:
     def __init__(self, path: str | Path, *, embed: Callable[[list[str]], list[list[float]]] | None = None):
         self._db = db.LocalConnections(path)
         self.embed = embed
+        self.fusion = "max"          # how the word ranking and the meaning ranking are merged: "max" or "rrf"
 
     @property
     def _conn(self):
@@ -157,5 +158,14 @@ class MomentIndex:
             moment = self.by_id(moment_id)
             if moment and moment.level in levels and moment.asset_id not in exclude_assets:
                 hits.append((score, coverage.get(moment_id, 0.0) + similarity.get(moment_id, 0.0), moment))
-        hits.sort(key=lambda h: (h[0], h[1]), reverse=True)
+        if self.fusion == "rrf":
+            # Reciprocal rank fusion: a moment's place in the word ranking and its place in the meaning ranking each count,
+            # so one that does fairly well on both comes before one that tops a single list. The score kept is still the
+            # larger of the two, since thresholds are set against it.
+            by_words = {m: r for r, m in enumerate(sorted(coverage, key=coverage.get, reverse=True), 1)}
+            by_meaning = {m: r for r, m in enumerate(sorted(similarity, key=similarity.get, reverse=True), 1)}
+            fused = lambda moment_id: (1 / (60 + by_words[moment_id]) if moment_id in by_words else 0.0) + (1 / (60 + by_meaning[moment_id]) if moment_id in by_meaning else 0.0)
+            hits.sort(key=lambda h: (fused(h[2].moment_id), h[0]), reverse=True)
+        else:
+            hits.sort(key=lambda h: (h[0], h[1]), reverse=True)
         return [Hit(m, round(s, 4)) for s, _, m in hits[:limit]]

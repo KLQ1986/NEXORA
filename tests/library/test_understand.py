@@ -65,3 +65,10 @@ def test_a_correction_by_the_operator_survives_re_analysis(system, ingested):
     again = system.index.moments(ingested, level="segment")[0]
     assert again.text == "Cận cảnh bàn tay rót trà." and again.source == "human"
     assert system.index.search("rót trà")[0].moment.moment_id == first.moment_id
+
+
+def test_rank_fusion_is_an_option_that_reorders_results_without_changing_their_scores(system, ingested):
+    plain = system.index.search("chợ rau củ cá tươi", limit=5)
+    system.index.fusion = "rrf"
+    fused = system.index.search("chợ rau củ cá tươi", limit=5)
+    assert {h.moment.moment_id: h.score for h in fused} == {h.moment.moment_id: h.score for h in plain} and len(fused) == len(plain) > 0
