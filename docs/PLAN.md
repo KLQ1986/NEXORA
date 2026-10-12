@@ -239,6 +239,22 @@ Sourcing (154 test đạt; đã chạy thật một câu chuyện ba cảnh: ả
 
 Chưa làm: mô hình video thật (cần khoá của nhà cung cấp), huấn luyện mô hình nhân vật (mục P2, cần công cụ huấn luyện), chọn nguồn stock trên giao diện.
 
+Edit (162 test đạt; đã chạy thật: bản ghi 14 giây có lời nói được cắt còn 9 giây và dựng ra video dùng chính tiếng của nó):
+
+- [x] Dựng thô theo lời nói: bỏ khoảng lặng, tiếng đệm, câu nói lại (giữ lần sau); người vận hành chọn lại từng câu; kết quả là dự án sẵn sàng dựng, dùng âm thanh gốc
+- [x] Từng cảnh: tốc độ (0,5 đến 2 lần), chống rung, dùng âm thanh gốc thay lời dẫn, tiếng động lấy từ thư viện
+- [x] Cả video: làm sạch âm thanh (giảm ù và xì), cân màu giữa các cảnh
+- [x] Bản xem thử nhanh: nửa kích thước, 15 khung/giây, không đọc lời dẫn mới, không cần duyệt clip, không có cổng duyệt
+- [x] Chỉnh sửa bằng lời: mô hình chỉ được chọn trong 8 thao tác trên câu có số; danh sách hiện ra trước, áp dụng sau
+- [x] Tái sử dụng sang khung hình khác thành dự án mới, giữ nguyên clip đã chọn
+- [x] Gói bàn giao để dựng tay (CapCut): mỗi cảnh một clip sạch, phụ đề rời, nhạc, tờ hướng dẫn
+- [x] Nhập lại bản hoàn thiện ở phần mềm khác: được đo như mọi bản dựng và tính là đã duyệt
+- [x] Lồng tiếng nhân vật: câu viết "Tên: lời thoại" đọc bằng giọng riêng của nhân vật trong hồ sơ dự án
+- [x] Phụ đề rời SRT và VTT; dịch phụ đề sang 7 ngôn ngữ với cùng mốc thời gian (bản dịch thiếu dòng bị từ chối)
+- [x] Nâng chất lượng clip: phóng to 2 lần (lấy mẫu lại, không sinh chi tiết mới), làm mượt lên 50 hoặc 60 khung/giây; bản dựng cuối lấy từ bản đã nâng
+
+Chưa làm: khớp khẩu hình (cần mô hình lip-sync), chuyển HDR về SDR (FFmpeg trên máy thiếu bộ lọc zscale), phóng to bằng mô hình học máy.
+
 ### Lát 1 — Lõi chạy việc
 
 Mục thiết kế: 5, 6, 7.

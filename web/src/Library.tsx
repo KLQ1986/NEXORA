@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { call, megabytes, post, timecode, usePoll, type Asset, type Hit, type Moment } from "./api";
+import { call, megabytes, post, timecode, usePoll, type Asset, type Hit, type Moment, type Project, type RoughPlan } from "./api";
 
 const LEVEL: Record<string, string> = { segment: "CẢNH", speech: "LỜI NÓI", note: "GHI CHÚ", frame: "KHUNG HÌNH" };
 import { Button, Icon, Page, RangeStrip, StageRail, StatusText, Tabs, TimeChip } from "./parts";
@@ -88,6 +88,34 @@ function Moments({ asset, t, seek, similar }: { asset: Asset; t: number; seek: (
   );
 }
 
+/** The recording cut by its words: which sentences stay, which go and why. The operator may overrule any of them. */
+function RoughCutPanel({ asset, seek }: { asset: Asset; seek: (s: number) => void }) {
+  const [plan, setPlan] = useState<RoughPlan | null>(null);
+  const [keep, setKeep] = useState<Set<number>>(new Set());
+  const [note, setNote] = useState<string | null>(null);
+  const open = async () => { const p = await call<RoughPlan>(`/api/v1/assets/${asset.asset_id}/roughcut`); setPlan(p); setKeep(new Set(p.sentences.filter((s) => s.keep).map((s) => s.index))); };
+  const make = async () => { try { const p = await post<Project>(`/api/v1/assets/${asset.asset_id}/roughcut`, { keep: [...keep].sort((a, b) => a - b) }); window.history.pushState(null, "", `/du-an/${p.project_id}`); window.dispatchEvent(new PopStateEvent("popstate")); } catch (e) { setNote((e as Error).message); } };
+  if (!plan) return <div className="ai-card flex flex-wrap items-center gap-3 p-3 text-[13px]"><Icon name="scissors" size={15} className="text-ai" /><span className="min-w-0 flex-1">Dựng thô theo lời nói: bỏ khoảng lặng, tiếng đệm và những câu nói lại.</span><Button size="sm" kind="ai" onClick={open}>Xem bản cắt đề xuất</Button></div>;
+  const seconds = plan.sentences.filter((s) => keep.has(s.index)).reduce((sum, s) => sum + s.t_out - s.t_in, 0);
+  return (
+    <div className="ai-card p-3 text-[13px]">
+      <p className="flex flex-wrap items-center gap-x-3 gap-y-1"><Icon name="scissors" size={15} className="text-ai" /><span className="font-medium">Bản cắt đề xuất</span>
+        <span className="mono text-mute">giữ {timecode(seconds)} trên {timecode(plan.source_seconds)}</span></p>
+      <ol className="mt-2 grid gap-1">
+        {plan.sentences.map((s) => (
+          <li key={s.index} className="flex items-start gap-2">
+            <input type="checkbox" className="mt-1" aria-label={`Giữ câu ${s.index + 1}`} checked={keep.has(s.index)} onChange={(e) => { const next = new Set(keep); if (e.target.checked) next.add(s.index); else next.delete(s.index); setKeep(next); }} />
+            <button type="button" onClick={() => seek(s.t_in)} className="mono mt-0.5 w-10 shrink-0 text-left text-[12px] text-accent hover:underline">{timecode(s.t_in)}</button>
+            <span className={`min-w-0 flex-1 ${keep.has(s.index) ? "" : "text-faint line-through"}`}>{s.text}{s.reason && <span className="ml-2 text-[12px] text-cue no-underline">{s.reason}</span>}{s.doubtful && <span className="ml-2 text-[12px] text-cue">nghe chưa rõ</span>}</span>
+          </li>
+        ))}
+      </ol>
+      <div className="mt-3 flex flex-wrap items-center gap-2"><Button size="sm" kind="primary" disabled={keep.size === 0} onClick={make}>Tạo dự án từ {keep.size} câu này</Button><Button size="sm" onClick={() => setPlan(null)}>Thôi</Button>{note && <span className="text-tally">{note}</span>}</div>
+      <p className="mt-2 text-[12px] text-faint">Mỗi câu thành một cảnh dùng chính hình và tiếng của đoạn đó. Dự án mới sẵn sàng để dựng ngay.</p>
+    </div>
+  );
+}
+
 /** What was said, sentence by sentence. A word the model was unsure of is shown dotted, so a wrong word is easy to spot. */
 function Speech({ asset, t, seek }: { asset: Asset; t: number; seek: (s: number) => void }) {
   const { data } = usePoll<{ speech: Moment[] }>(`/api/v1/assets/${asset.asset_id}/moments`, 6000);
@@ -103,6 +131,7 @@ function Speech({ asset, t, seek }: { asset: Asset; t: number; seek: (s: number)
         <span className="ml-auto"><Button size="sm" disabled={busy} onClick={listen}>{asset.speech ? "Nghe lại" : "Nghe lời nói"}</Button></span>
       </div>
       {note && <p className="text-[12.5px] text-mute">{note}</p>}
+      {asset.speech && data.speech.length > 0 && <RoughCutPanel asset={asset} seek={seek} />}
       {asset.speech && data.speech.length === 0 && <p className="rounded-lg border border-dashed border-line px-4 py-6 text-center text-[13px] text-mute">Không nghe thấy lời nói nào trong đoạn này.</p>}
       <ol className="grid gap-1.5">
         {data.speech.map((m) => (
@@ -167,6 +196,18 @@ function Player({ asset, start, others, close, similar }: { asset: Asset; start?
                 <p className="flex flex-wrap items-center gap-x-2 gap-y-1"><Icon name="folder" size={14} className="text-faint" /><span className="text-mute">Buổi quay</span><span>{asset.session || "không rõ"}</span></p>
                 <p className="flex flex-wrap items-center gap-x-2 gap-y-1"><Icon name="clapper" size={14} className="text-faint" /><span className="text-mute">Đã dùng trong</span>
                   {asset.used_in.length ? asset.used_in.map((u) => <a key={u.project_id} href={`/du-an/${u.project_id}`} className="underline decoration-edge underline-offset-2">{u.title}</a>) : <span className="text-faint">chưa dự án nào</span>}</p>
+                {asset.kind === "video" && !asset.still && (
+                  <div className="rounded-lg border border-line bg-raised/50 p-3">
+                    <p className="flex items-center gap-2"><Icon name="bolt" size={14} className="text-faint" />Nâng chất lượng
+                      {asset.enhanced && <span className="text-proof">đã có bản {asset.enhanced.upscale > 1 ? "phóng to 2 lần" : ""}{asset.enhanced.upscale > 1 && asset.enhanced.smooth_fps ? ", " : ""}{asset.enhanced.smooth_fps ? `${asset.enhanced.smooth_fps} khung/giây` : ""}</span>}
+                      {asset.enhance && ["queued", "running"].includes(asset.enhance.status) && <span className="text-ai">đang làm…</span>}</p>
+                    <p className="mt-1 text-[12px] text-faint">Phóng to là lấy mẫu lại cẩn thận rồi làm nét nhẹ, không thêm chi tiết mới. Làm mượt hợp với cảnh chậm, có thể nhoè ở cảnh chuyển động nhanh. Bản dựng cuối sẽ lấy từ bản này.</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <Button size="sm" onClick={() => post(`/api/v1/assets/${asset.asset_id}/enhance`, { upscale: 2 }).catch(() => {})}>Phóng to 2 lần</Button>
+                      <Button size="sm" onClick={() => post(`/api/v1/assets/${asset.asset_id}/enhance`, { smooth_fps: 60 }).catch(() => {})}>Làm mượt lên 60 khung/giây</Button>
+                    </div>
+                  </div>
+                )}
                 <label className="flex items-start gap-2.5 rounded-lg border border-line bg-raised/50 p-3"><input type="checkbox" className="mt-0.5" checked={asset.rejected} onChange={(e) => post(`/api/v1/assets/${asset.asset_id}`, { rejected: e.target.checked }, "PATCH")} />
                   <span>Không dùng nguyên liệu này<span className="block text-[12px] text-faint">Nó vẫn nằm trong thư viện nhưng không được đề xuất cho kịch bản nào và không hiện khi tìm kiếm.</span></span></label>
               </div>

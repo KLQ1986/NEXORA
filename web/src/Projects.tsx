@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { post, projectState, scriptText, stageName, timecode, usePoll, type Idea, type Source, type AgentTask, type Asset, type Settings, type Candidate, type Project, type RenderItem, type Shot, type BibleEntry, type GapPlan } from "./api";
+import { post, projectState, scriptText, stageName, timecode, usePoll, type Idea, type Source, type AgentTask, type Asset, type Settings, type Candidate, type Project, type RenderItem, type Shot, type BibleEntry, type GapPlan, type Op } from "./api";
 import Board from "./Board";
 import { Button, Empty, Filmstrip, Icon, Meter, Page, Section, Seg, StageRail, Steps, Tabs, Tag, TimeChip } from "./parts";
 import Timeline from "./Timeline";
@@ -13,7 +13,7 @@ function Clip({ url, tIn, tOut, poster }: { url: string | null; tIn: number; tOu
   return <video ref={ref} key={`${url}${tIn}`} src={`${url}#t=${tIn},${tOut}`} poster={poster ?? undefined} muted playsInline controls preload="metadata" className="aspect-video w-full rounded-lg bg-black" />;
 }
 
-function ShotRow({ shot, n, locked, changed, heading, sources = [] }: { shot: Shot; n: number; locked: boolean; changed: () => void; heading?: string | null; sources?: Source[] }) {
+function ShotRow({ shot, n, locked, changed, heading, sources = [], effects = [] }: { shot: Shot; n: number; locked: boolean; changed: () => void; heading?: string | null; effects?: Asset[]; sources?: Source[] }) {
   const note = async (body: Record<string, unknown>) => { await post(`/api/v1/shots/${shot.shot_id}`, body, "PATCH").catch(() => {}); changed(); };
   const sel = shot.selection;
   const [brief, setBrief] = useState<string | null>(null);
@@ -23,6 +23,7 @@ function ShotRow({ shot, n, locked, changed, heading, sources = [] }: { shot: Sh
   const [stock, setStock] = useState<string | null>(null);
   const findStock = async () => { setStock("Đang tìm trên các kho miễn phí…"); try { const r = await post<{ found: boolean }>(`/api/v1/shots/${shot.shot_id}/stock`, { query }); setStock(r.found ? null : "Không tìm thấy clip nào. Thử từ khoá tiếng Anh khác."); } catch (e) { setStock((e as Error).message); } changed(); };
   const act = async (path: string, body?: unknown) => { await post(`/api/v1/shots/${shot.shot_id}/${path}`, body).catch(() => {}); changed(); };
+  const treat = async (body: Record<string, unknown>) => { await post(`/api/v1/shots/${shot.shot_id}/treatment`, body, "PATCH").catch(() => {}); changed(); };
   const gap = sel?.status === "gap";
   const notes = [shot.brief && `hình cần có “${shot.brief}”`, shot.screen_text && `chữ trên màn hình “${shot.screen_text}”`, shot.target_seconds && `giữ ${shot.target_seconds} giây`, shot.sound_cue && `âm thanh “${shot.sound_cue}”`, shot.is_fact && (shot.source ? `dữ kiện, nguồn “${shot.source}”` : "dữ kiện chưa có nguồn")].filter(Boolean);
   return (
@@ -74,6 +75,14 @@ function ShotRow({ shot, n, locked, changed, heading, sources = [] }: { shot: Sh
                     </li>
                   ))}
                 </ul>
+              </div>
+            )}
+            {sel && !gap && !locked && sel.asset && !sel.asset.still && (
+              <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-[12.5px] text-mute">
+                <label className="flex items-center gap-1.5">Tốc độ<select aria-label={`Tốc độ hình của câu ${n}`} value={sel.speed} onChange={(e) => treat({ speed: Number(e.target.value) })} className="h-7 pl-1.5 text-[12px]">{[0.5, 0.75, 1, 1.5, 2].map((v) => <option key={v} value={v}>{v}×</option>)}</select></label>
+                <label className="flex items-center gap-1.5"><input type="checkbox" checked={sel.stabilise} onChange={(e) => treat({ stabilise: e.target.checked })} />Chống rung</label>
+                <label className="flex items-center gap-1.5" title="Giữ âm thanh của chính clip thay cho lời dẫn; độ dài cảnh bằng đúng đoạn đã chọn"><input type="checkbox" checked={sel.live_sound} onChange={(e) => treat({ live_sound: e.target.checked })} />Dùng âm thanh gốc</label>
+                {effects.length > 0 && <label className="flex items-center gap-1.5">Tiếng động<select aria-label={`Tiếng động của câu ${n}`} value={sel.sfx ?? ""} onChange={(e) => treat({ sfx: e.target.value || null })} className="h-7 max-w-[160px] pl-1.5 text-[12px]"><option value="">Không</option>{effects.map((a) => <option key={a.asset_id} value={a.asset_id}>{a.name}</option>)}</select></label>}
               </div>
             )}
             <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12.5px]">
@@ -144,6 +153,7 @@ function TimelineStrip({ shots }: { shots: Shot[] }) {
 
 function PackagePanel({ render, reload }: { render: RenderItem; reload: () => void }) {
   const pkg = render.package;
+  const [note, setNote] = useState<string | null>(null);
   const base = `/api/v1/renders/${render.render_id}/package`;
   if (!pkg) return <div className="panel p-4"><Button kind="primary" onClick={async () => { await post(base, {}); reload(); }}><Icon name="layers" />Chuẩn bị gói xuất bản</Button><p className="mt-2 text-[13px] text-mute">Tạo file video, phụ đề rời và ảnh đại diện trong một thư mục để bạn đăng tay.</p></div>;
   return (
@@ -164,8 +174,71 @@ function PackagePanel({ render, reload }: { render: RenderItem; reload: () => vo
         <a className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line bg-raised px-3 text-[12.5px] hover:border-edge" href={`${base}/${pkg.video}`} download><Icon name="download" size={14} />Video</a>
         <a className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line bg-raised px-3 text-[12.5px] hover:border-edge" href={`${base}/${pkg.captions}`} download><Icon name="captions" size={14} />Phụ đề (SRT)</a>
         <a className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line bg-raised px-3 text-[12.5px] hover:border-edge" href={`${base}/${pkg.thumbnail}`} download><Icon name="image" size={14} />Ảnh đại diện</a>
+        {Object.entries(pkg.translations ?? {}).map(([lang, name]) => <a key={lang} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line bg-raised px-3 text-[12.5px] hover:border-edge" href={`${base}/${name}`} download><Icon name="globe" size={14} />Phụ đề {LANGS[lang] ?? lang}</a>)}
       </div>
+      <form className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3 text-[13px]" onSubmit={async (e) => { e.preventDefault(); const lang = String(new FormData(e.currentTarget).get("lang")); setNote("Đang dịch…"); try { await post(`/api/v1/renders/${render.render_id}/captions/translate`, { language: lang }); setNote(null); } catch (err) { setNote((err as Error).message); } reload(); }}>
+        <label htmlFor={`lang-${render.render_id}`} className="text-mute">Dịch phụ đề sang</label>
+        <select id={`lang-${render.render_id}`} name="lang" className="h-8 pl-2">{Object.entries(LANGS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
+        <Button size="sm" type="submit">Dịch</Button>{note && <span className="text-mute">{note}</span>}
+      </form>
     </div>
+  );
+}
+
+const LANGS: Record<string, string> = { en: "tiếng Anh", zh: "tiếng Trung", ja: "tiếng Nhật", ko: "tiếng Hàn", fr: "tiếng Pháp", es: "tiếng Tây Ban Nha", th: "tiếng Thái" };
+
+/** Say what to change; see it as a list of operations; apply it or not. */
+function Command({ id, busy, reload }: { id: string; busy: boolean; reload: () => void }) {
+  const [text, setText] = useState("");
+  const [ops, setOps] = useState<Op[] | null>(null);
+  const [state, setState] = useState<string | null>(null);
+  const ask = async () => { setState("Đang đọc yêu cầu…"); setOps(null); try { const r = await post<{ ops: Op[] }>(`/api/v1/projects/${id}/command`, { text }); setOps(r.ops); setState(r.ops.length ? null : "Không hiểu yêu cầu này thành thao tác nào. Hãy nói rõ câu số mấy và muốn đổi gì."); } catch (e) { setState((e as Error).message); } };
+  const apply = async () => { try { const r = await post<{ done: string[] }>(`/api/v1/projects/${id}/command/apply`, { ops }); setState(`Đã làm ${r.done.length} thao tác. Dựng lại để thấy kết quả.`); setOps(null); setText(""); } catch (e) { setState((e as Error).message); } reload(); };
+  return (
+    <div className="mb-4 rounded-xl border border-line bg-ai/[0.04] px-4 py-3">
+      <form className="flex flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); if (text.trim()) ask(); }}>
+        <Icon name="sparkles" size={15} className="text-ai" /><label htmlFor="command" className="sr-only">Sửa bằng lời</label>
+        <input id="command" value={text} onChange={(e) => setText(e.target.value)} placeholder="Sửa bằng lời, ví dụ: rút câu 2 còn 2 giây, bỏ câu 4, đưa câu 3 lên đầu" className="bare h-8 min-w-0 flex-1 px-1" />
+        <Button size="sm" kind="ai" type="submit" disabled={busy || !text.trim()}>Xem sẽ đổi gì</Button>
+      </form>
+      {state && <p className="mt-2 text-[12.5px] text-mute">{state}</p>}
+      {ops && ops.length > 0 && (
+        <div className="mt-2 border-t border-line pt-2 text-[13px]">
+          <ul className="grid gap-1">{ops.map((o, i) => <li key={i} className="flex items-start gap-2"><Icon name="check" size={14} className="mt-0.5 shrink-0 text-ai" /><span className="min-w-0 flex-1">{o.describe}</span><button type="button" className="link shrink-0" onClick={() => setOps(ops.filter((_, k) => k !== i))}>Bỏ</button></li>)}</ul>
+          <div className="mt-2 flex gap-2"><Button size="sm" kind="primary" onClick={apply}>Áp dụng {ops.length} thao tác</Button><Button size="sm" onClick={() => setOps(null)}>Thôi</Button></div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Ways on from a cut: finish it by hand elsewhere and bring it back, or make the same video in another shape. */
+function Finishing({ id, render, format, run }: { id: string; render: RenderItem; format: string; run: (fn: () => Promise<unknown>) => void }) {
+  const [hand, setHand] = useState<{ folder: string; files: string[] } | null>(null);
+  const [path, setPath] = useState("");
+  const shapes: [string, string][] = [["landscape", "Ngang 16:9"], ["portrait", "Dọc 9:16"], ["square", "Vuông 1:1"]];
+  return (
+    <details className="panel group px-4 py-3 text-[13px]">
+      <summary className="flex cursor-pointer list-none items-center justify-between text-mute hover:text-ink">Dựng tiếp ở nơi khác, hoặc làm khung hình khác<Icon name="down" size={14} className="transition-transform group-open:rotate-180" /></summary>
+      <div className="mt-3 grid gap-4">
+        <div>
+          <p className="font-medium">Gói bàn giao để dựng tay (CapCut và phần mềm khác)</p>
+          <p className="mt-0.5 text-[12.5px] text-mute">Mỗi cảnh thành một clip sạch không phụ đề, kèm phụ đề rời, nhạc và tờ hướng dẫn thứ tự.</p>
+          {!render.qc.external && <div className="mt-2"><Button size="sm" onClick={() => run(async () => { setHand(await post(`/api/v1/renders/${render.render_id}/handoff`)); })}><Icon name="folder" size={14} />Tạo gói bàn giao</Button></div>}
+          {hand && <p className="mt-2 text-[12.5px] text-mute">{hand.files.length} file trong <span className="mono break-all text-ink">{hand.folder}</span></p>}
+        </div>
+        <form onSubmit={(e) => { e.preventDefault(); if (path.trim()) run(async () => { await post(`/api/v1/projects/${id}/renders/import`, { path: path.trim() }); setPath(""); }); }}>
+          <label htmlFor="finished" className="font-medium">Nhập lại bản đã hoàn thiện</label>
+          <p className="mt-0.5 text-[12.5px] text-mute">File được đo như mọi bản dựng và trở thành bản mới nhất của dự án, đã duyệt.</p>
+          <div className="mt-2 flex gap-2"><input id="finished" value={path} onChange={(e) => setPath(e.target.value)} placeholder="/Users/bạn/Movies/ban-cuoi.mp4" className="mono h-8 min-w-0 flex-1 px-2.5 text-[12.5px]" /><Button size="sm" type="submit" disabled={!path.trim()}>Nhập</Button></div>
+        </form>
+        <div>
+          <p className="font-medium">Làm bản khung hình khác</p>
+          <p className="mt-0.5 text-[12.5px] text-mute">Tạo một dự án mới với cùng kịch bản và cùng các clip đã chọn, ở khung hình khác.</p>
+          <div className="mt-2 flex flex-wrap gap-2">{shapes.filter(([k]) => k !== format).map(([k, name]) => <Button key={k} size="sm" onClick={() => run(async () => { const r = await post<Project>(`/api/v1/projects/${id}/repurpose`, { format: k }); window.history.pushState(null, "", `/du-an/${r.project_id}`); window.dispatchEvent(new PopStateEvent("popstate")); })}>{name}</Button>)}</div>
+        </div>
+      </div>
+    </details>
   );
 }
 
@@ -257,6 +330,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
     : null;
   const field = "field-label";
   const card = "panel grid gap-4 p-4";
+  const previewing = !!p?.preview && ["queued", "running"].includes(p.preview.status);
   const facts = (p?.shots ?? []).filter((s) => s.is_fact);
   return (
     <Page title={p.title} back={{ label: "Tất cả dự án", onClick: back }} wide
@@ -316,7 +390,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
               <Gaps id={id} shots={p.shots} run={run} />
               {p.shots.some((s) => s.selection) && <div className="mb-4"><TimelineStrip shots={p.shots} /></div>}
               <ol className="grid gap-3">
-                {p.shots.map((s, i) => <ShotRow key={s.shot_id} shot={s} n={i + 1} locked={!!rendering} changed={reload} heading={s.scene && s.scene !== p.shots[i - 1]?.scene ? s.scene : null} sources={p.research} />)}
+                {p.shots.map((s, i) => <ShotRow key={s.shot_id} shot={s} n={i + 1} locked={!!rendering} changed={reload} heading={s.scene && s.scene !== p.shots[i - 1]?.scene ? s.scene : null} sources={p.research} effects={(lib?.assets ?? []).filter((a) => a.kind === "audio")} />)}
               </ol>
             </Section>
           )}
@@ -325,7 +399,16 @@ function Detail({ id, back }: { id: string; back: () => void }) {
             <Section title="Bản dựng" icon="play"
                      note={rendering ? <span className="text-ai">Đang dựng…</span> : undefined}
                      actions={<>{rendering && p.render && <div className="w-48"><StageRail stages={p.render.stages} name={(k) => stageName(k, "edit.render")} /></div>}
+                       <Button size="sm" disabled={busy || previewing} title="Bản nhỏ, dựng nhanh, không đọc lời dẫn mới; chỉ để xem nhịp và hình" onClick={() => run(() => post(`/api/v1/projects/${id}/preview`))}><Icon name="bolt" size={14} />{previewing ? "Đang dựng bản xem thử…" : "Xem thử nhanh"}</Button>
                        <Button size="sm" disabled={busy || !!rendering} onClick={() => run(() => post(`/api/v1/projects/${id}/render`))}><Icon name="scissors" size={14} />{latest ? "Dựng lại" : "Dựng video"}</Button></>}>
+              <Command id={id} busy={busy} reload={reload} />
+              {p.previews[0] && !previewing && (
+                <details className="panel group mb-4 px-4 py-3">
+                  <summary className="flex cursor-pointer list-none items-center gap-2 text-[13px]"><Icon name="bolt" size={14} className="text-ai" />Bản xem thử nhanh<span className="mono text-faint">{timecode(p.previews[0].duration)}</span>{p.previews[0].gaps > 0 && <span className="text-cue">{p.previews[0].gaps} câu thiếu hình</span>}<Icon name="down" size={14} className="ml-auto transition-transform group-open:rotate-180" /></summary>
+                  <video key={p.previews[0].url} src={p.previews[0].url} controls className="mx-auto mt-3 max-h-[50vh] rounded-lg bg-black" />
+                  <p className="mt-2 text-[12px] text-faint">Bản này nhỏ và nén mạnh để dựng cho nhanh, câu nào chưa có lời dẫn thì im lặng. Nó không dùng để duyệt hay đăng.</p>
+                </details>
+              )}
               {p.render?.status === "failed" && <p className="mb-3 text-tally">Lần dựng vừa rồi thất bại ở bước {p.render.stages.find((s) => s.status === "failed")?.stage_key}. Xem chi tiết ở mục Tiến trình, rồi bấm dựng lại.</p>}
               {p.render?.status === "blocked" && <p className="mb-3 text-cue">Việc dựng đang dừng và cần bạn xử lý. Xem ở mục Tiến trình.</p>}
               {!latest && !rendering && <Empty icon="scissors" title="Sẵn sàng dựng">Các clip đã được duyệt. Bấm Dựng video để hệ thống đọc lời dẫn, vẽ phụ đề và ghép cảnh.</Empty>}
@@ -335,6 +418,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
                     <video ref={cut} key={latest.url} src={latest.url} controls className={`w-full bg-black ${latest.qc.format === "portrait" ? "mx-auto aspect-[9/16] max-h-[70vh] w-auto" : latest.qc.format === "square" ? "mx-auto aspect-square max-h-[70vh] w-auto" : "aspect-video"}`} />
                   </div>
                   <div className="grid min-w-0 content-start gap-4">
+                    {latest.qc.external && <p className="panel px-4 py-3 text-[13px] text-mute">Bản này được hoàn thiện ở phần mềm khác rồi nhập vào. Kiểm tra bên dưới đo trên chính file đó.</p>}
                     {latest.qc.draft && <p className="cue-card px-4 py-3 text-[13px] text-cue">Bản nháp: một số cảnh được cắt từ bản xem vì không tìm thấy file gốc. Cắm lại ổ chứa footage rồi dựng lại để có bản cuối.</p>}
                     <div className="panel overflow-hidden">
                       <p className="eyebrow flex items-center justify-between border-b border-line px-4 py-2.5"><span>Kiểm tra chất lượng</span><Tag tone={latest.qc.passed ? "proof" : "tally"}>{latest.qc.passed ? "Đạt" : "Không đạt"}</Tag></p>
@@ -365,6 +449,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
                       </div>
                     )}
                     {p.render?.status === "succeeded" && <><p className="flex items-center gap-2 text-proof"><Icon name="check" />Bạn đã duyệt bản dựng này.</p><PackagePanel render={latest} reload={reload} /></>}
+                    <Finishing id={id} render={latest} format={p.format} run={run} />
                     <p className="text-[13px]"><a className="inline-flex items-center gap-1.5 text-ink underline decoration-edge underline-offset-4 hover:decoration-mute" href={`/api/v1/renders/${latest.render_id}/edl`} download><Icon name="download" size={14} />Tải danh sách cắt (EDL)</a> <span className="text-mute">để dựng tiếp trong DaVinci Resolve từ file gốc</span></p>
                     {p.renders.length > 1 && (
                       <details className="panel group px-4 py-3">
@@ -420,6 +505,12 @@ function Detail({ id, back }: { id: string; back: () => void }) {
               </div>
               <p className="mt-1.5 text-[12px] text-faint">{!p.narration_dir ? "Đặt tên file theo số câu. Câu nào không có file thì dùng giọng máy." : p.own_takes.length ? `Đã có bản thu cho câu ${p.own_takes.join(", ")}. Các câu còn lại dùng giọng máy.` : "Chưa thấy file thu âm nào trong thư mục này."}</p>
             </form>
+            <div className="grid gap-2">
+              <label className="flex items-start gap-2.5 text-[13px]"><input type="checkbox" className="mt-0.5" checked={!!p.options.clean_audio} disabled={busy} onChange={(e) => patch({ options: { clean_audio: e.target.checked } })} />
+                <span>Làm sạch âm thanh<span className="block text-[12px] text-faint">Giảm tiếng ù và tiếng xì ở lời tự thu và âm thanh gốc.</span></span></label>
+              <label className="flex items-start gap-2.5 text-[13px]"><input type="checkbox" className="mt-0.5" checked={!!p.options.match_colour} disabled={busy} onChange={(e) => patch({ options: { match_colour: e.target.checked } })} />
+                <span>Cân màu giữa các cảnh<span className="block text-[12px] text-faint">Kéo độ sáng và tương phản của từng cảnh về cùng một mức.</span></span></label>
+            </div>
             <div><label htmlFor="due" className={field}>Ngày dự định đăng</label>
               <input id="due" type="date" defaultValue={p.due_date ?? ""} key={p.due_date ?? "none"} onChange={(e) => patch({ due_date: e.target.value })} className="mono mt-1.5 h-9 w-full px-3" /></div>
             <label className="flex items-start gap-2.5 rounded-lg border border-line bg-raised/50 p-3"><input type="checkbox" className="mt-0.5" checked={p.auto_accept} disabled={busy} onChange={(e) => patch({ auto_accept: e.target.checked ? 1 : 0 })} />
@@ -546,14 +637,15 @@ function Bible({ entries, save }: { entries: BibleEntry[]; save: (b: BibleEntry[
       <p className="mt-1 text-[12px] text-faint">Câu nào nhắc tới tên ở đây thì ảnh của câu đó được tả đúng như mô tả này. Mục “Phong cách” áp dụng cho mọi ảnh.</p>
       <ul className="rows mt-2 empty:hidden">
         {entries.map((e) => (
-          <li key={e.name} className="flex gap-2 py-1.5 text-[12.5px]"><span className="min-w-0 flex-1"><span className="font-medium">{e.name}</span><span className="ml-1.5 text-faint">{KIND[e.kind]}</span><span className="block text-mute">{e.description}</span></span>
+          <li key={e.name} className="flex gap-2 py-1.5 text-[12.5px]"><span className="min-w-0 flex-1"><span className="font-medium">{e.name}</span><span className="ml-1.5 text-faint">{KIND[e.kind]}{e.voice ? `, giọng ${e.voice}` : ""}</span><span className="block text-mute">{e.description}</span></span>
             <button type="button" className="link shrink-0" onClick={() => save(entries.filter((x) => x.name !== e.name))}>Bỏ</button></li>))}
       </ul>
       <form className="mt-2 grid gap-2" onSubmit={(ev) => { ev.preventDefault(); const f = new FormData(ev.currentTarget); const name = String(f.get("name") ?? "").trim(); if (!name) return;
-        save([...entries.filter((x) => x.name !== name), { name, kind: String(f.get("kind")) as BibleEntry["kind"], description: String(f.get("description") ?? ""), asset_id: null }]); ev.currentTarget.reset(); }}>
+        save([...entries.filter((x) => x.name !== name), { name, kind: String(f.get("kind")) as BibleEntry["kind"], description: String(f.get("description") ?? ""), voice: String(f.get("voice") ?? "").trim() || null, asset_id: null }]); ev.currentTarget.reset(); }}>
         <div className="flex gap-2"><input name="name" aria-label="Tên" placeholder="Tên, ví dụ: Mít" className="h-8 min-w-0 flex-1 px-2.5" />
           <select name="kind" aria-label="Loại" className="h-8 pl-2">{Object.entries(KIND).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>
         <input name="description" aria-label="Mô tả" placeholder="Mô tả bằng tiếng Anh cho mô hình: an orange tabby cat with a white chest" className="h-8 px-2.5" />
+        <input name="voice" aria-label="Giọng đọc của nhân vật" placeholder="Giọng đọc riêng (tuỳ chọn). Câu viết “Tên: lời thoại” sẽ dùng giọng này" className="h-8 px-2.5" />
         <div><Button size="sm" type="submit">Thêm</Button></div>
       </form>
     </div>
