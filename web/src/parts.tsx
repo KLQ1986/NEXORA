@@ -19,6 +19,7 @@ export function RangeStrip({ asset, playhead, onSeek, tall = false }: { asset: A
         {asset.black_ranges.map((r, i) => <div key={`b${i}`} className="hatch absolute inset-y-0 bg-canvas" style={span(r)} title="Khung đen, không dùng được" />)}
         {asset.frozen_ranges.map((r, i) => <div key={`f${i}`} className="dots absolute inset-y-0 bg-raised/90" style={span(r)} title="Hình đứng yên" />)}
         {tall && minutes.map((m) => <div key={m} className="absolute inset-y-0 w-px bg-canvas/70" style={{ left: pct(m) }} />)}
+        {tall && (asset.scene_cuts ?? []).map((c) => <div key={`c${c}`} className="absolute inset-y-1 w-[2px] rounded-full bg-ink/70" style={{ left: pct(c) }} title={`Chuyển cảnh ở ${timecode(c)}`} />)}
         {playhead != null && <div className="absolute inset-y-0 w-0.5 bg-cue shadow-[0_0_8px_var(--color-cue)]" style={{ left: pct(playhead) }} />}
       </div>
       {tall && (

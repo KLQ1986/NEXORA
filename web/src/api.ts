@@ -4,7 +4,7 @@ export type Stage = { stage_id: string; stage_key: string; status: string; block
 export type Run = { held?: boolean; stalled?: boolean; run_id: string; pipeline: string; subject_ref: string | null; created_at: number; status: string; cost: number; stages: Stage[] };
 export type Word = { text: string; start: number; end: number; p: number };
 export type Asset = {
-  enhance: Run | null; enhanced: { upscale: number; smooth_fps: number | null } | null; rejected: boolean; session: string; used_in: { project_id: string; title: string }[]; speech: { words: number; sentences: number; seconds: number; doubtful: number } | null; transcribe: Run | null;
+  scene_cuts?: number[]; enhance: Run | null; enhanced: { upscale: number; smooth_fps: number | null } | null; rejected: boolean; session: string; used_in: { project_id: string; title: string }[]; speech: { words: number; sentences: number; seconds: number; doubtful: number } | null; transcribe: Run | null;
   asset_id: string; name: string; path: string; online: boolean; size: number; duplicate_of: string | null;
   duration: number | null; width: number | null; height: number | null; frame_rate: number | null; has_audio: boolean | null;
   usable_ranges: number[][]; black_ranges: number[][]; frozen_ranges: number[][];

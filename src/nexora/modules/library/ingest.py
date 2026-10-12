@@ -26,6 +26,8 @@ AUDIO_EXT = frozenset({".mp3", ".wav", ".m4a", ".aiff", ".flac"})
 
 # A larger or smoother copy of one clip, asked for by the operator. Slow, so it runs with the other background work.
 ENHANCE = PipelineDefinition("library.enhance", "1", [StageDef("enhance", timeout_seconds=6 * 3600, lane="background")])
+# Scene cuts for footage that was taken in before cuts were looked for.
+FIND_CUTS = PipelineDefinition("library.cuts", "1", [StageDef("cuts", lane="background")])
 # A photograph: no proxy and no time ranges. It is its own thumbnail.
 INGEST_IMAGE = PipelineDefinition("library.ingest_image", "1", [StageDef("checksum"), StageDef("measure", depends_on=("checksum",))])
 # Music: its length and how loud it is, so that a track can be chosen for a cut without opening it.
@@ -64,6 +66,7 @@ class Library:
                           on_success=(lambda run_id, asset_id: self.understand(asset_id)) if self._understanding else None)
         registry.register(INGEST_AUDIO, {"checksum": self._checksum, "listen": self._listen})
         registry.register(ENHANCE, {"enhance": self._enhance})
+        registry.register(FIND_CUTS, {"cuts": self._find_cuts})
         if self._transcription:
             from nexora.modules.library.transcribe import TRANSCRIBE
             registry.register(TRANSCRIBE, self._transcription.handlers())
@@ -147,6 +150,27 @@ class Library:
         self._adapters.submit("ffmpeg", Request("enhance", inputs={"path": str(path)}, params={"out": str(out), **wanted, "color_transfer": original.metadata.get("probe", {}).get("color_transfer")}, attempt_id=ctx.claim.attempt_id))
         version_id = self._assets.add_version(ctx.subject_ref, out, role="enhanced", parents=[original.version_id], attempt_id=ctx.claim.attempt_id, metadata=wanted)
         return {"enhanced_version_id": version_id, **wanted}
+
+    def find_missing_cuts(self) -> list[str]:
+        """Look for scene cuts in every video that was taken in before cuts were looked for. Runs with the background work,
+        so it never holds up a render. Returns the runs started."""
+        runs = []
+        for asset in self._assets.assets():
+            if asset["kind"] != "video":
+                continue
+            original = self._assets.original(asset["asset_id"])
+            meta = original.metadata
+            if "duplicate_of" in meta or "scene_cuts" in meta or not meta.get("probe", {}).get("duration") or not self._assets.path_of(original).is_file():
+                continue
+            runs.append(self._orch.submit_run(FIND_CUTS, subject_ref=asset["asset_id"], idempotency_key=f"cuts:{asset['asset_id']}"))
+        return runs
+
+    def _find_cuts(self, ctx):
+        original, path = self._source(ctx)
+        cuts = self._adapters.submit("ffmpeg", Request("scenecuts", inputs={"path": str(path)}, params={"color_transfer": original.metadata.get("probe", {}).get("color_transfer")},
+                                                      attempt_id=ctx.claim.attempt_id)).outputs["cuts"]
+        self._assets.update_metadata(original.version_id, scene_cuts=cuts)
+        return {"scene_cuts": len(cuts)}
 
     def measure_unmeasured_music(self) -> list[str]:
         """Listen again to every music track taken in before tracks were measured for tempo and liveliness. Returns the runs started."""

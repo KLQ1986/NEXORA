@@ -106,3 +106,18 @@ def test_the_places_where_the_picture_changes_outright_are_found(system, tmp_pat
         pass
     cuts = system.assets.original(asset).metadata["scene_cuts"]
     assert len(cuts) == 2 and cuts[0] == pytest.approx(4.0, abs=0.1) and cuts[1] == pytest.approx(7.0, abs=0.1)
+
+
+def test_footage_taken_in_before_cuts_were_looked_for_is_looked_through_once(system, plain_clip):
+    asset, _ = system.library.ingest(plain_clip)
+    while system.worker.run_once():
+        pass
+    original = system.assets.original(asset)
+    meta = dict(original.metadata); meta.pop("scene_cuts")
+    import json, sqlite3
+    db = sqlite3.connect(system.data_dir / "nexora.db"); db.execute("UPDATE asset_versions SET metadata = ? WHERE version_id = ?", (json.dumps(meta), original.version_id)); db.commit(); db.close()
+    assert "scene_cuts" not in system.assets.original(asset).metadata                     # as an older version left it
+    assert len(system.library.find_missing_cuts()) == 1
+    while system.worker.run_once():
+        pass
+    assert system.assets.original(asset).metadata["scene_cuts"] == [] and system.library.find_missing_cuts() == []
