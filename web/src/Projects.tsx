@@ -433,6 +433,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
   const { data: lib } = usePoll<{ assets: Asset[] }>("/api/v1/library", 30000);
   const tracks = (lib?.assets ?? []).filter((a) => a.kind === "audio" && a.online);
   const { data: prefs } = usePoll<Settings>("/api/v1/settings", 30000);
+  const { data: chan } = usePoll<{ channels: Channel[] }>("/api/v1/channels", 60000);
   const cut = useRef<HTMLVideoElement>(null);
   const stored = p ? scriptText(p.shots) : null;
   const last = useRef<string | null>(null);
@@ -463,7 +464,6 @@ function Detail({ id, back }: { id: string; back: () => void }) {
     : null;
   const field = "field-label";
   const card = "panel grid gap-4 p-4";
-  const { data: chan } = usePoll<{ channels: Channel[] }>("/api/v1/channels", 60000);
   const channels = chan?.channels ?? [];
   const previewing = !!p?.preview && ["queued", "running"].includes(p.preview.status);
   const facts = (p?.shots ?? []).filter((s) => s.is_fact);
