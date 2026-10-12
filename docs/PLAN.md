@@ -298,11 +298,13 @@ Sự cố trong lượt này: cài `ffmpeg-full` làm Homebrew nâng thư viện
 - [x] Khớp khẩu hình và phóng to bằng mô hình qua endpoint RunPod do người vận hành thuê (`runpod_lipsync_endpoint`, `runpod_upscale_endpoint`): bật theo từng cảnh; clip của cảnh được cắt sạch, gửi đi, bản trả về thay vào chỗ nó. Footage riêng chỉ được gửi khi dự án bật "cho gửi footage lên RunPod"; chế độ riêng tư luôn chặn. Mới thử với máy chủ giả; clip gửi đi tối đa khoảng 6 MB
 - [x] Bộ mẫu chuẩn đã chạy trên dữ liệu thật trong máy ngày 2026-10-12: 17 mẫu lấy từ các clip đã duyệt, đúng ngay lần đầu 71%, nằm trong ba kết quả đầu 100% (mô hình bge-m3 và qwen2.5vl:7b). Lưu ý: các mẫu này vốn do chính hệ thống đề xuất rồi được duyệt, nên con số nghiêng về phía có lợi; mẫu do người vận hành tự chọn tay sẽ khắt khe hơn
 
+- [x] Huấn luyện mô hình nhân vật qua endpoint RunPod (`runpod_train_endpoint`): chọn một bộ sưu tập ảnh (4 đến 20 ảnh) cho một nhân vật trong hồ sơ dự án; việc chạy nền, tính tiền theo giây; mô hình trả về được lưu cùng nhân vật và được nạp cho mọi cảnh nhắc tên nhân vật đó, kèm từ kích hoạt trong prompt. Ảnh riêng chỉ được gửi khi dự án cho phép. Mới thử với máy chủ giả; nhà cung cấp ảnh phải nhận được tệp mô hình (Pollinations thì không)
+
 ### Còn lại sau lượt này
 
 Cần thứ ngoài máy này: tài khoản và khoá API của nền tảng (tự đăng, tự lấy số liệu), khoá của nhà cung cấp video AI, khoá Anthropic để chạy thật adapter Claude, dịch vụ tìm kiếm trên toàn bộ web (hiện chỉ tìm trên Wikipedia).
 
-Cần endpoint RunPod thật để chạy: video AI, khớp khẩu hình, phóng to bằng mô hình (adapter đã có). Chưa có đường nào cho huấn luyện mô hình nhân vật.
+Cần endpoint RunPod thật để chạy: video AI, khớp khẩu hình, phóng to bằng mô hình, huấn luyện mô hình nhân vật (adapter đã có, mới thử với máy chủ giả). Để dùng mô hình nhân vật đã huấn luyện còn cần một nhà cung cấp ảnh nhận tệp mô hình, ví dụ một endpoint ảnh trên RunPod.
 
 Chạy thử một lần với mô hình thật (qwen2.5vl:7b) ngày 2026-10-12: vai phản biện chỉ chép lại từng câu thay vì nêu vấn đề (hệ thống nay bỏ những "nhận xét" trùng với câu trong kịch bản), và vai tìm dữ kiện đánh dấu cả bốn câu tả cảnh là dữ kiện. Hai việc chữ này cần mô hình viết tốt hơn mô hình nhìn 7B; đây là lý do có bộ định tuyến mô hình.
 

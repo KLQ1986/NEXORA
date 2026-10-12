@@ -153,3 +153,21 @@ class RunPodUpscale(RunPodVideo):
 
     def submit(self, request: Request) -> Result:
         return self._start({"input": {"video": _b64(request.inputs["video"]), "scale": int(request.params.get("scale", 2))}}, Path(request.params["out"]), request.deadline_seconds)
+
+
+class RunPodTrainer(RunPodVideo):
+    """Pictures of one character sent to a training endpoint; a small model of that character (a LoRA) comes back as a file.
+    The handler gets `images` (base64), `name` and `trigger`, and returns `model_url` or `model` (base64). Training runs for
+    minutes, so the wait is long and the job is cancelled only when it outlives it."""
+    KIND, OPERATION = "train", "train"
+
+    def _collect(self, job: dict, out: Path) -> Result:
+        output = job.get("output") if isinstance(job.get("output"), dict) else {}
+        return super()._collect({**job, "output": {"video_url": output.get("model_url"), "video": output.get("model"), "model": output.get("base_model")}}, out)
+
+    def submit(self, request: Request) -> Result:
+        images = [_b64(p) for p in request.inputs["images"]]
+        if not images:
+            raise AdapterError(ErrorCode.INVALID_REQUEST, "training needs at least one picture")
+        return self._start({"input": {"images": images, "name": request.params["name"], "trigger": request.params["trigger"], "steps": int(request.params.get("steps", 1000))}},
+                           Path(request.params["out"]), request.deadline_seconds or 4 * 3600)

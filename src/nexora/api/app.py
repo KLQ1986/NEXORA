@@ -866,6 +866,17 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             raise HTTPException(422, "Không có câu nào được giữ lại. Bản ghi này có thể chưa được nghe, hoặc không có lời nói.")
         return project_view(need_project(project_id))
 
+    @app.post("/api/v1/projects/{project_id}/characters/train", status_code=202)
+    def train_character(project_id: str, body: dict):
+        """Train a model of one character from pictures in the library, on the operator's training endpoint."""
+        need_project(project_id)
+        if not any(c.name == "train" or c.name.startswith("train.") for c in system.adapters.describe()):
+            raise HTTPException(409, "Máy này chưa nối với endpoint huấn luyện nào (runpod_train_endpoint trong nexora.toml)")
+        try:
+            return {"run_id": system.generation.start_training(project_id, str(body.get("name", "")), [str(a) for a in body.get("assets") or []])}
+        except ValueError:
+            raise HTTPException(422, "Cần một nhân vật của dự án và ít nhất 4 ảnh trong thư viện")
+
     @app.post("/api/v1/shots/{shot_id}/variation")
     def vary_shot(shot_id: str):
         """Ask for another picture of the same thing; it is made the next time generation runs."""
@@ -1034,7 +1045,8 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             fields["options"] = json.dumps({**current, **{k: bool(v) for k, v in (fields["options"] or {}).items() if k in ("clean_audio", "match_colour", "music_cleared", "footage_may_leave")}})
         if "bible" in fields:                    # how the project's characters, places and props look, so that every shot shows them the same way
             kinds = ("character", "setting", "prop", "style")
-            fields["bible"] = json.dumps([{"name": str(e.get("name", "")).strip(), "kind": e.get("kind") if e.get("kind") in kinds else "character", "voice": str(e.get("voice") or "").strip() or None,
+            kept = {e["name"]: e for e in json.loads(need_project(project_id).get("bible") or "[]")}          # a trained model stays with its character through edits
+            fields["bible"] = json.dumps([{**{k: kept.get(str(e.get("name", "")).strip(), {}).get(k) for k in ("model", "training") if kept.get(str(e.get("name", "")).strip(), {}).get(k)}, "name": str(e.get("name", "")).strip(), "kind": e.get("kind") if e.get("kind") in kinds else "character", "voice": str(e.get("voice") or "").strip() or None,
                                            "description": str(e.get("description") or "").strip(), "asset_id": e.get("asset_id") if system.assets.asset(str(e.get("asset_id") or "")) else None}
                                           for e in fields["bible"] if str(e.get("name", "")).strip()], ensure_ascii=False)
         if "due_date" in fields:

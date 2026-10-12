@@ -693,7 +693,8 @@ function Detail({ id, back }: { id: string; back: () => void }) {
                   <ol className="grid gap-2">
                     {p.shots.map((s, i) => <GenRow key={s.shot_id} shot={s} n={i + 1} providers={p.generators} changed={reload} />)}
                   </ol>
-                  <Bible entries={p.bible} save={(bible) => patch({ bible })} />
+                  <Bible entries={p.bible} save={(bible) => patch({ bible })} images={(lib?.assets ?? []).filter((a) => a.kind === "image")}
+                         train={(name, assets) => run(() => post(`/api/v1/projects/${id}/characters/train`, { name, assets }))} />
                 </>
               )}
             </div>
@@ -744,7 +745,8 @@ function GenRow({ shot, n, providers, changed }: { shot: Shot; n: number; provid
 
 const KIND: Record<string, string> = { character: "Nhân vật", setting: "Bối cảnh", prop: "Đồ vật", style: "Phong cách" };
 /** How the project's characters, places and look are described, so that every shot shows them the same way. */
-function Bible({ entries, save }: { entries: BibleEntry[]; save: (b: BibleEntry[]) => void }) {
+function Bible({ entries, save, images = [], train }: { entries: BibleEntry[]; save: (b: BibleEntry[]) => void; images?: Asset[]; train?: (name: string, assets: string[]) => void }) {
+  const sets = [...new Set(images.flatMap((a) => a.collections))].sort();
   return (
     <div className="border-t border-line pt-3">
       <h3 className="flex items-center gap-2 text-[13px] font-semibold"><Icon name="user" size={14} className="text-mute" />Nhân vật và bối cảnh<span className="mono ml-auto text-[12px] font-normal text-faint">{entries.length}</span></h3>
@@ -752,7 +754,12 @@ function Bible({ entries, save }: { entries: BibleEntry[]; save: (b: BibleEntry[
       <ul className="rows mt-2 empty:hidden">
         {entries.map((e) => (
           <li key={e.name} className="flex gap-2 py-1.5 text-[12.5px]"><span className="min-w-0 flex-1"><span className="font-medium">{e.name}</span><span className="ml-1.5 text-faint">{KIND[e.kind]}{e.voice ? `, giọng ${e.voice}` : ""}</span><span className="block text-mute">{e.description}</span></span>
-            <button type="button" className="link shrink-0" onClick={() => save(entries.filter((x) => x.name !== e.name))}>Bỏ</button></li>))}
+            <span className="flex shrink-0 flex-col items-end gap-1">
+              <button type="button" className="link" onClick={() => save(entries.filter((x) => x.name !== e.name))}>Bỏ</button>
+              {e.kind === "character" && (e.model ? <span className="text-[11.5px] text-proof">đã có mô hình riêng</span> : e.training?.status === "queued" ? <span className="text-[11.5px] text-ai">đang huấn luyện</span>
+                : train && sets.length > 0 && <select aria-label={`Huấn luyện mô hình cho ${e.name} từ bộ sưu tập`} value="" onChange={(ev) => ev.target.value && train(e.name, images.filter((a) => a.collections.includes(ev.target.value)).map((a) => a.asset_id))} className="h-7 max-w-[150px] pl-1.5 text-[11.5px]">
+                    <option value="">Huấn luyện từ…</option>{sets.map((g) => <option key={g} value={g}>{g} ({images.filter((a) => a.collections.includes(g)).length} ảnh)</option>)}</select>)}
+            </span></li>))}
       </ul>
       <form className="mt-2 grid gap-2" onSubmit={(ev) => { ev.preventDefault(); const f = new FormData(ev.currentTarget); const name = String(f.get("name") ?? "").trim(); if (!name) return;
         save([...entries.filter((x) => x.name !== name), { name, kind: String(f.get("kind")) as BibleEntry["kind"], description: String(f.get("description") ?? ""), voice: String(f.get("voice") ?? "").trim() || null, asset_id: null }]); ev.currentTarget.reset(); }}>

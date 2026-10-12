@@ -185,3 +185,59 @@ def test_lip_sync_and_model_upscaling_are_done_on_a_shot_and_the_operators_own_f
         assert len(lips.runs) == 1                                                     # privacy mode overrides the project's permission
     finally:
         lips.server.shutdown(); bigger.server.shutdown()
+
+
+def test_a_character_model_is_trained_from_library_pictures_and_then_loaded_for_every_shot_that_names_the_character(tmp_path):
+    from fastapi.testclient import TestClient
+    from nexora.adapters.runpod import RunPodTrainer
+    from nexora.api.app import create_app
+    from nexora.app import capabilities
+    trainer = Pod(tmp_path / "trainer")
+
+    class TrainPod(http.server.BaseHTTPRequestHandler):
+        jobs = []
+        def _send(self, body):
+            self.send_response(200); self.send_header("content-type", "application/json"); self.end_headers(); self.wfile.write(json.dumps(body).encode())
+        def do_POST(self):
+            TrainPod.jobs.append(json.loads(self.rfile.read(int(self.headers["content-length"])))["input"])
+            self._send({"id": "train-1", "status": "IN_QUEUE"})
+        def do_GET(self):
+            self._send({"id": "train-1", "status": "COMPLETED", "executionTime": 600000, "output": {"model": base64.b64encode(b"LORA" * 600).decode(), "base_model": "flux"}})
+        def log_message(self, *a): pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), TrainPod)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    trainer.server.shutdown()
+    try:
+        image = FakeImageGen()
+        system = build(tmp_path / "data", voice=FakeVoice(), generators=[image, RunPodTrainer("k", "ep", host=f"http://127.0.0.1:{server.server_port}", price_per_second=0.001, poll_seconds=0.01)])
+        client = TestClient(create_app(system))
+        assert next(c for c in capabilities(system) if c["pipeline"] == "sourcing.train")["available"]
+        pictures = []
+        for i in range(5):
+            Image.new("RGB", (64, 64), (200, 100 + i * 20, 40)).save(tmp_path / f"mit{i}.png")
+            pictures.append(system.library.ingest(tmp_path / f"mit{i}.png")[0])
+        while system.worker.run_once(): pass
+        pid = client.post("/api/v1/projects", json={"title": "Mít", "lines": ["Mít ngồi bên cửa sổ.", "Trời mưa ngoài hiên."]}).json()["project_id"]
+        client.patch(f"/api/v1/projects/{pid}", json={"bible": [{"name": "Mít", "kind": "character", "description": "an orange tabby cat"}]})
+        assert client.post(f"/api/v1/projects/{pid}/characters/train", json={"name": "Mít", "assets": pictures[:2]}).status_code == 422       # too few pictures
+        assert client.post(f"/api/v1/projects/{pid}/characters/train", json={"name": "Mít", "assets": pictures}).status_code == 202
+        while system.worker.run_once(): pass
+        assert TrainPod.jobs == []                                    # the operator's own pictures: not sent without the project's permission
+        client.patch(f"/api/v1/projects/{pid}", json={"options": {"footage_may_leave": True}})
+        run = client.post(f"/api/v1/projects/{pid}/characters/train", json={"name": "Mít", "assets": pictures}).json()["run_id"]
+        while system.worker.run_once(): pass
+        assert system.orch.run_status(run) is RunStatus.SUCCEEDED and system.orch.run_cost(run) == pytest.approx(0.6)
+        assert len(TrainPod.jobs) == 1 and len(TrainPod.jobs[0]["images"]) == 5 and TrainPod.jobs[0]["trigger"] == "nxmit"
+        entry = client.get(f"/api/v1/projects/{pid}").json()["bible"][0]
+        assert entry["training"]["status"] == "done" and entry["model"].endswith(".safetensors")
+        client.patch(f"/api/v1/projects/{pid}", json={"bible": [{"name": "Mít", "kind": "character", "description": "an orange tabby cat with a white chest"}]})
+        assert client.get(f"/api/v1/projects/{pid}").json()["bible"][0]["model"] == entry["model"]              # editing the description keeps the trained model
+
+        client.post(f"/api/v1/projects/{pid}/generate")
+        while system.worker.run_once(): pass
+        first, second = image.requests
+        assert first.inputs["models"] == [entry["model"]] and "nxmit an orange tabby cat with a white chest" in first.inputs["prompt"]
+        assert second.inputs["models"] == [] and "nxmit" not in second.inputs["prompt"]                          # the line that does not name the character
+    finally:
+        server.shutdown()

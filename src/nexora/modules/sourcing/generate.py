@@ -24,6 +24,9 @@ GENERATE = PipelineDefinition("sourcing.generate", "1", [
     StageDef("keyframes", costly=True, gate=True, requires=("image_gen",)),                       # stills first: cheap to produce, cheap to correct
     StageDef("clips", depends_on=("keyframes",), costly=True, gate=True, requires=("video_gen",)),
 ])
+# A model of one character, trained from the operator's pictures of it. Long and paid for, so it runs in the background and is asked for by name.
+TRAIN = PipelineDefinition("sourcing.train", "1", [StageDef("train", costly=True, timeout_seconds=5 * 3600, lane="background", requires=("train",))])
+MIN_PICTURES, MAX_PICTURES = 4, 20
 COMPILER_VERSION = "2"
 MAX_REPAIRS = 2              # after the first still, at most this many more are made for one shot
 QUALITY_PASS = 6             # out of 10: below this a still is made again
@@ -51,6 +54,7 @@ class PromptSpec:
     exclusions: str = "text, watermark, logo, distorted hands"
     cast: str = ""                       # how the named characters, places and props of the project look, so that they look the same in every shot
     references: tuple = ()               # asset ids of the pictures that show them
+    models: tuple = ()                   # trained character models (LoRA files) to load for this picture
 
 
 def compile_prompt(spec: PromptSpec, *, kind: str) -> str:
@@ -90,6 +94,44 @@ class Generation:
 
     def register(self, registry: PipelineRegistry) -> None:
         registry.register(GENERATE, {"keyframes": self._keyframes, "clips": self._clips})
+        registry.register(TRAIN, {"train": self._train})
+
+    def start_training(self, project_id: str, name: str, asset_ids: list[str]) -> str:
+        """Train a model of one character of the project's bible from pictures in the library. The pictures are sent to the
+        operator's training endpoint, so only pictures allowed to leave this machine are taken unless the project permits it."""
+        project = self._projects.project(project_id)
+        bible = json.loads(project.get("bible") or "[]")
+        entry = next((e for e in bible if e["name"] == name and e.get("kind") == "character"), None)
+        pictures = [a for a in dict.fromkeys(asset_ids) if (self._assets.asset(a) or {}).get("kind") == "image"][:MAX_PICTURES]
+        if entry is None or len(pictures) < MIN_PICTURES:
+            raise ValueError(f"training needs a character of this project and at least {MIN_PICTURES} pictures from the library")
+        import re, unicodedata
+        plain = "".join(c for c in unicodedata.normalize("NFD", name.replace("đ", "d").replace("Đ", "D")) if unicodedata.category(c) != "Mn")
+        entry["training"] = {"assets": pictures, "status": "queued", "trigger": "nx" + re.sub(r"[^a-z0-9]", "", plain.lower())[:12]}
+        self._projects.update_project(project_id, bible=json.dumps(bible, ensure_ascii=False))
+        return self._orch.submit_run(TRAIN, subject_ref=f"{project_id}|{name}")
+
+    def _train(self, ctx):
+        project_id, _, name = ctx.subject_ref.partition("|")
+        project = self._projects.project(project_id)
+        bible = json.loads(project.get("bible") or "[]")
+        entry = next(e for e in bible if e["name"] == name)
+        job = entry["training"]
+        may_leave = bool(json.loads(project.get("options") or "{}").get("footage_may_leave"))
+        private = [a for a in job["assets"] if (self._assets.asset(a) or {}).get("privacy_class") != "cloud_allowed"]
+        paths = [str(self._assets.path_of(self._assets.original(a))) for a in job["assets"]]
+        out = self._media / f"character_{hashlib.sha256(ctx.subject_ref.encode()).hexdigest()[:12]}.safetensors"
+        result, provider = self._submit("train", None, Request("train", inputs={"images": paths}, params={"out": str(out), "name": name, "trigger": job["trigger"]}, attempt_id=ctx.claim.attempt_id,
+                                                              privacy_class=PrivacyClass.LOCAL_ONLY if private and not may_leave else PrivacyClass.CLOUD_ALLOWED))
+        if result.usage.cost:
+            ctx.record_cost(provider=provider, units=result.usage.units, cost=result.usage.cost)
+        bible = json.loads(self._projects.project(project_id).get("bible") or "[]")            # read again: the operator may have edited it meanwhile
+        for e in bible:
+            if e["name"] == name:
+                e["model"] = str(out)
+                e["training"] = {**job, "status": "done", "base_model": result.outputs.get("model")}
+        self._projects.update_project(project_id, bible=json.dumps(bible, ensure_ascii=False))
+        return {"model": str(out), "pictures": len(paths)}
 
     def providers(self, kind: str) -> list[dict]:
         """Every adapter that makes this kind of picture: `image_gen` itself or `image_gen.<name>`, in the operator's order."""
@@ -140,7 +182,9 @@ class Generation:
                           shot_size=gen.get("shot_size") if gen.get("shot_size") in SHOT_SIZES else "medium shot",
                           camera=gen.get("camera") if gen.get("camera") in CAMERAS else "slow push in",
                           duration=round(max(2.5, len(shot.text.split()) / WORDS_PER_SECOND), 2),
-                          cast="; ".join(f"{e['name']}: {e['description']}" for e in cast if e.get("description")),
+                          cast="; ".join(f"{e['name']}: {' '.join(filter(None, [(e.get('training') or {}).get('trigger') if e.get('model') else None, e.get('description')]))}"
+                                         for e in cast if e.get("description") or e.get("model")),
+                          models=tuple(e["model"] for e in cast if e.get("model")),
                           references=tuple(e["asset_id"] for e in cast if e.get("asset_id")))
 
     def _reference_paths(self, spec: PromptSpec) -> list[str]:
@@ -187,7 +231,7 @@ class Generation:
             for repair, seed in enumerate(seeds):
                 out = self._media / (f"{shot.shot_id}_key.png" if not turn and not repair else f"{shot.shot_id}_key_{turn}_{repair}.png")
                 result, provider = self._submit("image_gen", shot.gen.get("provider_image"), Request(
-                    "generate", inputs={"prompt": prompt, "references": self._reference_paths(spec)}, params={"out": str(out), "seed": seed, "aspect": spec.aspect},
+                    "generate", inputs={"prompt": prompt, "references": self._reference_paths(spec), "models": [m for m in spec.models if Path(m).is_file()]}, params={"out": str(out), "seed": seed, "aspect": spec.aspect},
                     attempt_id=ctx.claim.attempt_id, privacy_class=PrivacyClass.CLOUD_ALLOWED))
                 if result.usage.cost:
                     ctx.record_cost(provider=provider, units=result.usage.units, cost=result.usage.cost)
