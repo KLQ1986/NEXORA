@@ -3,10 +3,6 @@
 @import "@fontsource/be-vietnam-pro/500.css";
 @import "@fontsource/be-vietnam-pro/600.css";
 @import "@fontsource/be-vietnam-pro/700.css";
-@import "@fontsource/open-sans/400.css";
-@import "@fontsource/open-sans/500.css";
-@import "@fontsource/open-sans/600.css";
-@import "@fontsource/open-sans/700.css";
 
 /* NEXORA Studio: a dark post-production suite.
    Near-black chrome so the picture is what you judge. One brand colour (violet) for the primary action and the
@@ -42,10 +38,12 @@
 }
 
 html { color-scheme: dark; height: 100%; -webkit-text-size-adjust: 100%; }
-/* Vietnamese is set in Open Sans, whose open counters and tall x-height keep the stacked diacritics (ấ, ồ, ữ) legible at
-   13–14 px; the fontsource build has the Vietnamese subset and all four weights. English keeps Be Vietnam Pro. */
-html[lang="vi"] { --font-sans: "Open Sans", "Be Vietnam Pro", system-ui, sans-serif; }
-html[lang="vi"] h1, html[lang="vi"] h2, html[lang="vi"] h3 { letter-spacing: -0.01em; }
+/* Vietnamese is set in Tahoma, which ships with macOS and Windows and keeps the stacked diacritics (ấ, ồ, ữ) clear at small
+   sizes. Tahoma is cut tight, so the text gets one size more and a little tracking; headings lose the negative tracking of
+   Be Vietnam Pro. English keeps Be Vietnam Pro. (Open Sans was tried in between; its package stays installed.) */
+html[lang="vi"] { --font-sans: Tahoma, "Be Vietnam Pro", system-ui, sans-serif; }
+html[lang="vi"] body { font-size: 15px; letter-spacing: 0.012em; }
+html[lang="vi"] h1, html[lang="vi"] h2, html[lang="vi"] h3 { letter-spacing: 0.005em; }
 @media (pointer: fine) { html { overscroll-behavior: none; } }
 body, #root { height: 100%; }
 body {

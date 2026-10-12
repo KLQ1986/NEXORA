@@ -340,7 +340,7 @@ Sự cố trong lượt này: cài `ffmpeg-full` làm Homebrew nâng thư viện
 
 - [x] Chuyển đổi Việt/Anh: nút `VI | EN` ở thanh đầu trang và thẻ "Ngôn ngữ giao diện" ở Hệ thống › Điều khiển. Lựa chọn nằm trong trình duyệt (`localStorage nx.lang`), mặc định tiếng Việt; đổi ngôn ngữ thì tải lại trang để các hằng số dựng lúc nạp (tên màn hình, tên bước) cũng đổi theo
 - [x] Cách làm: chuỗi tiếng Việt trong mã là khoá (`tr("…")`, mẫu có biến dùng `` tv`…${x}…` `` với `{0}` trong bản dịch); `web/src/en.ts` giữ tiếng Anh cho 1.124 chuỗi; thiếu bản dịch thì hiện tiếng Việt chứ không trống. `npm run i18n:check` liệt kê chuỗi chưa có tiếng Anh và mục tiếng Anh không còn dùng. Ngày giờ theo `locale` (vi-VN / en-US)
-- [x] Font: khi giao diện tiếng Việt dùng Open Sans (gói `@fontsource/open-sans`, có bộ ký tự tiếng Việt và đủ bốn độ đậm 400–700, đóng gói cùng bản dựng nên không tải từ mạng); tiếng Anh giữ Be Vietnam Pro. Đã thử Tahoma trước đó: dấu rõ ở cỡ nhỏ nhưng chỉ có hai độ đậm và tiêu đề lớn trông thô, nên bỏ
+- [x] Font: khi giao diện tiếng Việt dùng Tahoma (có sẵn trên macOS và Windows), cỡ chữ 15 px thay vì 14, giãn chữ 0,012em cho cân, tiêu đề bỏ nén khoảng cách chữ; tiếng Anh giữ Be Vietnam Pro. Đã thử Open Sans ở giữa (gói `@fontsource/open-sans` vẫn cài, không nạp) rồi quay về Tahoma theo ý người vận hành
 - Không dịch: chuỗi do máy chủ sinh (thông báo, lý do dừng, nhận xét kiểm tra, lỗi API) vẫn tiếng Việt; muốn dịch phải thêm khoá thông điệp phía server. Tên dự án, kịch bản, mô tả footage là dữ liệu của người dùng, giữ nguyên
 - Đã kiểm tra bằng trình duyệt ở 1280 px: Tổng quan, trang dự án, Hệ thống ở cả hai ngôn ngữ; 206 test API vẫn đạt
 
