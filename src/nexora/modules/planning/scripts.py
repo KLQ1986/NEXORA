@@ -3,6 +3,8 @@ import json
 import time
 
 from nexora.core.adapter import AdapterRegistry, PrivacyClass, Request
+
+TEXT_ONLY = PrivacyClass.CLOUD_ALLOWED       # a prompt of words alone: it may be served by a cloud model if the operator routes it there
 from nexora.core.assets import AssetStore
 from nexora.core.index import MomentIndex
 from nexora.core.projects import ProjectStore
@@ -74,7 +76,7 @@ class Planning:
         inventory = "\n".join(self.inventory())
         if not inventory:
             return []
-        out = self._adapters.submit("model", Request("chat", params={"prompt": IDEAS_PROMPT.format(inventory=inventory, n=count), "json": True, "max_tokens": 900})).outputs["json"]
+        out = self._adapters.submit("model", Request("chat", privacy_class=TEXT_ONLY, params={"prompt": IDEAS_PROMPT.format(inventory=inventory, n=count), "json": True, "max_tokens": 900})).outputs["json"]
         ideas = []
         for raw in out.get("y_tuong", [])[:count]:
             if not isinstance(raw, dict) or not str(raw.get("tieu_de", "")).strip():
@@ -96,7 +98,7 @@ class Planning:
     def draft_script(self, topic: str, *, lines: int = 6) -> list[str]:
         """Ask the model for a script that only calls for footage that exists."""
         inventory = "\n".join(self.inventory()) or "(kho đang trống)"
-        out = self._adapters.submit("model", Request("chat", params={"prompt": DRAFT_PROMPT.format(topic=topic, inventory=inventory, n=lines),
+        out = self._adapters.submit("model", Request("chat", privacy_class=TEXT_ONLY, params={"prompt": DRAFT_PROMPT.format(topic=topic, inventory=inventory, n=lines),
                                                                     "json": True, "max_tokens": 600})).outputs["json"]
         return [str(c).strip() for c in out.get("cau", []) if str(c).strip()]
 
@@ -120,7 +122,7 @@ class Planning:
         if not script or not script["shots"]:
             return []
         lines = "\n".join(f"{i}. {s.text}" for i, s in enumerate(script["shots"], 1))
-        out = self._adapters.submit("model", Request("chat", params={"prompt": FIND_FACTS_PROMPT.format(lines=lines), "json": True, "max_tokens": 120, "task": "facts"})).outputs["json"]
+        out = self._adapters.submit("model", Request("chat", privacy_class=TEXT_ONLY, params={"prompt": FIND_FACTS_PROMPT.format(lines=lines), "json": True, "max_tokens": 120, "task": "facts"})).outputs["json"]
         found = []
         for n in out.get("du_kien") or []:
             if isinstance(n, (int, float)) and 1 <= int(n) <= len(script["shots"]):
@@ -140,7 +142,7 @@ class Planning:
                 continue
             result = {"verdict": "not_found", "source": None, "quote": "", "note": "Dự án chưa có nguồn tham khảo nào.", "checked_at": time.time()}
             if sources:
-                out = self._adapters.submit("model", Request("chat", params={"prompt": CHECK_FACT_PROMPT.format(line=shot.text, sources=listing), "json": True, "max_tokens": 300, "task": "check"})).outputs["json"]
+                out = self._adapters.submit("model", Request("chat", privacy_class=TEXT_ONLY, params={"prompt": CHECK_FACT_PROMPT.format(line=shot.text, sources=listing), "json": True, "max_tokens": 300, "task": "check"})).outputs["json"]
                 verdict = VERDICTS.get(str(out.get("ket_luan", "")).strip().lower(), "not_found")
                 try:
                     source = sources[int(out.get("nguon") or 0) - 1] if int(out.get("nguon") or 0) >= 1 else None
@@ -164,7 +166,7 @@ class Planning:
         if not script or not script["shots"]:
             return []
         lines = "\n".join(f"{i}. {s.text}" for i, s in enumerate(script["shots"], 1))
-        out = self._adapters.submit("model", Request("chat", params={"prompt": CRITIQUE_PROMPT.format(topic=project["title"], lines=lines, n=limit), "json": True, "max_tokens": 600, "task": "critique"})).outputs["json"]
+        out = self._adapters.submit("model", Request("chat", privacy_class=TEXT_ONLY, params={"prompt": CRITIQUE_PROMPT.format(topic=project["title"], lines=lines, n=limit), "json": True, "max_tokens": 600, "task": "critique"})).outputs["json"]
         notes = []
         for raw in (out.get("nhan_xet") or [])[:limit]:
             if isinstance(raw, dict) and str(raw.get("van_de", "")).strip():
@@ -184,7 +186,7 @@ class Planning:
             return None
         lines = "\n".join(f"{i}. {s.text}" for i, s in enumerate(script["shots"], 1))
         listed = "\n".join(f"- {'Câu ' + str(n['line']) if n['line'] else 'Cả bài'}: {n['issue']} Đề xuất: {n['fix']}" for n in notes)
-        out = self._adapters.submit("model", Request("chat", params={"prompt": REVISE_PROMPT.format(topic=project["title"], lines=lines, notes=listed), "json": True, "max_tokens": 700, "task": "revise"})).outputs["json"]
+        out = self._adapters.submit("model", Request("chat", privacy_class=TEXT_ONLY, params={"prompt": REVISE_PROMPT.format(topic=project["title"], lines=lines, notes=listed), "json": True, "max_tokens": 700, "task": "revise"})).outputs["json"]
         new = [str(c).strip() for c in out.get("cau") or [] if str(c).strip()]
         if not new or new == [s.text for s in script["shots"]]:
             return None

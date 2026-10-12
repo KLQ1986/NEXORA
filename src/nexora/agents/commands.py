@@ -4,7 +4,9 @@ A model reads the instruction, but it can only choose from a fixed set of operat
 done until the operator has seen the list and applied it. An instruction the model turns into nothing valid changes
 nothing. It sits above the modules because one sentence may touch the script, the clips and the cut at once.
 """
-from nexora.core.adapter import Request
+from nexora.core.adapter import PrivacyClass, Request
+
+TEXT_ONLY = PrivacyClass.CLOUD_ALLOWED       # a prompt of words alone: it may be served by a cloud model if the operator routes it there
 
 PROMPT = (
     "Đây là các câu của một video đang dựng, kèm tình trạng hình của từng câu:\n{lines}\n\n"
@@ -32,7 +34,7 @@ class Commands:
             return []
         state = lambda sel: "chưa tìm clip" if sel is None else "thiếu hình" if sel.status == "gap" else f"có clip, {len(sel.alternates)} phương án khác"
         lines = "\n".join(f"{i}. {s.text} ({state(self._projects.selection(s.shot_id))})" for i, s in enumerate(shots, 1))
-        out = self._adapters.submit("model", Request("chat", params={"prompt": PROMPT.format(lines=lines, text=text.strip()), "json": True, "max_tokens": 400, "task": "command"})).outputs["json"]
+        out = self._adapters.submit("model", Request("chat", privacy_class=TEXT_ONLY, params={"prompt": PROMPT.format(lines=lines, text=text.strip()), "json": True, "max_tokens": 400, "task": "command"})).outputs["json"]
         ops = []
         for raw in (out.get("thao_tac") or [])[:MAX_OPS]:
             op = self._valid(raw, shots)

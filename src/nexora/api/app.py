@@ -42,6 +42,10 @@ def run_view(system, run_id: str) -> dict:
     }
 
 
+TEXT_TASKS = {"write": "Viết nháp kịch bản và gợi ý ý tưởng", "critique": "Phản biện kịch bản", "revise": "Viết lại theo nhận xét", "facts": "Tìm câu nêu dữ kiện",
+              "check": "Đối chiếu dữ kiện với nguồn", "titles": "Gợi ý tiêu đề", "translate": "Dịch phụ đề", "command": "Chỉnh sửa bằng lời"}
+
+
 def asset_view(system, asset: dict, used: dict | None = None) -> dict:
     versions = system.assets.versions(asset["asset_id"])
     by_role = {v.role: v for v in versions}
@@ -74,6 +78,48 @@ def asset_view(system, asset: dict, used: dict | None = None) -> dict:
 
 def create_app(system, *, web_dir: str | Path | None = None, config=None) -> FastAPI:
     app = FastAPI(title="NEXORA", version="0.1.0")
+
+    @app.middleware("http")
+    async def keep_audit(request, call_next):
+        """Everything done through the interface that changes something is written down: what was asked, when, and how it ended."""
+        response = await call_next(request)
+        if request.method != "GET" and request.url.path.startswith("/api/") and request.url.path != "/api/v1/notifications/read":
+            try:
+                system.orch.audit({"at": time.time(), "method": request.method, "path": request.url.path, "status": response.status_code})
+            except Exception:
+                pass                                 # the record of an action must never undo the action
+        return response
+
+    @app.get("/api/v1/audit")
+    def audit(limit: int = 100):
+        return {"entries": system.orch.audit_log(limit=max(1, min(500, limit)))}
+
+    @app.get("/api/v1/autonomy")
+    def autonomy():
+        return system.autonomy.status()
+
+    @app.post("/api/v1/autonomy")
+    def set_autonomy(body: dict):
+        try:
+            return system.autonomy.set_level(int(body.get("level", -1)))
+        except PermissionError as err:
+            raise HTTPException(409, f"Chưa đủ điều kiện lên mức này. {err}")
+        except (TypeError, ValueError):
+            raise HTTPException(422, "Mức tự chủ là một số từ 0 đến 4")
+
+    @app.get("/api/v1/models/routes")
+    def model_routes():
+        """Which model serves which kind of text task. Tasks with pictures always stay on this machine."""
+        models = [{"name": c.name, "runs": c.runs} for c in system.adapters.describe() if c.name == "model" or c.name.startswith("model.")]
+        return {"models": models, "routes": json.loads(system.orch.setting("model_routes", "{}")), "tasks": TEXT_TASKS,
+                "privacy_local_only": system.orch.setting("privacy_local_only", "0") == "1"}
+
+    @app.post("/api/v1/models/routes")
+    def set_model_routes(body: dict):
+        known = {c.name for c in system.adapters.describe() if c.name.startswith("model.")}
+        routes = {task: name for task, name in (body.get("routes") or {}).items() if task in TEXT_TASKS and name in known}
+        system.orch.set_setting("model_routes", json.dumps(routes))
+        return model_routes()
 
     @app.post("/api/v1/assets/register", status_code=202)
     def register_asset(body: RegisterRequest):

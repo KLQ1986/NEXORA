@@ -111,6 +111,7 @@ class AdapterRegistry:
     def __init__(self):
         self._adapters: dict[str, Adapter] = {}
         self.local_only = None           # asked before every call to a cloud adapter; True means nothing may leave this machine
+        self.router = None               # (name, request) -> the adapter that should serve it; asked before every call
         self.observer = None             # called with a record of every call: what, how long, how it ended, what it cost
 
     def register(self, adapter: Adapter) -> None:
@@ -130,7 +131,23 @@ class AdapterRegistry:
             raise AdapterError(ErrorCode.INVALID_REQUEST, f"no adapter named {name}")
         return adapter.reconcile(request)
 
+    def _routed(self, name: str, request: Request) -> str:
+        """Where the router would send this request, if that is allowed. A router can only ever choose among registered
+        adapters, and its choice is dropped (the request stays where it was addressed) whenever taking it would send
+        something off this machine that may not go: in privacy mode, for a local-only request, or for one carrying files."""
+        if self.router is None:
+            return name
+        chosen = self.router(name, request)
+        other = self._adapters.get(chosen) if chosen != name else None
+        if other is None or request.operation not in other.describe().operations:
+            return name
+        if other.describe().runs == "cloud" and (request.privacy_class is PrivacyClass.LOCAL_ONLY or request.inputs.get("images")
+                                                 or (self.local_only is not None and self.local_only())):
+            return name
+        return chosen
+
     def submit(self, name: str, request: Request) -> Result:
+        name = self._routed(name, request)
         adapter = self._adapters.get(name)
         if adapter is None:
             raise AdapterError(ErrorCode.INVALID_REQUEST, f"no adapter named {name}")

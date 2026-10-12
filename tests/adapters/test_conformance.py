@@ -25,6 +25,40 @@ def test_adapter_describes_itself_and_rejects_bad_requests(cls, operation, tmp_p
             registry.submit(cap.name, Request(operation, privacy_class=PrivacyClass.LOCAL_ONLY))
 
 
+def test_every_adapter_of_the_installation_describes_itself_within_the_contract(tmp_path):
+    """Adapters added since the first two: each names itself, lists its operations, says where it runs, and refuses an operation it does not have."""
+    from nexora.adapters.claude import ClaudeText
+    from nexora.adapters.desktop import DesktopNotifier
+    from nexora.adapters.graphics import CaptionAdapter
+    from nexora.adapters.motion import StillMotion
+    from nexora.adapters.ollama import OllamaAdapter
+    from nexora.adapters.openmontage import OpenMontageStock
+    from nexora.adapters.outbox import FolderPublisher
+    from nexora.adapters.pollinations import PollinationsImage
+    from nexora.adapters.speech import WhisperCpp
+    from nexora.adapters.voice import SayVoice
+    from nexora.adapters.web import WebReader
+    adapters = [ClaudeText("k"), DesktopNotifier(), CaptionAdapter(), StillMotion(), OllamaAdapter(), OpenMontageStock(tmp_path / "none"), FolderPublisher(tmp_path / "out"),
+                PollinationsImage(), WhisperCpp(tmp_path / "none.bin"), SayVoice(), WebReader()]
+    registry, cloud = AdapterRegistry(), set()
+    for adapter in adapters:
+        cap = adapter.describe()
+        assert isinstance(cap, Capability) and cap.name and cap.operations and cap.runs in ("local", "cloud")
+        registry.register(adapter)
+        cloud |= {cap.name} if cap.runs == "cloud" else set()
+        with pytest.raises(AdapterError) as unsupported:
+            registry.submit(cap.name, Request("no-such-operation", privacy_class=PrivacyClass.CLOUD_ALLOWED))
+        assert unsupported.value.code is ErrorCode.INVALID_REQUEST
+    assert len({a.describe().name for a in adapters}) == len(adapters)
+    # Everything that reaches outside this machine says so, and so falls under privacy mode.
+    assert cloud == {"model.claude", "stock", "image_gen.pollinations", "web"}
+    registry.local_only = lambda: True
+    for name in cloud:
+        with pytest.raises(AdapterError) as kept_in:
+            registry.submit(name, Request(registry._adapters[name].describe().operations[0], privacy_class=PrivacyClass.CLOUD_ALLOWED))
+        assert kept_in.value.code is ErrorCode.AUTH
+
+
 def test_the_model_adapter_sends_each_kind_of_work_to_the_model_chosen_for_it():
     from nexora.adapters.ollama import OllamaAdapter
     from nexora.core.adapter import Request

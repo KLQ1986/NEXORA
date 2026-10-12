@@ -7,7 +7,9 @@ import json
 import shutil
 from pathlib import Path
 
-from nexora.core.adapter import AdapterRegistry, Request
+from nexora.core.adapter import AdapterRegistry, PrivacyClass, Request
+
+TEXT_ONLY = PrivacyClass.CLOUD_ALLOWED       # a prompt of words alone: it may be served by a cloud model if the operator routes it there
 from nexora.core.assets import AssetStore
 from nexora.core.projects import ProjectStore
 
@@ -131,7 +133,7 @@ class Distribution:
         never says is marked, since a title must not promise what the video does not hold."""
         shots = self._projects.render(render_id)["qc"].get("shots") or []
         script = " ".join(s["text"] for s in shots)
-        out = self._adapters.submit("model", Request("chat", params={"prompt": TITLES_PROMPT.format(script=script, n=count), "json": True, "max_tokens": 500, "task": "titles"})).outputs["json"]
+        out = self._adapters.submit("model", Request("chat", privacy_class=TEXT_ONLY, params={"prompt": TITLES_PROMPT.format(script=script, n=count), "json": True, "max_tokens": 500, "task": "titles"})).outputs["json"]
         said = {w.strip(".,!?:;“”\"").lower() for w in script.split()}
         titles = []
         for raw in (out.get("tieu_de") or [])[:count]:
@@ -181,7 +183,7 @@ class Distribution:
         if not shots:
             raise ValueError("this render has no captions to translate")
         lines = "\n".join(f"{i}. {s['text']}" for i, s in enumerate(shots, 1))
-        out = self._adapters.submit("model", Request("chat", params={"prompt": TRANSLATE_PROMPT.format(language=LANGUAGES[language], lines=lines, n=len(shots)),
+        out = self._adapters.submit("model", Request("chat", privacy_class=TEXT_ONLY, params={"prompt": TRANSLATE_PROMPT.format(language=LANGUAGES[language], lines=lines, n=len(shots)),
                                                                     "json": True, "max_tokens": 60 * len(shots) + 100, "task": "translate"})).outputs["json"]
         translated = [str(t).strip() for t in out.get("dong") or []]
         if len(translated) != len(shots) or not all(translated):

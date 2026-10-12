@@ -25,6 +25,10 @@ class Config:
     pollinations: bool = True
     pollinations_token: str = ""
     publish_folder: str = "~/Movies/NEXORA"
+    anthropic_api_key: str = ""
+    claude_model: str = "claude-haiku-5-5"
+    claude_input_price: float = 0.0
+    claude_output_price: float = 0.0
 
     @classmethod
     def load(cls, path: str | Path = "nexora.toml") -> "Config":
@@ -59,4 +63,8 @@ speech_language = "vi"            # the language spoken in the footage
 pollinations = true               # stills from Pollinations (only the prompt leaves this machine); without a token only a few stills at a time
 pollinations_token = ""           # a token from a Pollinations account lifts that limit
 publish_folder = "~/Movies/NEXORA"   # where "publish to folder" puts finished packages; empty turns it off
+anthropic_api_key = ""            # a key turns on Claude for text work; the ANTHROPIC_API_KEY environment variable does the same. Footage is never sent
+claude_model = "claude-haiku-5-5"
+claude_input_price = 0.0          # USD per million input tokens, for the cost record; take the figure from your Anthropic price list
+claude_output_price = 0.0         # USD per million output tokens
 """

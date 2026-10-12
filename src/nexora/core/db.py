@@ -209,6 +209,14 @@ CREATE TABLE IF NOT EXISTS generations (
     status           TEXT NOT NULL DEFAULT 'candidate',
     created_at       REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS audit (
+    audit_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at       REAL NOT NULL,
+    method   TEXT NOT NULL,
+    path     TEXT NOT NULL,
+    status   INTEGER NOT NULL,
+    detail   TEXT
+);
 CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL

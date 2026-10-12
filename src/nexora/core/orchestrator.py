@@ -376,6 +376,21 @@ class Orchestrator:
             else:
                 self._set_status(c, stage, StageStatus.READY, now)
 
+    def decisions(self, pipeline_id: str, *, limit: int = 200) -> list[dict]:
+        """Review decisions taken at the gates of one pipeline, newest first: when, by whom, and whether it was an approval."""
+        rows = self._conn.execute("SELECT e.occurred_at, e.actor, e.payload, e.run_id FROM events e JOIN runs r USING (run_id) "
+                                  "WHERE e.kind = 'review.decided' AND r.pipeline_id = ? ORDER BY e.event_id DESC LIMIT ?", (pipeline_id, limit))
+        return [{"at": r["occurred_at"], "actor": r["actor"], "approve": bool(json.loads(r["payload"] or "{}").get("approve")), "run_id": r["run_id"]} for r in rows]
+
+    def audit(self, entry: dict) -> None:
+        """One thing the operator did through the interface: what, when, and how it ended."""
+        with db.write(self._conn) as c:
+            c.execute("INSERT INTO audit (at, method, path, status, detail) VALUES (?,?,?,?,?)",
+                      (entry["at"], entry["method"], entry["path"], entry["status"], entry.get("detail")))
+
+    def audit_log(self, *, limit: int = 100) -> list[dict]:
+        return [dict(r) for r in self._conn.execute("SELECT * FROM audit ORDER BY audit_id DESC LIMIT ?", (limit,))]
+
     def retry(self, stage_id: str, *, now: float | None = None) -> None:
         """The operator asks for a failed stage to be tried again, after fixing what made it fail."""
         now = time.time() if now is None else now

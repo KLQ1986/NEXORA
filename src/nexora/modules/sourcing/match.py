@@ -41,11 +41,12 @@ def fit(t_start: float, t_end: float, need: float) -> tuple[float, float]:
 
 class Sourcing:
     def __init__(self, orch: Orchestrator, projects: ProjectStore, index: MomentIndex, *, threshold: float = 0.5, alternates: int = 3,
-                 adapters: AdapterRegistry | None = None, judge: bool = False, judge_pass: int = 5, rejected=None):
+                 adapters: AdapterRegistry | None = None, judge: bool = False, judge_pass: int = 5, rejected=None, may_accept=None):
         self._orch, self._projects, self._index = orch, projects, index
         self._adapters, self._judge, self._judge_pass = adapters, judge and adapters is not None, judge_pass
         self._threshold, self._alternates = threshold, alternates
         self._rejected = rejected or (lambda: frozenset())       # assets the operator has set aside: never proposed
+        self._may_accept = may_accept or (lambda project: bool(project.get("auto_accept")))      # whether a confident match needs no review; the autonomy level decides
 
     def register(self, registry: PipelineRegistry) -> None:
         registry.register(MATCH, {"match": self._match})
@@ -130,7 +131,7 @@ class Sourcing:
         script = self._projects.script(ctx.subject_ref)
         project = self._projects.project(script["project_id"])
         strong = self._judge and gaps == 0 and matched > 0 and all(v >= AUTO_ACCEPT for v in confident)
-        if project.get("auto_accept") and strong:
+        if strong and self._may_accept(project):
             for sel in self._projects.selections(ctx.subject_ref):
                 self._projects.set_selection(sel.shot_id, status="accepted", asset_id=sel.asset_id, moment_id=sel.moment_id, t_in=sel.t_in, t_out=sel.t_out,
                                              score=sel.score, reason=sel.reason, alternates=sel.alternates, decided_by="policy")

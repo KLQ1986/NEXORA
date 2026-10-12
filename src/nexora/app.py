@@ -12,6 +12,7 @@ from nexora.core.adapter import Adapter, PrivacyClass, Request
 from nexora.core.assets import AssetStore
 from nexora.core.index import MomentIndex
 from nexora.core.orchestrator import Orchestrator
+from nexora.agents.autonomy import Autonomy
 from nexora.agents.commands import Commands
 from nexora.agents.producer import Producer
 from nexora.core.pipeline import PipelineRegistry
@@ -59,6 +60,7 @@ class System:
     viewer: Viewer = None
     evaluation: Evaluation = None
     publishing: Publishing = None
+    autonomy: Autonomy = None
 
 
 def fill_gap_from_stock(system: "System", shot_id: str, query: str) -> dict:
@@ -106,7 +108,7 @@ def evaluation_config(system: "System") -> dict:
 
 PIPELINE_NAMES = {"library.ingest": "Nhập footage", "library.ingest_image": "Nhập ảnh", "library.ingest_audio": "Nhập nhạc", "library.understand": "Hiểu nội dung footage", "library.transcribe": "Nghe lời nói trong footage",
                   "sourcing.match": "Chọn clip", "sourcing.generate": "Sinh hình bằng AI", "edit.render": "Dựng video", "edit.preview": "Dựng bản xem thử", "library.enhance": "Nâng chất lượng clip"}
-ANNOUNCE = {"metrics_due": "đã tới mốc ghi số liệu", "disk_low": "ổ đĩa sắp đầy", "volume_offline": "không tìm thấy nơi chứa footage", "gaps": "còn câu chưa có hình", "waiting_review": "đang chờ bạn duyệt", "blocked": "đang dừng và cần bạn xử lý", "failed": "thất bại", "succeeded": "đã xong"}
+ANNOUNCE = {"autonomy_lowered": "mức tự chủ vừa bị hạ", "metrics_due": "đã tới mốc ghi số liệu", "disk_low": "ổ đĩa sắp đầy", "volume_offline": "không tìm thấy nơi chứa footage", "gaps": "còn câu chưa có hình", "waiting_review": "đang chờ bạn duyệt", "blocked": "đang dừng và cần bạn xử lý", "failed": "thất bại", "succeeded": "đã xong"}
 QUIET = frozenset({"library.ingest", "library.ingest_image", "library.ingest_audio", "library.understand", "library.transcribe", "edit.preview"})   # finishing these needs nobody's attention
 
 
@@ -119,6 +121,8 @@ def announce(system: "System", after: int) -> int:
         quiet = system.orch.setting("quiet_hours", "")
         if n["kind"] == "metrics_due":
             pipeline = f"Video {n['reason']}"
+        if n["kind"] == "autonomy_lowered":
+            pipeline = "Hệ thống:"
         if not pipeline and n["kind"] in ("disk_low", "volume_offline"):
             pipeline = "Máy"
         if (system.orch.setting("desktop_notifications", "1") != "1" or n["kind"] not in ANNOUNCE or n["kind"] in muted
@@ -191,7 +195,7 @@ def capabilities(system: "System") -> list[dict]:
 def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Adapter | None = None,
           segment_seconds: float = 12.0, voice: Adapter | None = None, match_threshold: float = 0.5, judge: bool = True,
           generators: list[Adapter] | None = None, stock: Adapter | None = None, desktop: Adapter | None = None, voice_name: str = "Linh",
-          web: Adapter | None = None, speech: Adapter | None = None, publishers: list[Adapter] | None = None) -> System:
+          web: Adapter | None = None, speech: Adapter | None = None, publishers: list[Adapter] | None = None, cloud_models: list[Adapter] | None = None) -> System:
     """`model` is the adapter for vision, reasoning and embeddings; without one, footage is ingested but not understood."""
     data_dir = Path(data_dir).resolve()          # tools resolve relative paths differently; keep every path absolute
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -205,6 +209,17 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
         adapters.register(voice)
     adapters.observer = orch.record_call
     adapters.local_only = lambda: orch.setting("privacy_local_only", "0") == "1"
+    for cloud_model in cloud_models or []:
+        adapters.register(cloud_model)
+
+    def route(name: str, request: Request) -> str:
+        """The model router: a text task goes to the model the operator chose for that kind of task, if any. The registry then
+        refuses the choice whenever it would carry footage or break privacy mode, so this function decides preference only."""
+        if name != "model" or request.operation != "chat":
+            return name
+        routes = json.loads(orch.setting("model_routes", "{}"))
+        return routes.get(request.params.get("task") or "write") or routes.get("*") or name
+    adapters.router = route
     index = MomentIndex(db_path)
     understanding = None
     if model is not None:
@@ -220,7 +235,8 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     library.register(registry)
     projects = ProjectStore(db_path)
     planning = Planning(projects, assets, index, adapters)
-    sourcing = Sourcing(orch, projects, index, threshold=match_threshold, adapters=adapters, judge=judge and model is not None, rejected=assets.rejected)
+    sourcing = Sourcing(orch, projects, index, threshold=match_threshold, adapters=adapters, judge=judge and model is not None, rejected=assets.rejected,
+                        may_accept=lambda project: system.autonomy.clips_may_be_accepted(project))
     sourcing.register(registry)
     library.on_understood.append(lambda asset_id: [sourcing.refine_from_asset(shot_id, asset_id) for shot_id in sourcing.pending_for(asset_id)])
     edit = Edit(orch, projects, assets, adapters, data_dir / "media", voice=voice is not None, voice_name=voice_name, reviewer=review_cut, model=model is not None,
@@ -258,6 +274,15 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     for publisher in publishers or []:
         adapters.register(publisher)
     system.publishing = Publishing(db_path, projects, adapters, distribution.package, notify=lambda kind, reason: orch.notify(kind, "", reason=reason))
+
+    def package_for_policy(render_id: str, peek: bool = False):
+        if peek:
+            return distribution.package(render_id)
+        package = distribution.build_package(render_id)
+        return distribution.annotate_package(render_id, rights={**render_rights(system, render_id), "override_reason": None}, checks=package_checks(package))
+    has_folder = any(c.name == "publish.folder" for c in adapters.describe())
+    system.autonomy = Autonomy(orch, projects, package=package_for_policy, rights=lambda render_id: render_rights(system, render_id),
+                               publish=(lambda render_id: system.publishing.publish(render_id, "publish.folder")) if has_folder else None)
     system.producer = Producer(db_path, orch=orch, projects=projects, planning=planning, sourcing=sourcing, edit=edit, adapters=adapters,
                                fill_gap=lambda shot_id, query: fill_gap_from_stock(system, shot_id, query))
     return system
@@ -268,6 +293,8 @@ def build_from_config(config, **overrides) -> System:
     from nexora.adapters.desktop import DesktopNotifier
     from nexora.adapters.ollama import OllamaAdapter
     from nexora.adapters.openmontage import OpenMontageStock
+    import os as _os
+    from nexora.adapters.claude import ClaudeText
     from nexora.adapters.motion import StillMotion
     from nexora.adapters.outbox import FolderPublisher
     from nexora.adapters.pollinations import PollinationsImage
@@ -281,7 +308,10 @@ def build_from_config(config, **overrides) -> System:
                  stock=OpenMontageStock(config.openmontage_repo), desktop=DesktopNotifier(), web=WebReader(),
                  speech=WhisperCpp(config.speech_model, language=config.speech_language) if config.speech_model else None,
                  generators=[*([PollinationsImage(token=config.pollinations_token)] if config.pollinations else []), StillMotion()],
-                 publishers=[FolderPublisher(config.publish_folder)] if config.publish_folder else [], **overrides)
+                 publishers=[FolderPublisher(config.publish_folder)] if config.publish_folder else [],
+                 cloud_models=[ClaudeText(_os.environ.get("ANTHROPIC_API_KEY") or config.anthropic_api_key, model=config.claude_model,
+                                          input_price=config.claude_input_price, output_price=config.claude_output_price)]
+                 if (_os.environ.get("ANTHROPIC_API_KEY") or config.anthropic_api_key) else [], **overrides)
 
 
 def doctor(system: System, config=None) -> list[dict]:
