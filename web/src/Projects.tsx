@@ -447,6 +447,17 @@ function Detail({ id, back }: { id: string; back: () => void }) {
   // The editor follows the stored script (after a reorder on the timeline, for example) unless the operator has typed something not yet saved.
   useEffect(() => { if (stored === null) return; if (text === null || text.trim() === (last.current ?? "").trim()) setText(stored); last.current = stored; }, [stored]);
   const unsaved = text !== null && stored !== null && text.trim() !== stored.trim();
+  const saveRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    // Space plays or pauses the cut; ⌘ Enter saves the script. Neither fires while the operator is typing somewhere else.
+    const on = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      const typing = !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable);
+      if (e.key === " " && !typing && cut.current && t?.tagName !== "BUTTON" && t?.tagName !== "A") { e.preventDefault(); if (cut.current.paused) cut.current.play().catch(() => {}); else cut.current.pause(); }
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey) && t?.getAttribute("aria-label") === "Kịch bản") { e.preventDefault(); saveRef.current(); }
+    };
+    window.addEventListener("keydown", on); return () => window.removeEventListener("keydown", on);
+  }, []);
   useEffect(() => {
     if (!unsaved) return;
     const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); };       // the browser asks before the unsaved script is lost
@@ -456,6 +467,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
   const run = async (fn: () => Promise<unknown>) => { setBusy(true); setNote(null); try { await fn(); } catch (e) { setNote((e as Error).message); } setBusy(false); reload(); };
   const saved = scriptText(p.shots);
   const dirty = text !== null && text.trim() !== saved.trim();
+  saveRef.current = () => { if (dirty && (text ?? "").trim()) run(() => post(`/api/v1/projects/${id}/script`, { lines: (text ?? "").split("\n") }, "PUT")); };
   const matching = p.match && ["queued", "running"].includes(p.match.status);
   const reviewing = p.match?.status === "waiting_review";
   const approved = !!p.script?.match_approved;
