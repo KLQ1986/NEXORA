@@ -13,7 +13,7 @@ function Clip({ url, tIn, tOut, poster }: { url: string | null; tIn: number; tOu
   return <video ref={ref} key={`${url}${tIn}`} src={`${url}#t=${tIn},${tOut}`} poster={poster ?? undefined} muted playsInline controls preload="metadata" className="aspect-video w-full rounded-lg bg-black" />;
 }
 
-function ShotRow({ shot, n, locked, changed, heading, sources = [], effects = [] }: { shot: Shot; n: number; locked: boolean; changed: () => void; heading?: string | null; effects?: Asset[]; sources?: Source[] }) {
+function ShotRow({ shot, n, locked, changed, heading, sources = [], effects = [], remote = [] }: { shot: Shot; n: number; locked: boolean; changed: () => void; heading?: string | null; effects?: Asset[]; remote?: string[]; sources?: Source[] }) {
   const note = async (body: Record<string, unknown>) => { await post(`/api/v1/shots/${shot.shot_id}`, body, "PATCH").catch(() => {}); changed(); };
   const sel = shot.selection;
   const [brief, setBrief] = useState<string | null>(null);
@@ -83,6 +83,8 @@ function ShotRow({ shot, n, locked, changed, heading, sources = [], effects = []
                 <label className="flex items-center gap-1.5">Tốc độ<select aria-label={`Tốc độ hình của câu ${n}`} value={sel.speed} onChange={(e) => treat({ speed: Number(e.target.value) })} className="h-7 pl-1.5 text-[12px]">{[0.5, 0.75, 1, 1.5, 2].map((v) => <option key={v} value={v}>{v}×</option>)}</select></label>
                 <label className="flex items-center gap-1.5"><input type="checkbox" checked={sel.stabilise} onChange={(e) => treat({ stabilise: e.target.checked })} />Chống rung</label>
                 <label className="flex items-center gap-1.5" title="Giữ âm thanh của chính clip thay cho lời dẫn; độ dài cảnh bằng đúng đoạn đã chọn"><input type="checkbox" checked={sel.live_sound} onChange={(e) => treat({ live_sound: e.target.checked })} />Dùng âm thanh gốc</label>
+                {remote.includes("lipsync") && <label className="flex items-center gap-1.5" title="Gửi clip của cảnh này và lời dẫn tới mô hình khớp khẩu hình trên RunPod"><input type="checkbox" checked={sel.lipsync} onChange={(e) => treat({ lipsync: e.target.checked })} />Khớp khẩu hình</label>}
+                {remote.includes("upscale") && <label className="flex items-center gap-1.5" title="Gửi clip của cảnh này tới mô hình phóng to trên RunPod"><input type="checkbox" checked={sel.upscale_ml} onChange={(e) => treat({ upscale_ml: e.target.checked })} />Phóng to bằng mô hình</label>}
                 {effects.length > 0 && <label className="flex items-center gap-1.5">Tiếng động<select aria-label={`Tiếng động của câu ${n}`} value={sel.sfx ?? ""} onChange={(e) => treat({ sfx: e.target.value || null })} className="h-7 max-w-[160px] pl-1.5 text-[12px]"><option value="">Không</option>{effects.map((a) => <option key={a.asset_id} value={a.asset_id}>{a.name}</option>)}</select></label>}
               </div>
             )}
@@ -486,7 +488,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
               <Gaps id={id} shots={p.shots} run={run} />
               {p.shots.some((s) => s.selection) && <div className="mb-4"><TimelineStrip shots={p.shots} /></div>}
               <ol className="grid gap-3">
-                {p.shots.map((s, i) => <ShotRow key={s.shot_id} shot={s} n={i + 1} locked={!!rendering} changed={reload} heading={s.scene && s.scene !== p.shots[i - 1]?.scene ? s.scene : null} sources={p.research} effects={(lib?.assets ?? []).filter((a) => a.kind === "audio")} />)}
+                {p.shots.map((s, i) => <ShotRow key={s.shot_id} shot={s} n={i + 1} locked={!!rendering} changed={reload} heading={s.scene && s.scene !== p.shots[i - 1]?.scene ? s.scene : null} sources={p.research} effects={(lib?.assets ?? []).filter((a) => a.kind === "audio")} remote={p.remote} />)}
               </ol>
             </Section>
           )}
@@ -614,6 +616,8 @@ function Detail({ id, back }: { id: string; back: () => void }) {
             <div className="grid gap-2">
               {p.music_path && <label className="flex items-start gap-2.5 text-[13px]"><input type="checkbox" className="mt-0.5" checked={!!p.options.music_cleared} disabled={busy} onChange={(e) => patch({ options: { music_cleared: e.target.checked } })} />
                 <span>Tôi có quyền dùng bản nhạc này<span className="block text-[12px] text-faint">Chưa xác nhận thì video không được đóng gói để đăng.</span></span></label>}
+              {p.remote.length > 0 && <label className="flex items-start gap-2.5 text-[13px]"><input type="checkbox" className="mt-0.5" checked={!!p.options.footage_may_leave} disabled={busy} onChange={(e) => patch({ options: { footage_may_leave: e.target.checked } })} />
+                <span>Cho gửi footage của tôi lên RunPod<span className="block text-[12px] text-faint">Chỉ áp dụng cho các cảnh bạn bật khớp khẩu hình hoặc phóng to bằng mô hình ở dự án này. Tắt thì chỉ hình sinh bằng AI mới được gửi. Chế độ riêng tư luôn chặn.</span></span></label>}
               <label className="flex items-start gap-2.5 text-[13px]"><input type="checkbox" className="mt-0.5" checked={!!p.options.clean_audio} disabled={busy} onChange={(e) => patch({ options: { clean_audio: e.target.checked } })} />
                 <span>Làm sạch âm thanh<span className="block text-[12px] text-faint">Giảm tiếng ù và tiếng xì ở lời tự thu và âm thanh gốc.</span></span></label>
               <label className="flex items-start gap-2.5 text-[13px]"><input type="checkbox" className="mt-0.5" checked={!!p.options.match_colour} disabled={busy} onChange={(e) => patch({ options: { match_colour: e.target.checked } })} />

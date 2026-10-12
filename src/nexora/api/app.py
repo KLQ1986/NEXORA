@@ -601,7 +601,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
                                      "decided_by": sel.decided_by, "moment_id": sel.moment_id,
                                      "frame_url": f"/api/v1/moments/{sel.moment_id}/frame" if sel.moment_id else None,
                                      "asset": asset_brief(sel.asset_id) if sel.asset_id else None,
-                                     "speed": float(sel.extras.get("speed") or 1.0), "stabilise": bool(sel.extras.get("stabilise")), "live_sound": bool(sel.extras.get("live_sound")), "sfx": sel.extras.get("sfx"),
+                                     "speed": float(sel.extras.get("speed") or 1.0), "stabilise": bool(sel.extras.get("stabilise")), "live_sound": bool(sel.extras.get("live_sound")), "sfx": sel.extras.get("sfx"), "lipsync": bool(sel.extras.get("lipsync")), "upscale_ml": bool(sel.extras.get("upscale_ml")),
                                      "inserts": sel.extras.get("inserts", []), "focus_x": (sel.extras.get("focus") or {}).get("x") if (sel.extras.get("focus") or {}).get("asset_id") == sel.asset_id else None,
                                      "angles": angles_of(sel),
                                      "alternates": [{**a, "frame_url": f"/api/v1/moments/{a['moment_id']}/frame", "asset": asset_brief(a["asset_id"])} for a in sel.alternates]}
@@ -616,6 +616,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
                 "preview": latest_run(script["script_id"], "edit.preview") if script else None, "options": json.loads(project.get("options") or "{}"),
                 "previews": [{"render_id": r["render_id"], "created_at": r["created_at"], "script_id": r["script_id"], "url": f"/api/v1/renders/{r['render_id']}/file", "duration": r["qc"]["duration"], "gaps": r["qc"]["gaps"]}
                              for r in system.projects.renders(project["project_id"], previews=True)[:1]],
+                "remote": sorted({c.name.partition(".")[0] for c in system.adapters.describe() if c.name.startswith(("lipsync", "upscale"))}),
                 "research": json.loads(project.get("research") or "[]"), "bible": json.loads(project.get("bible") or "[]"),
                 "auto_accept": bool(project.get("auto_accept")), "own_takes": own_takes(project, len(shots)),
                 "spent": system.generation.spent(project["project_id"])}
@@ -780,7 +781,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
     def treat_shot(shot_id: str, body: dict):
         """How one shot is treated in the cut: speed, stabilising, its own sound, a sound effect."""
         try:
-            system.edit.set_shot_options(shot_id, **{k: body[k] for k in ("speed", "stabilise", "live_sound", "sfx") if k in body})
+            system.edit.set_shot_options(shot_id, **{k: body[k] for k in ("speed", "stabilise", "live_sound", "sfx", "lipsync", "upscale_ml") if k in body})
         except ValueError:
             raise HTTPException(409, "Câu này chưa có clip")
         return {"ok": True}
@@ -1030,7 +1031,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         fields = {k: (str(Path(str(v)).expanduser()) if k in ("music_path", "narration_dir") and v else v) for k, v in body.items()}
         if "options" in fields:                  # treatments applied to the whole cut
             current = json.loads(need_project(project_id).get("options") or "{}")
-            fields["options"] = json.dumps({**current, **{k: bool(v) for k, v in (fields["options"] or {}).items() if k in ("clean_audio", "match_colour", "music_cleared")}})
+            fields["options"] = json.dumps({**current, **{k: bool(v) for k, v in (fields["options"] or {}).items() if k in ("clean_audio", "match_colour", "music_cleared", "footage_may_leave")}})
         if "bible" in fields:                    # how the project's characters, places and props look, so that every shot shows them the same way
             kinds = ("character", "setting", "prop", "style")
             fields["bible"] = json.dumps([{"name": str(e.get("name", "")).strip(), "kind": e.get("kind") if e.get("kind") in kinds else "character", "voice": str(e.get("voice") or "").strip() or None,

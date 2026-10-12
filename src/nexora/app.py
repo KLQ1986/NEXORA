@@ -195,7 +195,7 @@ def capabilities(system: "System") -> list[dict]:
 def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Adapter | None = None,
           segment_seconds: float = 12.0, voice: Adapter | None = None, match_threshold: float = 0.5, judge: bool = True,
           generators: list[Adapter] | None = None, stock: Adapter | None = None, desktop: Adapter | None = None, voice_name: str = "Linh",
-          ffmpeg_binary: str = "", web: Adapter | None = None, speech: Adapter | None = None, publishers: list[Adapter] | None = None, cloud_models: list[Adapter] | None = None) -> System:
+          ffmpeg_binary: str = "", web: Adapter | None = None, speech: Adapter | None = None, publishers: list[Adapter] | None = None, shot_models: list[Adapter] | None = None, cloud_models: list[Adapter] | None = None) -> System:
     """`model` is the adapter for vision, reasoning and embeddings; without one, footage is ingested but not understood."""
     data_dir = Path(data_dir).resolve()          # tools resolve relative paths differently; keep every path absolute
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -209,7 +209,7 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
         adapters.register(voice)
     adapters.observer = orch.record_call
     adapters.local_only = lambda: orch.setting("privacy_local_only", "0") == "1"
-    for cloud_model in cloud_models or []:
+    for cloud_model in [*(cloud_models or []), *(shot_models or [])]:
         adapters.register(cloud_model)
 
     def route(name: str, request: Request) -> str:
@@ -298,7 +298,7 @@ def build_from_config(config, **overrides) -> System:
     from nexora.adapters.motion import StillMotion
     from nexora.adapters.outbox import FolderPublisher
     from nexora.adapters.pollinations import PollinationsImage
-    from nexora.adapters.runpod import RunPodVideo
+    from nexora.adapters.runpod import RunPodLipSync, RunPodUpscale, RunPodVideo
     runpod_key = _os.environ.get("RUNPOD_API_KEY") or config.runpod_api_key
     rented = [RunPodVideo(runpod_key, config.runpod_video_endpoint, price_per_second=config.runpod_price_per_second)] if runpod_key and config.runpod_video_endpoint else []
     from nexora.adapters.speech import WhisperCpp
@@ -311,6 +311,8 @@ def build_from_config(config, **overrides) -> System:
                  stock=OpenMontageStock(config.openmontage_repo), desktop=DesktopNotifier(), web=WebReader(),
                  speech=WhisperCpp(config.speech_model, language=config.speech_language) if config.speech_model else None,
                  generators=[*([PollinationsImage(token=config.pollinations_token)] if config.pollinations else []), *rented, StillMotion()],
+                 shot_models=[cls(runpod_key, endpoint, price_per_second=config.runpod_price_per_second) for cls, endpoint in
+                              ((RunPodLipSync, config.runpod_lipsync_endpoint), (RunPodUpscale, config.runpod_upscale_endpoint)) if runpod_key and endpoint],
                  publishers=[FolderPublisher(config.publish_folder)] if config.publish_folder else [],
                  cloud_models=[ClaudeText(_os.environ.get("ANTHROPIC_API_KEY") or config.anthropic_api_key, model=config.claude_model,
                                           input_price=config.claude_input_price, output_price=config.claude_output_price)]

@@ -20,12 +20,25 @@ from nexora.core.adapter import Adapter, AdapterError, Capability, ErrorCode, Re
 FAILED = frozenset({"FAILED", "CANCELLED", "TIMED_OUT"})
 
 
+MAX_PAYLOAD = 9_000_000          # RunPod refuses a job whose request is larger than about 10 MB; files travel inside it as base64
+
+
 class RunPodVideo(Adapter):
+    KIND, OPERATION = "video_gen", "generate"
+
     def __init__(self, api_key: str, endpoint_id: str, *, host: str = "https://api.runpod.ai/v2", price_per_second: float = 0.0, poll_seconds: float = 5.0, label: str = "runpod"):
         self._key, self._base, self._price, self._every, self._label = api_key, f"{host.rstrip('/')}/{endpoint_id}", price_per_second, poll_seconds, label
 
     def describe(self) -> Capability:
-        return Capability(name=f"video_gen.{self._label}", operations=("generate",), runs="cloud", supports_cancel=True, supports_reconcile=True)
+        return Capability(name=f"{self.KIND}.{self._label}", operations=(self.OPERATION,), runs="cloud", supports_cancel=True, supports_reconcile=True)
+
+    def _start(self, payload: dict, out: Path, deadline_seconds: float | None) -> Result:
+        if len(json.dumps(payload)) > MAX_PAYLOAD:
+            raise AdapterError(ErrorCode.INVALID_REQUEST, "the clip is too large to send to RunPod in one request (about 6 MB of media at most); use a shorter shot", retryable=False)
+        job = self._call("POST", "/run", payload)
+        if not job.get("id"):
+            raise AdapterError(ErrorCode.OUTPUT_INVALID, "RunPod accepted the request but gave no job id")
+        return self._wait(job["id"], out, time.time() + (deadline_seconds or 1800))
 
     def environment(self) -> dict:
         return {"endpoint": self._base, "key_present": bool(self._key)}
@@ -99,10 +112,7 @@ class RunPodVideo(Adapter):
             raise AdapterError(ErrorCode.MISSING_INPUT, f"{still} does not exist")
         payload = {"input": {"prompt": request.inputs["prompt"], "image": base64.b64encode(still.read_bytes()).decode(), "seconds": float(request.params["duration"]),
                              "seed": int(request.params.get("seed", 0)), "aspect": request.params.get("aspect", "16:9"), "camera": request.params.get("camera")}}
-        job = self._call("POST", "/run", payload)
-        if not job.get("id"):
-            raise AdapterError(ErrorCode.OUTPUT_INVALID, "RunPod accepted the request but gave no job id")
-        return self._wait(job["id"], Path(request.params["out"]), time.time() + (request.deadline_seconds or 1800))
+        return self._start(payload, Path(request.params["out"]), request.deadline_seconds)
 
     def reconcile(self, request: Request) -> Result | None:
         """What became of a job whose id is known: the clip if it finished, None if it is gone."""
@@ -116,3 +126,30 @@ class RunPodVideo(Adapter):
                 return None
             raise
         return self._collect({**job, "id": job_id}, Path(request.params["out"])) if job.get("status") == "COMPLETED" else None
+
+
+def _b64(path: str | Path) -> str:
+    path = Path(path)
+    if not path.is_file():
+        raise AdapterError(ErrorCode.MISSING_INPUT, f"{path} does not exist")
+    return base64.b64encode(path.read_bytes()).decode()
+
+
+class RunPodLipSync(RunPodVideo):
+    """A clip of a face and the sound of a line, sent to a lip-sync model on the operator's endpoint; the clip comes back with
+    the mouth moving to the words. The handler gets `video` and `audio` as base64 and returns `video_url` or `video`.
+    The clip leaves this machine, so the registry lets through only clips that are allowed to: generated ones, never the
+    operator's own footage unless they have said so."""
+    KIND, OPERATION = "lipsync", "sync"
+
+    def submit(self, request: Request) -> Result:
+        return self._start({"input": {"video": _b64(request.inputs["video"]), "audio": _b64(request.inputs["audio"])}}, Path(request.params["out"]), request.deadline_seconds)
+
+
+class RunPodUpscale(RunPodVideo):
+    """A short clip sent to an upscaling model on the operator's endpoint. The handler gets `video` as base64 and `scale`,
+    and returns `video_url` or `video`."""
+    KIND, OPERATION = "upscale", "upscale"
+
+    def submit(self, request: Request) -> Result:
+        return self._start({"input": {"video": _b64(request.inputs["video"]), "scale": int(request.params.get("scale", 2))}}, Path(request.params["out"]), request.deadline_seconds)

@@ -92,7 +92,7 @@ class Edit:
         clean = {}
         if "speed" in options:
             clean["speed"] = min(SPEEDS, key=lambda s: abs(s - float(options["speed"] or 1.0)))
-        for flag in ("stabilise", "live_sound"):
+        for flag in ("stabilise", "live_sound", "lipsync", "upscale_ml"):
             if flag in options:
                 clean[flag] = bool(options[flag])
         if "sfx" in options:
@@ -172,6 +172,27 @@ class Edit:
         self._projects.set_render_review(render_id, approved=True, comment="Bản hoàn thiện ở phần mềm khác, do bạn nhập vào.")
         return render_id
 
+    def _remote(self, kind: str, operation: str, asset: dict, clip: str, extra: dict, key: str, ctx) -> tuple[str | None, str | None]:
+        """Send one shot's clip to a rented model (lip-sync, upscaling) and return (the file that came back, None), or
+        (None, why not). The request carries the clip's own privacy class, so the registry refuses to send the operator's
+        footage off this machine unless they have allowed it for this project; a refusal or a failure leaves the shot as it was."""
+        name = next((c.name for c in self._adapters.describe() if c.name == kind or c.name.startswith(kind + ".")), None)
+        if name is None:
+            return None, "máy này chưa nối với mô hình cho việc này"
+        out = self._media / "segments" / f"{key}_{kind}.mp4"
+        if out.is_file():
+            return str(out), None
+        from nexora.core.adapter import PrivacyClass
+        private = asset.get("privacy_class") != "cloud_allowed" and not extra.pop("footage_may_leave", False)
+        try:
+            result = self._adapters.submit(name, Request(operation, inputs={"video": clip, **extra.pop("inputs", {})}, params={"out": str(out), **extra}, attempt_id=ctx.claim.attempt_id,
+                                                        privacy_class=PrivacyClass.LOCAL_ONLY if private else PrivacyClass.CLOUD_ALLOWED))
+        except AdapterError as err:
+            return None, "đây là footage riêng của bạn và dự án chưa cho phép gửi nó ra ngoài máy" if private else (err.message or err.code.value)
+        if result.usage.cost:
+            ctx.record_cost(provider=name, units=result.usage.units, cost=result.usage.cost)
+        return str(out), None
+
     def _source(self, asset_id: str, t_in: float, need: float, *, proxy: bool = False, exact: bool = False) -> tuple[str, str, float]:
         """The file to cut from (the original when its volume is online, else the proxy) and a start that leaves room for `need` seconds.
         `proxy` asks for the small copy outright; `exact` keeps the start as given, for a range chosen to the word."""
@@ -230,7 +251,7 @@ class Edit:
         look = {"scale": float(profile.get("caption_scale") or 1.0), "position": profile.get("caption_position") or "bottom", "colour": profile.get("caption_colour"),
                 "typeface": profile.get("typeface") or "sans", "logo": profile.get("logo_path")}
         durations = {l["shot_id"]: l for l in ctx.inputs["narration"]["lines"]}
-        out, draft = [], False
+        out, draft, remote_notes = [], False, []
         for shot in script["shots"]:
             line, sel = durations[shot.shot_id], self._projects.selection(shot.shot_id)
             live = bool(line.get("live"))
@@ -248,7 +269,8 @@ class Edit:
             if not caption.is_file():
                 self._adapters.submit("graphics", Request("caption", inputs={"text": words}, params={"out": str(caption), **FORMAT, **look}))
             has_picture = sel is not None and sel.status != "gap" and sel.asset_id
-            inserts, focus = [], 0.5
+            inserts, focus, remote_done = [], 0.5, []
+            shot_fill = fill
             if has_picture:
                 path, checksum, t_in = self._source(sel.asset_id, sel.t_in, duration * speed, proxy=preview, exact=live)
                 source_original = self._assets.original(sel.asset_id)
@@ -262,6 +284,27 @@ class Edit:
                         continue
                     ipath, isum, iin = self._source(ins["asset_id"], ins["t_in"], duration - at, proxy=preview)
                     inserts.append({"path": ipath, "t_in": iin, "at": at, "checksum": isum, "keyword": ins["keyword"]})
+                # Lip-sync and model upscaling work on the shot's own clip: it is cut clean first, sent, and what comes back takes its place.
+                wanted = [("upscale", "upscale", "upscale_ml", {"scale": 2}), ("lipsync", "sync", "lipsync", {"inputs": {"audio": line["audio"]}})]
+                for kind, operation, flag, extra in wanted:
+                    if not extras.get(flag) or preview or (flag == "lipsync" and not line["audio"]):
+                        continue
+                    clean_key = _key("clean", checksum, t_in, duration, FORMAT, fill, focus, speed, treat.get("color_transfer"))
+                    clean = self._media / "segments" / f"{clean_key}.mp4"
+                    if not clean.is_file():
+                        self._adapters.submit("ffmpeg", Request("segment", inputs={"path": path}, attempt_id=ctx.claim.attempt_id, params={
+                            "out": str(clean), "t_in": t_in, "duration": duration, "overlay": None, "audio": None, "fill": fill, "focus_x": focus, **FORMAT,
+                            "speed": speed, "color_transfer": treat.get("color_transfer"), "stabilise": treat["stabilise"]}))
+                    made, why = self._remote(kind, operation, self._assets.asset(sel.asset_id) or {}, str(clean),
+                                             {**extra, "footage_may_leave": bool(options.get("footage_may_leave"))}, clean_key, ctx)
+                    if made:
+                        path, checksum, t_in = made, f"{checksum}:{kind}", 0.0
+                        treat.update(speed=1.0, stabilise=False, color_transfer=None)       # already applied to the clip that was sent
+                        fill = "fit" if kind == "upscale" else fill
+                        remote_done.append(kind)
+                    else:
+                        remote_notes.append({"check": "Khớp khẩu hình" if kind == "lipsync" else "Phóng to bằng mô hình", "shot": shot.position + 1, "severity": "vừa",
+                                             "text": f"Chưa làm được cho cảnh này: {why}.", "fix": "Cảnh được dựng như bình thường. Xem cài đặt RunPod ở nexora.toml hoặc quyền gửi footage của dự án."})
                 key = _key(checksum, t_in, duration, words, look, line["audio"], FORMAT, fill, focus, [(i["checksum"], i["t_in"], i["at"]) for i in inserts], treat)
             else:
                 path, t_in, key = None, 0.0, _key("gap", duration, words, look, line["audio"], FORMAT, treat)
@@ -274,9 +317,10 @@ class Edit:
                         "asset_id": sel.asset_id if has_picture else None, "t_in": t_in, "chosen_in": sel.t_in if has_picture else None,
                         "is_fact": shot.is_fact, "source": shot.source, "fact_check": shot.fact_check, "sound_cue": shot.sound_cue,
                         "own_voice": bool(line.get("own_voice")), "live_sound": live, "speed": speed, "focus_x": focus if fill == "cover" else None,
-                        "inserts": [{"keyword": i["keyword"], "at": i["at"]} for i in inserts]})
+                        "inserts": [{"keyword": i["keyword"], "at": i["at"]} for i in inserts], "remote": remote_done})
+            fill = shot_fill
             ctx.heartbeat()
-        return {"segments": out, "draft": draft}
+        return {"segments": out, "draft": draft, "notes": remote_notes}
 
     def _assemble(self, ctx, preview: bool = False):
         script = self._projects.script(ctx.subject_ref)
@@ -298,7 +342,7 @@ class Edit:
             "Độ dài khớp với kịch bản": abs(probe["duration"] - expected) < 1.0,
             "Âm thanh không bị vỡ": loud["max_db"] <= -0.5,
         }
-        findings = self._reviewer(segments) if self._reviewer else []
+        findings = (self._reviewer(segments) if self._reviewer else []) + list(ctx.inputs["segments"].get("notes") or [])
         if self._inspector and not preview:
             black = self._adapters.submit("ffmpeg", Request("blackdetect", inputs={"path": str(out)})).outputs["black_ranges"]
             silent = [[a, probe["duration"] if b is None else b] for a, b in self._adapters.submit("ffmpeg", Request("silencedetect", inputs={"path": str(out)})).outputs["silent_ranges"]]
@@ -315,6 +359,6 @@ class Edit:
               "format": project["format"], "music": bool(music), "draft": bool(ctx.inputs["segments"].get("draft")) and not preview, "preview": preview, "mean_db": loud["mean_db"], "max_db": loud["max_db"],
               "findings": findings,
               "shots": [{"text": s["text"], "duration": s["duration"], "gap": s["gap"], "asset_id": s.get("asset_id"), "t_in": s.get("chosen_in"),
-                         "is_fact": s.get("is_fact", False), "source": s.get("source"), "fact_check": s.get("fact_check"), "sound_cue": s.get("sound_cue"), "own_voice": s.get("own_voice", False), "live_sound": s.get("live_sound", False), "speed": s.get("speed", 1.0), "focus_x": s.get("focus_x"), "inserts": s.get("inserts", [])} for s in segments]}
+                         "is_fact": s.get("is_fact", False), "source": s.get("source"), "fact_check": s.get("fact_check"), "sound_cue": s.get("sound_cue"), "own_voice": s.get("own_voice", False), "live_sound": s.get("live_sound", False), "speed": s.get("speed", 1.0), "focus_x": s.get("focus_x"), "inserts": s.get("inserts", []), "remote": s.get("remote", [])} for s in segments]}
         render_id = self._projects.add_render(script["project_id"], ctx.subject_ref, str(out), qc)
         return {"render_id": render_id, "qc_passed": qc["passed"]}

@@ -295,11 +295,14 @@ Sự cố trong lượt này: cài `ffmpeg-full` làm Homebrew nâng thư viện
 - [x] Dựng thô: các lần nói của cùng một câu được gom nhóm để người vận hành chọn lần muốn dùng
 - [x] Adapter video cho endpoint serverless trên RunPod do người vận hành thuê (`runpod_api_key`, `runpod_video_endpoint` trong `nexora.toml`): gửi việc một lần, theo dõi tới khi xong, huỷ việc quá hạn, tìm lại việc theo mã, ghi chi phí theo giây GPU. Mới thử với máy chủ giả theo giao thức của RunPod; chưa chạy với endpoint thật. Handler của endpoint cần nhận `prompt`, `image` (base64), `seconds`, `seed`, `aspect` và trả `video_url` hoặc `video`
 
+- [x] Khớp khẩu hình và phóng to bằng mô hình qua endpoint RunPod do người vận hành thuê (`runpod_lipsync_endpoint`, `runpod_upscale_endpoint`): bật theo từng cảnh; clip của cảnh được cắt sạch, gửi đi, bản trả về thay vào chỗ nó. Footage riêng chỉ được gửi khi dự án bật "cho gửi footage lên RunPod"; chế độ riêng tư luôn chặn. Mới thử với máy chủ giả; clip gửi đi tối đa khoảng 6 MB
+- [x] Bộ mẫu chuẩn đã chạy trên dữ liệu thật trong máy ngày 2026-10-12: 17 mẫu lấy từ các clip đã duyệt, đúng ngay lần đầu 71%, nằm trong ba kết quả đầu 100% (mô hình bge-m3 và qwen2.5vl:7b). Lưu ý: các mẫu này vốn do chính hệ thống đề xuất rồi được duyệt, nên con số nghiêng về phía có lợi; mẫu do người vận hành tự chọn tay sẽ khắt khe hơn
+
 ### Còn lại sau lượt này
 
 Cần thứ ngoài máy này: tài khoản và khoá API của nền tảng (tự đăng, tự lấy số liệu), khoá của nhà cung cấp video AI, khoá Anthropic để chạy thật adapter Claude, dịch vụ tìm kiếm trên toàn bộ web (hiện chỉ tìm trên Wikipedia).
 
-Cần công cụ chưa có trên máy: mô hình khớp khẩu hình, công cụ huấn luyện mô hình nhân vật, mô hình phóng to hình.
+Cần endpoint RunPod thật để chạy: video AI, khớp khẩu hình, phóng to bằng mô hình (adapter đã có). Chưa có đường nào cho huấn luyện mô hình nhân vật.
 
 Chạy thử một lần với mô hình thật (qwen2.5vl:7b) ngày 2026-10-12: vai phản biện chỉ chép lại từng câu thay vì nêu vấn đề (hệ thống nay bỏ những "nhận xét" trùng với câu trong kịch bản), và vai tìm dữ kiện đánh dấu cả bốn câu tả cảnh là dữ kiện. Hai việc chữ này cần mô hình viết tốt hơn mô hình nhìn 7B; đây là lý do có bộ định tuyến mô hình.
 

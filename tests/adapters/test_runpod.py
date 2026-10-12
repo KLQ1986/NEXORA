@@ -128,3 +128,60 @@ def test_a_generated_story_takes_its_clips_from_the_rented_endpoint_and_falls_ba
     system.generation.approve(run2)
     while system.worker.run_once(): pass
     assert system.projects.generations(system.projects.script(script2)["shots"][0].shot_id, kind="clip")[-1]["provider"] == "motion"
+
+
+class ShotPod(Pod):
+    """An endpoint for work on one shot's clip: it gives back a clip of its own, so the change can be seen in the cut."""
+    def __init__(self, tmp_path, name):
+        super().__init__(tmp_path / name)
+        self.clip = make_video(tmp_path / name / "back.mp4", picture=4, size="640x360").read_bytes()
+
+
+def test_lip_sync_and_model_upscaling_are_done_on_a_shot_and_the_operators_own_footage_stays_unless_allowed(tmp_path):
+    from fastapi.testclient import TestClient
+    from nexora.adapters.runpod import RunPodLipSync, RunPodUpscale
+    from nexora.api.app import create_app
+    from tests.fakes import FakeModel
+    lips, bigger = ShotPod(tmp_path, "lips"), ShotPod(tmp_path, "bigger")
+    make = lambda cls, pod: cls("rp-key", "ep", host=f"http://127.0.0.1:{pod.server.server_port}", price_per_second=0.001, poll_seconds=0.01)
+    try:
+        system = build(tmp_path / "data", model=FakeModel(), voice=FakeVoice(), segment_seconds=2.0, judge=False, shot_models=[make(RunPodLipSync, lips), make(RunPodUpscale, bigger)])
+        client = TestClient(create_app(system))
+        system.library.ingest(make_video(tmp_path / "own.mp4", picture=20))
+        while system.worker.run_once(): pass
+        pid = client.post("/api/v1/projects", json={"title": "Chợ", "lines": ["chợ rau củ", "cá tươi trên sạp"]}).json()["project_id"]
+        client.post(f"/api/v1/projects/{pid}/match")
+        while system.worker.run_once(): pass
+        client.post(f"/api/v1/projects/{pid}/match/approve")
+        view = client.get(f"/api/v1/projects/{pid}").json()
+        assert view["remote"] == ["lipsync", "upscale"]
+        first, second = (s["shot_id"] for s in view["shots"])
+        client.patch(f"/api/v1/shots/{first}/treatment", json={"lipsync": True})
+        client.patch(f"/api/v1/shots/{second}/treatment", json={"upscale_ml": True})
+
+        client.post(f"/api/v1/projects/{pid}/render")
+        while system.worker.run_once(): pass
+        render = client.get(f"/api/v1/projects/{pid}").json()["renders"][0]
+        assert lips.runs == [] and bigger.runs == []                                   # the operator's own footage did not leave this machine
+        notes = [f for f in render["qc"]["findings"] if f["check"] in ("Khớp khẩu hình", "Phóng to bằng mô hình")]
+        assert render["qc"]["passed"] and [n["shot"] for n in notes] == [1, 2] and "footage riêng" in notes[0]["text"]
+
+        client.patch(f"/api/v1/projects/{pid}", json={"options": {"footage_may_leave": True}})         # the operator allows it for this project
+        client.post(f"/api/v1/projects/{pid}/render")
+        while system.worker.run_once(): pass
+        render = client.get(f"/api/v1/projects/{pid}").json()["renders"][0]
+        assert len(lips.runs) == 1 and len(bigger.runs) == 1 and set(lips.runs[0]) == {"video", "audio"} and bigger.runs[0]["scale"] == 2
+        assert [s["remote"] for s in render["qc"]["shots"]] == [["lipsync"], ["upscale"]] and render["qc"]["passed"]
+        assert not [f for f in render["qc"]["findings"] if f["check"] in ("Khớp khẩu hình", "Phóng to bằng mô hình")]
+        assert system.orch.run_cost(next(r for r in system.orch.runs_for_subject(view["script"]["script_id"]) if system.orch.pipeline_of(r) == "edit.render")) == pytest.approx(0.084)
+
+        client.post(f"/api/v1/projects/{pid}/render")                                  # nothing changed: nothing is sent or paid for again
+        while system.worker.run_once(): pass
+        assert len(lips.runs) == 1 and len(bigger.runs) == 1
+        system.orch.set_setting("privacy_local_only", "1")
+        client.patch(f"/api/v1/shots/{second}/treatment", json={"lipsync": True})
+        client.post(f"/api/v1/projects/{pid}/render")
+        while system.worker.run_once(): pass
+        assert len(lips.runs) == 1                                                     # privacy mode overrides the project's permission
+    finally:
+        lips.server.shutdown(); bigger.server.shutdown()
