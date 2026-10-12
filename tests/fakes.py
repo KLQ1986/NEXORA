@@ -127,3 +127,24 @@ class FakeWeb(Adapter):
         if url not in self.pages:
             raise AdapterError(ErrorCode.INVALID_REQUEST, "the page answered 404")
         return Result(outputs={"title": "", "publisher": "", "date": "", **self.pages[url], "url": url})
+
+
+class FakeSpeech(Adapter):
+    """Says the same words for every recording, half a second each, with a pause where `|` stands."""
+
+    def __init__(self, text: str = "chợ hội an buổi sáng rất đông. | ờ cá tươi nằm trên sạp. cá tươi nằm trên sạp."):
+        self.text, self.calls = text, 0
+
+    def describe(self) -> Capability:
+        return Capability(name="speech", operations=("transcribe",), runs="local")
+
+    def submit(self, request: Request) -> Result:
+        self.calls += 1
+        words, t = [], 0.5
+        for token in self.text.split():
+            if token == "|":
+                t += 2.0
+                continue
+            words.append({"text": token, "start": round(t, 2), "end": round(t + 0.4, 2), "p": 0.2 if token == "ờ" else 0.95})
+            t += 0.5
+        return Result(outputs={"words": words, "language": "vi"})

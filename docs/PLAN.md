@@ -215,6 +215,18 @@ Planning (137 test đạt; đã bấm thử trên giao diện với mô hình gi
 - [x] Radar cơ hội: footage chưa dùng vào video nào theo chủ đề; chủ đề đang theo dõi được đo bằng số cảnh khớp trong kho. Chưa có tín hiệu xu hướng từ nền tảng (cần tài khoản)
 - [x] Trợ lý có thêm ba vai có giới hạn: Nghiên cứu (đọc tối đa 5 trang được chỉ định), Phản biện (một vòng, biên kịch trả lời một lần), Kiểm chứng. Việc đi quá 40 bước bị dừng
 
+Library (145 test đạt; đã bấm thử trên giao diện, nhận dạng lời nói chạy bằng công cụ thật):
+
+- [x] Ngữ cảnh cho footage không tiếng: tên file, thư mục (buổi quay), ngày quay và ghi chú của người vận hành đi vào câu hỏi mô tả. Ghi chú đổi thì lần mô tả lại hỏi mới, không dùng kết quả cũ
+- [x] Ghi chú của người vận hành tìm được bằng ô tìm kiếm
+- [x] Tầng khung hình: xem kỹ một đoạn theo từng khung khi cần (tối đa 8 khung mỗi đoạn)
+- [x] Nhận dạng lời nói có mốc từng từ bằng whisper.cpp chạy trên máy (đã cài qua Homebrew, mô hình large-v3-turbo-q5 nằm ở `data/models`). Câu nói vào chung chỉ mục với mô tả hình. Footage không tiếng được bỏ qua
+- [x] Buổi quay (cùng thư mục, cùng ngày), lọc theo buổi quay
+- [x] Gạt một nguyên liệu ra: không được đề xuất cho kịch bản, không hiện khi tìm
+- [x] Mỗi nguyên liệu cho biết đang dùng trong dự án nào; lọc "chưa dùng"
+
+Ghi nhận để tối ưu sau: whisper nghe giọng đọc máy sai vài từ ("sạp" thành "sạc", "rau" thành "dao"); mốc từ liền nhau không có khoảng lặng nên câu được tách theo dấu phẩy và độ dài.
+
 ### Lát 1 — Lõi chạy việc
 
 Mục thiết kế: 5, 6, 7.

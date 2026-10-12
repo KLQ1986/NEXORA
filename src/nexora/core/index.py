@@ -108,6 +108,14 @@ class MomentIndex:
     def count(self) -> int:
         return self._conn.execute("SELECT COUNT(*) FROM moments WHERE level = 'segment'").fetchone()[0]
 
+    def remove(self, asset_id: str, level: str) -> None:
+        with db.write(self._conn) as c:
+            ids = [r[0] for r in c.execute("SELECT moment_id FROM moments WHERE asset_id = ? AND level = ?", (asset_id, level))]
+            for moment_id in ids:
+                c.execute("DELETE FROM moments_fts WHERE moment_id = ?", (moment_id,))
+                c.execute("DELETE FROM moment_vectors WHERE moment_id = ?", (moment_id,))
+                c.execute("DELETE FROM moments WHERE moment_id = ?", (moment_id,))
+
     def moments(self, asset_id: str, *, level: str | None = None) -> list[Moment]:
         rows = self._conn.execute("SELECT * FROM moments WHERE asset_id = ? AND (? IS NULL OR level = ?) ORDER BY t_start, level",
                                   (asset_id, level, level))
@@ -118,9 +126,11 @@ class MomentIndex:
                                   "WHERE m.asset_id = ? AND v.moment_id IS NULL ORDER BY m.t_start", (asset_id,))
         return [_moment(r) for r in rows]
 
-    def search(self, query: str, *, limit: int = 20, level: str = "segment", min_score: float = 0.0,
-               exclude: frozenset[str] = frozenset()) -> list[Hit]:
-        """Hybrid search: words (ignoring diacritics) and meaning (vectors), merged into one ranked list."""
+    def search(self, query: str, *, limit: int = 20, level: str | tuple[str, ...] = "segment", min_score: float = 0.0,
+               exclude: frozenset[str] = frozenset(), exclude_assets: frozenset[str] = frozenset()) -> list[Hit]:
+        """Hybrid search: words (ignoring diacritics) and meaning (vectors), merged into one ranked list.
+        `level` names the kinds of moment to return: one, or several to search pictures, speech and notes together."""
+        levels = (level,) if isinstance(level, str) else tuple(level)
         tokens = _tokens(query)
         if not tokens:
             return []
@@ -145,7 +155,7 @@ class MomentIndex:
             if score < min_score or moment_id in exclude:
                 continue
             moment = self.by_id(moment_id)
-            if moment and moment.level == level:
+            if moment and moment.level in levels and moment.asset_id not in exclude_assets:
                 hits.append((score, coverage.get(moment_id, 0.0) + similarity.get(moment_id, 0.0), moment))
         hits.sort(key=lambda h: (h[0], h[1]), reverse=True)
         return [Hit(m, round(s, 4)) for s, _, m in hits[:limit]]

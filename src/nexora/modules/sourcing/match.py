@@ -41,10 +41,11 @@ def fit(t_start: float, t_end: float, need: float) -> tuple[float, float]:
 
 class Sourcing:
     def __init__(self, orch: Orchestrator, projects: ProjectStore, index: MomentIndex, *, threshold: float = 0.5, alternates: int = 3,
-                 adapters: AdapterRegistry | None = None, judge: bool = False, judge_pass: int = 5):
+                 adapters: AdapterRegistry | None = None, judge: bool = False, judge_pass: int = 5, rejected=None):
         self._orch, self._projects, self._index = orch, projects, index
         self._adapters, self._judge, self._judge_pass = adapters, judge and adapters is not None, judge_pass
         self._threshold, self._alternates = threshold, alternates
+        self._rejected = rejected or (lambda: frozenset())       # assets the operator has set aside: never proposed
 
     def register(self, registry: PipelineRegistry) -> None:
         registry.register(MATCH, {"match": self._match})
@@ -100,7 +101,7 @@ class Sourcing:
         for shot in self._projects.script(ctx.subject_ref)["shots"]:
             need = needed_seconds(shot.text)
             wanted = f"{shot.text} {shot.brief}" if shot.brief else shot.text            # what is said, plus what the operator asked to see
-            hits = self._index.search(wanted, limit=self._alternates + 1, min_score=self._threshold, exclude=frozenset(used))
+            hits = self._index.search(wanted, limit=self._alternates + 1, min_score=self._threshold, exclude=frozenset(used), exclude_assets=self._rejected())
             verdicts: dict[str, tuple[int, str]] = {}
             if self._judge and hits:
                 for hit in hits:
@@ -212,7 +213,7 @@ class Sourcing:
             raise ValueError("Câu này chưa có hình chính")
         inserts = list(sel.extras.get("inserts", []))
         taken = {sel.moment_id, *(i["moment_id"] for i in inserts)} - {None}
-        hits = self._index.search(keyword, limit=1, min_score=self._threshold, exclude=frozenset(taken))
+        hits = self._index.search(keyword, limit=1, min_score=self._threshold, exclude=frozenset(taken), exclude_assets=self._rejected())
         if not hits:
             raise LookupError(keyword)
         m = hits[0].moment

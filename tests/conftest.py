@@ -1,3 +1,4 @@
+from pathlib import Path
 import subprocess
 
 import pytest
@@ -5,6 +6,7 @@ import pytest
 
 def make_video(path, *, picture=2, black=0, size="320x180", rate=25):
     """A test clip: `picture` seconds of moving test pattern followed by `black` seconds of black."""
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
     inputs = ["-f", "lavfi", "-i", f"testsrc2=size={size}:rate={rate}:duration={picture}"]
     graph = "[0:v]null[v]"
     if black:

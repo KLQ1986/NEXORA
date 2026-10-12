@@ -42,7 +42,7 @@ def run_view(system, run_id: str) -> dict:
     }
 
 
-def asset_view(system, asset: dict) -> dict:
+def asset_view(system, asset: dict, used: dict | None = None) -> dict:
     versions = system.assets.versions(asset["asset_id"])
     by_role = {v.role: v for v in versions}
     original = by_role["original"]
@@ -58,6 +58,9 @@ def asset_view(system, asset: dict) -> dict:
         "usable_ranges": meta.get("usable_ranges", []), "black_ranges": meta.get("black_ranges", []),
         "frozen_ranges": meta.get("frozen_ranges", []),
         "angles": [{"asset_id": other, "offset": shift} for other, shift in meta.get("angles", {}).items()],
+        "rejected": bool(asset.get("rejected")), "speech": meta.get("speech"), "session": f"{path.parent.name}, {str(probe.get('created') or '')[:10]}".rstrip(", "),
+        "used_in": [{"project_id": pid, "title": (system.projects.project(pid) or {}).get("title", "")} for pid in (used if used is not None else system.projects.used_assets()).get(asset["asset_id"], [])],
+        "transcribe": next((run_view(system, r) for r in runs if system.orch.pipeline_of(r) == "library.transcribe"), None),
         "note": asset.get("note"), "rating": asset.get("rating", 0), "collections": json.loads(asset.get("collections") or "[]"),
         "still": bool(probe.get("still")), "kind": asset.get("kind"), "mean_db": probe.get("mean_db"),
         "thumbnail_url": f"/media/{by_role['thumbnail'].version_id}" if "thumbnail" in by_role else f"/media/{original.version_id}" if probe.get("still") else None,
@@ -97,7 +100,8 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
     def annotate_asset(asset_id: str, body: dict):
         if system.assets.asset(asset_id) is None:
             raise HTTPException(404, "no such asset")
-        system.assets.annotate(asset_id, rating=body.get("rating"), collections=body.get("collections"), note=body.get("note"))
+        system.library.annotate(asset_id, rating=body.get("rating"), collections=body.get("collections"), note=body.get("note"),
+                                rejected=body.get("rejected") if "rejected" in body else None)
         return asset_view(system, system.assets.asset(asset_id))
 
     @app.get("/api/v1/events/stream")
@@ -120,7 +124,8 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
 
     @app.get("/api/v1/library")
     def library():
-        return {"assets": [asset_view(system, a) for a in system.assets.assets()]}
+        used = system.projects.used_assets()
+        return {"assets": [asset_view(system, a, used) for a in system.assets.assets()]}
 
     @app.get("/api/v1/runs")
     def list_runs():
@@ -445,16 +450,55 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
                 "thumbnail_url": f"/media/{versions['thumbnail'].version_id}" if "thumbnail" in versions
                 else f"/media/{original.version_id}" if original.metadata.get("probe", {}).get("still") else None}
 
+    @app.get("/api/v1/library/sessions")
+    def sessions():
+        return {"sessions": system.library.sessions()}
+
+    @app.post("/api/v1/assets/{asset_id}/understand", status_code=202)
+    def understand_again(asset_id: str):
+        """Describe the footage again, for example after a note was added that names what is in it."""
+        if system.assets.asset(asset_id) is None:
+            raise HTTPException(404, "no such asset")
+        run_id = system.library.understand(asset_id, force=True)
+        if run_id is None:
+            raise HTTPException(409, "Máy này chưa có mô hình để mô tả footage, hoặc đây là bản trùng")
+        return {"run_id": run_id}
+
+    @app.post("/api/v1/assets/{asset_id}/transcribe", status_code=202)
+    def transcribe(asset_id: str):
+        if system.assets.asset(asset_id) is None:
+            raise HTTPException(404, "no such asset")
+        run_id = system.library.transcribe(asset_id, force=True)
+        if run_id is None:
+            raise HTTPException(409, "Footage này không có tiếng, hoặc máy chưa có công cụ nhận dạng giọng nói")
+        return {"run_id": run_id}
+
+    @app.post("/api/v1/moments/{moment_id}/deepen")
+    def deepen(moment_id: str):
+        """Describe one stretch frame by frame."""
+        if not system.library.understands or system.index.by_id(moment_id) is None:
+            raise HTTPException(404, "no such moment, or no model to look with")
+        try:
+            made = system.library.deepen(moment_id)
+        except ValueError:
+            raise HTTPException(422, "Chỉ xem kỹ được một đoạn đã mô tả")
+        except AdapterError as err:
+            raise HTTPException(503, f"Mô hình không trả lời: {err.message or err.code.value}")
+        return {"frames": [moment_view(system.index.by_id(m)) for m in made]}
+
     @app.get("/api/v1/library/search")
     def search(q: str, limit: int = 24):
-        hits = system.index.search(q, limit=limit, min_score=0.3)
+        # Pictures, speech and the operator's own notes are searched together; assets set aside are left out.
+        hits = system.index.search(q, limit=limit, min_score=0.3, level=("segment", "speech", "note", "frame"), exclude_assets=system.assets.rejected())
         return {"hits": [{**moment_view(h.moment, h.score), "asset": asset_brief(h.moment.asset_id)} for h in hits]}
 
     @app.get("/api/v1/assets/{asset_id}/moments")
     def asset_moments(asset_id: str):
         moments = system.index.moments(asset_id)
         return {"video": next((moment_view(m) | {"title": m.data.get("detail", {}).get("tieu_de")} for m in moments if m.level == "video"), None),
-                "segments": [moment_view(m) for m in moments if m.level == "segment"]}
+                "segments": [moment_view(m) for m in moments if m.level == "segment"],
+                "frames": [moment_view(m) for m in moments if m.level == "frame"],
+                "speech": [moment_view(m) | {"words": m.data.get("words", [])} for m in moments if m.level == "speech"]}
 
     @app.patch("/api/v1/moments/{moment_id}")
     def correct_moment(moment_id: str, body: dict):

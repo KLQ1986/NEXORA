@@ -27,6 +27,15 @@ DESCRIBE_PROMPT = (
     "hanh_dong (danh sách hành động), boi_canh (một cụm từ về nơi chốn), chu_tren_hinh (chữ đọc được trên hình, hoặc chuỗi rỗng), "
     "co_canh (toàn, trung hoặc cận)."
 )
+CONTEXT_NOTE = (
+    "\n\nNgười quay cho biết thêm về đoạn video này:\n{context}\n"
+    "Dùng thông tin này để gọi đúng tên người, nơi chốn và sự việc khi chúng xuất hiện trong hình. Không tả điều không thấy trong hình."
+)
+FRAME_PROMPT = (
+    "Đây là một khung hình của một video. Hãy mô tả thật kỹ đúng khung hình này bằng tiếng Việt: từng vật thể, người, tư thế, vị trí trong khung, màu sắc, ánh sáng. "
+    "Không suy đoán điều không thấy. Chỉ trả về JSON với các khoá: mo_ta (2 đến 3 câu), chu_the (danh sách vật thể và người), chu_tren_hinh (chữ đọc được, hoặc chuỗi rỗng)."
+)
+MAX_DEEP_FRAMES = 8
 SUMMARY_PROMPT = (
     "Dưới đây là mô tả từng đoạn của một video, theo thứ tự thời gian. Hãy tóm tắt cả video bằng tiếng Việt. "
     "Chỉ trả về JSON với các khoá: tieu_de (một tiêu đề ngắn), tom_tat (2 đến 3 câu), chu_de (danh sách chủ đề chính).\n\n{lines}"
@@ -60,6 +69,54 @@ class Understanding:
     def analyzer(self) -> str:
         return f"{PROMPT_VERSION}:{self._seconds:g}s"
 
+    def context(self, asset_id: str) -> str:
+        """What is known about a recording apart from its picture: where the file sat (the shoot it came from), when it was made,
+        and what the operator wrote about it. For silent footage this is the only way a name or a place can reach the description."""
+        original, asset = self._assets.original(asset_id), self._assets.asset(asset_id) or {}
+        path, probe = self._assets.path_of(original), original.metadata.get("probe", {})
+        lines = [f"Tên file: {path.name}", f"Thư mục (buổi quay): {path.parent.name}"]
+        if probe.get("created"):
+            lines.append(f"Ngày quay: {str(probe['created'])[:10]}")
+        if asset.get("note"):
+            lines.append(f"Ghi chú của người quay: {asset['note']}")
+        return "\n".join(lines)
+
+    def _analyzer_for(self, asset_id: str) -> str:
+        """A changed note is a changed question, so descriptions made before it are no longer the cached answer."""
+        import hashlib
+        note = (self._assets.asset(asset_id) or {}).get("note")
+        return self.analyzer + (":" + hashlib.sha1(note.encode()).hexdigest()[:8] if note else "")
+
+    def deepen(self, moment_id: str) -> list[str]:
+        """Look at one stretch frame by frame. Segment descriptions say what happens; these say what each frame holds,
+        for when the operator needs an exact instant. Bounded, because every frame is one more look by the model."""
+        segment = self._index.by_id(moment_id)
+        if segment is None or segment.level != "segment":
+            raise ValueError("no such segment")
+        frames, made = segment.data.get("frames") or [], []
+        span = max(segment.t_end - segment.t_start, 0.1) / max(len(frames), 1)
+        for k, frame in enumerate(frames[:MAX_DEEP_FRAMES]):
+            out = self._adapters.submit("model", Request("describe", inputs={"images": [frame]}, params={"prompt": FRAME_PROMPT, "task": "frame", "index": k, "max_tokens": 400})).outputs["json"]
+            parts = [str(out.get("mo_ta", "")).strip()]
+            if isinstance(out.get("chu_the"), list) and out["chu_the"]:
+                parts.append(f"Thấy: {', '.join(str(v) for v in out['chu_the'])}.")
+            if out.get("chu_tren_hinh"):
+                parts.append(f"Chữ trên hình: {out['chu_tren_hinh']}.")
+            t = round(segment.t_start + k * span, 1)
+            made.append(self._index.upsert(segment.asset_id, "frame", t, round(min(t + span, segment.t_end), 1), " ".join(p for p in parts if p),
+                                           data={"frame": frame, "frames": [frame], "detail": out}, analyzer=self.analyzer))
+        self.embed_pending(segment.asset_id)
+        return made
+
+    def embed_pending(self, asset_id: str) -> int:
+        pending = self._index.without_vectors(asset_id)
+        for start in range(0, len(pending), 32):
+            batch = pending[start:start + 32]
+            vectors = self._adapters.submit("model", Request("embed", inputs={"texts": [m.text for m in batch]})).outputs["vectors"]
+            for moment, vector in zip(batch, vectors):
+                self._index.set_vector(moment.moment_id, vector)
+        return len(pending)
+
     def _segments(self, ctx):
         versions = {v.role: v for v in self._assets.versions(ctx.subject_ref)}
         original = versions["original"]
@@ -77,15 +134,16 @@ class Understanding:
 
     def _describe(self, ctx):
         done = unreadable = 0
+        analyzer, context = self._analyzer_for(ctx.subject_ref), self.context(ctx.subject_ref)
         for i, seg in enumerate(ctx.inputs["segments"]["segments"]):
             if ctx.should_stop():
                 break
             existing = self._index.get(ctx.subject_ref, "segment", seg["t_start"], seg["t_end"])
-            if existing and (existing.source == "human" or existing.analyzer == self.analyzer):
+            if existing and (existing.source == "human" or existing.analyzer == analyzer):
                 continue                                                    # cached: no model call
             if not seg["frames"]:
                 continue
-            prompt = DESCRIBE_PROMPT.format(n=len(seg["frames"]), gap=1 / FRAME_FPS)
+            prompt = DESCRIBE_PROMPT.format(n=len(seg["frames"]), gap=1 / FRAME_FPS) + CONTEXT_NOTE.format(context=context)
             try:
                 out = self._adapters.submit("model", Request("describe", inputs={"images": seg["frames"]},
                                                             params={"prompt": prompt, "index": i, "max_tokens": 700},
@@ -106,7 +164,7 @@ class Understanding:
                 parts.append(f"Chữ trên hình: {out['chu_tren_hinh']}.")
             frame = seg["frames"][len(seg["frames"]) // 2]
             self._index.upsert(ctx.subject_ref, "segment", seg["t_start"], seg["t_end"], " ".join(p for p in parts if p),
-                               data={"frame": frame, "frames": seg["frames"], "detail": out}, analyzer=self.analyzer)
+                               data={"frame": frame, "frames": seg["frames"], "detail": out}, analyzer=analyzer)
             done += 1
             ctx.heartbeat()
         return {"described": done, "unreadable": unreadable}
@@ -115,7 +173,7 @@ class Understanding:
         segments = self._index.moments(ctx.subject_ref, level="segment")
         if not segments:
             return {"skipped": "nothing to summarise"}
-        lines = "\n".join(f"[{clock(m.t_start)}] {m.text}" for m in segments)[:12000]
+        lines = self.context(ctx.subject_ref) + "\n\n" + "\n".join(f"[{clock(m.t_start)}] {m.text}" for m in segments)[:12000]
         out = self._adapters.submit("model", Request("chat", params={"prompt": SUMMARY_PROMPT.format(lines=lines), "json": True, "max_tokens": 400},
                                                     attempt_id=ctx.claim.attempt_id)).outputs["json"]
         duration = self._assets.original(ctx.subject_ref).metadata.get("probe", {}).get("duration", segments[-1].t_end)

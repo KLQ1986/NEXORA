@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { call, megabytes, post, timecode, usePoll, type Asset, type Hit, type Moment } from "./api";
+
+const LEVEL: Record<string, string> = { segment: "CẢNH", speech: "LỜI NÓI", note: "GHI CHÚ", frame: "KHUNG HÌNH" };
 import { Button, Icon, Page, RangeStrip, StageRail, StatusText, Tabs, TimeChip } from "./parts";
 
 function AddFootage({ onDone }: { onDone: () => void }) {
@@ -28,8 +30,11 @@ function AddFootage({ onDone }: { onDone: () => void }) {
 }
 
 function Moments({ asset, t, seek, similar }: { asset: Asset; t: number; seek: (s: number) => void; similar: (m: Moment) => void }) {
-  const { data, reload } = usePoll<{ video: Moment | null; segments: Moment[] }>(`/api/v1/assets/${asset.asset_id}/moments`, 6000);
+  const { data, reload } = usePoll<{ video: Moment | null; segments: Moment[]; frames: Moment[] }>(`/api/v1/assets/${asset.asset_id}/moments`, 6000);
   const [editing, setEditing] = useState<string | null>(null);
+  const [looking, setLooking] = useState<string | null>(null);
+  const [failed, setFailed] = useState<string | null>(null);
+  const deepen = async (id: string) => { setLooking(id); setFailed(null); try { await post(`/api/v1/moments/${id}/deepen`); } catch (e) { setFailed((e as Error).message); } setLooking(null); reload(); };
   const [draft, setDraft] = useState("");
   if (!data) return null;
   if (!data.segments.length) return <p className="rounded-lg border border-dashed border-line px-4 py-6 text-center text-[13px] text-mute">{asset.understand && asset.understand.status !== "succeeded" ? "Hệ thống đang xem video này. Mô tả sẽ hiện ra khi xong." : "Video này chưa được mô tả."}</p>;
@@ -37,9 +42,11 @@ function Moments({ asset, t, seek, similar }: { asset: Asset; t: number; seek: (
   return (
     <div className="grid gap-3">
       {data.video && <div className="ai-card p-3.5 text-[13px]"><p className="eyebrow mb-1.5 flex items-center gap-1.5 !text-ai"><Icon name="sparkles" size={12} />Tóm tắt video</p><p className="leading-relaxed">{data.video.text}</p></div>}
+      {failed && <p className="text-[12.5px] text-tally">{failed}</p>}
       <ol className="grid gap-2">
         {data.segments.map((m) => {
           const now = t >= m.t_start && t < m.t_end;
+          const frames = data.frames.filter((f) => f.t_start >= m.t_start && f.t_start < m.t_end);
           return (
             <li key={m.moment_id} className={`rounded-xl border p-2.5 transition-colors ${now ? "border-accent/50 bg-accent/[0.06]" : "border-line bg-raised/40 hover:border-edge"}`}>
               <div className="flex gap-3">
@@ -60,13 +67,51 @@ function Moments({ asset, t, seek, similar }: { asset: Asset; t: number; seek: (
                   <span className="mono rounded bg-overlay px-1.5 text-faint">CẢNH</span>
                   {m.source === "human" && <span className="text-accent">Bạn đã sửa</span>}
                   <span className="ml-auto" />
+                  {frames.length === 0 && <button type="button" className="link" disabled={looking !== null} title="Mô hình xem từng khung hình của đoạn này và tả riêng từng khung" onClick={() => deepen(m.moment_id)}>{looking === m.moment_id ? "Đang xem…" : "Xem kỹ từng khung"}</button>}
                   <button type="button" className="link" onClick={() => { setEditing(m.moment_id); setDraft(m.text); }}>Sửa</button>
                   <button type="button" className="flex items-center gap-1 text-ai hover:underline" onClick={() => similar(m)}><Icon name="sparkles" size={12} />Tìm cảnh giống</button>
                 </div>
               )}
+              {frames.length > 0 && (
+                <ol className="mt-2.5 grid gap-1.5 border-t border-line pt-2.5">
+                  {frames.map((f) => (
+                    <li key={f.moment_id} className="flex gap-2.5 text-[12px]">
+                      <button type="button" onClick={() => seek(f.t_start)} className="mono w-10 shrink-0 text-left text-accent hover:underline">{timecode(f.t_start)}</button>
+                      <span className="min-w-0 leading-relaxed text-mute">{f.text}</span></li>))}
+                </ol>
+              )}
             </li>
           );
         })}
+      </ol>
+    </div>
+  );
+}
+
+/** What was said, sentence by sentence. A word the model was unsure of is shown dotted, so a wrong word is easy to spot. */
+function Speech({ asset, t, seek }: { asset: Asset; t: number; seek: (s: number) => void }) {
+  const { data } = usePoll<{ speech: Moment[] }>(`/api/v1/assets/${asset.asset_id}/moments`, 6000);
+  const [note, setNote] = useState<string | null>(null);
+  const listen = () => post(`/api/v1/assets/${asset.asset_id}/transcribe`).then(() => setNote("Đã xếp việc nghe lại."), (e) => setNote((e as Error).message));
+  const busy = !!asset.transcribe && ["queued", "running"].includes(asset.transcribe.status);
+  if (!data) return null;
+  return (
+    <div className="grid gap-3">
+      <div className="flex flex-wrap items-center gap-3 text-[12.5px] text-mute">
+        {asset.speech ? <span><span className="mono text-ink">{asset.speech.words}</span> từ trong <span className="mono text-ink">{asset.speech.sentences}</span> câu{asset.speech.doubtful > 0 && <>, <span className="text-cue">{asset.speech.doubtful} từ nghe chưa chắc</span></>}</span>
+          : <span>{busy ? "Hệ thống đang nghe đoạn này." : "Đoạn này chưa được nghe."}</span>}
+        <span className="ml-auto"><Button size="sm" disabled={busy} onClick={listen}>{asset.speech ? "Nghe lại" : "Nghe lời nói"}</Button></span>
+      </div>
+      {note && <p className="text-[12.5px] text-mute">{note}</p>}
+      {asset.speech && data.speech.length === 0 && <p className="rounded-lg border border-dashed border-line px-4 py-6 text-center text-[13px] text-mute">Không nghe thấy lời nói nào trong đoạn này.</p>}
+      <ol className="grid gap-1.5">
+        {data.speech.map((m) => (
+          <li key={m.moment_id} className={`flex gap-3 rounded-lg px-2.5 py-2 text-[13px] ${t >= m.t_start && t < m.t_end ? "bg-accent/[0.08]" : ""}`}>
+            <button type="button" onClick={() => seek(m.t_start)} className="mono w-10 shrink-0 text-left text-[12px] text-accent hover:underline">{timecode(m.t_start)}</button>
+            <p className="min-w-0 leading-relaxed">{(m.words ?? []).map((w, i) => (
+              <button key={i} type="button" onClick={() => seek(w.start)} title={`${w.start.toFixed(1)} giây`} className={`mr-1 rounded hover:bg-raised ${w.p < 0.35 ? "text-cue underline decoration-dotted" : t >= w.start && t < w.end ? "text-accent" : ""}`}>{w.text}</button>))}</p>
+          </li>
+        ))}
       </ol>
     </div>
   );
@@ -77,7 +122,7 @@ function Player({ asset, start, others, close, similar }: { asset: Asset; start?
   const [other, setOther] = useState("");
   const [sync, setSync] = useState<string | null>(null);
   const [tags, setTags] = useState<string | null>(null);
-  const [tab, setTab] = useState<"scenes" | "info">(asset.kind === "video" ? "scenes" : "info");
+  const [tab, setTab] = useState<"scenes" | "speech" | "info">(asset.kind === "video" ? "scenes" : "info");
   const video = useRef<HTMLVideoElement>(null);
   const [t, setT] = useState(0);
   const seek = (s: number) => { if (video.current) { video.current.currentTime = s; video.current.play().catch(() => {}); } };
@@ -112,11 +157,19 @@ function Player({ asset, start, others, close, similar }: { asset: Asset; start?
           {asset.duplicate_of && <p className="text-[12.5px] text-mute">File này trùng nội dung với một video đã có trong thư viện nên không được xử lý lại.</p>}
           {!asset.online && <p className="rounded-lg border border-cue/30 bg-cue/5 px-3 py-2 text-[12.5px] text-cue">Không tìm thấy file gốc. Hãy cắm lại ổ chứa nó để render bản cuối.</p>}
         </div>
-        <div className="mt-2 px-4"><Tabs value={tab} onChange={setTab} items={[...(asset.kind === "video" ? [{ key: "scenes" as const, label: "Các cảnh", icon: "layers" }] : []), { key: "info" as const, label: "Thông tin", icon: "sliders" }]} /></div>
+        <div className="mt-2 px-4"><Tabs value={tab} onChange={setTab} items={[...(asset.kind === "video" ? [{ key: "scenes" as const, label: "Các cảnh", icon: "layers" }] : []), ...(asset.kind === "video" && asset.has_audio ? [{ key: "speech" as const, label: "Lời nói", icon: "mic", count: asset.speech?.sentences }] : []), { key: "info" as const, label: "Thông tin", icon: "sliders" }]} /></div>
         <div className="border-t border-line p-4">
           {tab === "scenes" && <Moments asset={asset} t={t} seek={seek} similar={similar} />}
+          {tab === "speech" && <Speech asset={asset} t={t} seek={seek} />}
           {tab === "info" && (
             <div className="grid gap-5">
+              <div className="grid gap-2 text-[13px]">
+                <p className="flex flex-wrap items-center gap-x-2 gap-y-1"><Icon name="folder" size={14} className="text-faint" /><span className="text-mute">Buổi quay</span><span>{asset.session || "không rõ"}</span></p>
+                <p className="flex flex-wrap items-center gap-x-2 gap-y-1"><Icon name="clapper" size={14} className="text-faint" /><span className="text-mute">Đã dùng trong</span>
+                  {asset.used_in.length ? asset.used_in.map((u) => <a key={u.project_id} href={`/du-an/${u.project_id}`} className="underline decoration-edge underline-offset-2">{u.title}</a>) : <span className="text-faint">chưa dự án nào</span>}</p>
+                <label className="flex items-start gap-2.5 rounded-lg border border-line bg-raised/50 p-3"><input type="checkbox" className="mt-0.5" checked={asset.rejected} onChange={(e) => post(`/api/v1/assets/${asset.asset_id}`, { rejected: e.target.checked }, "PATCH")} />
+                  <span>Không dùng nguyên liệu này<span className="block text-[12px] text-faint">Nó vẫn nằm trong thư viện nhưng không được đề xuất cho kịch bản nào và không hiện khi tìm kiếm.</span></span></label>
+              </div>
               <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-line bg-line">
                 {facts.map(([k, v]) => <div key={k} className="bg-surface px-3 py-2"><dt className="eyebrow !text-[10px]">{k}</dt><dd className="mono mt-0.5 text-[13px]">{v}</dd></div>)}
               </dl>
@@ -138,6 +191,7 @@ function Player({ asset, start, others, close, similar }: { asset: Asset; start?
                 <label htmlFor="memo" className="field-label">Ghi chú buổi quay</label>
                 <textarea id="memo" rows={2} value={memo ?? asset.note ?? ""} onChange={(e) => setMemo(e.target.value)} placeholder="Ví dụ: quay sáng thứ bảy ở chợ Hội An, máy cầm tay" className="w-full p-2.5 text-[13px]" />
                 {memo !== null && <div className="mt-1.5 flex gap-2"><Button size="sm" kind="primary" onClick={() => post(`/api/v1/assets/${asset.asset_id}`, { note: memo }, "PATCH").then(() => setMemo(null))}>Lưu ghi chú</Button><Button size="sm" onClick={() => setMemo(null)}>Bỏ</Button></div>}
+                {memo === null && asset.note && asset.kind !== "audio" && <p className="mt-1.5 text-[12px] text-faint">Ghi chú này tìm được bằng ô tìm kiếm. <button type="button" className="link" title="Mô hình xem lại footage và dùng ghi chú để gọi đúng tên người, nơi chốn" onClick={() => post(`/api/v1/assets/${asset.asset_id}/understand`).catch(() => {})}>Mô tả lại theo ghi chú</button></p>}
               </form>
               {asset.kind === "video" && asset.has_audio && partners.length > 0 && (
                 <div>
@@ -184,10 +238,14 @@ export default function Library() {
   const [kind, setKind] = useState("");
   const [group, setGroup] = useState("");
   const [least, setLeast] = useState(0);
+  const [session, setSession] = useState("");
+  const [use, setUse] = useState<"" | "unused" | "used" | "rejected">("");
   const [sort, setSort] = useState<Sort>("name");
   const [view, setView] = useState<"grid" | "list">("grid");
   const groups = [...new Set(assets.flatMap((a) => a.collections))].sort();
-  const shown = assets.filter((a) => (!kind || a.kind === kind) && (!group || a.collections.includes(group)) && a.rating >= least)
+  const sessions = [...new Set(assets.filter((a) => a.kind !== "audio" && a.session).map((a) => a.session))].sort().reverse();
+  const shown = assets.filter((a) => (!kind || a.kind === kind) && (!group || a.collections.includes(group)) && a.rating >= least && (!session || a.session === session)
+    && (use === "rejected" ? a.rejected : !a.rejected || use === "") && (use !== "unused" || a.used_in.length === 0) && (use !== "used" || a.used_in.length > 0))
     .sort((a, b) => (sort === "long" ? (b.duration ?? 0) - (a.duration ?? 0) : sort === "rating" ? b.rating - a.rating : a.name.localeCompare(b.name)));
   const seconds = assets.reduce((sum, a) => sum + (a.kind === "video" ? a.duration ?? 0 : 0), 0);
   const described = assets.filter((a) => a.understand?.status === "succeeded").length;
@@ -221,7 +279,8 @@ export default function Library() {
               {hits.map((h, i) => (
                 <li key={h.moment_id}>
                   <button type="button" className="panel group block w-full overflow-hidden text-left transition-colors hover:border-ai/50" onClick={() => { setPicked(h.asset_id); setStart(h.t_start); }}>
-                    <span className="relative block bg-black">{h.frame_url ? <img src={h.frame_url} alt="" loading="lazy" className="aspect-video w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" /> : <span className="block aspect-video" />}
+                    <span className="relative block bg-black">{h.frame_url ?? h.asset.thumbnail_url ? <img src={(h.frame_url ?? h.asset.thumbnail_url)!} alt="" loading="lazy" className="aspect-video w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" /> : <span className="block aspect-video" />}
+                      {h.level && h.level !== "segment" && <span className="chip absolute left-2 top-2">{LEVEL[h.level] ?? h.level}</span>}
                       <TimeChip className="absolute bottom-2 left-2">{h.asset.still ? "ẢNH" : `${timecode(h.t_start)} – ${timecode(h.t_end)}`}</TimeChip>
                       <span className="mono absolute right-2 top-2 grid h-6 w-6 place-items-center rounded-md bg-ai/90 text-[11px] font-semibold text-canvas">{i + 1}</span></span>
                     <span className="block px-3 py-2.5"><span className="block truncate text-[12px] text-faint">{h.asset.name}</span>
@@ -248,6 +307,19 @@ export default function Library() {
                   {groups.map((g) => <button key={g} type="button" onClick={() => setGroup(g)} aria-pressed={group === g} className={facet(group === g)}><Icon name="folder" size={15} className="text-accent" /><span className="flex-1 truncate">{g}</span><span className="mono text-[11px] text-faint">{assets.filter((a) => a.collections.includes(g)).length}</span></button>)}
                 </div>
               )}
+              {sessions.length > 1 && (
+                <div>
+                  <p className="eyebrow mb-1.5 px-2.5">Buổi quay</p>
+                  <button type="button" onClick={() => setSession("")} aria-pressed={!session} className={facet(!session)}><Icon name="clock" size={15} /><span className="flex-1">Mọi buổi quay</span></button>
+                  {sessions.slice(0, 12).map((s) => <button key={s} type="button" onClick={() => setSession(s)} aria-pressed={session === s} className={facet(session === s)}><Icon name="clock" size={15} /><span className="flex-1 truncate" title={s}>{s}</span><span className="mono text-[11px] text-faint">{assets.filter((a) => a.session === s).length}</span></button>)}
+                </div>
+              )}
+              <div>
+                <p className="eyebrow mb-1.5 px-2.5">Tình trạng dùng</p>
+                {([["", "Tất cả"], ["unused", "Chưa dùng vào video nào"], ["used", "Đã dùng"], ["rejected", "Đã gạt ra"]] as const).map(([k, name]) => (
+                  <button key={k} type="button" onClick={() => setUse(k)} aria-pressed={use === k} className={facet(use === k)}><Icon name={k === "rejected" ? "x" : k === "used" ? "check" : "layers"} size={15} /><span className="flex-1">{name}</span>
+                    <span className="mono text-[11px] text-faint">{k === "" ? assets.length : k === "rejected" ? assets.filter((a) => a.rejected).length : k === "used" ? assets.filter((a) => a.used_in.length > 0).length : assets.filter((a) => !a.rejected && a.used_in.length === 0).length}</span></button>))}
+              </div>
               <div>
                 <p className="eyebrow mb-1.5 px-2.5">Đánh giá</p>
                 <button type="button" onClick={() => setLeast(least ? 0 : 4)} aria-pressed={least > 0} className={facet(least > 0)}><Icon name="star" size={15} className={least ? "text-cue" : ""} /><span className="flex-1">Từ 4 sao</span></button>
@@ -278,6 +350,7 @@ export default function Library() {
                             <TimeChip className="absolute bottom-2 right-2">{a.still ? "ẢNH" : a.duration ? timecode(a.duration) : "…"}</TimeChip>
                             {a.rating > 0 && <span className="chip absolute left-2 top-2 !text-cue"><Icon name="star" size={11} />{a.rating}</span>}
                             {seen && <span className="chip absolute right-2 top-2 !text-ai" title="Đã được AI mô tả"><Icon name="sparkles" size={11} />AI</span>}
+                            {a.rejected && <span className="absolute inset-0 grid place-items-center bg-canvas/70 text-[12px] font-medium text-mute">Đã gạt ra</span>}
                             {!a.online && <span className="absolute inset-x-0 top-0 bg-cue/95 px-2 py-0.5 text-[11px] font-medium text-canvas">Không tìm thấy file gốc</span>}
                           </span>
                           <span className="block px-3 pb-3 pt-2.5">
@@ -289,6 +362,8 @@ export default function Library() {
                                 <span className="mono">{megabytes(a.size)}</span>
                                 {a.kind === "video" && !seen && a.understand && <span className="text-ai">đang mô tả</span>}
                               </>}
+                              {a.used_in.length > 0 && <span className="text-proof" title={a.used_in.map((u) => u.title).join(", ")}>dùng trong {a.used_in.length} dự án</span>}
+                              {a.speech && a.speech.words > 0 && <span title="Có lời nói đã được ghi lại"><Icon name="mic" size={11} className="inline" /></span>}
                               {a.collections.length > 0 && <span className="truncate text-accent">{a.collections.join(", ")}</span>}
                             </span>
                             <span className="mt-2.5 block">{working ? <StageRail stages={a.ingest!.stages} /> : a.kind === "video" ? <RangeStrip asset={a} /> : <span className="block h-1.5" />}</span>

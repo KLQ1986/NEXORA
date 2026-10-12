@@ -245,6 +245,7 @@ MIGRATIONS = [
     ("shots", "fact_check", "TEXT"),
     ("scripts", "critique", "TEXT"),
     ("projects", "due_date", "TEXT"),
+    ("assets", "rejected", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 

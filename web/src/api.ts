@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 export type Stage = { stage_id: string; stage_key: string; status: string; blocked_reason: string | null; attempts: number };
 export type Run = { held?: boolean; stalled?: boolean; run_id: string; pipeline: string; subject_ref: string | null; created_at: number; status: string; cost: number; stages: Stage[] };
+export type Word = { text: string; start: number; end: number; p: number };
 export type Asset = {
+  rejected: boolean; session: string; used_in: { project_id: string; title: string }[]; speech: { words: number; sentences: number; seconds: number; doubtful: number } | null; transcribe: Run | null;
   asset_id: string; name: string; path: string; online: boolean; size: number; duplicate_of: string | null;
   duration: number | null; width: number | null; height: number | null; frame_rate: number | null; has_audio: boolean | null;
   usable_ranges: number[][]; black_ranges: number[][]; frozen_ranges: number[][];
@@ -72,7 +74,7 @@ export const REASONS: Record<string, string> = {
   insufficient_storage: "Ổ đĩa sắp đầy", auth: "Khoá truy cập không hợp lệ", quota_exhausted: "Hết hạn mức của nhà cung cấp",
 };
 
-export type Moment = { moment_id: string; asset_id: string; t_start: number; t_end: number; text: string; source: string; score: number | null; frame_url: string | null; title?: string | null };
+export type Moment = { level?: string; words?: Word[]; moment_id: string; asset_id: string; t_start: number; t_end: number; text: string; source: string; score: number | null; frame_url: string | null; title?: string | null };
 export type AssetBrief = { asset_id: string; name: string; proxy_url: string | null; duration: number | null; still: boolean; thumbnail_url: string | null };
 export type Hit = Moment & { asset: AssetBrief };
 export type Candidate = { moment_id: string; t_in: number; t_out: number; score: number; reason: string; frame_url: string; asset: AssetBrief };

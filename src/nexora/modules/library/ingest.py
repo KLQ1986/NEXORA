@@ -44,10 +44,11 @@ def usable_ranges(duration: float, black: list[list[float]]) -> list[list[float]
 
 class Library:
     def __init__(self, orch: Orchestrator, assets: AssetStore, adapters: AdapterRegistry, media_dir: str | Path,
-                 *, min_free_bytes: int = 2 * 1024**3, understanding=None):
+                 *, min_free_bytes: int = 2 * 1024**3, understanding=None, transcription=None):
         self._orch, self._assets, self._adapters = orch, assets, adapters
         self._min_free = min_free_bytes
         self._understanding = understanding          # None when no model is available
+        self._transcription = transcription          # None when no speech tool is available
         self.on_understood = []                      # called with an asset id once that asset has been described and indexed
         self._media = Path(media_dir)
         self._media.mkdir(parents=True, exist_ok=True)
@@ -56,10 +57,13 @@ class Library:
     def register(self, registry: PipelineRegistry) -> None:
         registry.register(INGEST, {"checksum": self._checksum, "probe": self._probe, "usable": self._usable,
                                    "proxy": self._proxy, "thumbnail": self._thumbnail},
-                          on_success=(lambda run_id, asset_id: self.understand(asset_id)) if self._understanding else None)
+                          on_success=lambda run_id, asset_id: (self.understand(asset_id), self.transcribe(asset_id)))
         registry.register(INGEST_IMAGE, {"checksum": self._checksum, "measure": self._measure},
                           on_success=(lambda run_id, asset_id: self.understand(asset_id)) if self._understanding else None)
         registry.register(INGEST_AUDIO, {"checksum": self._checksum, "listen": self._listen})
+        if self._transcription:
+            from nexora.modules.library.transcribe import TRANSCRIBE
+            registry.register(TRANSCRIBE, self._transcription.handlers())
         if self._understanding:
             from nexora.modules.library.understand import UNDERSTAND
             registry.register(UNDERSTAND, self._understanding.handlers(),
@@ -75,6 +79,13 @@ class Library:
         if self._understanding is None or "duplicate_of" in self._assets.original(asset_id).metadata:
             return None
         return self._orch.submit_run(UNDERSTAND, subject_ref=asset_id, idempotency_key=None if force else f"understand:{asset_id}")
+
+    def transcribe(self, asset_id: str, *, force: bool = False) -> str | None:
+        """Start listening to an ingested asset for speech. Footage without sound is left alone."""
+        from nexora.modules.library.transcribe import TRANSCRIBE
+        if self._transcription is None or not self._transcription.wanted(asset_id):
+            return None
+        return self._orch.submit_run(TRANSCRIBE, subject_ref=asset_id, idempotency_key=None if force else f"transcribe:{asset_id}")
 
     def ingest(self, path: str | Path, *, origin: str = "self_shot", rights: dict | None = None) -> tuple[str, str]:
         """Register a file and start its ingest run. Ingesting the same file again returns the same asset and run.
@@ -93,6 +104,41 @@ class Library:
             return asset_id, self._orch.submit_run(INGEST_IMAGE, subject_ref=asset_id, idempotency_key=f"ingest:{asset_id}")
         run_id = self._orch.submit_run(INGEST, subject_ref=asset_id, idempotency_key=f"ingest:{asset_id}")
         return asset_id, run_id
+
+    def annotate(self, asset_id: str, *, note: str | None = None, **marks) -> None:
+        """The operator's marks. A note is also put in the index, so that what the operator knows about a silent clip can be searched for."""
+        self._assets.annotate(asset_id, note=note, **marks)
+        if note is not None and self._understanding is not None:
+            index = self._understanding._index
+            index.remove(asset_id, "note")
+            if note.strip():
+                duration = self._assets.original(asset_id).metadata.get("probe", {}).get("duration") or 0.0
+                index.upsert(asset_id, "note", 0.0, round(float(duration), 1), note.strip())
+                index.correct(index.get(asset_id, "note", 0.0, round(float(duration), 1)).moment_id, note.strip())      # the operator's words
+                try:
+                    self._understanding.embed_pending(asset_id)
+                except AdapterError:
+                    pass                                 # found by its words until the embedding model is back
+
+    def deepen(self, moment_id: str) -> list[str]:
+        return self._understanding.deepen(moment_id)
+
+    def sessions(self) -> list[dict]:
+        """Shoots: recordings that sat in the same folder and were made on the same day."""
+        import time
+        groups: dict[tuple[str, str], dict] = {}
+        for asset in self._assets.assets():
+            if asset["kind"] == "audio":
+                continue
+            original = self._assets.original(asset["asset_id"])
+            if "duplicate_of" in original.metadata:
+                continue
+            path, probe = self._assets.path_of(original), original.metadata.get("probe", {})
+            day = str(probe.get("created") or "")[:10] or time.strftime("%Y-%m-%d", time.localtime(path.stat().st_mtime if path.is_file() else asset["created_at"]))
+            row = groups.setdefault((str(path.parent), day), {"session": f"{path.parent.name}, {day}", "folder": str(path.parent), "date": day, "assets": [], "seconds": 0.0})
+            row["assets"].append(asset["asset_id"])
+            row["seconds"] += probe.get("duration") or 0.0
+        return sorted(groups.values(), key=lambda g: (g["date"], g["folder"]), reverse=True)
 
     # ------------------------------------------------------------------ stage handlers
     def sync(self, first: str, second: str) -> dict:

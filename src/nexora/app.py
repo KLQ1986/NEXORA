@@ -21,6 +21,7 @@ from nexora.core.worker import Worker
 from nexora.modules.library.ingest import Library
 from nexora.modules.distribution.package import Distribution
 from nexora.modules.edit.render import Edit
+from nexora.modules.library.transcribe import Transcription
 from nexora.modules.library.understand import Understanding
 from nexora.modules.planning.scripts import Planning
 from nexora.modules.quality.review import review_cut
@@ -67,10 +68,10 @@ def fill_gap_from_stock(system: "System", shot_id: str, query: str) -> dict:
     return {"found": True, "asset_id": asset_id, "run_id": run_id, "rights": rights}
 
 
-PIPELINE_NAMES = {"library.ingest": "Nhập footage", "library.ingest_image": "Nhập ảnh", "library.ingest_audio": "Nhập nhạc", "library.understand": "Hiểu nội dung footage",
+PIPELINE_NAMES = {"library.ingest": "Nhập footage", "library.ingest_image": "Nhập ảnh", "library.ingest_audio": "Nhập nhạc", "library.understand": "Hiểu nội dung footage", "library.transcribe": "Nghe lời nói trong footage",
                   "sourcing.match": "Chọn clip", "sourcing.generate": "Sinh hình bằng AI", "edit.render": "Dựng video"}
 ANNOUNCE = {"disk_low": "ổ đĩa sắp đầy", "volume_offline": "không tìm thấy nơi chứa footage", "gaps": "còn câu chưa có hình", "waiting_review": "đang chờ bạn duyệt", "blocked": "đang dừng và cần bạn xử lý", "failed": "thất bại", "succeeded": "đã xong"}
-QUIET = frozenset({"library.ingest", "library.ingest_image", "library.ingest_audio", "library.understand"})   # finishing these needs nobody's attention
+QUIET = frozenset({"library.ingest", "library.ingest_image", "library.ingest_audio", "library.understand", "library.transcribe"})   # finishing these needs nobody's attention
 
 
 def announce(system: "System", after: int) -> int:
@@ -151,7 +152,7 @@ def capabilities(system: "System") -> list[dict]:
 def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Adapter | None = None,
           segment_seconds: float = 12.0, voice: Adapter | None = None, match_threshold: float = 0.5, judge: bool = True,
           generators: list[Adapter] | None = None, stock: Adapter | None = None, desktop: Adapter | None = None, voice_name: str = "Linh",
-          web: Adapter | None = None) -> System:
+          web: Adapter | None = None, speech: Adapter | None = None) -> System:
     """`model` is the adapter for vision, reasoning and embeddings; without one, footage is ingested but not understood."""
     data_dir = Path(data_dir).resolve()          # tools resolve relative paths differently; keep every path absolute
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -172,11 +173,15 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
         index.embed = lambda texts: adapters.submit("model", Request("embed", inputs={"texts": texts})).outputs["vectors"]
         understanding = Understanding(assets, index, adapters, data_dir / "media", segment_seconds=segment_seconds)
     registry = PipelineRegistry()
-    library = Library(orch, assets, adapters, data_dir / "media", min_free_bytes=min_free_bytes, understanding=understanding)
+    transcription = None
+    if speech is not None:
+        adapters.register(speech)
+        transcription = Transcription(assets, index, adapters)
+    library = Library(orch, assets, adapters, data_dir / "media", min_free_bytes=min_free_bytes, understanding=understanding, transcription=transcription)
     library.register(registry)
     projects = ProjectStore(db_path)
     planning = Planning(projects, assets, index, adapters)
-    sourcing = Sourcing(orch, projects, index, threshold=match_threshold, adapters=adapters, judge=judge and model is not None)
+    sourcing = Sourcing(orch, projects, index, threshold=match_threshold, adapters=adapters, judge=judge and model is not None, rejected=assets.rejected)
     sourcing.register(registry)
     library.on_understood.append(lambda asset_id: [sourcing.refine_from_asset(shot_id, asset_id) for shot_id in sourcing.pending_for(asset_id)])
     edit = Edit(orch, projects, assets, adapters, data_dir / "media", voice=voice is not None, voice_name=voice_name, reviewer=review_cut, model=model is not None)
@@ -215,13 +220,15 @@ def build_from_config(config, **overrides) -> System:
     from nexora.adapters.desktop import DesktopNotifier
     from nexora.adapters.ollama import OllamaAdapter
     from nexora.adapters.openmontage import OpenMontageStock
+    from nexora.adapters.speech import WhisperCpp
     from nexora.adapters.voice import SayVoice
     from nexora.adapters.web import WebReader
     return build(config.data_dir, min_free_bytes=int(config.min_free_gb * 1024**3), segment_seconds=config.segment_seconds, judge=config.judge,
                  model=OllamaAdapter(host=config.ollama_host, vision_model=config.vision_model, embed_model=config.embed_model,
                                      judge_model=config.judge_model, writer_model=config.writer_model),
                  voice=SayVoice(), voice_name=config.voice, match_threshold=config.match_threshold,
-                 stock=OpenMontageStock(config.openmontage_repo), desktop=DesktopNotifier(), web=WebReader(), **overrides)
+                 stock=OpenMontageStock(config.openmontage_repo), desktop=DesktopNotifier(), web=WebReader(),
+                 speech=WhisperCpp(config.speech_model, language=config.speech_language) if config.speech_model else None, **overrides)
 
 
 def doctor(system: System, config=None) -> list[dict]:
@@ -236,6 +243,11 @@ def doctor(system: System, config=None) -> list[dict]:
     add("Ollama đang chạy", model.get("running"), "có kết nối" if model.get("running") else "không kết nối được", "Mở ứng dụng Ollama hoặc chạy `ollama serve`.")
     for wanted, have in (model.get("models") or {}).items():
         add(f"Mô hình {wanted}", have, "đã tải" if have else "chưa tải", f"Chạy `ollama pull {wanted}`.")
+    speech = env.get("speech")
+    if speech is not None:
+        add("Công cụ nhận dạng giọng nói", speech.get("binary"), speech.get("binary") or "không tìm thấy whisper-cli", "Chạy `brew install whisper-cpp`.", optional=True)
+        add("Mô hình nhận dạng giọng nói", speech.get("model_present"), speech["model"] if speech.get("model_present") else "chưa có file mô hình",
+            f"Tải một mô hình ggml của whisper.cpp về {speech['model']}, hoặc sửa speech_model trong nexora.toml.", optional=True)
     voices = (env.get("voice") or {}).get("vietnamese_voices", [])
     add("Giọng đọc tiếng Việt", voices, ", ".join(voices) or "không có", "Tải một giọng tiếng Việt trong Cài đặt > Trợ năng > Nội dung được đọc.")
     missing = [k for k, ok in (env.get("ffmpeg") or {}).get("filters", {}).items() if not ok]
