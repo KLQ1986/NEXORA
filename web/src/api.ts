@@ -79,7 +79,7 @@ export type AssetBrief = { asset_id: string; name: string; proxy_url: string | n
 export type Hit = Moment & { asset: AssetBrief };
 export type Candidate = { moment_id: string; t_in: number; t_out: number; score: number; reason: string; frame_url: string; asset: AssetBrief };
 export type Op = { op: string; line: number; describe: string; [k: string]: unknown };
-export type RoughPlan = { asset_id: string; sentences: { index: number; text: string; keep: boolean; reason: string | null; t_in: number; t_out: number; doubtful: boolean }[]; source_seconds: number | null; kept_seconds: number; removed_seconds: number };
+export type RoughPlan = { asset_id: string; sentences: { index: number; text: string; keep: boolean; reason: string | null; t_in: number; t_out: number; doubtful: boolean; take_of: number | null; takes: number[] }[]; source_seconds: number | null; kept_seconds: number; removed_seconds: number };
 export type Selection = { speed: number; stabilise: boolean; live_sound: boolean; sfx: string | null; status: string; t_in: number | null; t_out: number | null; score: number | null; reason: string | null; decided_by: string;
   moment_id: string | null; frame_url: string | null; asset: AssetBrief | null; alternates: Candidate[];
   inserts: { keyword: string; at: number; reason: string }[]; focus_x: number | null; angles: (AssetBrief & { offset: number; t_in: number })[] };

@@ -34,7 +34,7 @@ def plan(sentences: list[dict], *, duration: float | None = None) -> list[dict]:
         told.append({"words": spoken, "norm": " ".join(_norm(w["text"]) for w in spoken)})
     out = []
     for i, (s, t) in enumerate(zip(sentences, told)):
-        entry = {"index": i, "text": s["text"], "keep": True, "reason": None, "t_in": s["t_start"], "t_out": s["t_end"], "doubtful": False}
+        entry = {"index": i, "text": s["text"], "keep": True, "reason": None, "t_in": s["t_start"], "t_out": s["t_end"], "doubtful": False, "take_of": None}
         if not t["words"]:
             entry.update(keep=False, reason="Chỉ có tiếng đệm.")
         else:
@@ -50,9 +50,17 @@ def plan(sentences: list[dict], *, duration: float | None = None) -> list[dict]:
                 alike = difflib.SequenceMatcher(None, t["norm"], later["norm"]).ratio()
                 false_start = len(t["norm"]) < len(later["norm"]) and later["norm"].startswith(t["norm"])
                 if alike >= RETAKE_ALIKE or false_start:
-                    entry.update(keep=False, reason="Câu này được nói lại ngay sau đó; giữ lần nói sau.")
+                    entry.update(keep=False, reason="Câu này được nói lại ngay sau đó; giữ lần nói sau.", take_of=told.index(later, i + 1))
                     break
         out.append(entry)
+    # Takes of one line are gathered under the take that is kept, so that the operator can hear them side by side and choose another.
+    for entry in out:
+        final = entry["take_of"]
+        while final is not None and out[final]["take_of"] is not None:
+            final = out[final]["take_of"]
+        entry["take_of"] = final
+    for entry in out:
+        entry["takes"] = [e["index"] for e in out if e["take_of"] == entry["index"]] + [entry["index"]] if any(e["take_of"] == entry["index"] for e in out) else []
     for a, b in zip(out, out[1:]):                 # two kept ranges never overlap: the handle of one stops where the next begins
         if a["t_out"] > b["t_in"]:
             a["t_out"] = b["t_in"] = round((a["t_out"] + b["t_in"]) / 2, 2)

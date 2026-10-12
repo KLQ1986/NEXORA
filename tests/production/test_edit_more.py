@@ -35,6 +35,9 @@ def said(text, start):
 def test_the_rough_cut_drops_fillers_and_earlier_takes_and_never_clips_a_word():
     entries = plan([said("ờ à", 0.5), said("hôm nay mình đi chợ", 2.0), said("hôm nay mình đi chợ Hội An.", 5.0), said("ờ cá ở đây rất tươi.", 9.0), said("cá", 12.0), said("cá ở chợ này rẻ lắm.", 13.0)], duration=16.0)
     assert [(e["keep"], e["reason"] and e["reason"][:12]) for e in entries] == [(False, "Chỉ có tiếng"), (False, "Câu này được"), (True, None), (True, None), (False, "Câu này được"), (True, None)]
+    assert [e["take_of"] for e in entries] == [None, 2, None, None, 5, None] and entries[2]["takes"] == [1, 2] and entries[5]["takes"] == [4, 5] and entries[3]["takes"] == []
+    three = plan([said("mình đi chợ", 0.0), said("mình đi chợ Hội", 3.0), said("mình đi chợ Hội An.", 6.0)])
+    assert [e["take_of"] for e in three] == [2, 2, None] and three[2]["takes"] == [0, 1, 2]              # three takes of one line: one group, the last one kept
     kept = [e for e in entries if e["keep"]]
     assert kept[1]["text"] == "cá ở đây rất tươi." and kept[1]["t_in"] == pytest.approx(9.5 - 0.12)          # the leading "ờ" is cut off with its time
     assert kept[0]["t_in"] == pytest.approx(4.88) and kept[0]["t_out"] == pytest.approx(8.6)                   # a handle before the first word and after the last

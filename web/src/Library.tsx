@@ -104,9 +104,12 @@ function RoughCutPanel({ asset, seek }: { asset: Asset; seek: (s: number) => voi
       <ol className="mt-2 grid gap-1">
         {plan.sentences.map((s) => (
           <li key={s.index} className="flex items-start gap-2">
-            <input type="checkbox" className="mt-1" aria-label={`Giữ câu ${s.index + 1}`} checked={keep.has(s.index)} onChange={(e) => { const next = new Set(keep); if (e.target.checked) next.add(s.index); else next.delete(s.index); setKeep(next); }} />
+            {s.take_of !== null || s.takes.length > 0
+              ? <input type="radio" className="mt-1" name={`take-${s.take_of ?? s.index}`} aria-label={`Dùng lần nói này cho câu ${(s.take_of ?? s.index) + 1}`} title="Các lần nói của cùng một câu: chọn lần muốn dùng" checked={keep.has(s.index)}
+                       onChange={() => { const group = plan.sentences.filter((x) => (x.take_of ?? x.index) === (s.take_of ?? s.index)).map((x) => x.index); const next = new Set([...keep].filter((i) => !group.includes(i))); next.add(s.index); setKeep(next); }} />
+              : <input type="checkbox" className="mt-1" aria-label={`Giữ câu ${s.index + 1}`} checked={keep.has(s.index)} onChange={(e) => { const next = new Set(keep); if (e.target.checked) next.add(s.index); else next.delete(s.index); setKeep(next); }} />}
             <button type="button" onClick={() => seek(s.t_in)} className="mono mt-0.5 w-10 shrink-0 text-left text-[12px] text-accent hover:underline">{timecode(s.t_in)}</button>
-            <span className={`min-w-0 flex-1 ${keep.has(s.index) ? "" : "text-faint line-through"}`}>{s.text}{s.reason && <span className="ml-2 text-[12px] text-cue no-underline">{s.reason}</span>}{s.doubtful && <span className="ml-2 text-[12px] text-cue">nghe chưa rõ</span>}</span>
+            <span className={`min-w-0 flex-1 ${keep.has(s.index) ? "" : "text-faint line-through"}`}>{s.text}{s.take_of !== null && <span className="ml-2 text-[12px] text-faint">lần nói khác của câu {s.take_of + 1}</span>}{s.reason && s.take_of === null && <span className="ml-2 text-[12px] text-cue no-underline">{s.reason}</span>}{s.doubtful && <span className="ml-2 text-[12px] text-cue">nghe chưa rõ</span>}</span>
           </li>
         ))}
       </ol>
