@@ -67,6 +67,7 @@ def asset_view(system, asset: dict, used: dict | None = None) -> dict:
         "transcribe": next((run_view(system, r) for r in runs if system.orch.pipeline_of(r) == "library.transcribe"), None),
         "enhance": next((run_view(system, r) for r in runs if system.orch.pipeline_of(r) == "library.enhance"), None),
         "enhanced": by_role["enhanced"].metadata if "enhanced" in by_role else None,
+        "music": meta.get("music"),
         "note": asset.get("note"), "rating": asset.get("rating", 0), "collections": json.loads(asset.get("collections") or "[]"),
         "still": bool(probe.get("still")), "kind": asset.get("kind"), "mean_db": probe.get("mean_db"),
         "thumbnail_url": f"/media/{by_role['thumbnail'].version_id}" if "thumbnail" in by_role else f"/media/{original.version_id}" if probe.get("still") else None,
@@ -970,6 +971,49 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         system.orch.set_setting("radar_topics", json.dumps(topics, ensure_ascii=False))
         return radar()
 
+    def channel_list() -> list[dict]:
+        return json.loads(system.orch.setting("channels", "[]"))
+
+    @app.get("/api/v1/channels")
+    def channels():
+        """Channels: where videos go out, who for, and how often. A project belongs to at most one."""
+        return {"channels": channel_list()}
+
+    @app.post("/api/v1/channels")
+    def save_channels(body: dict):
+        from nexora.app import templates
+        names, out = {t["name"] for t in templates(system)}, []
+        for raw in body.get("channels") or []:
+            name = str(raw.get("name", "")).strip()
+            if not name or name in [c["name"] for c in out]:
+                continue
+            try:
+                cadence = max(0, min(21, int(raw.get("per_week") or 0)))
+            except (TypeError, ValueError):
+                cadence = 0
+            out.append({"name": name, "platform": str(raw.get("platform") or "").strip(), "audience": str(raw.get("audience") or "").strip(), "per_week": cadence,
+                        "template": raw.get("template") if raw.get("template") in names else None})
+        system.orch.set_setting("channels", json.dumps(out, ensure_ascii=False))
+        return {"channels": out}
+
+    def cadence_gaps(rows: list[dict], today: str) -> list[dict]:
+        """For each channel with a cadence: the coming four weeks, and how many videos each is short of what the channel promises."""
+        import datetime
+        start = datetime.date.fromisoformat(today)
+        start -= datetime.timedelta(days=start.weekday())
+        out = []
+        for channel in channel_list():
+            if not channel["per_week"]:
+                continue
+            weeks = []
+            for k in range(4):
+                first = start + datetime.timedelta(weeks=k)
+                last = first + datetime.timedelta(days=6)
+                planned = sum(1 for r in rows if r["channel"] == channel["name"] and r["due_date"] and first.isoformat() <= r["due_date"] <= last.isoformat())
+                weeks.append({"from": first.isoformat(), "to": last.isoformat(), "planned": planned, "short": max(0, channel["per_week"] - planned)})
+            out.append({"channel": channel["name"], "per_week": channel["per_week"], "weeks": weeks, "short": sum(w["short"] for w in weeks)})
+        return out
+
     @app.get("/api/v1/calendar")
     def calendar():
         """The editorial calendar: every project with the day it is meant to go out and how far along it is."""
@@ -980,8 +1024,9 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             approved = next((r for r in renders if (r["review"] or {}).get("approved")), None)
             stage = ("Đã có gói xuất bản" if approved and system.distribution.package(approved["render_id"]) else "Bản dựng đã duyệt" if approved
                      else "Chờ duyệt bản dựng" if renders else "Đã chọn clip" if script and script["match_approved"] else "Có kịch bản" if script else "Mới có ý tưởng")
-            rows.append({"project_id": p["project_id"], "title": p["title"], "format": p["format"], "due_date": p.get("due_date"), "stage": stage, "ready": bool(approved)})
-        return {"projects": rows, "today": time.strftime("%Y-%m-%d")}
+            rows.append({"project_id": p["project_id"], "title": p["title"], "format": p["format"], "due_date": p.get("due_date"), "stage": stage, "ready": bool(approved), "channel": p.get("channel")})
+        today = time.strftime("%Y-%m-%d")
+        return {"projects": rows, "today": today, "channels": channel_list(), "cadence": cadence_gaps(rows, today)}
 
     @app.post("/api/v1/ideas")
     def propose_ideas():
@@ -1042,6 +1087,9 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         if body.get("narration_dir") and not Path(str(body["narration_dir"])).expanduser().is_dir():
             raise HTTPException(404, "Không tìm thấy thư mục này")
         fields = {k: (str(Path(str(v)).expanduser()) if k in ("music_path", "narration_dir") and v else v) for k, v in body.items()}
+        if "channel" in fields:                  # the channel a video is for; choosing one also brings that channel's template when the project has none
+            wanted = next((c for c in channel_list() if c["name"] == fields["channel"]), None)
+            fields["channel"] = wanted["name"] if wanted else None
         if "options" in fields:                  # treatments applied to the whole cut
             current = json.loads(need_project(project_id).get("options") or "{}")
             fields["options"] = json.dumps({**current, **{k: bool(v) for k, v in (fields["options"] or {}).items() if k in ("clean_audio", "match_colour", "music_cleared", "footage_may_leave")}})
@@ -1219,6 +1267,19 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             except ValueError:
                 raise HTTPException(422, "Chọn một ảnh của gói và nhập chữ cho nó")
         return system.distribution.set_text(render_id, title=body.get("title"), description=body.get("description"))
+
+    @app.get("/api/v1/projects/{project_id}/music/suggest")
+    def suggest_music(project_id: str, energy: str | None = None):
+        """Tracks from the library that would sit under this project's cut, with why each is where it is in the list."""
+        project = need_project(project_id)
+        script = system.projects.current_script(project_id)
+        renders = system.projects.renders(project_id)
+        seconds = renders[0]["qc"]["duration"] if renders else sum(max(2.0, len(s.text.split()) / 2.6) + 0.4 for s in (script["shots"] if script else []))
+        return {"seconds": round(seconds, 1), "tracks": system.library.suggest_music(seconds=seconds, energy=energy if energy in ("êm", "vừa", "sôi động") else None), "current": project.get("music_path")}
+
+    @app.get("/api/v1/sourcing/feedback")
+    def match_feedback():
+        return {"counts": system.projects.feedback_counts()}
 
     @app.get("/api/v1/renders/{render_id}/otio")
     def render_otio(render_id: str):

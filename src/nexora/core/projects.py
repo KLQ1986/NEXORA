@@ -58,7 +58,7 @@ class ProjectStore:
         return project_id
 
     def update_project(self, project_id: str, **fields) -> None:
-        allowed = {k: v for k, v in fields.items() if k in ("title", "format", "music_path", "auto_accept", "style", "narration_dir", "budget_cap", "voice", "music_gain", "template", "profile", "research", "due_date", "bible", "options")}
+        allowed = {k: v for k, v in fields.items() if k in ("title", "format", "music_path", "auto_accept", "style", "narration_dir", "budget_cap", "voice", "music_gain", "template", "profile", "research", "due_date", "bible", "options", "channel")}
         with db.write(self._conn) as c:
             for key, value in allowed.items():
                 c.execute(f"UPDATE projects SET {key} = ? WHERE project_id = ?", (value, project_id))
@@ -248,6 +248,20 @@ class ProjectStore:
     def set_render_review(self, render_id: str, *, approved: bool, comment: str | None = None) -> None:
         with db.write(self._conn) as c:
             c.execute("UPDATE renders SET review = ? WHERE render_id = ?", (json.dumps({"approved": approved, "comment": comment, "at": time.time()}, ensure_ascii=False), render_id))
+
+    def add_feedback(self, line: str, moment_id: str, verdict: str, *, asset_id: str | None = None) -> None:
+        """What the operator made of a moment proposed for a line: "rejected" when they turned it down, "accepted" when they
+        kept it. The latest word on a pair stands."""
+        with db.write(self._conn) as c:
+            c.execute("INSERT INTO match_feedback (line, moment_id, asset_id, verdict, at) VALUES (?,?,?,?,?) "
+                      "ON CONFLICT(line, moment_id) DO UPDATE SET verdict = excluded.verdict, at = excluded.at", (line.strip().lower(), moment_id, asset_id, verdict, time.time()))
+
+    def feedback(self, line: str) -> dict[str, str]:
+        """For one line: the verdict on each moment the operator has judged for it."""
+        return {r["moment_id"]: r["verdict"] for r in self._conn.execute("SELECT moment_id, verdict FROM match_feedback WHERE line = ?", (line.strip().lower(),))}
+
+    def feedback_counts(self) -> dict[str, int]:
+        return {r[0]: r[1] for r in self._conn.execute("SELECT verdict, COUNT(*) FROM match_feedback GROUP BY verdict")}
 
     def update_render_qc(self, render_id: str, **values) -> None:
         """Add to what is known about a render after it was made: a later look, a later measurement."""

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { post, projectState, scriptText, stageName, timecode, usePoll, type Idea, type Source, type AgentTask, type Asset, type Settings, type Candidate, type Project, type RenderItem, type Shot, type BibleEntry, type GapPlan, type Op, type Rights, type Publishing } from "./api";
+import { call, post, projectState, scriptText, stageName, timecode, usePoll, type Idea, type Source, type AgentTask, type Asset, type Settings, type Candidate, type Project, type RenderItem, type Shot, type BibleEntry, type GapPlan, type Op, type Rights, type Publishing, type Channel } from "./api";
 import Board from "./Board";
 import { Button, Empty, Filmstrip, Icon, Meter, Page, Section, Seg, StageRail, Steps, Tabs, Tag, TimeChip } from "./parts";
 import Timeline from "./Timeline";
@@ -285,6 +285,41 @@ function RightsList({ renderId }: { renderId: string }) {
 
 const LANGS: Record<string, string> = { en: "tiếng Anh", zh: "tiếng Trung", ja: "tiếng Nhật", ko: "tiếng Hàn", fr: "tiếng Pháp", es: "tiếng Tây Ban Nha", th: "tiếng Thái" };
 
+/** Tracks from the library that would sit under this cut, with why each is where it is. */
+function MusicIdeas({ id, choose }: { id: string; choose: (path: string) => void }) {
+  const [energy, setEnergy] = useState("");
+  const [data, setData] = useState<{ seconds: number; tracks: { asset_id: string; name: string; path: string; why: string }[] } | null>(null);
+  const ask = async (e: string) => { setEnergy(e); setData(await call(`/api/v1/projects/${id}/music/suggest${e ? `?energy=${encodeURIComponent(e)}` : ""}`)); };
+  return (
+    <details className="mt-2 text-[12.5px]" onToggle={(e) => { if ((e.target as HTMLDetailsElement).open && !data) ask(""); }}>
+      <summary className="cursor-pointer list-none text-accent">Gợi ý nhạc từ thư viện</summary>
+      <div className="mt-2 flex flex-wrap gap-1.5">{[["", "Mọi nhịp"], ["êm", "Êm"], ["vừa", "Vừa"], ["sôi động", "Sôi động"]].map(([k, name]) => <button key={k} type="button" aria-pressed={energy === k} onClick={() => ask(k)} className={`rounded-md border px-2 py-1 ${energy === k ? "border-accent/60 bg-accent/[0.08]" : "border-line"}`}>{name}</button>)}</div>
+      {data && data.tracks.length === 0 && <p className="mt-2 text-mute">Thư viện chưa có bản nhạc nào đã được đo. Thêm file nhạc ở mục Thư viện.</p>}
+      <ul className="rows mt-1">{(data?.tracks ?? []).map((t) => <li key={t.asset_id} className="flex gap-2 py-1.5"><span className="min-w-0 flex-1"><span className="font-medium">{t.name}</span><span className="block text-faint">{t.why}</span></span><button type="button" className="link shrink-0" onClick={() => choose(t.path)}>Dùng</button></li>)}</ul>
+    </details>
+  );
+}
+
+type Trace = { script: { version: number }; shots: { line: number; text: string; source: { name: string; origin: string; checksum: string; t_in: number | null; derived: { role: string }[] } | null; generated: { kind: string; prompt: string; seed: number; provider: string }[] | null }[] };
+/** Everything a cut was made from, traced back. */
+function Lineage({ renderId }: { renderId: string }) {
+  const [data, setData] = useState<Trace | null>(null);
+  return (
+    <details className="panel group px-4 py-3 text-[13px]" onToggle={async (e) => { if ((e.target as HTMLDetailsElement).open && !data) setData(await call(`/api/v1/renders/${renderId}/lineage`)); }}>
+      <summary className="flex cursor-pointer list-none items-center justify-between text-mute hover:text-ink">Bản dựng này làm từ những gì<Icon name="down" size={14} className="transition-transform group-open:rotate-180" /></summary>
+      {data && <ol className="rows mt-2">
+        <li className="py-1.5 text-mute">Kịch bản phiên bản {data.script.version}</li>
+        {data.shots.map((s) => (
+          <li key={s.line} className="py-1.5"><p><span className="mono mr-2 text-faint">{String(s.line).padStart(2, "0")}</span>{s.text}</p>
+            {s.source ? <p className="mt-0.5 break-words text-[12.5px] text-mute">{s.source.name}{s.source.t_in != null ? `, từ giây ${s.source.t_in.toFixed(1)}` : ""}, {ORIGIN[s.source.origin] ?? s.source.origin}. <span className="mono text-faint" title={s.source.checksum}>{(s.source.checksum ?? "").slice(0, 12)}</span></p>
+              : <p className="mt-0.5 text-[12.5px] text-cue">Không có hình.</p>}
+            {s.generated?.map((g, i) => <p key={i} className="mt-0.5 break-words text-[12.5px] text-faint">{g.kind === "keyframe" ? "Ảnh" : "Clip"} từ {g.provider}, seed {g.seed}: {g.prompt}</p>)}
+          </li>))}
+      </ol>}
+    </details>
+  );
+}
+
 /** Say what to change; see it as a list of operations; apply it or not. */
 function Command({ id, busy, reload }: { id: string; busy: boolean; reload: () => void }) {
   const [text, setText] = useState("");
@@ -428,6 +463,8 @@ function Detail({ id, back }: { id: string; back: () => void }) {
     : null;
   const field = "field-label";
   const card = "panel grid gap-4 p-4";
+  const { data: chan } = usePoll<{ channels: Channel[] }>("/api/v1/channels", 60000);
+  const channels = chan?.channels ?? [];
   const previewing = !!p?.preview && ["queued", "running"].includes(p.preview.status);
   const facts = (p?.shots ?? []).filter((s) => s.is_fact);
   return (
@@ -558,7 +595,8 @@ function Detail({ id, back }: { id: string; back: () => void }) {
                     )}
                     {p.render?.status === "succeeded" && <><p className="flex items-center gap-2 text-proof"><Icon name="check" />Bạn đã duyệt bản dựng này.</p><PackagePanel render={latest} reload={reload} /></>}
                     <Finishing id={id} render={latest} format={p.format} run={run} />
-                    <p className="text-[13px]"><a className="inline-flex items-center gap-1.5 text-ink underline decoration-edge underline-offset-4 hover:decoration-mute" href={`/api/v1/renders/${latest.render_id}/edl`} download><Icon name="download" size={14} />Tải danh sách cắt (EDL)</a> <span className="text-mute">để dựng tiếp trong DaVinci Resolve từ file gốc</span></p>
+                    <p className="text-[13px]"><a className="inline-flex items-center gap-1.5 text-ink underline decoration-edge underline-offset-4 hover:decoration-mute" href={`/api/v1/renders/${latest.render_id}/edl`} download><Icon name="download" size={14} />Tải danh sách cắt (EDL)</a> <span className="text-mute">hoặc</span> <a className="text-ink underline decoration-edge underline-offset-4 hover:decoration-mute" href={`/api/v1/renders/${latest.render_id}/otio`} download>OpenTimelineIO</a> <span className="text-mute">để dựng tiếp trong DaVinci Resolve từ file gốc</span></p>
+                    <Lineage renderId={latest.render_id} />
                     {p.renders.length > 1 && (
                       <details className="panel group px-4 py-3">
                         <summary className="flex cursor-pointer list-none items-center justify-between text-[13px] text-mute hover:text-ink">Các bản dựng trước ({p.renders.length - 1})<Icon name="down" size={14} className="transition-transform group-open:rotate-180" /></summary>
@@ -604,6 +642,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
               </div>
               <datalist id="tracks">{tracks.map((a) => <option key={a.asset_id} value={a.path}>{`${a.name}, ${timecode(a.duration)}`}</option>)}</datalist>
               <p className="mt-1.5 text-[12px] text-faint">Nhạc tự nhỏ lại khi có lời dẫn.</p>
+              <MusicIdeas id={id} choose={(path) => patch({ music_path: path })} />
             </form>
             <form onSubmit={(e) => { e.preventDefault(); patch({ narration_dir: (takes ?? "").trim() || null }); }}>
               <label htmlFor="takes" className={field}>Lời dẫn bạn tự thu</label>
@@ -623,6 +662,8 @@ function Detail({ id, back }: { id: string; back: () => void }) {
               <label className="flex items-start gap-2.5 text-[13px]"><input type="checkbox" className="mt-0.5" checked={!!p.options.match_colour} disabled={busy} onChange={(e) => patch({ options: { match_colour: e.target.checked } })} />
                 <span>Cân màu giữa các cảnh<span className="block text-[12px] text-faint">Kéo độ sáng và tương phản của từng cảnh về cùng một mức.</span></span></label>
             </div>
+            {channels.length > 0 && <div><label htmlFor="channel" className={field}>Kênh</label>
+              <select id="channel" value={p.channel ?? ""} disabled={busy} onChange={(e) => patch({ channel: e.target.value })} className="mt-1.5 h-9 w-full pl-2.5"><option value="">Chưa thuộc kênh nào</option>{channels.map((c) => <option key={c.name}>{c.name}</option>)}</select></div>}
             <div><label htmlFor="due" className={field}>Ngày dự định đăng</label>
               <input id="due" type="date" defaultValue={p.due_date ?? ""} key={p.due_date ?? "none"} onChange={(e) => patch({ due_date: e.target.value })} className="mono mt-1.5 h-9 w-full px-3" /></div>
             <label className="flex items-start gap-2.5 rounded-lg border border-line bg-raised/50 p-3"><input type="checkbox" className="mt-0.5" checked={p.auto_accept} disabled={busy} onChange={(e) => patch({ auto_accept: e.target.checked ? 1 : 0 })} />

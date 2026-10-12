@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { call, post, timecode, usePoll, type Campaign, type CalendarRow, type Publication, type Publishing, type Radar, type RadarSubject } from "./api";
+import { call, post, timecode, usePoll, type Campaign, type Channel, type CalendarRow, type Publication, type Publishing, type Radar, type RadarSubject } from "./api";
 import { Button, Empty, Icon, Page, Section, Tabs, Tag } from "./parts";
 
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -21,7 +21,8 @@ function weeksOf(year: number, month: number): Date[][] {
 }
 
 function Calendar() {
-  const { data, reload } = usePoll<{ projects: CalendarRow[]; today: string }>("/api/v1/calendar", 15000);
+  const { data, reload } = usePoll<{ projects: CalendarRow[]; today: string; channels: Channel[]; cadence: { channel: string; per_week: number; short: number; weeks: { from: string; planned: number; short: number }[] }[] }>("/api/v1/calendar", 15000);
+  const saveChannels = (channels: Channel[]) => post("/api/v1/channels", { channels }).then(reload);
   const now = new Date();
   const [at, setAt] = useState({ y: now.getFullYear(), m: now.getMonth() });
   const weeks = useMemo(() => weeksOf(at.y, at.m), [at]);
@@ -67,6 +68,22 @@ function Calendar() {
         </div>
         <p className="mt-2 text-[12px] text-faint">Kéo một video sang ngày khác để dời lịch. Viền xanh là video đã có bản dựng được duyệt; viền vàng là video đã quá ngày.</p>
       </div>
+      <div className="grid gap-8">
+      <Section title="Kênh" icon="user" note="Mỗi kênh có nhịp đăng riêng. Lịch cho biết tuần nào còn thiếu video so với nhịp đó.">
+        <ul className="panel rows empty:hidden">
+          {(data?.channels ?? []).map((c) => { const gap = data!.cadence.find((x) => x.channel === c.name); return (
+            <li key={c.name} className="px-3 py-2.5 text-[13px]"><div className="flex items-center gap-2"><span className="font-medium">{c.name}</span><span className="text-faint">{[c.platform, c.per_week ? `${c.per_week} video mỗi tuần` : "", c.audience].filter(Boolean).join(", ")}</span>
+              <button type="button" className="link ml-auto" onClick={() => saveChannels(data!.channels.filter((x) => x.name !== c.name))}>Bỏ</button></div>
+              {gap && <p className="mt-1 flex flex-wrap gap-1.5">{gap.weeks.map((w) => <span key={w.from} title={`Tuần từ ${w.from}`} className={`mono rounded-md border px-1.5 py-0.5 text-[11.5px] ${w.short ? "border-cue/40 bg-cue/10 text-cue" : "border-proof/40 bg-proof/10 text-proof"}`}>{w.from.slice(5)}: {w.short ? `thiếu ${w.short}` : "đủ"}</span>)}</p>}
+            </li>); })}
+        </ul>
+        <form className="mt-2 grid gap-2 text-[13px]" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); const name = String(f.get("name") ?? "").trim(); if (!name || !data) return;
+          saveChannels([...data.channels.filter((c) => c.name !== name), { name, platform: String(f.get("platform") ?? ""), audience: String(f.get("audience") ?? ""), per_week: Number(f.get("per_week") || 0), template: null }]); e.currentTarget.reset(); }}>
+          <div className="flex gap-2"><input name="name" aria-label="Tên kênh" placeholder="Tên kênh" className="h-8 min-w-0 flex-1 px-2.5" /><input name="platform" aria-label="Nền tảng" placeholder="Nền tảng" className="h-8 w-28 px-2.5" /></div>
+          <div className="flex items-center gap-2"><input name="audience" aria-label="Người xem" placeholder="Người xem là ai" className="h-8 min-w-0 flex-1 px-2.5" /><input name="per_week" type="number" min="0" max="21" aria-label="Số video mỗi tuần" placeholder="0" className="mono h-8 w-16 px-2" /><span className="text-faint">mỗi tuần</span></div>
+          <div><Button size="sm" type="submit">Thêm kênh</Button></div>
+        </form>
+      </Section>
       <Section title="Chưa có ngày đăng" icon="clock" note="Kéo vào một ngày trên lịch, hoặc chọn ngày ở đây.">
         {data && unplanned.length === 0 && <p className="text-[13px] text-mute">Mọi dự án đều đã có ngày.</p>}
         <ul className="panel rows empty:hidden">
@@ -79,6 +96,7 @@ function Calendar() {
           ))}
         </ul>
       </Section>
+      </div>
     </div>
   );
 }

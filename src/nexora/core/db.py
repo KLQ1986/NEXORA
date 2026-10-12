@@ -209,6 +209,14 @@ CREATE TABLE IF NOT EXISTS generations (
     status           TEXT NOT NULL DEFAULT 'candidate',
     created_at       REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS match_feedback (
+    line      TEXT NOT NULL,
+    moment_id TEXT NOT NULL,
+    asset_id  TEXT,
+    verdict   TEXT NOT NULL,
+    at        REAL NOT NULL,
+    PRIMARY KEY (line, moment_id)
+);
 CREATE TABLE IF NOT EXISTS audit (
     audit_id INTEGER PRIMARY KEY AUTOINCREMENT,
     at       REAL NOT NULL,
@@ -256,6 +264,7 @@ MIGRATIONS = [
     ("assets", "rejected", "INTEGER NOT NULL DEFAULT 0"),
     ("shots", "gen", "TEXT"),
     ("projects", "options", "TEXT"),
+    ("projects", "channel", "TEXT"),
     ("projects", "bible", "TEXT"),
     ("generations", "quality", "TEXT"),
 ]

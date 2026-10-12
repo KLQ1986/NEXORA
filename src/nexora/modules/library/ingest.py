@@ -148,6 +148,22 @@ class Library:
         version_id = self._assets.add_version(ctx.subject_ref, out, role="enhanced", parents=[original.version_id], attempt_id=ctx.claim.attempt_id, metadata=wanted)
         return {"enhanced_version_id": version_id, **wanted}
 
+    def suggest_music(self, *, seconds: float, energy: str | None = None, limit: int = 3) -> list[dict]:
+        """Tracks from the library for a cut of this length: long enough to run under it without looping if possible, not set
+        aside, and of the liveliness asked for when one is asked for. Each comes with why it was put where it is."""
+        from nexora.modules.library.music import rank
+        tracks = []
+        for asset in self._assets.assets():
+            if asset["kind"] != "audio" or asset.get("rejected"):
+                continue
+            original = self._assets.original(asset["asset_id"])
+            path = self._assets.path_of(original)
+            if "duplicate_of" in original.metadata or not path.is_file() or not original.metadata.get("music"):
+                continue
+            tracks.append({"asset_id": asset["asset_id"], "name": path.name, "path": str(path), "duration": original.metadata["probe"]["duration"],
+                           "rating": asset.get("rating", 0), **original.metadata["music"]})
+        return rank(tracks, seconds=seconds, energy=energy)[:limit]
+
     def deepen(self, moment_id: str) -> list[str]:
         return self._understanding.deepen(moment_id)
 
@@ -220,8 +236,14 @@ class Library:
         duration = self._adapters.submit("ffprobe", Request("duration", inputs={"path": str(path)}, attempt_id=ctx.claim.attempt_id)).outputs["duration"]
         loud = self._adapters.submit("ffmpeg", Request("loudness", inputs={"path": str(path)}, attempt_id=ctx.claim.attempt_id)).outputs
         heard = {"duration": round(float(duration), 2), "has_audio": True, "audio_only": True, "mean_db": loud["mean_db"], "max_db": loud["max_db"]}
-        self._assets.update_metadata(original.version_id, probe=heard)
-        return heard
+        # How the track moves: its tempo, how lively it is, how long it takes to start. Measured from the sound, so a track can be
+        # suggested for a cut without anyone having to describe it.
+        from nexora.modules.library.music import analyse
+        envelope = self._adapters.submit("ffmpeg", Request("envelope", inputs={"path": str(path)}, params={"out": str(self._media / f"{ctx.subject_ref}.raw"), "max_seconds": 180},
+                                                          attempt_id=ctx.claim.attempt_id)).outputs
+        music = analyse(envelope["envelope"], envelope["rate"])
+        self._assets.update_metadata(original.version_id, probe=heard, music=music)
+        return {**heard, "music": music}
 
     def _measure(self, ctx):
         if self._is_duplicate(ctx):

@@ -312,6 +312,10 @@ Sự cố trong lượt này: cài `ffmpeg-full` làm Homebrew nâng thư viện
 - [x] Xuất bản dựng sang OpenTimelineIO (`cut.otio`): một clip cho mỗi cảnh trỏ về file gốc, khoảng trống cho câu thiếu hình, hiệu ứng tốc độ, lời dẫn làm tên clip. Chưa mở thử trong Resolve
 - [x] Truy vết một bản dựng: phiên bản kịch bản, với mỗi cảnh là file gốc, mã băm, đoạn dùng, nguồn gốc, các bản dẫn xuất và lần chạy đã tạo ra chúng; với hình sinh bằng AI là prompt, seed, nhà cung cấp
 
+- [x] Học từ lựa chọn của người vận hành (MatchFeedback): clip bị đổi đi hoặc bị đánh dấu "không clip nào hợp" cho một câu sẽ không được đề xuất lại cho đúng câu đó; clip đã được chọn thì đứng đầu. Chỉ áp dụng cho câu trùng chữ, chưa suy rộng sang câu gần nghĩa
+- [x] Hiểu thư viện nhạc (MusicAnalysis): nhịp (số nhịp mỗi phút, đo từ đường bao âm lượng), độ sôi động, thời gian vào bài. Gợi ý nhạc cho một dự án theo độ dài video, độ sôi động và số sao, kèm lý do. Nhịp là ước lượng; bài không có phách rõ thì không có số nhịp
+- [x] Hồ sơ kênh (ChannelProfile): tên, nền tảng, người xem, số video mỗi tuần; dự án thuộc một kênh; lịch cho biết bốn tuần tới tuần nào thiếu video so với nhịp của kênh
+
 ### Còn lại sau lượt này
 
 Cần thứ ngoài máy này: tài khoản và khoá API của nền tảng (tự đăng, tự lấy số liệu), khoá của nhà cung cấp video AI, khoá Anthropic để chạy thật adapter Claude, dịch vụ tìm kiếm trên toàn bộ web (hiện chỉ tìm trên Wikipedia).

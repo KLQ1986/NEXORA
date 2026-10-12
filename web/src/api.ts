@@ -109,11 +109,12 @@ export type RenderItem = { render_id: string; created_at: number; url: string; p
         shots?: { text: string; duration: number; gap: boolean; asset_id?: string | null; t_in?: number | null; own_voice?: boolean; focus_x?: number | null; inserts?: { keyword: string; at: number }[] }[] } };
 export type BoardEvent = { at: number; kind: string; pipeline: string; stage_key: string | null; actor: string; payload: Record<string, unknown> };
 export type Notice = { notification_id: number; kind: string; run_id: string; stage_key: string | null; reason: string | null; created_at: number; read_at: number | null; pipeline: string | null; subject_name: string | null; link: string | null };
-export type Project = { project_id: string; title: string; created_at: number; format: string; music_path: string | null;
+export type Project = { channel: string | null; project_id: string; title: string; created_at: number; format: string; music_path: string | null;
   due_date: string | null; script: { script_id: string; version: number; match_approved: boolean; critique: Critique[] | null } | null; shots: Shot[]; match: Run | null; render: Run | null; renders: RenderItem[];
   preview: Run | null; previews: { render_id: string; url: string; duration: number; gaps: number; created_at: number }[]; remote: string[]; options: { clean_audio?: boolean; match_colour?: boolean; music_cleared?: boolean; footage_may_leave?: boolean }; generate: Run | null; generators: { image: boolean; video: boolean; image_providers: Provider[]; video_providers: Provider[] }; bible: BibleEntry[]; auto_accept: boolean; style: string | null; narration_dir: string | null; own_takes: number[]; budget_cap: number | null; spent: number; template: string | null; voice: string | null; research: Source[] };
 export type Template = { name: string; format: string; voice: string; music_gain: number; auto_accept: boolean; caption_scale: number; caption_position: string; pronounce: Record<string, string>; typeface?: string; caption_colour?: number[] | null; logo_path?: string };
-export type CalendarRow = { project_id: string; title: string; format: string; due_date: string | null; stage: string; ready: boolean };
+export type Channel = { name: string; platform: string; audience: string; per_week: number; template: string | null };
+export type CalendarRow = { channel: string | null; project_id: string; title: string; format: string; due_date: string | null; stage: string; ready: boolean };
 export type RadarSubject = { subject: string; videos: number; seconds: number; unused_videos: number; unused_seconds: number; examples: { asset_id: string; title: string; summary: string }[] };
 export type Radar = { unused: RadarSubject[]; subjects: RadarSubject[]; watched: { topic: string; moments: number; best: number; assets: number; verdict: string }[]; topics: string[] };
 export type Idea = { title: string; summary: string; scores: Record<string, number>; total: number; risk: string };

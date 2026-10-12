@@ -102,14 +102,19 @@ class Sourcing:
         for shot in self._projects.script(ctx.subject_ref)["shots"]:
             need = needed_seconds(shot.text)
             wanted = f"{shot.text} {shot.brief}" if shot.brief else shot.text            # what is said, plus what the operator asked to see
-            hits = self._index.search(wanted, limit=self._alternates + 1, min_score=self._threshold, exclude=frozenset(used), exclude_assets=self._rejected())
+            # What the operator said before about clips for these very words: a clip they turned down is not offered again,
+            # and one they chose goes first.
+            told = self._projects.feedback(shot.text)
+            turned_down = frozenset(m for m, v in told.items() if v == "rejected")
+            hits = self._index.search(wanted, limit=self._alternates + 1 + len(told), min_score=self._threshold, exclude=frozenset(used) | turned_down, exclude_assets=self._rejected())
+            hits = sorted(hits, key=lambda h: told.get(h.moment.moment_id) != "accepted")[:self._alternates + 1]
             verdicts: dict[str, tuple[int, str]] = {}
             if self._judge and hits:
                 for hit in hits:
                     verdicts[hit.moment.moment_id] = self._look(shot.brief or shot.text, hit)
                     ctx.heartbeat()
-                hits = sorted((h for h in hits if verdicts[h.moment.moment_id][0] >= self._judge_pass),
-                              key=lambda h: (verdicts[h.moment.moment_id][0], h.score), reverse=True)
+                hits = sorted((h for h in hits if verdicts[h.moment.moment_id][0] >= self._judge_pass or told.get(h.moment.moment_id) == "accepted"),
+                              key=lambda h: (told.get(h.moment.moment_id) == "accepted", verdicts[h.moment.moment_id][0], h.score), reverse=True)
             if not hits:
                 self._projects.set_selection(shot.shot_id, status="gap", reason="Không có footage nào đủ khớp với câu này.")
                 gaps += 1
@@ -145,6 +150,11 @@ class Sourcing:
         """Replace the selection of a shot with one of its alternates; the old selection becomes an alternate."""
         sel = self._projects.selection(shot_id)
         chosen = sel.alternates[alternate]
+        line = self._projects.shot(shot_id).text
+        if sel.moment_id:                                   # the operator preferred another clip for these words: remember both halves of that
+            self._projects.add_feedback(line, sel.moment_id, "rejected", asset_id=sel.asset_id)
+        if chosen.get("moment_id"):
+            self._projects.add_feedback(line, chosen["moment_id"], "accepted", asset_id=chosen.get("asset_id"))
         old = [{"moment_id": sel.moment_id, "asset_id": sel.asset_id, "t_in": sel.t_in, "t_out": sel.t_out, "score": sel.score, "reason": sel.reason}] if sel.moment_id else []
         rest = [a for i, a in enumerate(sel.alternates) if i != alternate] + old
         self._projects.set_selection(shot_id, status="accepted" if sel.status == "accepted" else "proposed", alternates=rest, decided_by="operator", **_fields(chosen))
@@ -278,6 +288,11 @@ class Sourcing:
 
     def mark_gap(self, shot_id: str) -> None:
         sel = self._projects.selection(shot_id)
+        if sel and sel.moment_id:                           # "no clip fits": the one shown, and the alternates beside it, were all turned down for these words
+            line = self._projects.shot(shot_id).text
+            for moment_id, asset_id in [(sel.moment_id, sel.asset_id)] + [(a.get("moment_id"), a.get("asset_id")) for a in sel.alternates]:
+                if moment_id:
+                    self._projects.add_feedback(line, moment_id, "rejected", asset_id=asset_id)
         keep = ([{"moment_id": sel.moment_id, "asset_id": sel.asset_id, "t_in": sel.t_in, "t_out": sel.t_out, "score": sel.score, "reason": sel.reason}] if sel and sel.moment_id else []) + (sel.alternates if sel else [])
         self._projects.set_selection(shot_id, status="gap", reason="Người vận hành đánh dấu là chưa có hình phù hợp.", alternates=keep, decided_by="operator")
 
@@ -290,6 +305,8 @@ class Sourcing:
         """The operator accepts the selections as they stand."""
         script_id = self._orch.run_info(run_id)["subject_ref"]
         for sel in self._projects.selections(script_id):
+            if sel.moment_id and sel.status in ("proposed", "accepted"):
+                self._projects.add_feedback(self._projects.shot(sel.shot_id).text, sel.moment_id, "accepted", asset_id=sel.asset_id)
             if sel.status == "proposed":
                 self._projects.set_selection(sel.shot_id, status="accepted", asset_id=sel.asset_id, moment_id=sel.moment_id, t_in=sel.t_in, t_out=sel.t_out,
                                              score=sel.score, reason=sel.reason, alternates=sel.alternates, decided_by=sel.decided_by)

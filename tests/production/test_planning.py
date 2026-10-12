@@ -235,3 +235,23 @@ def test_the_encyclopedia_search_asks_in_vietnamese_first_and_builds_addresses_t
             reader.submit(Request("search", inputs={"query": " "}))
     finally:
         server.shutdown()
+
+
+def test_channels_have_a_cadence_and_the_calendar_says_which_weeks_fall_short(tmp_path):
+    import datetime
+    system, _ = make(tmp_path)
+    client = TestClient(create_app(system))
+    saved = client.post("/api/v1/channels", json={"channels": [{"name": "Bếp nhà", "platform": "YouTube", "audience": "người thích nấu ăn", "per_week": 2, "template": "Video dọc ngắn"},
+                                                               {"name": "Bếp nhà", "per_week": 5}, {"name": " "}, {"name": "Du lịch", "per_week": "nhiều", "template": "không có"}]}).json()["channels"]
+    assert [(c["name"], c["per_week"], c["template"]) for c in saved] == [("Bếp nhà", 2, "Video dọc ngắn"), ("Du lịch", 0, None)]
+    monday = datetime.date.today() - datetime.timedelta(days=datetime.date.today().weekday())
+    ids = [client.post("/api/v1/projects", json={"title": t}).json()["project_id"] for t in ("Phở", "Bún chả", "Cao lầu")]
+    client.patch(f"/api/v1/projects/{ids[0]}", json={"channel": "Bếp nhà", "due_date": (monday + datetime.timedelta(days=1)).isoformat()})
+    client.patch(f"/api/v1/projects/{ids[1]}", json={"channel": "Bếp nhà", "due_date": (monday + datetime.timedelta(days=3)).isoformat()})
+    client.patch(f"/api/v1/projects/{ids[2]}", json={"channel": "Bếp nhà", "due_date": (monday + datetime.timedelta(days=8)).isoformat()})
+    assert client.patch(f"/api/v1/projects/{ids[2]}", json={"channel": "Kênh lạ"}).json()["channel"] is None and client.patch(f"/api/v1/projects/{ids[2]}", json={"channel": "Bếp nhà"}).json()["channel"] == "Bếp nhà"
+    calendar = client.get("/api/v1/calendar").json()
+    kitchen = calendar["cadence"][0]
+    assert len(calendar["cadence"]) == 1 and kitchen["channel"] == "Bếp nhà"                    # a channel without a cadence promises nothing
+    assert [(w["planned"], w["short"]) for w in kitchen["weeks"]] == [(2, 0), (1, 1), (0, 2), (0, 2)] and kitchen["short"] == 5
+    assert {p["title"]: p["channel"] for p in calendar["projects"]} == {"Phở": "Bếp nhà", "Bún chả": "Bếp nhà", "Cao lầu": "Bếp nhà"}
