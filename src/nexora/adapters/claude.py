@@ -25,8 +25,8 @@ def _json_from(text: str) -> dict:
 
 class ClaudeText(Adapter):
     def __init__(self, api_key: str, *, model: str = "claude-haiku-5-5", host: str = "https://api.anthropic.com",
-                 input_price: float = 0.0, output_price: float = 0.0):
-        self._key, self._model, self._host = api_key, model, host.rstrip("/")
+                 input_price: float = 0.0, output_price: float = 0.0, workspace_id: str = ""):
+        self._key, self._model, self._host, self._workspace = api_key, model, host.rstrip("/"), workspace_id
         self._prices = (input_price, output_price)              # USD per million tokens, as the operator entered them
 
     def describe(self) -> Capability:
@@ -39,7 +39,8 @@ class ClaudeText(Adapter):
         body = {"model": self._model, "max_tokens": int(request.params.get("max_tokens", 500)),
                 "messages": [{"role": "user", "content": request.params["prompt"] + ("\n\nChỉ trả về một đối tượng JSON, không kèm lời giải thích." if request.params.get("json") else "")}]}
         req = urllib.request.Request(self._host + "/v1/messages", data=json.dumps(body).encode(),
-                                     headers={"content-type": "application/json", "x-api-key": self._key, "anthropic-version": "2023-06-01"})
+                                     headers={"content-type": "application/json", "x-api-key": self._key, "anthropic-version": "2023-06-01",
+                                              **({"anthropic-workspace-id": self._workspace} if self._workspace else {})})
         try:
             with urllib.request.urlopen(req, timeout=request.deadline_seconds or 120) as r:
                 out = json.load(r)
@@ -47,6 +48,11 @@ class ClaudeText(Adapter):
             detail = err.read().decode(errors="replace")[:200]
             code = {400: ErrorCode.INVALID_REQUEST, 401: ErrorCode.AUTH, 403: ErrorCode.AUTH, 404: ErrorCode.INVALID_REQUEST, 413: ErrorCode.INVALID_REQUEST,
                     429: ErrorCode.RATE_LIMITED}.get(err.code, ErrorCode.UNAVAILABLE)
+            # Two refusals arrive as plain "bad request" but are nothing the request can fix: only the operator can.
+            if "anthropic-workspace-id" in detail:
+                raise AdapterError(ErrorCode.AUTH, "this Anthropic key is not tied to a workspace: set anthropic_workspace_id in nexora.toml, or use a key made inside a workspace", retryable=False) from None
+            if "credit balance" in detail.lower():
+                raise AdapterError(ErrorCode.QUOTA_EXHAUSTED, "the Anthropic account has no credit left: add credit, then try again", retryable=False) from None
             retry = err.headers.get("retry-after") if err.headers else None
             raise AdapterError(code, f"Claude API {err.code}: {detail}", retry_after=float(retry) if retry and retry.replace(".", "", 1).isdigit() else None) from None
         except TimeoutError:

@@ -911,8 +911,10 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         try:
             return work()
         except AdapterError as err:
-            if err.code is ErrorCode.AUTH:
+            if err.code is ErrorCode.AUTH and "privacy mode" in (err.message or ""):
                 raise HTTPException(409, "Chế độ riêng tư đang bật nên hệ thống không đọc trang web. Tắt ở mục Hệ thống, hoặc tự nhập nguồn.")
+            if err.code in (ErrorCode.AUTH, ErrorCode.QUOTA_EXHAUSTED):
+                raise HTTPException(409, f"Dịch vụ bên ngoài từ chối: {err.message or err.code.value}")
             raise HTTPException(503 if err.code in (ErrorCode.UNAVAILABLE, ErrorCode.TIMEOUT) else 422, f"Không làm được: {err.message or err.code.value}")
         except KeyError as err:
             raise HTTPException(409, f"Máy này chưa có công cụ {err.args[0]} cho việc này")
@@ -1091,6 +1093,8 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             name, link = names.get(subject, (None, None))
             if n["kind"] == "metrics_due":
                 name, link = n["reason"], "/ke-hoach?xem=ket-qua"
+            if n["kind"] in ("model_fallback", "autonomy_lowered"):
+                name, link = n["reason"], "/he-thong"
             out.append({**n, "pipeline": info.get("pipeline_id"), "subject_ref": subject, "subject_name": name, "link": link})
         return {"unread": sum(1 for n in out if n["read_at"] is None), "items": out}
 

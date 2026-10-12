@@ -112,6 +112,7 @@ class AdapterRegistry:
         self._adapters: dict[str, Adapter] = {}
         self.local_only = None           # asked before every call to a cloud adapter; True means nothing may leave this machine
         self.router = None               # (name, request) -> the adapter that should serve it; asked before every call
+        self.on_fallback = None          # (chosen adapter, error) -> None; told when a routed request had to go back to where it was addressed
         self.observer = None             # called with a record of every call: what, how long, how it ended, what it cost
 
     def register(self, adapter: Adapter) -> None:
@@ -147,7 +148,21 @@ class AdapterRegistry:
         return chosen
 
     def submit(self, name: str, request: Request) -> Result:
-        name = self._routed(name, request)
+        """Send a request to an adapter. When a router has moved it to another adapter and that one cannot serve it (down, out
+        of credit, key refused), the request goes back to the adapter it was addressed to: a preference must never stop the work.
+        `on_fallback(chosen, error)` is told, so that the operator hears why their choice was not used."""
+        chosen = self._routed(name, request)
+        if chosen != name:
+            try:
+                return self._send(chosen, request)
+            except AdapterError as err:
+                if err.code not in NEEDS_OPERATOR and err.code not in (ErrorCode.UNAVAILABLE, ErrorCode.TIMEOUT, ErrorCode.RATE_LIMITED):
+                    raise
+                if self.on_fallback is not None:
+                    self.on_fallback(chosen, err)
+        return self._send(name, request)
+
+    def _send(self, name: str, request: Request) -> Result:
         adapter = self._adapters.get(name)
         if adapter is None:
             raise AdapterError(ErrorCode.INVALID_REQUEST, f"no adapter named {name}")

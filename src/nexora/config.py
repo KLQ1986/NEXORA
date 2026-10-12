@@ -38,6 +38,7 @@ class Config:
     youtube_refresh_token: str = ""
     youtube_privacy: str = "private"
     anthropic_api_key: str = ""
+    anthropic_workspace_id: str = ""
     claude_model: str = "claude-haiku-5-5"
     claude_input_price: float = 0.0
     claude_output_price: float = 0.0
@@ -88,6 +89,7 @@ youtube_client_secret = ""
 youtube_refresh_token = ""        # a refresh token for your channel with the scopes youtube.upload and youtube.readonly; all three turn on publishing to YouTube
 youtube_privacy = "private"       # private, unlisted or public: how an uploaded video starts out
 anthropic_api_key = ""            # a key turns on Claude for text work; the ANTHROPIC_API_KEY environment variable does the same. Footage is never sent
+anthropic_workspace_id = ""       # needed only for a key that is not tied to one workspace
 claude_model = "claude-haiku-5-5"
 claude_input_price = 0.0          # USD per million input tokens, for the cost record; take the figure from your Anthropic price list
 claude_output_price = 0.0         # USD per million output tokens

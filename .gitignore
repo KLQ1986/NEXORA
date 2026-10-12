@@ -15,3 +15,6 @@ review.png
 
 # graphify output and cache (rebuilt from the sources)
 graphify-out/
+
+# local settings: may hold keys
+nexora.toml

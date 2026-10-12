@@ -108,7 +108,7 @@ def evaluation_config(system: "System") -> dict:
 
 PIPELINE_NAMES = {"library.ingest": "Nhập footage", "library.ingest_image": "Nhập ảnh", "library.ingest_audio": "Nhập nhạc", "library.understand": "Hiểu nội dung footage", "library.transcribe": "Nghe lời nói trong footage",
                   "sourcing.match": "Chọn clip", "sourcing.generate": "Sinh hình bằng AI", "edit.render": "Dựng video", "edit.preview": "Dựng bản xem thử", "library.enhance": "Nâng chất lượng clip", "sourcing.train": "Huấn luyện mô hình nhân vật"}
-ANNOUNCE = {"autonomy_lowered": "mức tự chủ vừa bị hạ", "metrics_due": "đã tới mốc ghi số liệu", "disk_low": "ổ đĩa sắp đầy", "volume_offline": "không tìm thấy nơi chứa footage", "gaps": "còn câu chưa có hình", "waiting_review": "đang chờ bạn duyệt", "blocked": "đang dừng và cần bạn xử lý", "failed": "thất bại", "succeeded": "đã xong"}
+ANNOUNCE = {"model_fallback": "không dùng được mô hình cloud đã chọn, mô hình trên máy làm thay", "autonomy_lowered": "mức tự chủ vừa bị hạ", "metrics_due": "đã tới mốc ghi số liệu", "disk_low": "ổ đĩa sắp đầy", "volume_offline": "không tìm thấy nơi chứa footage", "gaps": "còn câu chưa có hình", "waiting_review": "đang chờ bạn duyệt", "blocked": "đang dừng và cần bạn xử lý", "failed": "thất bại", "succeeded": "đã xong"}
 QUIET = frozenset({"library.ingest", "library.ingest_image", "library.ingest_audio", "library.understand", "library.transcribe", "edit.preview"})   # finishing these needs nobody's attention
 
 
@@ -121,7 +121,7 @@ def announce(system: "System", after: int) -> int:
         quiet = system.orch.setting("quiet_hours", "")
         if n["kind"] == "metrics_due":
             pipeline = f"Video {n['reason']}"
-        if n["kind"] == "autonomy_lowered":
+        if n["kind"] in ("autonomy_lowered", "model_fallback"):
             pipeline = "Hệ thống:"
         if not pipeline and n["kind"] in ("disk_low", "volume_offline"):
             pipeline = "Máy"
@@ -220,6 +220,14 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
         routes = json.loads(orch.setting("model_routes", "{}"))
         return routes.get(request.params.get("task") or "write") or routes.get("*") or name
     adapters.router = route
+
+    def routed_model_failed(chosen: str, err) -> None:
+        """Say once, not at every call, that the model chosen for text work could not be used and the local one answered instead."""
+        state = f"{chosen}:{err.code.value}"
+        if orch.setting("model_fallback", "") != state:
+            orch.set_setting("model_fallback", state)
+            orch.notify("model_fallback", "", reason=f"{chosen.partition('.')[2] or chosen}: {err.message or err.code.value}")
+    adapters.on_fallback = routed_model_failed
     index = MomentIndex(db_path)
     understanding = None
     if model is not None:
@@ -318,7 +326,7 @@ def build_from_config(config, **overrides) -> System:
                  publishers=[*([FolderPublisher(config.publish_folder)] if config.publish_folder else []),
                              *([YouTubePublisher(config.youtube_client_id, config.youtube_client_secret, config.youtube_refresh_token, privacy=config.youtube_privacy)]
                                if config.youtube_client_id and config.youtube_client_secret and config.youtube_refresh_token else [])],
-                 cloud_models=[ClaudeText(_os.environ.get("ANTHROPIC_API_KEY") or config.anthropic_api_key, model=config.claude_model,
+                 cloud_models=[ClaudeText(_os.environ.get("ANTHROPIC_API_KEY") or config.anthropic_api_key, model=config.claude_model, workspace_id=config.anthropic_workspace_id,
                                           input_price=config.claude_input_price, output_price=config.claude_output_price)]
                  if (_os.environ.get("ANTHROPIC_API_KEY") or config.anthropic_api_key) else [], **overrides)
 

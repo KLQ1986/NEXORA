@@ -61,12 +61,13 @@ def test_text_goes_to_the_model_chosen_for_the_task_and_footage_and_privacy_mode
 
 
 def test_the_claude_adapter_speaks_the_messages_api_counts_cost_and_names_its_errors():
-    seen, answers = [], []
+    seen, answers, headers_seen = [], [], []
 
     class Api(http.server.BaseHTTPRequestHandler):
         def do_POST(self):
             body = json.loads(self.rfile.read(int(self.headers["content-length"])))
             seen.append((self.path, self.headers.get("x-api-key"), self.headers.get("anthropic-version"), body))
+            headers_seen.append(self.headers.get("anthropic-workspace-id") or "")
             status, payload = answers.pop(0)
             self.send_response(status); self.send_header("content-type", "application/json"); self.end_headers()
             self.wfile.write(json.dumps(payload).encode())
@@ -89,6 +90,17 @@ def test_the_claude_adapter_speaks_the_messages_api_counts_cost_and_names_its_er
             with pytest.raises(AdapterError) as failed:
                 adapter.submit(Request("chat", params={"prompt": "x"}))
             assert failed.value.code is code
+        # Two refusals that come back as a plain bad request but that only the operator can fix.
+        for detail, code, word in (("This API key is not scoped to a workspace, so this request must include the anthropic-workspace-id header", ErrorCode.AUTH, "anthropic_workspace_id"),
+                                   ("Your credit balance is too low to access the Anthropic API.", ErrorCode.QUOTA_EXHAUSTED, "credit")):
+            answers.append((400, {"type": "error", "error": {"type": "invalid_request_error", "message": detail}}))
+            with pytest.raises(AdapterError) as refused:
+                adapter.submit(Request("chat", params={"prompt": "x"}))
+            assert refused.value.code is code and word in refused.value.message and not refused.value.retryable
+        scoped = ClaudeText("sk-test", host=f"http://127.0.0.1:{server.server_port}", workspace_id="wrkspc_1")
+        answers.append((200, {"content": [{"type": "text", "text": "ok"}], "usage": {}}))
+        scoped.submit(Request("chat", params={"prompt": "x"}))
+        assert seen[-1][3]["messages"] and "wrkspc_1" in headers_seen[-1]
         answers.append((200, {"content": [{"type": "text", "text": "không phải JSON"}], "usage": {}}))
         with pytest.raises(AdapterError) as bad:
             adapter.submit(Request("chat", params={"prompt": "x", "json": True}))
@@ -166,3 +178,29 @@ def test_a_cut_with_a_serious_finding_or_a_gap_is_left_for_the_operator_at_every
     client.post(f"/api/v1/projects/{pid}/match/approve")
     client.post(f"/api/v1/projects/{pid}/render"); drain(system)
     assert system.autonomy.tick() == [] and client.get(f"/api/v1/projects/{pid}").json()["render"]["status"] == "waiting_review"
+
+
+def test_a_cloud_model_that_cannot_serve_hands_the_work_back_to_the_local_one_and_says_so_once(tmp_path):
+    class Broke(Cloud):
+        def submit(self, request):
+            self.asked.append(request)
+            raise AdapterError(ErrorCode.QUOTA_EXHAUSTED, "the Anthropic account has no credit left", retryable=False)
+    local, cloud = FakeModel(), Broke()
+    system = build(tmp_path / "data", model=local, voice=FakeVoice(), cloud_models=[cloud])
+    client = TestClient(create_app(system))
+    pid = client.post("/api/v1/projects", json={"title": "Chợ", "lines": ["chợ rau củ", "cá tươi"]}).json()["project_id"]
+    client.post("/api/v1/models/routes", json={"routes": {"critique": "model.cloud"}})
+    local.answers["critique"] = {"nhan_xet": [{"cau": 1, "van_de": "Từ mô hình trên máy.", "de_xuat": ""}]}
+    for _ in range(3):
+        assert client.post(f"/api/v1/projects/{pid}/critique").json()["script"]["critique"][0]["issue"] == "Từ mô hình trên máy."       # the work is done all the same
+    assert len(cloud.asked) == 3
+    notices = [n for n in client.get("/api/v1/notifications").json()["items"] if n["kind"] == "model_fallback"]
+    assert len(notices) == 1 and "no credit left" in notices[0]["reason"] and notices[0]["link"] == "/he-thong"                             # told once, not three times
+
+    class Wrong(Cloud):
+        def submit(self, request):
+            raise AdapterError(ErrorCode.OUTPUT_INVALID, "the model did not return JSON")
+    strict = build(tmp_path / "strict", model=FakeModel(), voice=FakeVoice(), cloud_models=[Wrong()])
+    strict.orch.set_setting("model_routes", json.dumps({"*": "model.cloud"}))
+    with pytest.raises(AdapterError):                                          # a bad answer is the model's fault, not a reason to ask another one silently
+        strict.adapters.submit("model", Request("chat", params={"prompt": "x", "json": True}, privacy_class=PrivacyClass.CLOUD_ALLOWED))
