@@ -163,7 +163,9 @@ class RunPodTrainer(RunPodVideo):
 
     def _collect(self, job: dict, out: Path) -> Result:
         output = job.get("output") if isinstance(job.get("output"), dict) else {}
-        return super()._collect({**job, "output": {"video_url": output.get("model_url"), "video": output.get("model"), "model": output.get("base_model")}}, out)
+        result = super()._collect({**job, "output": {"video_url": output.get("model_url"), "video": output.get("model"), "model": output.get("base_model")}}, out)
+        # Where the endpoint keeps the model, when it says: an image endpoint loads it from there, since the file is too large to send back up.
+        return Result(outputs={**result.outputs, "model_url": output.get("model_url")}, files=result.files, external_ref=result.external_ref, usage=result.usage)
 
     def submit(self, request: Request) -> Result:
         images = [_b64(p) for p in request.inputs["images"]]
@@ -171,3 +173,27 @@ class RunPodTrainer(RunPodVideo):
             raise AdapterError(ErrorCode.INVALID_REQUEST, "training needs at least one picture")
         return self._start({"input": {"images": images, "name": request.params["name"], "trigger": request.params["trigger"], "steps": int(request.params.get("steps", 1000))}},
                            Path(request.params["out"]), request.deadline_seconds or 4 * 3600)
+
+
+class RunPodImage(RunPodVideo):
+    """Stills from an image model on the operator's endpoint. Unlike a keyless service, it can load the character models
+    trained for a project: the handler gets `prompt`, `seed`, `aspect`, `references` (base64 pictures) and `loras` (the
+    addresses of trained models), and returns `image_url` or `image` (base64)."""
+    KIND, OPERATION = "image_gen", "generate"
+
+    def _collect(self, job: dict, out: Path) -> Result:
+        output = job.get("output")
+        output = output[0] if isinstance(output, list) and output else output
+        output = {"image_url": output} if isinstance(output, str) else output if isinstance(output, dict) else {}
+        made = super()._collect({**job, "output": {"video_url": output.get("image_url") or output.get("url"), "video": output.get("image"), "model": output.get("model")}}, out)
+        from PIL import Image
+        try:
+            Image.open(out).convert("RGB").save(out)            # whatever format came back, the file is the picture the caller named
+        except OSError:
+            raise AdapterError(ErrorCode.OUTPUT_INVALID, "the endpoint returned something that is not a picture") from None
+        return made
+
+    def submit(self, request: Request) -> Result:
+        payload = {"input": {"prompt": request.inputs["prompt"], "seed": int(request.params.get("seed", 0)), "aspect": request.params.get("aspect", "16:9"),
+                             "references": [_b64(p) for p in request.inputs.get("references") or []], "loras": list(request.inputs.get("model_urls") or [])}}
+        return self._start(payload, Path(request.params["out"]), request.deadline_seconds)

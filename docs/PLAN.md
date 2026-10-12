@@ -300,6 +300,8 @@ Sự cố trong lượt này: cài `ffmpeg-full` làm Homebrew nâng thư viện
 
 - [x] Huấn luyện mô hình nhân vật qua endpoint RunPod (`runpod_train_endpoint`): chọn một bộ sưu tập ảnh (4 đến 20 ảnh) cho một nhân vật trong hồ sơ dự án; việc chạy nền, tính tiền theo giây; mô hình trả về được lưu cùng nhân vật và được nạp cho mọi cảnh nhắc tên nhân vật đó, kèm từ kích hoạt trong prompt. Ảnh riêng chỉ được gửi khi dự án cho phép. Mới thử với máy chủ giả; nhà cung cấp ảnh phải nhận được tệp mô hình (Pollinations thì không)
 
+- [x] Adapter sinh ảnh qua endpoint RunPod (`runpod_image_endpoint`): nhận prompt, seed, khung hình, ảnh tham chiếu và địa chỉ các mô hình nhân vật đã huấn luyện; được ưu tiên trước Pollinations khi có. Mới thử với máy chủ giả
+
 ### Còn lại sau lượt này
 
 Cần thứ ngoài máy này: tài khoản và khoá API của nền tảng (tự đăng, tự lấy số liệu), khoá của nhà cung cấp video AI, khoá Anthropic để chạy thật adapter Claude, dịch vụ tìm kiếm trên toàn bộ web (hiện chỉ tìm trên Wikipedia).

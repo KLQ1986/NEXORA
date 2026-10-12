@@ -298,8 +298,9 @@ def build_from_config(config, **overrides) -> System:
     from nexora.adapters.motion import StillMotion
     from nexora.adapters.outbox import FolderPublisher
     from nexora.adapters.pollinations import PollinationsImage
-    from nexora.adapters.runpod import RunPodLipSync, RunPodTrainer, RunPodUpscale, RunPodVideo
+    from nexora.adapters.runpod import RunPodImage, RunPodLipSync, RunPodTrainer, RunPodUpscale, RunPodVideo
     runpod_key = _os.environ.get("RUNPOD_API_KEY") or config.runpod_api_key
+    rented_image = [RunPodImage(runpod_key, config.runpod_image_endpoint, price_per_second=config.runpod_price_per_second)] if runpod_key and config.runpod_image_endpoint else []
     rented = [RunPodVideo(runpod_key, config.runpod_video_endpoint, price_per_second=config.runpod_price_per_second)] if runpod_key and config.runpod_video_endpoint else []
     from nexora.adapters.speech import WhisperCpp
     from nexora.adapters.voice import SayVoice
@@ -310,7 +311,7 @@ def build_from_config(config, **overrides) -> System:
                  voice=SayVoice(), voice_name=config.voice, match_threshold=config.match_threshold,
                  stock=OpenMontageStock(config.openmontage_repo), desktop=DesktopNotifier(), web=WebReader(),
                  speech=WhisperCpp(config.speech_model, language=config.speech_language) if config.speech_model else None,
-                 generators=[*([PollinationsImage(token=config.pollinations_token)] if config.pollinations else []), *rented, StillMotion()],
+                 generators=[*rented_image, *([PollinationsImage(token=config.pollinations_token)] if config.pollinations else []), *rented, StillMotion()],
                  shot_models=[cls(runpod_key, endpoint, price_per_second=config.runpod_price_per_second) for cls, endpoint in
                               ((RunPodLipSync, config.runpod_lipsync_endpoint), (RunPodUpscale, config.runpod_upscale_endpoint), (RunPodTrainer, config.runpod_train_endpoint)) if runpod_key and endpoint],
                  publishers=[FolderPublisher(config.publish_folder)] if config.publish_folder else [],

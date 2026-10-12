@@ -241,3 +241,32 @@ def test_a_character_model_is_trained_from_library_pictures_and_then_loaded_for_
         assert second.inputs["models"] == [] and "nxmit" not in second.inputs["prompt"]                          # the line that does not name the character
     finally:
         server.shutdown()
+
+
+def test_the_rented_image_endpoint_gets_the_prompt_the_references_and_the_trained_models_and_returns_a_picture(tmp_path):
+    import io
+    from nexora.adapters.runpod import RunPodImage
+    jobs = []
+    picture = io.BytesIO(); Image.new("RGB", (720, 1280), "purple").save(picture, "JPEG")
+
+    class ImagePod(http.server.BaseHTTPRequestHandler):
+        def _send(self, body):
+            self.send_response(200); self.send_header("content-type", "application/json"); self.end_headers(); self.wfile.write(json.dumps(body).encode())
+        def do_POST(self):
+            jobs.append(json.loads(self.rfile.read(int(self.headers["content-length"])))["input"]); self._send({"id": "img-1", "status": "IN_QUEUE"})
+        def do_GET(self):
+            self._send({"id": "img-1", "status": "COMPLETED", "executionTime": 8000, "output": {"image": base64.b64encode(picture.getvalue()).decode(), "model": "flux-dev"}})
+        def log_message(self, *a): pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), ImagePod)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        adapter = RunPodImage("k", "ep", host=f"http://127.0.0.1:{server.server_port}", price_per_second=0.001, poll_seconds=0.01)
+        Image.new("RGB", (32, 32), "orange").save(tmp_path / "ref.png")
+        result = adapter.submit(Request("generate", inputs={"prompt": "nxmit an orange cat", "references": [str(tmp_path / "ref.png")], "model_urls": ["https://example.test/mit.safetensors"]},
+                                        params={"out": str(tmp_path / "key.png"), "seed": 5, "aspect": "9:16"}, privacy_class=PrivacyClass.CLOUD_ALLOWED))
+        made = Image.open(tmp_path / "key.png")
+        assert adapter.describe().name == "image_gen.runpod" and made.format == "PNG" and made.size == (720, 1280) and result.usage.cost == pytest.approx(0.008)
+        assert jobs[0]["loras"] == ["https://example.test/mit.safetensors"] and len(jobs[0]["references"]) == 1 and (jobs[0]["prompt"], jobs[0]["seed"], jobs[0]["aspect"]) == ("nxmit an orange cat", 5, "9:16")
+    finally:
+        server.shutdown()

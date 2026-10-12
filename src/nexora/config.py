@@ -32,6 +32,7 @@ class Config:
     runpod_lipsync_endpoint: str = ""
     runpod_upscale_endpoint: str = ""
     runpod_train_endpoint: str = ""
+    runpod_image_endpoint: str = ""
     anthropic_api_key: str = ""
     claude_model: str = "claude-haiku-5-5"
     claude_input_price: float = 0.0
@@ -73,6 +74,7 @@ publish_folder = "~/Movies/NEXORA"   # where "publish to folder" puts finished p
 runpod_api_key = ""               # with an endpoint id, turns on video from a model on your RunPod serverless endpoint; RUNPOD_API_KEY does the same
 runpod_video_endpoint = ""        # the id of the endpoint; its handler gets prompt, image (base64), seconds, seed, aspect and returns video_url or video
 runpod_lipsync_endpoint = ""      # an endpoint running a lip-sync model: gets video and audio (base64), returns video_url or video
+runpod_image_endpoint = ""        # an endpoint running an image model: gets prompt, seed, aspect, references, loras; returns image_url or image
 runpod_train_endpoint = ""        # an endpoint that trains a character model: gets images (base64), name, trigger; returns model_url or model
 runpod_upscale_endpoint = ""      # an endpoint running an upscaling model: gets video (base64) and scale, returns video_url or video
 runpod_price_per_second = 0.0     # USD per second of GPU time on that endpoint, for the cost record

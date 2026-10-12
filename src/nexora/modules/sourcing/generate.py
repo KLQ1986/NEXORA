@@ -55,6 +55,7 @@ class PromptSpec:
     cast: str = ""                       # how the named characters, places and props of the project look, so that they look the same in every shot
     references: tuple = ()               # asset ids of the pictures that show them
     models: tuple = ()                   # trained character models (LoRA files) to load for this picture
+    model_urls: tuple = ()               # where the training endpoint keeps those models, for an image endpoint that loads them by address
 
 
 def compile_prompt(spec: PromptSpec, *, kind: str) -> str:
@@ -129,7 +130,7 @@ class Generation:
         for e in bible:
             if e["name"] == name:
                 e["model"] = str(out)
-                e["training"] = {**job, "status": "done", "base_model": result.outputs.get("model")}
+                e["training"] = {**job, "status": "done", "base_model": result.outputs.get("model"), "model_url": result.outputs.get("model_url")}
         self._projects.update_project(project_id, bible=json.dumps(bible, ensure_ascii=False))
         return {"model": str(out), "pictures": len(paths)}
 
@@ -185,6 +186,7 @@ class Generation:
                           cast="; ".join(f"{e['name']}: {' '.join(filter(None, [(e.get('training') or {}).get('trigger') if e.get('model') else None, e.get('description')]))}"
                                          for e in cast if e.get("description") or e.get("model")),
                           models=tuple(e["model"] for e in cast if e.get("model")),
+                          model_urls=tuple((e.get("training") or {}).get("model_url") for e in cast if e.get("model") and (e.get("training") or {}).get("model_url")),
                           references=tuple(e["asset_id"] for e in cast if e.get("asset_id")))
 
     def _reference_paths(self, spec: PromptSpec) -> list[str]:
@@ -231,7 +233,7 @@ class Generation:
             for repair, seed in enumerate(seeds):
                 out = self._media / (f"{shot.shot_id}_key.png" if not turn and not repair else f"{shot.shot_id}_key_{turn}_{repair}.png")
                 result, provider = self._submit("image_gen", shot.gen.get("provider_image"), Request(
-                    "generate", inputs={"prompt": prompt, "references": self._reference_paths(spec), "models": [m for m in spec.models if Path(m).is_file()]}, params={"out": str(out), "seed": seed, "aspect": spec.aspect},
+                    "generate", inputs={"prompt": prompt, "references": self._reference_paths(spec), "models": [m for m in spec.models if Path(m).is_file()], "model_urls": list(spec.model_urls)}, params={"out": str(out), "seed": seed, "aspect": spec.aspect},
                     attempt_id=ctx.claim.attempt_id, privacy_class=PrivacyClass.CLOUD_ALLOWED))
                 if result.usage.cost:
                     ctx.record_cost(provider=provider, units=result.usage.units, cost=result.usage.cost)
