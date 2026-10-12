@@ -155,7 +155,7 @@ export function Page({ title, eyebrow, note, actions, back, tabs, children, wide
 /** Underlined tabs under a page title. */
 export function Tabs<T extends string>({ items, value, onChange }: { items: { key: T; label: string; icon?: string; count?: number }[]; value: T; onChange: (k: T) => void }) {
   return (
-    <div className="-mb-px flex gap-1 overflow-x-auto" role="tablist">
+    <div className="scroll-x -mb-px flex gap-1" role="tablist">
       {items.map((t) => (
         <button key={t.key} type="button" role="tab" aria-selected={value === t.key} onClick={() => onChange(t.key)}
                 className={`flex h-10 items-center gap-2 whitespace-nowrap border-b-2 px-3 text-[13.5px] transition-colors ${value === t.key ? "border-accent font-medium text-ink" : "border-transparent text-mute hover:text-ink"}`}>

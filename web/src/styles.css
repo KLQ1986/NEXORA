@@ -127,6 +127,9 @@ button, a, [role="button"], input, select, textarea, summary { touch-action: man
 /* The sidebar sits on a surface a shade above the canvas; nothing in the chrome glows. */
 .backdrop { background: var(--color-canvas); }
 /* Fields that sit inside a framed editor carry no frame of their own. */
+/* Rows that scroll sideways on a phone show no bar: the content itself says it continues. */
+.scroll-x { overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none; }
+.scroll-x::-webkit-scrollbar { display: none; }
 .bare, .bare:hover, .bare:focus { border-color: transparent !important; box-shadow: none !important; background: transparent !important; outline: none !important; }
 
 @keyframes rise { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }

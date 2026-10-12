@@ -397,7 +397,7 @@ export default function System() {
     <Page eyebrow="Vận hành" title="Hệ thống" note="Điều khiển, cài đặt, dữ liệu và sức khoẻ của máy." wide
           actions={<><span className={`flex items-center gap-2 text-[13px] ${kill ? "text-tally" : "text-proof"}`}><span className={`h-2 w-2 rounded-full ${kill ? "bg-tally" : "bg-proof"}`} />{kill ? "Đang dừng khẩn cấp" : "Hoạt động bình thường"}</span><Button kind={kill ? "primary" : "danger"} onClick={toggle}><Icon name="power" size={15} />{kill ? "Cho chạy lại" : "Dừng khẩn cấp"}</Button></>}>
       <div className="grid items-start gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
-        <nav className="flex gap-1 overflow-x-auto lg:sticky lg:top-0 lg:flex-col" aria-label="Mục cài đặt">
+        <nav className="scroll-x flex gap-1 lg:sticky lg:top-0 lg:flex-col" aria-label="Mục cài đặt">
           {AREAS.map(([k, name, icon]) => (
             <button key={k} type="button" onClick={() => setArea(k)} aria-current={area === k ? "page" : undefined}
                     className={`flex h-9 shrink-0 items-center gap-2.5 whitespace-nowrap rounded-lg px-3 text-[13.5px] transition-colors ${area === k ? "bg-raised font-medium text-ink" : "text-mute hover:bg-raised/50 hover:text-ink"}`}>
