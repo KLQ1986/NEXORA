@@ -82,6 +82,12 @@ class Distribution:
         out.write_text(edl(project["title"], shots), encoding="utf-8")
         return out
 
+    def annotate_package(self, render_id: str, **values) -> dict:
+        """Add to a package's record what other parts of the system found about it: its rights report, its checks."""
+        package = {**self.package(render_id), **values}
+        (self._exports / render_id / "package.json").write_text(json.dumps(package, ensure_ascii=False, indent=2), encoding="utf-8")
+        return package
+
     def build_package(self, render_id: str, *, title: str | None = None, description: str | None = None) -> dict:
         render = self._projects.render(render_id)
         project = self._projects.project(render["project_id"])

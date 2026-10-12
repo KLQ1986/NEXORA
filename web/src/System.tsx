@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { call, megabytes, post, usePoll, type Settings, type Template } from "./api";
+import { call, megabytes, post, usePoll, type EvalRun, type Settings, type Template } from "./api";
 import { Button, Icon, Meter, Page, Tag } from "./parts";
 
 type Env = { ffmpeg?: { filters: Record<string, boolean>; encoders: Record<string, boolean> }; disk: { free_bytes: number; total_bytes: number };
@@ -85,6 +85,37 @@ function Capabilities() {
             <p className={`mt-0.5 pl-3.5 text-[12px] ${p.available ? "text-faint" : "text-cue"}`}>{p.available ? "Sẵn sàng" : `Thiếu ${p.missing.map((m) => NEED[m] ?? m).join(", ")}`}</p></li>
         ))}
       </ul>
+    </Card>
+  );
+}
+
+/** The operator's own benchmark: known right answers, and how the search does on them from one run to the next. */
+function Benchmark() {
+  const { data, reload } = usePoll<{ cases: { case_id: string; line: string; t_in: number; t_out: number }[]; runs: EvalRun[] }>("/api/v1/evaluation", 15000);
+  const [note, setNote] = useState<string | null>(null);
+  const run = async () => { setNote(null); try { await post("/api/v1/evaluation/run"); } catch (e) { setNote((e as Error).message); } reload(); };
+  const pct = (v: number) => `${Math.round(v * 100)}%`;
+  const CONFIG: Record<string, string> = { models: "mô hình", describe_prompt: "câu hỏi mô tả", segment_seconds: "độ dài đoạn", moments: "số cảnh trong kho" };
+  return (
+    <Card title="Bộ mẫu chuẩn" icon="shield" tone="ai" note="Những cặp câu và clip bạn đã xác nhận là đúng. Chạy lại sau khi đổi mô hình, câu hỏi hoặc ngưỡng để biết hệ thống tìm tốt lên hay kém đi."
+          actions={<Button kind="ai" disabled={!data?.cases.length} onClick={run}>Chạy đánh giá</Button>}>
+      {note && <p className="mb-2 text-[13px] text-tally">{note}</p>}
+      {data && data.cases.length === 0 && <p className="text-[13px] text-mute">Chưa có mẫu nào. Trong một dự án, bấm “Lưu làm mẫu chuẩn” dưới một clip đã duyệt.</p>}
+      {!!data?.runs.length && (
+        <ul className="rows mb-3 text-[13px]">
+          {data.runs.map((r) => (
+            <li key={r.run_id} className="py-2">
+              <p className="flex flex-wrap items-center gap-x-3 gap-y-1"><span className="mono text-faint">{new Date(r.created_at * 1000).toLocaleString("vi-VN", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+                <span>Đúng ngay lần đầu <span className="mono">{pct(r.first)}</span></span><span>Trong ba kết quả đầu <span className="mono">{pct(r.top3)}</span></span><span className="text-faint">{r.cases} mẫu</span>
+                {r.change && <Tag tone={r.change.regression ? "tally" : r.change.first > 0 || r.change.top3 > 0 ? "proof" : "mute"}>{r.change.regression ? "Kém đi" : r.change.first > 0 || r.change.top3 > 0 ? "Tốt lên" : "Không đổi"}</Tag>}</p>
+              {r.change && Object.keys(r.change.config).length > 0 && <p className="mt-0.5 text-[12.5px] text-mute">Đã đổi: {Object.entries(r.change.config).map(([k, [a, b]]) => `${CONFIG[k] ?? k} từ ${String(a)} thành ${String(b)}`).join("; ")}</p>}
+              {r.change && r.change.lost.length > 0 && <p className="mt-0.5 text-[12.5px] text-cue">Không còn tìm ra: {r.change.lost.map((l) => `“${l}”`).join(", ")}</p>}
+            </li>))}
+        </ul>)}
+      {!!data?.cases.length && (
+        <details className="text-[13px]"><summary className="cursor-pointer list-none text-accent">{data.cases.length} mẫu đang giữ</summary>
+          <ul className="rows mt-2">{data.cases.map((c) => <li key={c.case_id} className="flex gap-3 py-1.5"><span className="min-w-0 flex-1 truncate">{c.line}</span><span className="mono shrink-0 text-faint">{c.t_in.toFixed(1)} đến {c.t_out.toFixed(1)} giây</span>
+            <button type="button" className="link shrink-0" onClick={async () => { await call(`/api/v1/evaluation/cases/${c.case_id}`, { method: "DELETE" }); reload(); }}>Bỏ</button></li>)}</ul></details>)}
     </Card>
   );
 }
@@ -312,7 +343,7 @@ export default function System() {
           {area === "library" && <><WatchFolders /><Volumes /></>}
           {area === "templates" && <Templates />}
           {area === "storage" && <StoreCards />}
-          {area === "health" && <><Health /><Capabilities /><Tools /></>}
+          {area === "health" && <><Health /><Capabilities /><Benchmark /><Tools /></>}
         </div>
       </div>
     </Page>

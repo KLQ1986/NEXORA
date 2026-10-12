@@ -26,7 +26,11 @@ from nexora.modules.edit.roughcut import RoughCut
 from nexora.modules.library.transcribe import Transcription
 from nexora.modules.library.understand import Understanding
 from nexora.modules.planning.scripts import Planning
+from nexora.modules.quality.evaluation import Evaluation
+from nexora.modules.quality.qc import caption_findings, package_checks, picture_and_sound
 from nexora.modules.quality.review import review_cut
+from nexora.modules.quality.rights import rights_report
+from nexora.modules.quality.watch import Viewer
 from nexora.modules.sourcing.generate import Generation
 from nexora.modules.sourcing.match import Sourcing
 
@@ -51,6 +55,8 @@ class System:
     producer: Producer = None
     roughcut: RoughCut = None
     commands: Commands = None
+    viewer: Viewer = None
+    evaluation: Evaluation = None
 
 
 def fill_gap_from_stock(system: "System", shot_id: str, query: str) -> dict:
@@ -71,6 +77,29 @@ def fill_gap_from_stock(system: "System", shot_id: str, query: str) -> dict:
     if system.orch.run_status(run_id) is RunStatus.SUCCEEDED and system.index.moments(asset_id, level="segment"):
         system.sourcing.refine_from_asset(shot_id, asset_id)     # the same clip was fetched before and has already been watched
     return {"found": True, "asset_id": asset_id, "run_id": run_id, "rights": rights}
+
+
+def render_rights(system: "System", render_id: str) -> dict:
+    """The rights report of a render. Lives here because it reads what three modules own: the cut, the assets and the project."""
+    render = system.projects.render(render_id)
+    project = system.projects.project(render["project_id"])
+    by_id = {}
+    for shot in render["qc"].get("shots") or []:
+        asset = system.assets.asset(shot.get("asset_id") or "")
+        if asset:
+            original = system.assets.original(asset["asset_id"])
+            by_id[asset["asset_id"]] = {"origin": asset["origin"], "name": system.assets.path_of(original).name, "rights": original.metadata.get("rights")}
+    options = json.loads(project.get("options") or "{}")
+    music = project["music_path"] if render["qc"].get("music") and project.get("music_path") else None
+    return rights_report(render["qc"].get("shots") or [], by_id, music=music, music_cleared=bool(options.get("music_cleared")))
+
+
+def evaluation_config(system: "System") -> dict:
+    """What describes the installation for a benchmark run: the models in use and the versions of the prompts."""
+    from nexora.modules.library.understand import PROMPT_VERSION
+    env = (system.adapters.environment().get("model") or {}).get("models") or {}
+    return {"models": ", ".join(sorted(env)) or "không có mô hình", "describe_prompt": PROMPT_VERSION, "segment_seconds": system.library.segment_seconds,
+            "moments": system.index.count()}
 
 
 PIPELINE_NAMES = {"library.ingest": "Nhập footage", "library.ingest_image": "Nhập ảnh", "library.ingest_audio": "Nhập nhạc", "library.understand": "Hiểu nội dung footage", "library.transcribe": "Nghe lời nói trong footage",
@@ -190,7 +219,8 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     sourcing = Sourcing(orch, projects, index, threshold=match_threshold, adapters=adapters, judge=judge and model is not None, rejected=assets.rejected)
     sourcing.register(registry)
     library.on_understood.append(lambda asset_id: [sourcing.refine_from_asset(shot_id, asset_id) for shot_id in sourcing.pending_for(asset_id)])
-    edit = Edit(orch, projects, assets, adapters, data_dir / "media", voice=voice is not None, voice_name=voice_name, reviewer=review_cut, model=model is not None)
+    edit = Edit(orch, projects, assets, adapters, data_dir / "media", voice=voice is not None, voice_name=voice_name, reviewer=review_cut, model=model is not None,
+                inspector={"file": picture_and_sound, "captions": caption_findings})
     edit.register(registry)
     if stock is not None:
         adapters.register(stock)
@@ -219,6 +249,8 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     system = System(data_dir, orch, assets, adapters, registry, worker, library, index, projects, planning, sourcing, edit, distribution, generation, workers)
     system.roughcut = RoughCut(projects, assets, index)
     system.commands = Commands(adapters, projects, sourcing, edit)
+    system.viewer = Viewer(projects, adapters, data_dir / "media") if model is not None else None
+    system.evaluation = Evaluation(db_path, index, threshold=match_threshold)
     system.producer = Producer(db_path, orch=orch, projects=projects, planning=planning, sourcing=sourcing, edit=edit, adapters=adapters,
                                fill_gap=lambda shot_id, query: fill_gap_from_stock(system, shot_id, query))
     return system

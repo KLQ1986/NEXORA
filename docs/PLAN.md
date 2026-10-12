@@ -255,6 +255,13 @@ Edit (162 test đạt; đã chạy thật: bản ghi 14 giây có lời nói đ�
 
 Chưa làm: khớp khẩu hình (cần mô hình lip-sync), chuyển HDR về SDR (FFmpeg trên máy thiếu bộ lọc zscale), phóng to bằng mô hình học máy.
 
+Quality (167 test đạt; đã bấm thử trên giao diện):
+
+- [x] Kiểm tra đo được trên file dựng: khung đen ngoài ý muốn, khoảng im lặng dài; trên phụ đề: quá hai dòng, đọc không kịp; trên gói: đủ video, phụ đề, ảnh đại diện, tiêu đề, mô tả
+- [x] Xem lại như người xem: mô hình nhìn một khung giữa mỗi cảnh của chính file dựng và so với lời dẫn; thêm kiểm tra mở đầu dài, kết bỏ lửng, lặp từ. Cảnh mô hình không trả lời được thì không được tính là đạt
+- [x] Cổng bản quyền và nguồn gốc: liệt kê nguồn của từng hình và nhạc; clip ngoài thiếu giấy phép, nhạc chưa xác nhận quyền, dữ kiện thiếu nguồn hoặc trái nguồn sẽ chặn việc đóng gói, trừ khi người vận hành ghi lý do (lý do được lưu cùng gói)
+- [x] Bộ mẫu chuẩn: lưu cặp câu và clip đã duyệt làm đáp án; mỗi lần chạy ghi tỷ lệ đúng, cấu hình lúc chạy, và so với lần trước (kém đi, mẫu nào không còn tìm ra, cấu hình nào đã đổi)
+
 ### Lát 1 — Lõi chạy việc
 
 Mục thiết kế: 5, 6, 7.

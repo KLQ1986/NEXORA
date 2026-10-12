@@ -249,6 +249,12 @@ class ProjectStore:
         with db.write(self._conn) as c:
             c.execute("UPDATE renders SET review = ? WHERE render_id = ?", (json.dumps({"approved": approved, "comment": comment, "at": time.time()}, ensure_ascii=False), render_id))
 
+    def update_render_qc(self, render_id: str, **values) -> None:
+        """Add to what is known about a render after it was made: a later look, a later measurement."""
+        with db.write(self._conn) as c:
+            qc = json.loads(c.execute("SELECT qc FROM renders WHERE render_id = ?", (render_id,)).fetchone()[0])
+            c.execute("UPDATE renders SET qc = ? WHERE render_id = ?", (json.dumps({**qc, **values}, ensure_ascii=False), render_id))
+
     def renders(self, project_id: str, *, previews: bool = False) -> list[dict]:
         """The cuts of a project, newest first. Quick previews are another kind of thing and are listed only when asked for."""
         rows = self._conn.execute("SELECT * FROM renders WHERE project_id = ? ORDER BY created_at DESC, render_id DESC", (project_id,))

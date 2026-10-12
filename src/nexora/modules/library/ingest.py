@@ -73,6 +73,10 @@ class Library:
                               on_success=lambda run_id, asset_id: [listener(asset_id) for listener in self.on_understood])
 
     @property
+    def segment_seconds(self) -> float | None:
+        return self._understanding._seconds if self._understanding else None
+
+    @property
     def understands(self) -> bool:
         return self._understanding is not None
 

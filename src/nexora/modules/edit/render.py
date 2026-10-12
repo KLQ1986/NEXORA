@@ -67,10 +67,11 @@ def _key(*parts) -> str:
 
 class Edit:
     def __init__(self, orch: Orchestrator, projects: ProjectStore, assets: AssetStore, adapters: AdapterRegistry, media_dir: str | Path,
-                 *, voice: bool = False, voice_name: str = "Linh", reviewer=None, model: bool = False):
+                 *, voice: bool = False, voice_name: str = "Linh", reviewer=None, model: bool = False, inspector=None):
         self._orch, self._projects, self._assets, self._adapters = orch, projects, assets, adapters
         self._media, self._voice, self._voice_name = Path(media_dir), voice, voice_name
         self._reviewer = reviewer                    # the whole-cut review of the Quality module, injected by the composition root
+        self._inspector = inspector                  # the Quality module's measured checks on the finished file and its captions
         self._model = model                          # a vision model is available to find the subject when a frame must be cropped
         for sub in ("narration", "captions", "segments", "renders", "focus"):
             (self._media / sub).mkdir(parents=True, exist_ok=True)
@@ -294,10 +295,22 @@ class Edit:
             "Độ dài khớp với kịch bản": abs(probe["duration"] - expected) < 1.0,
             "Âm thanh không bị vỡ": loud["max_db"] <= -0.5,
         }
+        findings = self._reviewer(segments) if self._reviewer else []
+        if self._inspector and not preview:
+            black = self._adapters.submit("ffmpeg", Request("blackdetect", inputs={"path": str(out)})).outputs["black_ranges"]
+            silent = [[a, probe["duration"] if b is None else b] for a, b in self._adapters.submit("ffmpeg", Request("silencedetect", inputs={"path": str(out)})).outputs["silent_ranges"]]
+            gap_ranges, at = [], 0.0
+            for s in segments:
+                if s["gap"]:
+                    gap_ranges.append([at, at + s["duration"]])
+                at += s["duration"]
+            measured = self._inspector["file"](black, silent, probe["duration"], gap_ranges=gap_ranges)
+            checks.update(measured["checks"])
+            findings = findings + self._inspector["captions"]([{"text": s["text"], "duration": s["duration"]} for s in segments])
         qc = {"passed": all(checks.values()), "checks": checks, "width": probe["width"], "height": probe["height"], "duration": probe["duration"],
               "has_audio": probe["has_audio"], "shot_durations": [s["duration"] for s in segments], "gaps": sum(1 for s in segments if s["gap"]),
               "format": project["format"], "music": bool(music), "draft": bool(ctx.inputs["segments"].get("draft")) and not preview, "preview": preview, "mean_db": loud["mean_db"], "max_db": loud["max_db"],
-              "findings": self._reviewer(segments) if self._reviewer else [],
+              "findings": findings,
               "shots": [{"text": s["text"], "duration": s["duration"], "gap": s["gap"], "asset_id": s.get("asset_id"), "t_in": s.get("chosen_in"),
                          "is_fact": s.get("is_fact", False), "source": s.get("source"), "fact_check": s.get("fact_check"), "sound_cue": s.get("sound_cue"), "own_voice": s.get("own_voice", False), "live_sound": s.get("live_sound", False), "speed": s.get("speed", 1.0), "focus_x": s.get("focus_x"), "inserts": s.get("inserts", [])} for s in segments]}
         render_id = self._projects.add_render(script["project_id"], ctx.subject_ref, str(out), qc)

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { post, projectState, scriptText, stageName, timecode, usePoll, type Idea, type Source, type AgentTask, type Asset, type Settings, type Candidate, type Project, type RenderItem, type Shot, type BibleEntry, type GapPlan, type Op } from "./api";
+import { post, projectState, scriptText, stageName, timecode, usePoll, type Idea, type Source, type AgentTask, type Asset, type Settings, type Candidate, type Project, type RenderItem, type Shot, type BibleEntry, type GapPlan, type Op, type Rights } from "./api";
 import Board from "./Board";
 import { Button, Empty, Filmstrip, Icon, Meter, Page, Section, Seg, StageRail, Steps, Tabs, Tag, TimeChip } from "./parts";
 import Timeline from "./Timeline";
@@ -23,6 +23,7 @@ function ShotRow({ shot, n, locked, changed, heading, sources = [], effects = []
   const [stock, setStock] = useState<string | null>(null);
   const findStock = async () => { setStock("Đang tìm trên các kho miễn phí…"); try { const r = await post<{ found: boolean }>(`/api/v1/shots/${shot.shot_id}/stock`, { query }); setStock(r.found ? null : "Không tìm thấy clip nào. Thử từ khoá tiếng Anh khác."); } catch (e) { setStock((e as Error).message); } changed(); };
   const act = async (path: string, body?: unknown) => { await post(`/api/v1/shots/${shot.shot_id}/${path}`, body).catch(() => {}); changed(); };
+  const [saved, setSaved] = useState(false);
   const treat = async (body: Record<string, unknown>) => { await post(`/api/v1/shots/${shot.shot_id}/treatment`, body, "PATCH").catch(() => {}); changed(); };
   const gap = sel?.status === "gap";
   const notes = [shot.brief && `hình cần có “${shot.brief}”`, shot.screen_text && `chữ trên màn hình “${shot.screen_text}”`, shot.target_seconds && `giữ ${shot.target_seconds} giây`, shot.sound_cue && `âm thanh “${shot.sound_cue}”`, shot.is_fact && (shot.source ? `dữ kiện, nguồn “${shot.source}”` : "dữ kiện chưa có nguồn")].filter(Boolean);
@@ -87,6 +88,7 @@ function ShotRow({ shot, n, locked, changed, heading, sources = [], effects = []
             )}
             <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12.5px]">
               {sel && !gap && !locked && <button type="button" className="link" onClick={() => act("gap")}>Không clip nào hợp</button>}
+              {sel && !gap && sel.status === "accepted" && <button type="button" className="link" title="Giữ cặp câu và clip này làm đáp án đúng, để đo xem hệ thống có tìm kém đi sau khi đổi mô hình hay cài đặt" onClick={async () => { await post("/api/v1/evaluation/cases", { shot_id: shot.shot_id }).catch(() => {}); setSaved(true); }}>{saved ? "Đã lưu làm mẫu chuẩn" : "Lưu làm mẫu chuẩn"}</button>}
               <details className="group w-full">
                 <summary className="link inline-flex cursor-pointer list-none items-center gap-1"><Icon name="edit" size={13} />{notes.length ? `Ghi chú: ${notes.join(", ")}` : "Thêm ghi chú cho câu này"}</summary>
                 <form className="panel-raised mt-2 grid max-w-xl gap-3 p-3.5" onSubmit={(e) => { e.preventDefault(); saveNotes(); }}>
@@ -154,8 +156,18 @@ function TimelineStrip({ shots }: { shots: Shot[] }) {
 function PackagePanel({ render, reload }: { render: RenderItem; reload: () => void }) {
   const pkg = render.package;
   const [note, setNote] = useState<string | null>(null);
+  const [why, setWhy] = useState("");
+  const [blocked, setBlocked] = useState(false);
   const base = `/api/v1/renders/${render.render_id}/package`;
-  if (!pkg) return <div className="panel p-4"><Button kind="primary" onClick={async () => { await post(base, {}); reload(); }}><Icon name="layers" />Chuẩn bị gói xuất bản</Button><p className="mt-2 text-[13px] text-mute">Tạo file video, phụ đề rời và ảnh đại diện trong một thư mục để bạn đăng tay.</p></div>;
+  if (!pkg) return (
+    <div className="panel grid gap-3 p-4">
+      <RightsList renderId={render.render_id} />
+      <div><Button kind="primary" onClick={async () => { setNote(null); try { await post(base, why.trim() ? { override_reason: why.trim() } : {}); } catch (e) { setNote((e as Error).message); setBlocked(true); } reload(); }}><Icon name="layers" />Chuẩn bị gói xuất bản</Button>
+        <p className="mt-2 text-[13px] text-mute">Tạo file video, phụ đề rời và ảnh đại diện trong một thư mục để bạn đăng tay.</p></div>
+      {note && <p className="text-[13px] text-cue">{note}</p>}
+      {blocked && <label className="grid gap-1 text-[13px]"><span className="text-mute">Lý do vẫn đăng (được lưu cùng gói)</span><input value={why} onChange={(e) => setWhy(e.target.value)} placeholder="Ví dụ: nhạc do tôi tự sáng tác" className="h-9 px-3" /></label>}
+    </div>
+  );
   return (
     <div className="panel p-4">
       <h3 className="mb-1 flex items-center gap-2 font-semibold"><Icon name="layers" size={16} className="text-accent" />Gói xuất bản</h3>
@@ -168,6 +180,12 @@ function PackagePanel({ render, reload }: { render: RenderItem; reload: () => vo
           </button>
         ))}
       </div>
+      {pkg.rights && (pkg.rights.override_reason || pkg.rights.disclosures.length > 0) && (
+        <div className="mb-3 rounded-lg border border-line bg-raised/40 px-3 py-2 text-[12.5px] text-mute">
+          {pkg.rights.override_reason && <p className="text-cue">Đóng gói dù còn điểm chưa xử lý. Lý do: {pkg.rights.override_reason}</p>}
+          {pkg.rights.disclosures.map((d) => <p key={d}>{d}</p>)}
+        </div>)}
+      {pkg.checks && Object.values(pkg.checks).some((ok) => !ok) && <p className="mb-3 text-[12.5px] text-tally">Gói còn thiếu: {Object.entries(pkg.checks).filter(([, ok]) => !ok).map(([k]) => k.toLowerCase()).join(", ")}.</p>}
       <p className="font-medium">{pkg.title}</p>
       <p className="mb-3 line-clamp-3 text-[13px] text-mute">{pkg.description}</p>
       <div className="flex flex-wrap gap-2">
@@ -181,6 +199,22 @@ function PackagePanel({ render, reload }: { render: RenderItem; reload: () => vo
         <select id={`lang-${render.render_id}`} name="lang" className="h-8 pl-2">{Object.entries(LANGS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
         <Button size="sm" type="submit">Dịch</Button>{note && <span className="text-mute">{note}</span>}
       </form>
+    </div>
+  );
+}
+
+const ORIGIN: Record<string, string> = { self_shot: "Footage của bạn", licensed: "Clip có giấy phép", generated: "Sinh bằng AI", music: "Nhạc nền" };
+/** Where every picture and sound of the cut came from, and what stands in the way of publishing it. */
+function RightsList({ renderId }: { renderId: string }) {
+  const { data } = usePoll<Rights>(`/api/v1/renders/${renderId}/rights`, 10000);
+  if (!data) return null;
+  return (
+    <div className="text-[13px]">
+      <p className="flex items-center gap-2 font-semibold"><Icon name="shield" size={15} className={data.clear ? "text-proof" : "text-cue"} />Nguồn gốc và quyền sử dụng<Tag tone={data.clear ? "proof" : "cue"}>{data.clear ? "Đủ điều kiện đăng" : `${data.blockers.length} điểm cần xử lý`}</Tag></p>
+      <ul className="rows mt-2">
+        {data.items.map((i) => <li key={i.name} className="flex gap-2 py-1.5"><Icon name={i.ok ? "check" : "alert"} size={14} className={`mt-0.5 shrink-0 ${i.ok ? "text-proof" : "text-cue"}`} /><span className="min-w-0"><span className="font-medium">{i.name}</span><span className="ml-1.5 text-faint">{ORIGIN[i.origin] ?? i.origin}</span><span className="block break-words text-[12.5px] text-mute">{i.note}</span></span></li>)}
+      </ul>
+      {data.blockers.length > 0 && <ul className="mt-2 grid gap-1 text-[12.5px] text-cue">{data.blockers.map((b) => <li key={b}>{b}</li>)}</ul>}
     </div>
   );
 }
@@ -437,6 +471,16 @@ function Detail({ id, back }: { id: string; back: () => void }) {
                         </ul>
                       </div>
                     )}
+                    {!latest.qc.external && (
+                      <div className="panel px-4 py-3 text-[13px]">
+                        <div className="flex flex-wrap items-center gap-2"><Icon name="eye" size={15} className="text-ai" /><span className="font-medium">Xem lại như người xem</span>
+                          <span className="text-faint">{latest.qc.viewer ? `Đã xem ${latest.qc.viewer.judged} trên ${latest.qc.viewer.of} cảnh có hình` : "Mô hình nhìn từng cảnh của bản dựng và so với lời dẫn."}</span>
+                          <span className="ml-auto"><Button size="sm" kind="ai" disabled={busy} onClick={() => run(() => post(`/api/v1/renders/${latest.render_id}/watch`))}>{latest.qc.viewer ? "Xem lại" : "Xem"}</Button></span></div>
+                        {latest.qc.viewer && (latest.qc.viewer.findings.length ? <ul className="mt-2 grid gap-1.5">{latest.qc.viewer.findings.map((f, i) => <li key={i}><span className={f.severity === "cao" ? "font-medium text-cue" : "font-medium"}>Câu {f.shot}, {f.check.toLowerCase()}:</span> {f.text} <span className="text-mute">{f.fix}</span></li>)}</ul>
+                          : latest.qc.viewer.judged === 0 ? <p className="mt-2 text-cue">Mô hình không trả lời được cho cảnh nào, nên chưa có nhận xét.</p>
+                          : <p className="mt-2 text-proof">Không thấy cảnh nào lệch với lời dẫn{latest.qc.viewer.judged < latest.qc.viewer.of ? `, trong ${latest.qc.viewer.judged} cảnh mô hình xem được` : ""}.</p>)}
+                      </div>
+                    )}
                     {renderReview && (
                       <div className="cue-card p-4">
                         <label htmlFor="why" className={field}>Ghi chú nếu chưa được</label>
@@ -506,6 +550,8 @@ function Detail({ id, back }: { id: string; back: () => void }) {
               <p className="mt-1.5 text-[12px] text-faint">{!p.narration_dir ? "Đặt tên file theo số câu. Câu nào không có file thì dùng giọng máy." : p.own_takes.length ? `Đã có bản thu cho câu ${p.own_takes.join(", ")}. Các câu còn lại dùng giọng máy.` : "Chưa thấy file thu âm nào trong thư mục này."}</p>
             </form>
             <div className="grid gap-2">
+              {p.music_path && <label className="flex items-start gap-2.5 text-[13px]"><input type="checkbox" className="mt-0.5" checked={!!p.options.music_cleared} disabled={busy} onChange={(e) => patch({ options: { music_cleared: e.target.checked } })} />
+                <span>Tôi có quyền dùng bản nhạc này<span className="block text-[12px] text-faint">Chưa xác nhận thì video không được đóng gói để đăng.</span></span></label>}
               <label className="flex items-start gap-2.5 text-[13px]"><input type="checkbox" className="mt-0.5" checked={!!p.options.clean_audio} disabled={busy} onChange={(e) => patch({ options: { clean_audio: e.target.checked } })} />
                 <span>Làm sạch âm thanh<span className="block text-[12px] text-faint">Giảm tiếng ù và tiếng xì ở lời tự thu và âm thanh gốc.</span></span></label>
               <label className="flex items-start gap-2.5 text-[13px]"><input type="checkbox" className="mt-0.5" checked={!!p.options.match_colour} disabled={busy} onChange={(e) => patch({ options: { match_colour: e.target.checked } })} />

@@ -960,7 +960,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         fields = {k: (str(Path(str(v)).expanduser()) if k in ("music_path", "narration_dir") and v else v) for k, v in body.items()}
         if "options" in fields:                  # treatments applied to the whole cut
             current = json.loads(need_project(project_id).get("options") or "{}")
-            fields["options"] = json.dumps({**current, **{k: bool(v) for k, v in (fields["options"] or {}).items() if k in ("clean_audio", "match_colour")}})
+            fields["options"] = json.dumps({**current, **{k: bool(v) for k, v in (fields["options"] or {}).items() if k in ("clean_audio", "match_colour", "music_cleared")}})
         if "bible" in fields:                    # how the project's characters, places and props look, so that every shot shows them the same way
             kinds = ("character", "setting", "prop", "style")
             fields["bible"] = json.dumps([{"name": str(e.get("name", "")).strip(), "kind": e.get("kind") if e.get("kind") in kinds else "character", "voice": str(e.get("voice") or "").strip() or None,
@@ -1021,7 +1021,57 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         body = body or {}
         if body.get("thumbnail") and system.distribution.package(render_id):
             return system.distribution.choose_thumbnail(render_id, body["thumbnail"])
-        return system.distribution.build_package(render_id, title=body.get("title"), description=body.get("description"))
+        # The rights gate: a cut with something unresolved is not packaged unless the operator says why it may go out.
+        from nexora.app import render_rights
+        from nexora.modules.quality.qc import package_checks
+        rights, reason = render_rights(system, render_id), str(body.get("override_reason") or "").strip()
+        if rights["blockers"] and not reason:
+            raise HTTPException(409, "Chưa đóng gói được: " + " ".join(rights["blockers"]) + " Xử lý các điểm này, hoặc ghi lý do vẫn đăng.")
+        package = system.distribution.build_package(render_id, title=body.get("title"), description=body.get("description"))
+        package = system.distribution.annotate_package(render_id, rights={**rights, "override_reason": reason or None, "checked_at": time.time()})
+        return system.distribution.annotate_package(render_id, checks=package_checks(package))
+
+    @app.get("/api/v1/renders/{render_id}/rights")
+    def rights(render_id: str):
+        from nexora.app import render_rights
+        if system.projects.render(render_id) is None:
+            raise HTTPException(404, "Không tìm thấy bản dựng")
+        return render_rights(system, render_id)
+
+    @app.post("/api/v1/renders/{render_id}/watch")
+    def watch(render_id: str):
+        """Have the vision model look at the finished cut, shot by shot, as a viewer would."""
+        if system.projects.render(render_id) is None:
+            raise HTTPException(404, "Không tìm thấy bản dựng")
+        if system.viewer is None:
+            raise HTTPException(409, "Máy này chưa có mô hình nhìn để xem lại bản dựng")
+        return system.viewer.watch(render_id)
+
+    @app.get("/api/v1/evaluation")
+    def evaluation():
+        return {"cases": system.evaluation.cases(), "runs": system.evaluation.runs()}
+
+    @app.post("/api/v1/evaluation/cases", status_code=201)
+    def add_case(body: dict):
+        """Keep an accepted clip as a known right answer: the line of a shot and the stretch chosen for it."""
+        shot = system.projects.shot(str(body.get("shot_id", "")))
+        sel = system.projects.selection(shot.shot_id) if shot else None
+        if sel is None or sel.status == "gap" or not sel.asset_id or sel.t_in is None:
+            raise HTTPException(409, "Câu này chưa có clip để lấy làm mẫu")
+        return {"case_id": system.evaluation.add_case(shot.brief or shot.text, sel.asset_id, sel.t_in, sel.t_out), "cases": len(system.evaluation.cases())}
+
+    @app.delete("/api/v1/evaluation/cases/{case_id}")
+    def remove_case(case_id: str):
+        system.evaluation.remove_case(case_id)
+        return evaluation()
+
+    @app.post("/api/v1/evaluation/run")
+    def run_evaluation():
+        from nexora.app import evaluation_config
+        if not system.evaluation.cases():
+            raise HTTPException(409, "Chưa có mẫu nào. Lưu vài clip đã duyệt làm mẫu trước.")
+        system.evaluation.run(evaluation_config(system))
+        return evaluation()
 
     @app.get("/api/v1/renders/{render_id}/package")
     def get_package(render_id: str):

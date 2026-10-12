@@ -65,7 +65,7 @@ class FFmpegAdapter(Adapter):
         return ffmpeg_capabilities()
 
     def describe(self) -> Capability:
-        return Capability(name="ffmpeg", operations=("blackdetect", "freezedetect", "proxy", "thumbnail", "frames", "segment", "concat", "loudness", "envelope", "enhance"), runs="local", supports_cancel=True)
+        return Capability(name="ffmpeg", operations=("blackdetect", "freezedetect", "proxy", "thumbnail", "frames", "segment", "concat", "loudness", "envelope", "enhance", "silencedetect"), runs="local", supports_cancel=True)
 
     def submit(self, request: Request) -> Result:
         timeout = request.deadline_seconds or 3600
@@ -248,6 +248,14 @@ class FFmpegAdapter(Adapter):
         self._run(["-y", "-i", str(src), "-vf", ",".join(filters), "-c:v", "libx264", "-preset", "medium", "-crf", "17", "-pix_fmt", "yuv420p", "-c:a", "copy", str(partial)], timeout, "enhance")
         partial.replace(out)
         return Result(files=(str(out),))
+
+    def _silencedetect(self, src: Path, params: dict, timeout: float) -> Result:
+        """Stretches with nothing to hear, as [start, end] pairs. A silence that runs to the end of the file ends at None."""
+        done = self._run(["-i", str(src), "-af", f"silencedetect=n={params.get('noise_db', -45)}dB:d={params.get('min_seconds', 0.4)}", "-vn", "-f", "null", "-"], timeout, "silencedetect")
+        re = __import__("re")
+        starts = [float(x) for x in re.findall(r"silence_start: (-?[\d.]+)", done.stderr)]
+        ends = [float(x) for x in re.findall(r"silence_end: (-?[\d.]+)", done.stderr)]
+        return Result(outputs={"silent_ranges": [[max(0.0, s), ends[i] if i < len(ends) else None] for i, s in enumerate(starts)]})
 
     def _envelope(self, src: Path, params: dict, timeout: float) -> Result:
         """How loud the sound is, `rate` times a second: enough to recognise the same event in two recordings."""
