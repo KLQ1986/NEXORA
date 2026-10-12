@@ -304,6 +304,8 @@ Sự cố trong lượt này: cài `ffmpeg-full` làm Homebrew nâng thư viện
 
 Đã tìm ra nguyên nhân của các bài test thỉnh thoảng lỗi: bộ sinh ảnh giả của test tô màu theo seed, mà seed lấy từ mã ngẫu nhiên, nên đôi khi ra ảnh gần đen và bị kiểm tra "khung đen ngoài ý muốn" bắt (đúng việc của nó). Đã sửa bộ giả để không bao giờ ra ảnh tối; đây là lỗi của test, không phải của sản phẩm.
 
+- [x] Đăng lên YouTube và tự lấy số liệu (YouTube Data API v3, OAuth của chính người vận hành: `youtube_client_id`, `youtube_client_secret`, `youtube_refresh_token`). Video lên ở chế độ riêng tư trừ khi cài đặt khác; khoá chống trùng nằm trong thẻ của video nên lần tải lên mất phản hồi được tìm lại trên kênh thay vì tải lần hai; lượt xem, thích, bình luận được lấy tự động khi tới mốc. Mới thử với máy chủ giả. TikTok, Facebook, Instagram vẫn ghi nhận bằng tay
+
 ### Còn lại sau lượt này
 
 Cần thứ ngoài máy này: tài khoản và khoá API của nền tảng (tự đăng, tự lấy số liệu), khoá của nhà cung cấp video AI, khoá Anthropic để chạy thật adapter Claude, dịch vụ tìm kiếm trên toàn bộ web (hiện chỉ tìm trên Wikipedia).

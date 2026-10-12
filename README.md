@@ -69,7 +69,7 @@ Footage, frames, proxies and audio are only ever read by tools on this machine.
 
 ## Data and safety
 
-- Publishing to a folder writes packages to `~/Movies/NEXORA` (the `publish_folder` setting). The system has no platform accounts: uploads to YouTube and the like are done by hand and recorded.
+- Publishing to a folder writes packages to `~/Movies/NEXORA` (the `publish_folder` setting). With the three `youtube_*` settings filled in, cuts can be uploaded to your channel (private by default) and their figures are fetched at each mark; other platforms are uploaded by hand and recorded.
 
 - Your footage is never copied or modified; the library records where it is. If a disk moves, point the library at its new place in System > Nơi chứa footage.
 - `data/nexora.db` is the one file that cannot be rebuilt. It is backed up at every start; the newest seven copies are kept.

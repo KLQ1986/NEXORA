@@ -120,6 +120,7 @@ def main() -> None:
                 try:
                     system.producer.tick()
                     system.autonomy.tick()
+                    system.publishing.collect()
                 except Exception as err:           # the agent must never take the server down
                     print(f"producer: {err!r}")
                 time.sleep(3)

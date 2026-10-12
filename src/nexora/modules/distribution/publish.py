@@ -47,9 +47,10 @@ class Publishing:
 
     # ------------------------------------------------------------------ the ledger
     def targets(self) -> list[dict]:
-        own = [{"target": c.name, "label": "Thư mục xuất bản" if c.name == "publish.folder" else c.name.partition(".")[2], "manual": False}
+        own = [{"target": c.name, "label": "Thư mục xuất bản" if c.name == "publish.folder" else PLATFORMS.get(c.name.partition(".")[2], c.name.partition(".")[2]), "manual": False}
                for c in self._adapters.describe() if c.name.startswith("publish.")]
-        return own + [{"target": key, "label": name, "manual": True} for key, name in PLATFORMS.items()]
+        connected = {t["target"].partition(".")[2] for t in own}                 # a platform the system can reach is not offered for hand uploads as well
+        return own + [{"target": key, "label": name, "manual": True} for key, name in PLATFORMS.items() if key not in connected]
 
     def _row(self, row) -> dict:
         out = dict(row)
@@ -102,7 +103,7 @@ class Publishing:
                 return row
         package = self._package(render_id)
         files = [package["video"], package["captions"], package["thumbnail"], *(package.get("translations") or {}).values()]
-        request = Request("publish", inputs={"folder": package["folder"], "files": files, "title": package["title"], "description": package["description"]},
+        request = Request("publish", inputs={"folder": package["folder"], "files": files, "title": package["title"], "description": package["description"], "synthetic_content": package.get("synthetic_content")},
                           idempotency_key=row["idempotency_key"], privacy_class=PrivacyClass.CLOUD_ALLOWED)         # a publication is meant to leave this machine
         self._set(row["publication_id"], status="publishing", attempts=row["attempts"] + 1, error=None)
         try:
@@ -174,6 +175,23 @@ class Publishing:
                     if fresh and self._notify:
                         self._notify("metrics_due", f"{row['title']} ({mark} giờ)")
         return out
+
+    def collect(self, *, now: float | None = None) -> list[str]:
+        """Take the figures of every publication that has reached a mark, from the places that can be asked for them. Where the
+        place cannot be asked (a hand upload, a folder), the mark stays due and the operator is reminded as before."""
+        taken = []
+        can_ask = {c.name for c in self._adapters.describe() if "stats" in c.operations}
+        for item in self.due(now=now):
+            row = self.publication(item["publication_id"])
+            if row["target"] not in can_ask or not row["external_ref"]:
+                continue
+            try:
+                figures = self._adapters.submit(row["target"], Request("stats", inputs={"external_ref": row["external_ref"]}, privacy_class=PrivacyClass.CLOUD_ALLOWED)).outputs["figures"]
+                self.add_snapshot(row["publication_id"], figures, at=now)
+                taken.append(row["publication_id"])
+            except (AdapterError, ValueError):
+                continue                                  # asked again at the next round; the mark stays due meanwhile
+        return taken
 
     def _at(self, row: dict, metric: str, hours: float) -> float | None:
         """The figure at the last snapshot taken no later than `hours` after publishing."""

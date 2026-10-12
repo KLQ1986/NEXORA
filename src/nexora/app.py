@@ -305,6 +305,7 @@ def build_from_config(config, **overrides) -> System:
     from nexora.adapters.speech import WhisperCpp
     from nexora.adapters.voice import SayVoice
     from nexora.adapters.web import WebReader
+    from nexora.adapters.youtube import YouTubePublisher
     return build(config.data_dir, ffmpeg_binary=config.ffmpeg_binary, min_free_bytes=int(config.min_free_gb * 1024**3), segment_seconds=config.segment_seconds, judge=config.judge,
                  model=OllamaAdapter(host=config.ollama_host, vision_model=config.vision_model, embed_model=config.embed_model,
                                      judge_model=config.judge_model, writer_model=config.writer_model),
@@ -314,7 +315,9 @@ def build_from_config(config, **overrides) -> System:
                  generators=[*rented_image, *([PollinationsImage(token=config.pollinations_token)] if config.pollinations else []), *rented, StillMotion()],
                  shot_models=[cls(runpod_key, endpoint, price_per_second=config.runpod_price_per_second) for cls, endpoint in
                               ((RunPodLipSync, config.runpod_lipsync_endpoint), (RunPodUpscale, config.runpod_upscale_endpoint), (RunPodTrainer, config.runpod_train_endpoint)) if runpod_key and endpoint],
-                 publishers=[FolderPublisher(config.publish_folder)] if config.publish_folder else [],
+                 publishers=[*([FolderPublisher(config.publish_folder)] if config.publish_folder else []),
+                             *([YouTubePublisher(config.youtube_client_id, config.youtube_client_secret, config.youtube_refresh_token, privacy=config.youtube_privacy)]
+                               if config.youtube_client_id and config.youtube_client_secret and config.youtube_refresh_token else [])],
                  cloud_models=[ClaudeText(_os.environ.get("ANTHROPIC_API_KEY") or config.anthropic_api_key, model=config.claude_model,
                                           input_price=config.claude_input_price, output_price=config.claude_output_price)]
                  if (_os.environ.get("ANTHROPIC_API_KEY") or config.anthropic_api_key) else [], **overrides)
