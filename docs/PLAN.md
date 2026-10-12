@@ -275,6 +275,24 @@ Distribution (171 test đạt; đã bấm thử trên giao diện):
 
 Chưa làm: tự đăng lên nền tảng và tự lấy số liệu (cần tài khoản và khoá API của từng nền tảng); phân tích nhân quả và lập kế hoạch chiến dịch (mục P2).
 
+Platform core (177 test đạt; đã bấm thử trên giao diện):
+
+- [x] Bộ định tuyến mô hình: việc chỉ có chữ đi tới mô hình người vận hành chọn cho loại việc đó; yêu cầu có hình, yêu cầu đánh dấu chỉ-trên-máy và chế độ riêng tư luôn giữ việc ở lại máy. Lần gọi được ghi dưới tên mô hình đã trả lời
+- [x] Adapter Claude cho việc chữ (Messages API), tính chi phí từ số token và đơn giá trong cài đặt. Chỉ bật khi có khoá `ANTHROPIC_API_KEY`; chưa chạy với khoá thật, mới thử với máy chủ giả
+- [x] Nhật ký thao tác: mọi yêu cầu làm thay đổi hệ thống qua giao diện được ghi (việc gì, lúc nào, kết quả)
+- [x] Mức tự chủ A0 đến A4. Mức 2 trở lên phải được "kiếm" bằng lịch sử duyệt của chính người vận hành, đọc từ nhật ký sự kiện. Từ chối một bản dựng khi đang ở mức 3 hoặc 4 thì hệ thống tự hạ về mức 2 và báo
+- [x] Mọi adapter (13 cái) đi qua cùng một bài kiểm tra hợp đồng; bốn adapter chạm ra ngoài máy đều bị chế độ riêng tư chặn
+
+### Còn lại sau lượt này
+
+Cần thứ ngoài máy này: tài khoản và khoá API của nền tảng (tự đăng, tự lấy số liệu), khoá của nhà cung cấp video AI, khoá Anthropic để chạy thật adapter Claude, dịch vụ tìm kiếm web (tự tìm nguồn).
+
+Cần công cụ chưa có trên máy: mô hình khớp khẩu hình, FFmpeg có bộ lọc zscale (HDR về SDR), công cụ huấn luyện mô hình nhân vật, mô hình phóng to hình.
+
+Chạy thử một lần với mô hình thật (qwen2.5vl:7b) ngày 2026-10-12: vai phản biện chỉ chép lại từng câu thay vì nêu vấn đề (hệ thống nay bỏ những "nhận xét" trùng với câu trong kịch bản), và vai tìm dữ kiện đánh dấu cả bốn câu tả cảnh là dữ kiện. Hai việc chữ này cần mô hình viết tốt hơn mô hình nhìn 7B; đây là lý do có bộ định tuyến mô hình.
+
+Để dành cho giai đoạn tối ưu: độ chính xác của nhận dạng lời nói tiếng Việt, mốc thời gian từng từ (whisper cho mốc liền nhau, không có khoảng lặng), điểm vào của clip stock, cắt khung theo chủ thể, các prompt của vai phản biện và kiểm chứng chưa được chạy với mô hình thật.
+
 ### Lát 1 — Lõi chạy việc
 
 Mục thiết kế: 5, 6, 7.

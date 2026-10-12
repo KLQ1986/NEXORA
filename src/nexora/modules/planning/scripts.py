@@ -167,9 +167,10 @@ class Planning:
             return []
         lines = "\n".join(f"{i}. {s.text}" for i, s in enumerate(script["shots"], 1))
         out = self._adapters.submit("model", Request("chat", privacy_class=TEXT_ONLY, params={"prompt": CRITIQUE_PROMPT.format(topic=project["title"], lines=lines, n=limit), "json": True, "max_tokens": 600, "task": "critique"})).outputs["json"]
-        notes = []
+        notes, said = [], {shot.text.strip().rstrip(".") for shot in script["shots"]}
         for raw in (out.get("nhan_xet") or [])[:limit]:
-            if isinstance(raw, dict) and str(raw.get("van_de", "")).strip():
+            # A note that only repeats a line of the script says nothing about it; small models do this when they have no remark to make.
+            if isinstance(raw, dict) and str(raw.get("van_de", "")).strip() and str(raw["van_de"]).strip().rstrip(".") not in said:
                 try:
                     line = int(raw.get("cau") or 0)
                 except (TypeError, ValueError):

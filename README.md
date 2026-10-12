@@ -13,6 +13,8 @@ The design is in `NEXORA_System_Design_v4.0.docx` (with an `.html` twin). The bu
 - [Ollama](https://ollama.com) with the two models: `ollama pull qwen2.5vl:7b` and `ollama pull bge-m3`
 - A Vietnamese voice for the `say` command (System Settings > Accessibility > Spoken Content)
 - Optional: OpenMontage at `~/openmontage`, for free stock clips when the library has no picture for a line
+- Optional: whisper.cpp (`brew install whisper-cpp`) and a ggml model at `data/models/ggml-large-v3-turbo-q5_0.bin`, for speech with a time for every word and the rough cut built on it
+- Optional: an Anthropic API key in `ANTHROPIC_API_KEY`, to let Claude do text work (never footage) for the tasks you choose in System
 
 ## Run
 
@@ -53,7 +55,20 @@ data/                 database, derived media, backups, logs (not in git)
 
 `uv run lint-imports` enforces the layer and module boundaries; `uv run pytest` runs the tests (no model needed: they use stand-ins).
 
+## What leaves this machine
+
+Nothing, unless one of these is used, and privacy mode (System) turns all of them off at once:
+
+- Stock search: the search words go to the stock libraries.
+- Reading a source: the address of the page you name is fetched. Only public web addresses are read.
+- Pollinations stills: the prompt and seed. Without an account it gives a few stills, then refuses for a while.
+- Claude: the text of the tasks you routed to it, which includes the script and descriptions of your footage. Frames are never sent.
+
+Footage, frames, proxies and audio are only ever read by tools on this machine.
+
 ## Data and safety
+
+- Publishing to a folder writes packages to `~/Movies/NEXORA` (the `publish_folder` setting). The system has no platform accounts: uploads to YouTube and the like are done by hand and recorded.
 
 - Your footage is never copied or modified; the library records where it is. If a disk moves, point the library at its new place in System > Nơi chứa footage.
 - `data/nexora.db` is the one file that cannot be rebuilt. It is backed up at every start; the newest seven copies are kept.

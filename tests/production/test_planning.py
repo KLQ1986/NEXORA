@@ -101,7 +101,7 @@ def test_a_critique_is_kept_with_its_version_and_the_revision_is_the_next_versio
     system, model = make(tmp_path)
     project = system.planning.create_project("Buổi sáng ở chợ")
     system.planning.save_script(project, ["# Mở đầu", "Hôm nay chúng ta sẽ cùng nhau đi thăm một khu chợ.", "# Trong chợ", "Cá tươi nằm trên sạp."])
-    model.answers["critique"] = {"nhan_xet": [{"cau": 1, "van_de": "Mở đầu chậm.", "de_xuat": "Vào thẳng hình ảnh."}, {"cau": 9, "van_de": "Kết chưa rõ.", "de_xuat": "Thêm một câu kết."}, {"cau": 2}]}
+    model.answers["critique"] = {"nhan_xet": [{"cau": 1, "van_de": "Mở đầu chậm.", "de_xuat": "Vào thẳng hình ảnh."}, {"cau": 9, "van_de": "Kết chưa rõ.", "de_xuat": "Thêm một câu kết."}, {"cau": 2}, {"cau": 0, "van_de": "Cá tươi nằm trên sạp.", "de_xuat": "Cá nằm trên sạp."}]}
     notes = system.planning.critique(project)
     assert notes == [{"line": 1, "issue": "Mở đầu chậm.", "fix": "Vào thẳng hình ảnh."}, {"line": 0, "issue": "Kết chưa rõ.", "fix": "Thêm một câu kết."}]
     first = system.projects.current_script(project)

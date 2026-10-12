@@ -252,3 +252,24 @@ def test_the_keyless_image_service_reports_a_spent_allowance_as_something_only_t
         assert refused.value.code in NEEDS_OPERATOR
     finally:
         server.shutdown()
+
+
+def test_the_operator_chooses_which_stock_libraries_are_searched(tmp_path):
+    from tests.fakes import FakeStock
+    class Asked(FakeStock):
+        def __init__(self): self.params = []
+        def submit(self, request):
+            self.params.append(request.params)
+            return super().submit(request)
+    stock = Asked()
+    system = build(tmp_path / "data", model=FakeModel(), voice=FakeVoice(), segment_seconds=2.0, judge=False, stock=stock)
+    client = TestClient(create_app(system))
+    assert [s["on"] for s in client.get("/api/v1/generators").json()["stock"]["sources"]] == [True, True, True]
+    assert client.post("/api/v1/control/stock-sources", json={"sources": ["bogus"]}).status_code == 422
+    chosen = client.post("/api/v1/control/stock-sources", json={"sources": ["nasa", "bogus"]}).json()["stock"]["sources"]
+    assert [(s["key"], s["on"]) for s in chosen] == [("archive_org", False), ("nasa", True), ("wikimedia", False)]
+    pid = client.post("/api/v1/projects", json={"title": "Vũ trụ", "lines": ["tên lửa phóng lên quỹ đạo"]}).json()["project_id"]
+    client.post(f"/api/v1/projects/{pid}/match"); drain(system)
+    shot = client.get(f"/api/v1/projects/{pid}").json()["shots"][0]["shot_id"]
+    assert client.post(f"/api/v1/shots/{shot}/stock", json={"query": "rocket launch"}).status_code == 200
+    assert stock.params[-1]["sources"] == ["nasa"]

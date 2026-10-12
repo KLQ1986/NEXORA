@@ -107,6 +107,23 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         except (TypeError, ValueError):
             raise HTTPException(422, "Mức tự chủ là một số từ 0 đến 4")
 
+    STOCK_SOURCES = {"archive_org": "Internet Archive", "nasa": "NASA", "wikimedia": "Wikimedia Commons"}       # libraries that need no key
+
+    @app.get("/api/v1/generators")
+    def generators():
+        chosen = json.loads(system.orch.setting("stock_sources", "[]"))
+        return {"generators": system.generation.available(), "stock": {"available": any(c.name == "stock" for c in system.adapters.describe()),
+                                                                       "sources": [{"key": k, "label": v, "on": not chosen or k in chosen} for k, v in STOCK_SOURCES.items()]}}
+
+    @app.post("/api/v1/control/stock-sources")
+    def set_stock_sources(body: dict):
+        """Which stock libraries are searched when a line has no picture. At least one stays on."""
+        chosen = [k for k in body.get("sources") or [] if k in STOCK_SOURCES]
+        if not chosen:
+            raise HTTPException(422, "Giữ ít nhất một nguồn stock")
+        system.orch.set_setting("stock_sources", json.dumps(chosen))
+        return generators()
+
     @app.get("/api/v1/models/routes")
     def model_routes():
         """Which model serves which kind of text task. Tasks with pictures always stay on this machine."""

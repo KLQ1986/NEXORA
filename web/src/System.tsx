@@ -89,6 +89,88 @@ function Capabilities() {
   );
 }
 
+type Level = { level: number; name: string; does: string; earned: boolean; progress: { have: number; need: number; text: string } | null };
+/** How much the system may decide alone. A level can be chosen only once the operator's own review record has earned it. */
+function AutonomyCard() {
+  const { data, reload } = usePoll<{ level: number; levels: Level[]; log: { at: number; level: number; text: string }[] }>("/api/v1/autonomy", 8000);
+  const [note, setNote] = useState<string | null>(null);
+  const choose = async (level: number) => { setNote(null); try { await post("/api/v1/autonomy", { level }); } catch (e) { setNote((e as Error).message); } reload(); };
+  return (
+    <Card title="Mức tự chủ" icon="bolt" tone="ai" note="Mỗi mức cho hệ thống tự quyết thêm một việc. Mức cao hơn chỉ chọn được khi chính lịch sử duyệt của bạn cho thấy nó xứng đáng. Dừng khẩn cấp, ngân sách và chế độ riêng tư luôn được tuân theo trước.">
+      {note && <p className="mb-3 rounded-lg border border-cue/30 bg-cue/[0.06] px-3 py-2 text-[13px] text-cue">{note}</p>}
+      <ol className="grid gap-2">
+        {(data?.levels ?? []).map((l) => {
+          const now = data!.level === l.level, reachable = (data?.levels ?? []).filter((x) => x.level <= l.level).every((x) => x.earned) || l.level < data!.level;
+          return (
+            <li key={l.level} className={`rounded-xl border px-4 py-3 text-[13px] ${now ? "border-accent/60 bg-accent/[0.06]" : "border-line bg-raised/40"}`}>
+              <div className="flex flex-wrap items-center gap-2"><span className="mono text-faint">A{l.level}</span><span className="font-medium">{l.name}</span>
+                {now ? <Tag tone="accent">Đang dùng</Tag> : !reachable && <Tag tone="mute">Chưa đủ điều kiện</Tag>}
+                {!now && <span className="ml-auto"><Button size="sm" disabled={!reachable} onClick={() => choose(l.level)}>{l.level < data!.level ? "Hạ xuống mức này" : "Chọn mức này"}</Button></span>}</div>
+              <p className="mt-1 text-mute">{l.does}</p>
+              {l.progress && !l.earned && <p className="mt-1 text-[12.5px] text-faint">{l.progress.text}</p>}
+            </li>);
+        })}
+      </ol>
+      {!!data?.log.length && <details className="mt-3 text-[13px]"><summary className="cursor-pointer list-none text-accent">Những việc hệ thống đã tự quyết</summary>
+        <ul className="rows mt-2">{[...data.log].reverse().map((e, i) => <li key={i} className="flex gap-3 py-1.5"><span className="mono shrink-0 text-faint">{new Date(e.at * 1000).toLocaleString("vi-VN", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })}</span><span>{e.text}</span></li>)}</ul></details>}
+    </Card>
+  );
+}
+
+/** Which model answers each kind of text task. Anything with a picture in it never leaves this machine. */
+function ModelRoutes() {
+  const { data, reload } = usePoll<{ models: { name: string; runs: string }[]; routes: Record<string, string>; tasks: Record<string, string>; privacy_local_only: boolean }>("/api/v1/models/routes", 30000);
+  const cloud = (data?.models ?? []).filter((m) => m.runs === "cloud");
+  const set = async (task: string, name: string) => { const routes = { ...(data?.routes ?? {}) }; if (name) routes[task] = name; else delete routes[task]; await post("/api/v1/models/routes", { routes }); reload(); };
+  return (
+    <Card title="Mô hình cho việc chữ" icon="globe" note="Việc nào có hình (mô tả footage, chấm clip, tìm chủ thể) luôn chạy trên máy này. Việc chỉ có chữ có thể giao cho mô hình cloud; khi đó nội dung chữ của việc đó, gồm kịch bản và mô tả kho footage, được gửi ra ngoài.">
+      {data && cloud.length === 0 && <p className="text-[13px] text-mute">Chưa có mô hình cloud nào. Đặt biến môi trường ANTHROPIC_API_KEY hoặc điền anthropic_api_key trong nexora.toml rồi khởi động lại để dùng Claude cho việc chữ.</p>}
+      {data?.privacy_local_only && cloud.length > 0 && <p className="mb-2 text-[13px] text-cue">Chế độ riêng tư đang bật: mọi việc đều chạy trên máy, các lựa chọn dưới đây tạm không có tác dụng.</p>}
+      {cloud.length > 0 && <ul className="rows text-[13px]">{Object.entries(data!.tasks).map(([task, name]) => (
+        <li key={task} className="flex items-center gap-3 py-2"><span className="min-w-0 flex-1">{name}</span>
+          <select aria-label={`Mô hình cho ${name}`} value={data!.routes[task] ?? ""} onChange={(e) => set(task, e.target.value)} className="h-8 pl-2"><option value="">Trên máy</option>{cloud.map((m) => <option key={m.name} value={m.name}>{m.name.replace("model.", "")} (cloud)</option>)}</select></li>))}</ul>}
+    </Card>
+  );
+}
+
+/** The order in which picture providers are tried. */
+function Providers() {
+  const { data, reload } = usePoll<{ stock?: { available: boolean; sources: { key: string; label: string; on: boolean }[] }; generators?: { image_providers: { name: string; label: string; runs: string }[]; video_providers: { name: string; label: string; runs: string }[] } }>("/api/v1/generators", 30000);
+  const first = async (kind: string, list: { name: string }[], name: string) => { await post("/api/v1/control/providers", { kind, order: [name, ...list.map((p) => p.name).filter((n) => n !== name)] }); reload(); };
+  const g = data?.generators;
+  const row = (kind: string, title: string, list: { name: string; label: string; runs: string }[]) => (
+    <div><p className="mb-1.5 text-[13px] font-medium">{title}</p>
+      {list.length === 0 ? <p className="text-[13px] text-mute">Chưa có nhà cung cấp nào.</p> : <ol className="rows text-[13px]">{list.map((p, i) => (
+        <li key={p.name} className="flex items-center gap-3 py-1.5"><span className="mono w-5 text-faint">{i + 1}</span><span className="min-w-0 flex-1">{p.label === "motion" ? "Chuyển động từ ảnh tĩnh" : p.label}</span><span className="text-faint">{p.runs === "cloud" ? "ngoài máy" : "trên máy"}</span>
+          {i > 0 && <button type="button" className="link" onClick={() => first(kind, list, p.name)}>Dùng trước</button>}</li>))}</ol>}</div>);
+  return <Card title="Nhà cung cấp hình sinh bằng AI" icon="spark" note="Mỗi cảnh được gửi tới nhà cung cấp đứng đầu; nếu nó hỏng, hết lượt hoặc bị chế độ riêng tư chặn thì tới nhà kế tiếp.">
+    {g && <div className="grid gap-4 sm:grid-cols-2">{row("image_gen", "Ảnh", g.image_providers)}{row("video_gen", "Video", g.video_providers)}</div>}
+    {data?.stock && <div className="mt-4 border-t border-line pt-3"><p className="mb-1.5 text-[13px] font-medium">Nguồn clip stock</p>
+      {!data.stock.available ? <p className="text-[13px] text-mute">Máy này chưa có công cụ tìm clip stock (OpenMontage).</p>
+        : <div className="flex flex-wrap gap-x-5 gap-y-2 text-[13px]">{data.stock.sources.map((s) => <label key={s.key} className="flex items-center gap-2"><input type="checkbox" checked={s.on}
+            onChange={async (e) => { const next = data.stock!.sources.filter((x) => (x.key === s.key ? e.target.checked : x.on)).map((x) => x.key); if (next.length) { await post("/api/v1/control/stock-sources", { sources: next }); reload(); } }} />{s.label}</label>)}
+          <span className="w-full text-[12px] text-faint">Cả ba đều không cần khoá và chỉ trả về clip thuộc phạm vi công cộng hoặc có giấy phép mở; giấy phép của từng clip được lưu cùng clip.</span></div>}</div>}</Card>;
+}
+
+const AUDIT_PATHS: [RegExp, string][] = [[/kill-switch/, "Dừng khẩn cấp"], [/autonomy/, "Đổi mức tự chủ"], [/models\/routes/, "Đổi mô hình cho việc chữ"], [/render\/decision/, "Duyệt hoặc từ chối bản dựng"], [/match\/approve/, "Duyệt clip"],
+  [/generate\/approve/, "Duyệt hình sinh bằng AI"], [/\/publish$/, "Đăng hoặc ghi nhận bản đăng"], [/\/package$/, "Gói xuất bản"], [/\/render$/, "Dựng video"], [/\/preview$/, "Dựng bản xem thử"], [/\/match$/, "Tìm clip"], [/\/script$/, "Lưu kịch bản"],
+  [/assets\/register/, "Thêm footage"], [/\/settings/, "Đổi cài đặt"], [/storage\/clean/, "Dọn bộ đệm"], [/storage\/backup/, "Sao lưu"], [/agent\/tasks/, "Giao việc cho trợ lý"], [/^\/api\/v1\/projects$/, "Tạo dự án"], [/projects\//, "Sửa dự án"], [/shots\//, "Sửa một câu"], [/assets\//, "Sửa một nguyên liệu"]];
+/** Everything changed through the interface, newest first. */
+function AuditCard() {
+  const { data } = usePoll<{ entries: { audit_id: number; at: number; method: string; path: string; status: number }[] }>("/api/v1/audit?limit=200", 10000);
+  return (
+    <Card title="Nhật ký thao tác" icon="list" note="Mọi thao tác làm thay đổi hệ thống qua giao diện này đều được ghi lại: việc gì, lúc nào, có thành công không. Nhật ký của từng lần chạy nằm ở Bảng theo dõi của dự án.">
+      {data && data.entries.length === 0 && <p className="text-[13px] text-mute">Chưa có thao tác nào được ghi.</p>}
+      <div className="overflow-x-auto"><table className="w-full min-w-[520px] text-[12.5px]"><tbody>
+        {(data?.entries ?? []).map((e) => (
+          <tr key={e.audit_id} className="border-t border-line first:border-t-0"><td className="mono whitespace-nowrap py-1.5 pr-3 text-faint">{new Date(e.at * 1000).toLocaleString("vi-VN", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" })}</td>
+            <td className="py-1.5 pr-3">{AUDIT_PATHS.find(([re]) => re.test(e.path))?.[1] ?? "Thao tác khác"}</td><td className="mono max-w-[260px] truncate py-1.5 pr-3 text-faint" title={e.path}>{e.path.replace("/api/v1", "")}</td>
+            <td className={`py-1.5 text-right ${e.status < 400 ? "text-proof" : "text-cue"}`}>{e.status < 400 ? "Được" : `Không được (${e.status})`}</td></tr>))}
+      </tbody></table></div>
+    </Card>
+  );
+}
+
 /** The operator's own benchmark: known right answers, and how the search does on them from one run to the next. */
 function Benchmark() {
   const { data, reload } = usePoll<{ cases: { case_id: string; line: string; t_in: number; t_out: number }[]; runs: EvalRun[] }>("/api/v1/evaluation", 15000);
@@ -299,8 +381,8 @@ function Tools() {
   );
 }
 
-type Area = "control" | "ai" | "library" | "templates" | "storage" | "health";
-const AREAS: [Area, string, string][] = [["control", "Điều khiển", "power"], ["ai", "Giọng & mô hình", "sparkles"], ["library", "Footage", "folder"], ["templates", "Mẫu định dạng", "layers"], ["storage", "Lưu trữ & sao lưu", "disk"], ["health", "Sức khoẻ máy", "shield"]];
+type Area = "control" | "autonomy" | "ai" | "library" | "templates" | "storage" | "health" | "audit";
+const AREAS: [Area, string, string][] = [["control", "Điều khiển", "power"], ["autonomy", "Mức tự chủ", "bolt"], ["ai", "Giọng & mô hình", "sparkles"], ["library", "Footage", "folder"], ["templates", "Mẫu định dạng", "layers"], ["storage", "Lưu trữ & sao lưu", "disk"], ["health", "Sức khoẻ máy", "shield"], ["audit", "Nhật ký thao tác", "list"]];
 
 export default function System() {
   const { data: control, reload } = usePoll<Control>("/api/v1/control", 3000);
@@ -339,7 +421,9 @@ export default function System() {
               </Card>
             </>
           )}
-          {area === "ai" && <VoiceModels />}
+          {area === "autonomy" && <AutonomyCard />}
+          {area === "audit" && <AuditCard />}
+          {area === "ai" && <><VoiceModels /><ModelRoutes /><Providers /></>}
           {area === "library" && <><WatchFolders /><Volumes /></>}
           {area === "templates" && <Templates />}
           {area === "storage" && <StoreCards />}
