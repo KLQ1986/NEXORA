@@ -94,3 +94,15 @@ def test_frozen_stretches_are_recorded_but_stay_usable(system, tmp_path):
     drain(system)
     meta = system.assets.original(asset_id).metadata
     assert len(meta["frozen_ranges"]) == 1 and meta["usable_ranges"] == [[0.0, pytest.approx(5.0, abs=0.2)]]
+
+
+def test_the_places_where_the_picture_changes_outright_are_found(system, tmp_path):
+    import subprocess
+    out = tmp_path / "two_shots.mp4"
+    subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=25:duration=4", "-f", "lavfi", "-i", "smptebars=size=320x180:rate=25:duration=3",
+                    "-f", "lavfi", "-i", "mandelbrot=size=320x180:rate=25", "-filter_complex", "[2:v]trim=duration=3,setpts=PTS-STARTPTS[m];[0:v][1:v][m]concat=n=3:v=1[v]", "-map", "[v]", "-pix_fmt", "yuv420p", str(out)], check=True)
+    asset, _ = system.library.ingest(out)
+    while system.worker.run_once():
+        pass
+    cuts = system.assets.original(asset).metadata["scene_cuts"]
+    assert len(cuts) == 2 and cuts[0] == pytest.approx(4.0, abs=0.1) and cuts[1] == pytest.approx(7.0, abs=0.1)

@@ -283,8 +283,11 @@ class Library:
         frozen = self._adapters.submit("ffmpeg", Request("freezedetect", inputs={"path": str(path)}, attempt_id=ctx.claim.attempt_id)).outputs["frozen_ranges"]
         frozen = [[a, duration if b is None else b] for a, b in frozen]
         ranges = usable_ranges(duration, black)          # a frozen picture is recorded, not excluded: a still shot can be wanted
-        self._assets.update_metadata(original.version_id, black_ranges=black, frozen_ranges=frozen, usable_ranges=ranges)
-        return {"black_ranges": black, "frozen_ranges": frozen, "usable_ranges": ranges}
+        # Where one shot of the recording ends and the next begins, so that a clip chosen from it never runs across a cut.
+        cuts = self._adapters.submit("ffmpeg", Request("scenecuts", inputs={"path": str(path)}, params={"color_transfer": ctx.inputs["probe"].get("color_transfer")},
+                                                      attempt_id=ctx.claim.attempt_id)).outputs["cuts"]
+        self._assets.update_metadata(original.version_id, black_ranges=black, frozen_ranges=frozen, usable_ranges=ranges, scene_cuts=cuts)
+        return {"black_ranges": black, "frozen_ranges": frozen, "usable_ranges": ranges, "scene_cuts": cuts}
 
     def _proxy(self, ctx):
         if self._is_duplicate(ctx):

@@ -95,7 +95,7 @@ class FFmpegAdapter(Adapter):
         return [HDR_TO_SDR]
 
     def describe(self) -> Capability:
-        return Capability(name="ffmpeg", operations=("blackdetect", "freezedetect", "proxy", "thumbnail", "frames", "segment", "concat", "loudness", "envelope", "enhance", "silencedetect"), runs="local", supports_cancel=True)
+        return Capability(name="ffmpeg", operations=("blackdetect", "freezedetect", "proxy", "thumbnail", "frames", "segment", "concat", "loudness", "envelope", "enhance", "silencedetect", "scenecuts"), runs="local", supports_cancel=True)
 
     def submit(self, request: Request) -> Result:
         timeout = request.deadline_seconds or 3600
@@ -119,6 +119,14 @@ class FFmpegAdapter(Adapter):
         done = self._run(["-i", str(src), "-vf", f"blackdetect=d={min_duration}:pix_th=0.10", "-an", "-f", "null", "-"], timeout, "blackdetect")
         ranges = [[round(float(a), 3), round(float(b), 3)] for a, b in _BLACK.findall(done.stderr)]
         return Result(outputs={"black_ranges": ranges})
+
+    def _scenecuts(self, src: Path, params: dict, timeout: float) -> Result:
+        """The instants at which the picture changes outright: one shot ends and another begins. Measured on a small copy of
+        each frame, which is enough to see a cut and far quicker."""
+        threshold = float(params.get("threshold", 0.35))
+        done = self._run(["-i", str(src), "-vf", f"{','.join([*self._sdr(params), 'scale=320:-2'])},select='gt(scene,{threshold})',showinfo", "-an", "-f", "null", "-"], timeout, "scenecuts")
+        times = [round(float(t), 2) for t in __import__("re").findall(r"pts_time:([\d.]+)", done.stderr)]
+        return Result(outputs={"cuts": sorted(t for t in dict.fromkeys(times) if t > 0.2)})
 
     def _freezedetect(self, src: Path, params: dict, timeout: float) -> Result:
         done = self._run(["-i", str(src), "-vf", f"freezedetect=n=-60dB:d={params.get('min_duration', 2.0)}", "-an", "-f", "null", "-"],

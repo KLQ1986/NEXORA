@@ -92,3 +92,13 @@ def test_tracks_taken_in_before_music_was_measured_are_listened_to_once_more(tmp
     drain(system)
     assert system.assets.original(track).metadata["music"]["tempo"] in range(96, 105) and system.library.suggest_music(seconds=10)[0]["name"] == "cu.wav"
     assert system.library.measure_unmeasured_music() == []                     # nothing left to measure
+
+
+def test_a_clip_is_moved_so_that_it_does_not_run_across_a_cut():
+    from nexora.modules.sourcing.match import clear_of_cuts
+    assert clear_of_cuts(2.0, 5.0, []) == (2.0, 5.0) and clear_of_cuts(2.0, 5.0, [1.0, 9.0]) == (2.0, 5.0)           # no cut inside: left alone
+    assert clear_of_cuts(2.0, 5.0, [4.5]) == (1.35, 4.35)                       # most of it lies before the cut: it ends just before the cut
+    assert clear_of_cuts(2.0, 5.0, [2.5], ceiling=20.0) == (2.65, 5.65)         # most of it lies after: it starts just after
+    assert clear_of_cuts(2.0, 5.0, [4.5], floor=0.0) == (1.35, 4.35) and clear_of_cuts(0.5, 3.5, [3.0], ceiling=20.0) == (3.15, 6.15)   # no room before: it goes after
+    assert clear_of_cuts(2.0, 5.0, [1.5, 4.0, 6.0], ceiling=20.0) == (2.0, 5.0)  # shots too short on both sides for the line: left where it was
+    assert clear_of_cuts(2.0, 5.0, [4.95]) == (2.0, 5.0)                        # a cut at the very edge is not inside

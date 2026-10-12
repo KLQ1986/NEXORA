@@ -319,6 +319,8 @@ Sự cố trong lượt này: cài `ffmpeg-full` làm Homebrew nâng thư viện
 - [x] Bộ worker mẫu cho năm endpoint RunPod (`runpod/worker.py`, `Dockerfile`, `README.md`): giữ đúng đầu vào và đầu ra mà các adapter gửi và đọc; có test cho adapter nói chuyện trực tiếp với worker. Phần giữa của mỗi worker là bản thế chỗ làm bằng FFmpeg và Pillow, không phải mô hình: phải thay hàm `run_*` bằng lời gọi mô hình thật trước khi dùng. Chưa triển khai lên RunPod
 - [x] Nhạc nhập từ trước được đo lại khi khởi động; lệnh build giao diện từ chối hook React đặt sai chỗ (loại lỗi đã làm trang dự án trắng một lần)
 
+- [x] Phát hiện chỗ chuyển cảnh trong footage khi nhập (bộ lọc scene của FFmpeg trên bản thu nhỏ); đoạn clip được chọn cho một câu được dời để không vắt qua chỗ cắt, khi cảnh ở một bên đủ dài cho câu đó. Footage đã nhập từ trước chưa có dữ liệu này cho tới khi được nhập lại
+
 ### Còn lại sau lượt này
 
 Cần thứ ngoài máy này: tài khoản và khoá API của nền tảng (tự đăng, tự lấy số liệu), khoá của nhà cung cấp video AI, khoá Anthropic để chạy thật adapter Claude, dịch vụ tìm kiếm trên toàn bộ web (hiện chỉ tìm trên Wikipedia).

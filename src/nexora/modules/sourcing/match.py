@@ -39,13 +39,36 @@ def fit(t_start: float, t_end: float, need: float) -> tuple[float, float]:
     return round(t_start, 2), round(t_start + need, 2)
 
 
+CUT_MARGIN = 0.15        # seconds kept clear of a cut on either side
+
+
+def clear_of_cuts(t_in: float, t_out: float, cuts: list[float], *, floor: float = 0.0, ceiling: float | None = None) -> tuple[float, float]:
+    """Move a range so that it does not run across a cut in the footage. The range keeps its length and goes to the side of
+    the cut that already holds more of it, as long as that side has room before the next cut (or the end of the footage);
+    when neither side has room, it is left where it was, since a shot must be as long as its line."""
+    inside = [c for c in cuts if t_in + CUT_MARGIN < c < t_out - CUT_MARGIN]
+    if not inside:
+        return t_in, t_out
+    need, cut = t_out - t_in, min(inside, key=lambda c: abs(c - (t_in + t_out) / 2))
+    before = max([c for c in cuts if c < cut] + [floor])
+    after = min([c for c in cuts if c > cut] + ([ceiling] if ceiling is not None else [float("inf")]))
+    left, right = (cut - CUT_MARGIN - need, cut - CUT_MARGIN), (cut + CUT_MARGIN, cut + CUT_MARGIN + need)
+    fits_left, fits_right = left[0] >= before, right[1] <= after
+    if fits_left and (not fits_right or cut - t_in >= t_out - cut):
+        return round(left[0], 2), round(left[1], 2)
+    if fits_right:
+        return round(right[0], 2), round(right[1], 2)
+    return t_in, t_out
+
+
 class Sourcing:
     def __init__(self, orch: Orchestrator, projects: ProjectStore, index: MomentIndex, *, threshold: float = 0.5, alternates: int = 3,
-                 adapters: AdapterRegistry | None = None, judge: bool = False, judge_pass: int = 5, rejected=None, may_accept=None):
+                 adapters: AdapterRegistry | None = None, judge: bool = False, judge_pass: int = 5, rejected=None, may_accept=None, cuts=None):
         self._orch, self._projects, self._index = orch, projects, index
         self._adapters, self._judge, self._judge_pass = adapters, judge and adapters is not None, judge_pass
         self._threshold, self._alternates = threshold, alternates
         self._rejected = rejected or (lambda: frozenset())       # assets the operator has set aside: never proposed
+        self._cuts = cuts or (lambda asset_id: ([], None))      # asset id -> (where its shots change, how long it is)
         self._may_accept = may_accept or (lambda project: bool(project.get("auto_accept")))      # whether a confident match needs no review; the autonomy level decides
 
     def register(self, registry: PipelineRegistry) -> None:
@@ -60,9 +83,13 @@ class Sourcing:
         return run_id
 
     def _candidate(self, hit, need: float) -> dict:
-        t_in, t_out = fit(hit.moment.t_start, hit.moment.t_end, need)
+        t_in, t_out = self._whole_shot(hit.moment.asset_id, *fit(hit.moment.t_start, hit.moment.t_end, need))
         return {"moment_id": hit.moment.moment_id, "asset_id": hit.moment.asset_id, "t_in": t_in, "t_out": t_out,
                 "score": hit.score, "reason": hit.moment.text}
+
+    def _whole_shot(self, asset_id: str, t_in: float, t_out: float) -> tuple[float, float]:
+        cuts, length = self._cuts(asset_id)
+        return clear_of_cuts(t_in, t_out, cuts, ceiling=length) if cuts else (t_in, t_out)
 
     def _look(self, line: str, hit) -> tuple[int, str]:
         """The model looks at real frames of a candidate and says how well they show the line (0-10).
@@ -121,7 +148,7 @@ class Sourcing:
                 continue
             best, rest = self._candidate(hits[0], need), [self._candidate(h, need) for h in hits[1:]]
             if self._judge:
-                best["t_in"], best["t_out"] = self._locate(shot.text, hits[0], need)
+                best["t_in"], best["t_out"] = self._whole_shot(best["asset_id"], *self._locate(shot.text, hits[0], need))
                 confident.append(verdicts[best["moment_id"]][0])
                 for cand in [best, *rest]:
                     points, why = verdicts[cand["moment_id"]]

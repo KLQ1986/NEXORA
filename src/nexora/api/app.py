@@ -60,7 +60,7 @@ def asset_view(system, asset: dict, used: dict | None = None) -> dict:
         "duration": probe.get("duration"), "width": probe.get("width"), "height": probe.get("height"),
         "frame_rate": probe.get("frame_rate"), "has_audio": probe.get("has_audio"),
         "usable_ranges": meta.get("usable_ranges", []), "black_ranges": meta.get("black_ranges", []),
-        "frozen_ranges": meta.get("frozen_ranges", []),
+        "frozen_ranges": meta.get("frozen_ranges", []), "scene_cuts": meta.get("scene_cuts", []),
         "angles": [{"asset_id": other, "offset": shift} for other, shift in meta.get("angles", {}).items()],
         "rejected": bool(asset.get("rejected")), "speech": meta.get("speech"), "session": f"{path.parent.name}, {str(probe.get('created') or '')[:10]}".rstrip(", "),
         "used_in": [{"project_id": pid, "title": (system.projects.project(pid) or {}).get("title", "")} for pid in (used if used is not None else system.projects.used_assets()).get(asset["asset_id"], [])],
