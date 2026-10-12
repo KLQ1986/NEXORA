@@ -76,7 +76,8 @@ class FakeImageGen(Adapter):
         from nexora.core.adapter import Usage
         self.requests.append(request)
         seed = request.params["seed"]
-        Image.new("RGB", (640, 360), (seed % 200, seed // 7 % 200, seed // 13 % 200)).save(request.params["out"])
+        # Never near black: the seed comes from a random id, and a dark still would be reported, rightly, as black frames in the cut.
+        Image.new("RGB", (640, 360), (55 + seed % 200, 55 + seed // 7 % 200, 55 + seed // 13 % 200)).save(request.params["out"])
         return Result(outputs={"provider": "fake", "model": "fake-image-1"}, files=(request.params["out"],), usage=Usage(units=1, cost=0.02))
 
 

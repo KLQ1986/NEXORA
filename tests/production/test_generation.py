@@ -61,6 +61,6 @@ def test_stills_are_approved_before_any_video_is_generated_and_the_result_render
     system.edit.start_render(script)
     drain(system)
     qc = system.projects.renders(pid)[0]["qc"]
-    assert qc["passed"] and qc["gaps"] == 0
+    assert qc["passed"] and qc["gaps"] == 0, (qc["checks"], qc["duration"], qc["shot_durations"], qc.get("mean_db"), qc.get("max_db"))
     package = system.distribution.build_package(system.projects.renders(pid)[0]["render_id"])
     assert package["synthetic_content"] is True                                    # generated picture is disclosed
