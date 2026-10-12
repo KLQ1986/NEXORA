@@ -24,6 +24,8 @@ MIN_SYNC_CONFIDENCE = 0.35       # below this the two sounds are not the same ev
 IMAGE_EXT = frozenset({".jpg", ".jpeg", ".png", ".webp"})
 AUDIO_EXT = frozenset({".mp3", ".wav", ".m4a", ".aiff", ".flac"})
 
+# A larger or smoother copy of one clip, asked for by the operator. Slow, so it runs with the other background work.
+ENHANCE = PipelineDefinition("library.enhance", "1", [StageDef("enhance", timeout_seconds=6 * 3600, lane="background")])
 # A photograph: no proxy and no time ranges. It is its own thumbnail.
 INGEST_IMAGE = PipelineDefinition("library.ingest_image", "1", [StageDef("checksum"), StageDef("measure", depends_on=("checksum",))])
 # Music: its length and how loud it is, so that a track can be chosen for a cut without opening it.
@@ -61,6 +63,7 @@ class Library:
         registry.register(INGEST_IMAGE, {"checksum": self._checksum, "measure": self._measure},
                           on_success=(lambda run_id, asset_id: self.understand(asset_id)) if self._understanding else None)
         registry.register(INGEST_AUDIO, {"checksum": self._checksum, "listen": self._listen})
+        registry.register(ENHANCE, {"enhance": self._enhance})
         if self._transcription:
             from nexora.modules.library.transcribe import TRANSCRIBE
             registry.register(TRANSCRIBE, self._transcription.handlers())
@@ -119,6 +122,27 @@ class Library:
                     self._understanding.embed_pending(asset_id)
                 except AdapterError:
                     pass                                 # found by its words until the embedding model is back
+
+    def enhance(self, asset_id: str, *, upscale: int = 1, smooth_fps: int | None = None) -> str:
+        """Start making a larger (`upscale` 2) or smoother (`smooth_fps` 50 or 60) copy of a clip. Renders use it once it exists."""
+        original = self._assets.original(asset_id)
+        if original.metadata.get("probe", {}).get("still") or self._assets.asset(asset_id)["kind"] != "video":
+            raise ValueError("only video can be enhanced")
+        wanted = {"upscale": 2 if int(upscale or 1) >= 2 else 1, "smooth_fps": int(smooth_fps) if smooth_fps in (50, 60) else None}
+        if wanted["upscale"] == 1 and not wanted["smooth_fps"]:
+            raise ValueError("nothing to enhance")
+        self._assets.update_metadata(original.version_id, enhance=wanted)
+        return self._orch.submit_run(ENHANCE, subject_ref=asset_id)
+
+    def _enhance(self, ctx):
+        original, path = self._source(ctx)
+        wanted = original.metadata.get("enhance") or {}
+        if shutil.disk_usage(self._media).free < self._min_free:
+            raise AdapterError(ErrorCode.INSUFFICIENT_STORAGE, f"less than {self._min_free} bytes free for derived media")
+        out = self._derived_path(original, f"_enhanced_{wanted.get('upscale', 1)}x_{wanted.get('smooth_fps') or 0}.mp4")
+        self._adapters.submit("ffmpeg", Request("enhance", inputs={"path": str(path)}, params={"out": str(out), **wanted}, attempt_id=ctx.claim.attempt_id))
+        version_id = self._assets.add_version(ctx.subject_ref, out, role="enhanced", parents=[original.version_id], attempt_id=ctx.claim.attempt_id, metadata=wanted)
+        return {"enhanced_version_id": version_id, **wanted}
 
     def deepen(self, moment_id: str) -> list[str]:
         return self._understanding.deepen(moment_id)

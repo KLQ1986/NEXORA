@@ -122,3 +122,117 @@ def test_a_preview_is_quick_small_ungated_and_is_not_a_cut_to_approve(tmp_path):
     assert not list((system.data_dir / "media" / "narration").glob("*.wav"))                      # no narration was recorded for it
     assert client.get("/api/v1/calendar").json()["projects"][0]["stage"] == "Có kịch bản"
     assert client.get(preview["url"]).status_code == 200
+
+
+def cut_project(tmp_path, lines=("chợ rau củ", "cá tươi trên sạp", "pha cà phê"), **more):
+    model = FakeModel()
+    system = build(tmp_path / "data", model=model, voice=FakeVoice(), segment_seconds=2.0, judge=False, **more)
+    client = TestClient(create_app(system))
+    asset, _ = system.library.ingest(make_video(tmp_path / "a.mp4", picture=20))
+    drain(system)
+    pid = client.post("/api/v1/projects", json={"title": "Chợ sáng", "lines": list(lines)}).json()["project_id"]
+    client.post(f"/api/v1/projects/{pid}/match"); drain(system)
+    client.post(f"/api/v1/projects/{pid}/match/approve")
+    return system, model, client, pid, asset
+
+
+def test_an_instruction_in_words_becomes_operations_that_change_nothing_until_applied(tmp_path):
+    system, model, client, pid, _ = cut_project(tmp_path)
+    before = client.get(f"/api/v1/projects/{pid}").json()
+    model.answers["command"] = {"thao_tac": [{"loai": "cat_ngan", "cau": 1, "giay": 1.5}, {"loai": "toc_do", "cau": 2, "gia_tri": 2}, {"loai": "toc_do", "cau": 2, "gia_tri": 7},
+                                             {"loai": "bo_cau", "cau": 3}, {"loai": "xoa_het", "cau": 1}, {"loai": "bo_cau", "cau": 9}, {"loai": "chuyen", "cau": 2, "den": 1}, "rác"]}
+    ops = client.post(f"/api/v1/projects/{pid}/command", json={"text": "rút câu 1 còn 1,5 giây, câu 2 chạy nhanh gấp đôi và đưa lên đầu, bỏ câu 3"}).json()["ops"]
+    assert [o["op"] for o in ops] == ["trim", "speed", "remove", "move"]                       # what is not on the list, or names no real line, is left out
+    assert client.get(f"/api/v1/projects/{pid}").json()["script"]["version"] == before["script"]["version"]
+
+    after = client.post(f"/api/v1/projects/{pid}/command/apply", json={"ops": ops + [{"op": "remove", "line": 99}, {"op": "format_disk", "line": 1}]}).json()
+    assert len(after["done"]) == 4 and after["script"]["version"] == before["script"]["version"] + 1
+    assert [s["text"] for s in after["shots"]] == ["cá tươi trên sạp", "chợ rau củ"]
+    fish, market = after["shots"]
+    assert fish["selection"]["speed"] == 2.0 and market["selection"]["t_out"] - market["selection"]["t_in"] == pytest.approx(1.5)
+    assert all(s["selection"]["status"] == "accepted" for s in after["shots"]) and not after["script"]["match_approved"]      # a line was removed: the cut is looked at again
+
+    model.answers["command"] = {"thao_tac": [{"loai": "sua_loi", "cau": 1, "loi_moi": "cá vừa về sạp lúc năm giờ"}]}
+    ops = client.post(f"/api/v1/projects/{pid}/command", json={"text": "câu 1 nói là cá vừa về sạp lúc năm giờ"}).json()["ops"]
+    reworded = client.post(f"/api/v1/projects/{pid}/command/apply", json={"ops": ops}).json()
+    assert reworded["shots"][0]["text"] == "cá vừa về sạp lúc năm giờ" and reworded["shots"][0]["selection"] is None and reworded["shots"][1]["selection"] is not None
+    model.answers["command"] = {"thao_tac": []}
+    assert client.post(f"/api/v1/projects/{pid}/command", json={"text": "làm cho hay hơn"}).json()["ops"] == []
+
+
+def test_a_project_is_repurposed_into_another_shape_with_its_clips_and_a_finished_cut_comes_back_in(tmp_path):
+    system, model, client, pid, _ = cut_project(tmp_path, lines=("chợ rau củ", "cá tươi trên sạp"))
+    assert client.post(f"/api/v1/projects/{pid}/repurpose", json={"format": "landscape"}).status_code == 422
+    tall = client.post(f"/api/v1/projects/{pid}/repurpose", json={"format": "portrait"}).json()
+    assert tall["title"] == "Chợ sáng (bản dọc)" and tall["format"] == "portrait" and tall["script"]["match_approved"]
+    assert [s["selection"]["status"] for s in tall["shots"]] == ["accepted", "accepted"] and tall["project_id"] != pid
+    client.post(f"/api/v1/projects/{tall['project_id']}/render"); drain(system)
+    render = client.get(f"/api/v1/projects/{tall['project_id']}").json()["renders"][0]
+    assert render["qc"]["passed"] and render["qc"]["format"] == "portrait"
+
+    hand = client.post(f"/api/v1/renders/{render['render_id']}/handoff").json()
+    assert hand["files"] == ["01.mp4", "02.mp4", "captions.srt", "README.md"]
+    from pathlib import Path
+    folder = Path(hand["folder"])
+    assert probe(folder / "01.mp4", "stream=width,height", "v:0") == "720,1280" and float(probe(folder / "01.mp4")) == pytest.approx(render["qc"]["shots"][0]["duration"], abs=0.2)
+    assert "01.mp4" in (folder / "README.md").read_text() and "chợ rau củ" in (folder / "README.md").read_text()
+
+    finished = make_video(tmp_path / "xong.mp4", picture=5, size="720x1280")
+    assert client.post(f"/api/v1/projects/{tall['project_id']}/renders/import", json={"path": str(tmp_path / "khong-co.mp4")}).status_code == 404
+    view = client.post(f"/api/v1/projects/{tall['project_id']}/renders/import", json={"path": str(finished)}).json()
+    newest = view["renders"][0]
+    assert newest["qc"]["external"] and newest["review"]["approved"] and newest["qc"]["checks"]["Đúng tỷ lệ khung của dự án"] and not newest["qc"]["checks"]["Có âm thanh"]
+    finished.unlink()                                                    # the project kept its own copy
+    assert client.get(newest["url"]).status_code == 200
+    assert client.get("/api/v1/calendar").json()["projects"][0]["stage"] == "Bản dựng đã duyệt"
+
+
+def test_characters_speak_in_their_own_voices_and_captions_are_translated_with_the_same_timing(tmp_path):
+    class Voices(FakeVoice):
+        def __init__(self): self.said = []
+        def submit(self, request):
+            self.said.append((request.params["voice"], request.inputs["text"]))
+            return super().submit(request)
+    voice = Voices()
+    model = FakeModel()
+    system = build(tmp_path / "data", model=model, voice=voice, segment_seconds=2.0, judge=False)
+    client = TestClient(create_app(system))
+    system.library.ingest(make_video(tmp_path / "a.mp4", picture=20)); drain(system)
+    pid = client.post("/api/v1/projects", json={"title": "Chợ", "lines": ["chợ rau củ sáng nay", "Bà Tư: cá tươi trên sạp đây", "Khách: pha cà phê"]}).json()["project_id"]
+    client.patch(f"/api/v1/projects/{pid}", json={"bible": [{"name": "Bà Tư", "kind": "character", "description": "", "voice": "Linh (Nâng cao)"}]})
+    client.post(f"/api/v1/projects/{pid}/match"); drain(system)
+    client.post(f"/api/v1/projects/{pid}/match/approve")
+    client.post(f"/api/v1/projects/{pid}/render"); drain(system)
+    assert voice.said == [("Linh", "chợ rau củ sáng nay"), ("Linh (Nâng cao)", "cá tươi trên sạp đây"), ("Linh", "Khách: pha cà phê")]     # only a known character is dialogue
+    render = client.get(f"/api/v1/projects/{pid}").json()["renders"][0]
+
+    assert client.post(f"/api/v1/renders/{render['render_id']}/captions/translate", json={"language": "en"}).status_code == 409        # no package yet
+    client.post(f"/api/v1/projects/{pid}/render/decision", json={"approve": True})
+    client.post(f"/api/v1/renders/{render['render_id']}/package", json={})
+    model.answers["translate"] = {"dong": ["The market this morning", "Fresh fish on the stall"]}
+    assert client.post(f"/api/v1/renders/{render['render_id']}/captions/translate", json={"language": "en"}).status_code == 422        # one line short: refused, not guessed
+    model.answers["translate"] = {"dong": ["The market this morning", "Fresh fish on the stall", "Making coffee"]}
+    package = client.post(f"/api/v1/renders/{render['render_id']}/captions/translate", json={"language": "en"}).json()
+    assert package["translations"] == {"en": "captions.en.srt"}
+    english = client.get(f"/api/v1/renders/{render['render_id']}/package/captions.en.srt").text
+    vietnamese = client.get(f"/api/v1/renders/{render['render_id']}/package/captions.srt").text
+    stamps = lambda text: [l for l in text.splitlines() if "-->" in l]
+    assert stamps(english) == stamps(vietnamese) and "Fresh fish on the stall" in english
+    assert client.get(f"/api/v1/renders/{render['render_id']}/package/captions.vtt").text.startswith("WEBVTT")
+    assert client.post(f"/api/v1/renders/{render['render_id']}/captions/translate", json={"language": "xx"}).status_code == 409
+
+
+def test_a_clip_is_made_larger_and_the_final_cut_is_taken_from_the_larger_copy(tmp_path):
+    system, model, client, pid, asset = cut_project(tmp_path, lines=("chợ rau củ",))
+    client.post(f"/api/v1/projects/{pid}/render"); drain(system)
+    segments = system.data_dir / "media" / "segments"
+    before = {p.name for p in segments.glob("*.mp4")}
+    assert client.post(f"/api/v1/assets/{asset}/enhance", json={}).status_code == 422
+    assert client.post(f"/api/v1/assets/{asset}/enhance", json={"upscale": 2}).status_code == 202
+    drain(system)
+    view = next(a for a in client.get("/api/v1/library").json()["assets"] if a["asset_id"] == asset)
+    assert view["enhanced"] == {"upscale": 2, "smooth_fps": None} and view["enhance"]["status"] == "succeeded"
+    enhanced = next(v for v in system.assets.versions(asset) if v.role == "enhanced")
+    assert probe(system.assets.path_of(enhanced), "stream=width,height", "v:0") == "640,360"
+    client.post(f"/api/v1/projects/{pid}/render"); drain(system)
+    assert len({p.name for p in segments.glob("*.mp4")} - before) == 1 and client.get(f"/api/v1/projects/{pid}").json()["renders"][0]["qc"]["passed"]

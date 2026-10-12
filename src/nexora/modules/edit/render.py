@@ -51,6 +51,16 @@ FOCUS_VERSION = "thirds-1"
 MIN_BEFORE_INSERT, MIN_INSERT = 0.4, 0.8          # seconds: a cut closer than this to either end of a shot reads as a glitch
 
 
+def spoken_by(text: str, bible: list[dict]) -> tuple[dict | None, str]:
+    """A line written as "Name: words" is dialogue when the name is a character of the project. Returns the character and the words alone."""
+    name, sep, words = text.partition(":")
+    if sep and words.strip() and len(name) <= 30:
+        who = next((e for e in bible if e.get("kind") == "character" and e["name"].strip().lower() == name.strip().lower()), None)
+        if who:
+            return who, words.strip()
+    return None, text
+
+
 def _key(*parts) -> str:
     return hashlib.sha256(json.dumps(parts, ensure_ascii=False, sort_keys=True).encode()).hexdigest()[:24]
 
@@ -104,6 +114,7 @@ class Edit:
         project = self._projects.project(script["project_id"])
         recorded = project.get("narration_dir")
         voice = project.get("voice") or self._orch.setting("voice", self._voice_name)      # the project's voice, else the installation's
+        bible = json.loads(project.get("bible") or "[]")
         for shot in script["shots"]:
             sel = self._projects.selection(shot.shot_id)
             if sel and sel.status != "gap" and sel.extras.get("live_sound") and sel.t_out is not None:
@@ -119,10 +130,11 @@ class Edit:
             if not self._voice:
                 lines.append({"shot_id": shot.shot_id, "audio": None, "duration": round(max(2.0, len(shot.text.split()) / WORDS_PER_SECOND), 2)})
                 continue
-            spoken = shot.text
+            who, spoken = spoken_by(shot.text, bible)
+            line_voice = (who or {}).get("voice") or voice           # a character with a voice of its own speaks in it
             for written, said in (json.loads(project.get("profile") or "{}").get("pronounce") or {}).items():
                 spoken = spoken.replace(written, said)             # the brand's pronunciation dictionary: written form, spoken form
-            out = self._media / "narration" / f"{_key(spoken, voice)}.wav"
+            out = self._media / "narration" / f"{_key(spoken, line_voice)}.wav"
             if preview and not out.is_file():        # a preview records nothing new
                 lines.append({"shot_id": shot.shot_id, "audio": None, "duration": round(max(2.0, len(shot.text.split()) / WORDS_PER_SECOND), 2)})
                 continue
@@ -131,10 +143,33 @@ class Edit:
                 with wave.open(str(out)) as w:
                     duration = w.getnframes() / w.getframerate()
             else:
-                duration = self._adapters.submit("voice", Request("speak", inputs={"text": spoken}, params={"out": str(out), "voice": voice},
+                duration = self._adapters.submit("voice", Request("speak", inputs={"text": spoken}, params={"out": str(out), "voice": line_voice},
                                                                  attempt_id=ctx.claim.attempt_id)).outputs["duration"]
             lines.append({"shot_id": shot.shot_id, "audio": str(out), "duration": round(float(duration), 2)})
         return {"lines": lines}
+
+    def import_finished(self, project_id: str, path: str | Path) -> str:
+        """Bring back a cut finished in another editor as the project's newest render. It is measured like any render, and it
+        counts as approved: the operator made it."""
+        path = Path(path).expanduser()
+        if not path.is_file():
+            raise FileNotFoundError(path)
+        script = self._projects.current_script(project_id)
+        project = self._projects.project(project_id)
+        probe = self._adapters.submit("ffprobe", Request("probe", inputs={"path": str(path)})).outputs
+        loud = self._adapters.submit("ffmpeg", Request("loudness", inputs={"path": str(path)})).outputs if probe.get("has_audio") else {"mean_db": -120.0, "max_db": -120.0}
+        kept = self._media / "renders" / f"{script['script_id']}_external_{_key(str(path), path.stat().st_mtime)}{path.suffix.lower()}"
+        import shutil
+        shutil.copyfile(path, kept)                                   # the project keeps its own copy: the file outside may move
+        wanted = FORMATS.get(project["format"], FORMATS["landscape"])
+        checks = {"Có hình": bool(probe.get("width")), "Có âm thanh": bool(probe.get("has_audio")), "Âm thanh không bị vỡ": loud["max_db"] <= -0.5,
+                  "Đúng tỷ lệ khung của dự án": abs(probe["width"] / probe["height"] - wanted["width"] / wanted["height"]) < 0.02 if probe.get("height") else False}
+        qc = {"passed": all(checks.values()), "checks": checks, "width": probe.get("width"), "height": probe.get("height"), "duration": probe["duration"], "has_audio": probe.get("has_audio"),
+              "shot_durations": [], "gaps": 0, "format": project["format"], "music": False, "draft": False, "external": True, "source_file": str(path),
+              "mean_db": loud["mean_db"], "max_db": loud["max_db"], "findings": [], "shots": []}
+        render_id = self._projects.add_render(project_id, script["script_id"], str(kept), qc)
+        self._projects.set_render_review(render_id, approved=True, comment="Bản hoàn thiện ở phần mềm khác, do bạn nhập vào.")
+        return render_id
 
     def _source(self, asset_id: str, t_in: float, need: float, *, proxy: bool = False, exact: bool = False) -> tuple[str, str, float]:
         """The file to cut from (the original when its volume is online, else the proxy) and a start that leaves room for `need` seconds.
@@ -146,6 +181,13 @@ class Edit:
             path = self._assets.path_of(versions["proxy"])
         if original.metadata.get("probe", {}).get("still"):
             return str(path), original.checksum, 0.0
+        enhanced = [v for v in self._assets.versions(asset_id) if v.role == "enhanced" and self._assets.path_of(v).is_file()]
+        if enhanced and not proxy and self._assets.path_of(original).is_file():
+            # The operator had a larger or smoother copy made: the final cut is taken from it. Its times are those of the original.
+            path = self._assets.path_of(enhanced[-1])
+            usable = original.metadata.get("usable_ranges") or [[0.0, original.metadata.get("probe", {}).get("duration", t_in + need)]]
+            start, end = next(((a, b) for a, b in usable if a <= t_in < b), usable[0])
+            return str(path), f"{original.checksum}:{enhanced[-1].version_id}", round(t_in if exact else max(start, min(t_in, end - need)), 2)
         usable = original.metadata.get("usable_ranges") or [[0.0, original.metadata.get("probe", {}).get("duration", t_in + need)]]
         if exact:
             return str(path), original.checksum, round(t_in, 2)
@@ -181,6 +223,7 @@ class Edit:
         if preview:
             FORMAT = {"width": FORMAT["width"] // 2, "height": FORMAT["height"] // 2, "fps": 15}
         options = json.loads(project.get("options") or "{}")
+        bible = json.loads(project.get("bible") or "[]")
         fill = "fit" if project["format"] == "landscape" else "cover"
         profile = json.loads(project.get("profile") or "{}")
         look = {"scale": float(profile.get("caption_scale") or 1.0), "position": profile.get("caption_position") or "bottom", "colour": profile.get("caption_colour"),
@@ -199,7 +242,7 @@ class Edit:
                 sfx = str(sfx_path) if sfx_path.is_file() else None
             treat = {"speed": speed, "stabilise": bool(extras.get("stabilise")), "normalise": bool(options.get("match_colour")), "live_sound": live,
                      "clean_audio": bool(options.get("clean_audio")), "own_voice": bool(line.get("own_voice")) or live, "sfx": sfx, "quality": "preview" if preview else "final"}
-            words = shot.screen_text or shot.text
+            words = shot.screen_text or spoken_by(shot.text, bible)[1]       # a caption shows what is said, not who says it
             caption = self._media / "captions" / f"{_key(words, FORMAT, look)}.png"
             if not caption.is_file():
                 self._adapters.submit("graphics", Request("caption", inputs={"text": words}, params={"out": str(caption), **FORMAT, **look}))

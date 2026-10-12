@@ -61,6 +61,8 @@ def asset_view(system, asset: dict, used: dict | None = None) -> dict:
         "rejected": bool(asset.get("rejected")), "speech": meta.get("speech"), "session": f"{path.parent.name}, {str(probe.get('created') or '')[:10]}".rstrip(", "),
         "used_in": [{"project_id": pid, "title": (system.projects.project(pid) or {}).get("title", "")} for pid in (used if used is not None else system.projects.used_assets()).get(asset["asset_id"], [])],
         "transcribe": next((run_view(system, r) for r in runs if system.orch.pipeline_of(r) == "library.transcribe"), None),
+        "enhance": next((run_view(system, r) for r in runs if system.orch.pipeline_of(r) == "library.enhance"), None),
+        "enhanced": by_role["enhanced"].metadata if "enhanced" in by_role else None,
         "note": asset.get("note"), "rating": asset.get("rating", 0), "collections": json.loads(asset.get("collections") or "[]"),
         "still": bool(probe.get("still")), "kind": asset.get("kind"), "mean_db": probe.get("mean_db"),
         "thumbnail_url": f"/media/{by_role['thumbnail'].version_id}" if "thumbnail" in by_role else f"/media/{original.version_id}" if probe.get("still") else None,
@@ -720,6 +722,61 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             raise HTTPException(409, "Câu này chưa có clip")
         return {"ok": True}
 
+    @app.post("/api/v1/projects/{project_id}/command")
+    def propose_command(project_id: str, body: dict):
+        """What an instruction in the operator's own words would change. Nothing is changed yet."""
+        need_project(project_id)
+        return {"ops": planning_call(lambda: system.commands.propose(project_id, str(body.get("text", ""))))}
+
+    @app.post("/api/v1/projects/{project_id}/command/apply")
+    def apply_command(project_id: str, body: dict):
+        current_script_id(project_id)
+        done = system.commands.apply(project_id, [op for op in body.get("ops") or [] if isinstance(op, dict)])
+        return {**project_view(need_project(project_id)), "done": done["done"]}
+
+    @app.post("/api/v1/projects/{project_id}/repurpose", status_code=201)
+    def repurpose(project_id: str, body: dict):
+        """The same video in another shape, as a project of its own."""
+        source, shape = need_project(project_id), body.get("format")
+        if shape not in ("landscape", "portrait", "square") or shape == source["format"]:
+            raise HTTPException(422, "Chọn một khung hình khác với khung hiện tại")
+        names = {"landscape": "ngang", "portrait": "dọc", "square": "vuông"}
+        new = system.projects.clone(project_id, title=f"{source['title']} (bản {names[shape]})", format=shape)
+        return project_view(need_project(new))
+
+    @app.post("/api/v1/projects/{project_id}/renders/import", status_code=201)
+    def import_finished(project_id: str, body: dict):
+        current_script_id(project_id)
+        try:
+            system.edit.import_finished(project_id, str(body.get("path", "")))
+        except FileNotFoundError:
+            raise HTTPException(404, "Không tìm thấy file ở đường dẫn này")
+        except AdapterError as err:
+            raise HTTPException(422, f"Không đọc được file này như một video: {err.message or err.code.value}")
+        return project_view(need_project(project_id))
+
+    @app.post("/api/v1/renders/{render_id}/handoff")
+    def handoff(render_id: str):
+        if system.projects.render(render_id) is None:
+            raise HTTPException(404, "no such render")
+        return system.distribution.handoff(render_id)
+
+    @app.post("/api/v1/renders/{render_id}/captions/translate")
+    def translate_captions(render_id: str, body: dict):
+        try:
+            return planning_call(lambda: system.distribution.translate_captions(render_id, str(body.get("language", ""))))
+        except ValueError:
+            raise HTTPException(409, "Bản dựng này chưa có gói xuất bản, không có phụ đề, hoặc ngôn ngữ chưa được hỗ trợ")
+
+    @app.post("/api/v1/assets/{asset_id}/enhance", status_code=202)
+    def enhance(asset_id: str, body: dict):
+        if system.assets.asset(asset_id) is None:
+            raise HTTPException(404, "no such asset")
+        try:
+            return {"run_id": system.library.enhance(asset_id, upscale=int(body.get("upscale") or 1), smooth_fps=body.get("smooth_fps"))}
+        except ValueError:
+            raise HTTPException(422, "Chỉ nâng chất lượng được cho video, và phải chọn phóng to hoặc làm mượt")
+
     @app.post("/api/v1/projects/{project_id}/preview", status_code=202)
     def start_preview(project_id: str):
         return {"run_id": system.edit.start_preview(current_script_id(project_id))}
@@ -906,7 +963,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             fields["options"] = json.dumps({**current, **{k: bool(v) for k, v in (fields["options"] or {}).items() if k in ("clean_audio", "match_colour")}})
         if "bible" in fields:                    # how the project's characters, places and props look, so that every shot shows them the same way
             kinds = ("character", "setting", "prop", "style")
-            fields["bible"] = json.dumps([{"name": str(e.get("name", "")).strip(), "kind": e.get("kind") if e.get("kind") in kinds else "character",
+            fields["bible"] = json.dumps([{"name": str(e.get("name", "")).strip(), "kind": e.get("kind") if e.get("kind") in kinds else "character", "voice": str(e.get("voice") or "").strip() or None,
                                            "description": str(e.get("description") or "").strip(), "asset_id": e.get("asset_id") if system.assets.asset(str(e.get("asset_id") or "")) else None}
                                           for e in fields["bible"] if str(e.get("name", "")).strip()], ensure_ascii=False)
         if "due_date" in fields:
@@ -976,7 +1033,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
     @app.get("/api/v1/renders/{render_id}/package/{name}")
     def package_file(render_id: str, name: str):
         package = system.distribution.package(render_id)
-        if package is None or name not in (package["thumbnails"] + [package["video"], package["captions"]]):
+        if package is None or name not in (package["thumbnails"] + [package["video"], package["captions"], package.get("captions_vtt"), *package.get("translations", {}).values()]):
             raise HTTPException(404, "Không có file này trong gói")
         return FileResponse(Path(package["folder"]) / name)
 

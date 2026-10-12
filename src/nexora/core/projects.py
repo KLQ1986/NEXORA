@@ -118,27 +118,50 @@ class ProjectStore:
 
     def reorder(self, script_id: str, order: list[str]) -> str:
         """The same lines in a new order, as the next version of the script. Each line keeps its clip, so nothing has to be matched again."""
-        old = self.script(script_id)
-        by_id = {s.shot_id: s for s in old["shots"]}
-        if sorted(order) != sorted(by_id):
+        if sorted(order) != sorted(s.shot_id for s in self.script(script_id)["shots"]):
             raise ValueError("the new order must name every shot of the script exactly once")
-        new_id_ = new_id("scr")
+        return self.revise(script_id, order)
+
+    def revise(self, script_id: str, order: list[str], *, texts: dict[str, str] | None = None, project_id: str | None = None) -> str:
+        """The next version of a script made from lines of this one: `order` names the lines to keep, in their new order, and
+        `texts` gives new words for some of them. A line whose words are unchanged keeps its clip and everything chosen for it;
+        a reworded line keeps its notes but must be matched again. With `project_id` the new script starts another project."""
+        old, texts = self.script(script_id), texts or {}
+        by_id = {s.shot_id: s for s in old["shots"]}
+        if len(set(order)) != len(order) or any(shot_id not in by_id for shot_id in order) or not order:
+            raise ValueError("the order must name lines of this script, each at most once")
+        target, new_id_ = project_id or old["project_id"], new_id("scr")
+        same = all((texts.get(i) or by_id[i].text) == by_id[i].text for i in order) and len(order) == len(by_id)
         with db.write(self._conn) as c:
-            version = c.execute("SELECT COALESCE(MAX(version), 0) + 1 FROM scripts WHERE project_id = ?", (old["project_id"],)).fetchone()[0]
+            version = c.execute("SELECT COALESCE(MAX(version), 0) + 1 FROM scripts WHERE project_id = ?", (target,)).fetchone()[0]
             c.execute("INSERT INTO scripts (script_id, project_id, version, match_approved, created_at) VALUES (?,?,?,?,?)",
-                      (new_id_, old["project_id"], version, int(old["match_approved"]), time.time()))
+                      (new_id_, target, version, int(old["match_approved"] and same), time.time()))
             for position, shot_id in enumerate(order):
-                fresh = new_id("sht")
-                old_shot = by_id[shot_id]
+                fresh, old_shot = new_id("sht"), by_id[shot_id]
+                text = (texts.get(shot_id) or old_shot.text).strip()
+                kept = text == old_shot.text
                 c.execute("INSERT INTO shots (shot_id, script_id, position, text, scene, brief, screen_text, target_seconds, sound_cue, is_fact, source, fact_check, gen) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                          (fresh, new_id_, position, old_shot.text, old_shot.scene, old_shot.brief, old_shot.screen_text, old_shot.target_seconds, old_shot.sound_cue, int(old_shot.is_fact), old_shot.source,
-                           json.dumps(old_shot.fact_check, ensure_ascii=False) if old_shot.fact_check else None, json.dumps(old_shot.gen, ensure_ascii=False) if old_shot.gen else None))
+                          (fresh, new_id_, position, text, old_shot.scene, old_shot.brief, old_shot.screen_text, old_shot.target_seconds, old_shot.sound_cue,
+                           int(old_shot.is_fact and kept), old_shot.source if kept else None,
+                           json.dumps(old_shot.fact_check, ensure_ascii=False) if old_shot.fact_check and kept else None, json.dumps(old_shot.gen, ensure_ascii=False) if old_shot.gen else None))
+                if not kept:
+                    continue
                 c.execute("INSERT INTO selections (shot_id, status, asset_id, moment_id, t_in, t_out, score, reason, alternates, decided_by, extras) "
                           "SELECT ?, status, asset_id, moment_id, t_in, t_out, score, reason, alternates, decided_by, extras FROM selections WHERE shot_id = ?", (fresh, shot_id))
                 c.execute("INSERT INTO generations (record_id, shot_id, kind, spec, prompt, compiler_version, provider, model, seed, asset_id, created_at, quality) "
                           "SELECT record_id || ?, ?, kind, spec, prompt, compiler_version, provider, model, seed, asset_id, created_at, quality FROM generations WHERE shot_id = ?",
-                          (f"-v{version}", fresh, shot_id))
+                          (f"-{new_id_[-6:]}", fresh, shot_id))
         return new_id_
+
+    def clone(self, project_id: str, *, title: str, format: str) -> str:
+        """The same video in another shape: a new project with this one's script, clips and settings, in another format."""
+        source = self.project(project_id)
+        new = self.create_project(title, format=format)
+        self.update_project(new, **{k: source.get(k) for k in ("music_path", "auto_accept", "style", "narration_dir", "voice", "music_gain", "profile", "research", "bible", "options") if source.get(k) is not None})
+        script = self.current_script(project_id)
+        if script:
+            self.revise(script["script_id"], [s.shot_id for s in script["shots"]], project_id=new)
+        return new
 
     def script(self, script_id: str) -> dict | None:
         row = self._conn.execute("SELECT * FROM scripts WHERE script_id = ?", (script_id,)).fetchone()

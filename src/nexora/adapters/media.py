@@ -65,7 +65,7 @@ class FFmpegAdapter(Adapter):
         return ffmpeg_capabilities()
 
     def describe(self) -> Capability:
-        return Capability(name="ffmpeg", operations=("blackdetect", "freezedetect", "proxy", "thumbnail", "frames", "segment", "concat", "loudness", "envelope"), runs="local", supports_cancel=True)
+        return Capability(name="ffmpeg", operations=("blackdetect", "freezedetect", "proxy", "thumbnail", "frames", "segment", "concat", "loudness", "envelope", "enhance"), runs="local", supports_cancel=True)
 
     def submit(self, request: Request) -> Result:
         timeout = request.deadline_seconds or 3600
@@ -230,6 +230,23 @@ class FFmpegAdapter(Adapter):
             self._run(["-y", "-f", "concat", "-safe", "0", "-i", str(listing), "-c:v", "copy", "-af", "apad=pad_dur=4,loudnorm=I=-16:TP=-1.5:LRA=11",
                        "-shortest", *tail], timeout, "concat")
         partial.replace(out); listing.unlink(missing_ok=True)
+        return Result(files=(str(out),))
+
+    def _enhance(self, src: Path, params: dict, timeout: float) -> Result:
+        """A larger or smoother copy of a clip. Upscaling here is a careful resample with a little sharpening, not a learned
+        model: it makes footage fill a bigger frame cleanly, it does not invent detail. Smoothing makes in-between frames
+        by motion estimation, which suits slow, steady shots and can smear fast ones."""
+        out, filters = Path(params["out"]), []
+        if params.get("smooth_fps"):
+            filters.append(f"minterpolate=fps={int(params['smooth_fps'])}:mi_mode=mci:mc_mode=aobmc:vsbmc=1")
+        factor = int(params.get("upscale") or 1)
+        if factor > 1:
+            filters.append(f"scale=iw*{factor}:ih*{factor}:flags=lanczos,unsharp=5:5:0.6:5:5:0.0")
+        if not filters:
+            raise AdapterError(ErrorCode.INVALID_REQUEST, "nothing to enhance: give upscale or smooth_fps")
+        partial = out.with_name(out.stem + ".partial" + out.suffix)
+        self._run(["-y", "-i", str(src), "-vf", ",".join(filters), "-c:v", "libx264", "-preset", "medium", "-crf", "17", "-pix_fmt", "yuv420p", "-c:a", "copy", str(partial)], timeout, "enhance")
+        partial.replace(out)
         return Result(files=(str(out),))
 
     def _envelope(self, src: Path, params: dict, timeout: float) -> Result:

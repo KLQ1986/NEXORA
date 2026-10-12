@@ -12,6 +12,7 @@ from nexora.core.adapter import Adapter, PrivacyClass, Request
 from nexora.core.assets import AssetStore
 from nexora.core.index import MomentIndex
 from nexora.core.orchestrator import Orchestrator
+from nexora.agents.commands import Commands
 from nexora.agents.producer import Producer
 from nexora.core.pipeline import PipelineRegistry
 from nexora.core.schedule import in_window
@@ -49,6 +50,7 @@ class System:
     workers: list = None            # one worker per lane, for a long-running server
     producer: Producer = None
     roughcut: RoughCut = None
+    commands: Commands = None
 
 
 def fill_gap_from_stock(system: "System", shot_id: str, query: str) -> dict:
@@ -72,7 +74,7 @@ def fill_gap_from_stock(system: "System", shot_id: str, query: str) -> dict:
 
 
 PIPELINE_NAMES = {"library.ingest": "Nhập footage", "library.ingest_image": "Nhập ảnh", "library.ingest_audio": "Nhập nhạc", "library.understand": "Hiểu nội dung footage", "library.transcribe": "Nghe lời nói trong footage",
-                  "sourcing.match": "Chọn clip", "sourcing.generate": "Sinh hình bằng AI", "edit.render": "Dựng video", "edit.preview": "Dựng bản xem thử"}
+                  "sourcing.match": "Chọn clip", "sourcing.generate": "Sinh hình bằng AI", "edit.render": "Dựng video", "edit.preview": "Dựng bản xem thử", "library.enhance": "Nâng chất lượng clip"}
 ANNOUNCE = {"disk_low": "ổ đĩa sắp đầy", "volume_offline": "không tìm thấy nơi chứa footage", "gaps": "còn câu chưa có hình", "waiting_review": "đang chờ bạn duyệt", "blocked": "đang dừng và cần bạn xử lý", "failed": "thất bại", "succeeded": "đã xong"}
 QUIET = frozenset({"library.ingest", "library.ingest_image", "library.ingest_audio", "library.understand", "library.transcribe", "edit.preview"})   # finishing these needs nobody's attention
 
@@ -216,6 +218,7 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
                Worker(orch, registry, worker_id=f"background-{os.getpid()}", lanes=frozenset({"background"}), log=log, allowed=night_only)]
     system = System(data_dir, orch, assets, adapters, registry, worker, library, index, projects, planning, sourcing, edit, distribution, generation, workers)
     system.roughcut = RoughCut(projects, assets, index)
+    system.commands = Commands(adapters, projects, sourcing, edit)
     system.producer = Producer(db_path, orch=orch, projects=projects, planning=planning, sourcing=sourcing, edit=edit, adapters=adapters,
                                fill_gap=lambda shot_id, query: fill_gap_from_stock(system, shot_id, query))
     return system
