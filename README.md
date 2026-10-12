@@ -14,6 +14,7 @@ The design is in `NEXORA_System_Design_v4.0.docx` (with an `.html` twin). The bu
 - A Vietnamese voice for the `say` command (System Settings > Accessibility > Spoken Content)
 - Optional: OpenMontage at `~/openmontage`, for free stock clips when the library has no picture for a line
 - Optional: whisper.cpp (`brew install whisper-cpp`) and a ggml model at `data/models/ggml-large-v3-turbo-q5_0.bin`, for speech with a time for every word and the rough cut built on it
+- Optional: a RunPod serverless endpoint running a video model (`runpod_api_key` and `runpod_video_endpoint` in `nexora.toml`), for real generated video from approved stills
 - Optional: an Anthropic API key in `ANTHROPIC_API_KEY`, to let Claude do text work (never footage) for the tasks you choose in System
 
 ## Run

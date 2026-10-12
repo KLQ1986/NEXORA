@@ -292,6 +292,9 @@ Platform core (177 test đạt; đã bấm thử trên giao diện):
 
 Sự cố trong lượt này: cài `ffmpeg-full` làm Homebrew nâng thư viện x265, khiến `ffmpeg` sẵn có (8.1.2) không chạy được. Đã sửa bằng `brew upgrade ffmpeg` (nay là 9.0.2); toàn bộ test chạy lại đạt trên bản mới.
 
+- [x] Dựng thô: các lần nói của cùng một câu được gom nhóm để người vận hành chọn lần muốn dùng
+- [x] Adapter video cho endpoint serverless trên RunPod do người vận hành thuê (`runpod_api_key`, `runpod_video_endpoint` trong `nexora.toml`): gửi việc một lần, theo dõi tới khi xong, huỷ việc quá hạn, tìm lại việc theo mã, ghi chi phí theo giây GPU. Mới thử với máy chủ giả theo giao thức của RunPod; chưa chạy với endpoint thật. Handler của endpoint cần nhận `prompt`, `image` (base64), `seconds`, `seed`, `aspect` và trả `video_url` hoặc `video`
+
 ### Còn lại sau lượt này
 
 Cần thứ ngoài máy này: tài khoản và khoá API của nền tảng (tự đăng, tự lấy số liệu), khoá của nhà cung cấp video AI, khoá Anthropic để chạy thật adapter Claude, dịch vụ tìm kiếm trên toàn bộ web (hiện chỉ tìm trên Wikipedia).

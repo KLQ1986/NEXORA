@@ -298,6 +298,9 @@ def build_from_config(config, **overrides) -> System:
     from nexora.adapters.motion import StillMotion
     from nexora.adapters.outbox import FolderPublisher
     from nexora.adapters.pollinations import PollinationsImage
+    from nexora.adapters.runpod import RunPodVideo
+    runpod_key = _os.environ.get("RUNPOD_API_KEY") or config.runpod_api_key
+    rented = [RunPodVideo(runpod_key, config.runpod_video_endpoint, price_per_second=config.runpod_price_per_second)] if runpod_key and config.runpod_video_endpoint else []
     from nexora.adapters.speech import WhisperCpp
     from nexora.adapters.voice import SayVoice
     from nexora.adapters.web import WebReader
@@ -307,7 +310,7 @@ def build_from_config(config, **overrides) -> System:
                  voice=SayVoice(), voice_name=config.voice, match_threshold=config.match_threshold,
                  stock=OpenMontageStock(config.openmontage_repo), desktop=DesktopNotifier(), web=WebReader(),
                  speech=WhisperCpp(config.speech_model, language=config.speech_language) if config.speech_model else None,
-                 generators=[*([PollinationsImage(token=config.pollinations_token)] if config.pollinations else []), StillMotion()],
+                 generators=[*([PollinationsImage(token=config.pollinations_token)] if config.pollinations else []), *rented, StillMotion()],
                  publishers=[FolderPublisher(config.publish_folder)] if config.publish_folder else [],
                  cloud_models=[ClaudeText(_os.environ.get("ANTHROPIC_API_KEY") or config.anthropic_api_key, model=config.claude_model,
                                           input_price=config.claude_input_price, output_price=config.claude_output_price)]
