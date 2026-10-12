@@ -316,6 +316,9 @@ Sự cố trong lượt này: cài `ffmpeg-full` làm Homebrew nâng thư viện
 - [x] Hiểu thư viện nhạc (MusicAnalysis): nhịp (số nhịp mỗi phút, đo từ đường bao âm lượng), độ sôi động, thời gian vào bài. Gợi ý nhạc cho một dự án theo độ dài video, độ sôi động và số sao, kèm lý do. Nhịp là ước lượng; bài không có phách rõ thì không có số nhịp
 - [x] Hồ sơ kênh (ChannelProfile): tên, nền tảng, người xem, số video mỗi tuần; dự án thuộc một kênh; lịch cho biết bốn tuần tới tuần nào thiếu video so với nhịp của kênh
 
+- [x] Bộ worker mẫu cho năm endpoint RunPod (`runpod/worker.py`, `Dockerfile`, `README.md`): giữ đúng đầu vào và đầu ra mà các adapter gửi và đọc; có test cho adapter nói chuyện trực tiếp với worker. Phần giữa của mỗi worker là bản thế chỗ làm bằng FFmpeg và Pillow, không phải mô hình: phải thay hàm `run_*` bằng lời gọi mô hình thật trước khi dùng. Chưa triển khai lên RunPod
+- [x] Nhạc nhập từ trước được đo lại khi khởi động; lệnh build giao diện từ chối hook React đặt sai chỗ (loại lỗi đã làm trang dự án trắng một lần)
+
 ### Còn lại sau lượt này
 
 Cần thứ ngoài máy này: tài khoản và khoá API của nền tảng (tự đăng, tự lấy số liệu), khoá của nhà cung cấp video AI, khoá Anthropic để chạy thật adapter Claude, dịch vụ tìm kiếm trên toàn bộ web (hiện chỉ tìm trên Wikipedia).
