@@ -401,20 +401,25 @@ const STEPS = [["Kịch bản", "edit"], ["Chọn clip", "sparkles"], ["Duyệt 
 
 /** Where the video stands: five stations on one line. The current one is lit; the two review gates turn amber when they wait. */
 function Pipeline({ step }: { step: number }) {
+  const current = STEPS[Math.min(step, STEPS.length - 1)]?.[0];
   return (
-    <ol className="panel mb-6 flex items-center gap-2 overflow-hidden px-4 py-3.5" aria-label="Các bước làm video">
-      {STEPS.map(([label, icon], i) => {
-        const done = i < step, now = i === step, gate = now && (i === 2 || i === 4);
-        return (
-          <li key={label} aria-current={now ? "step" : undefined} className={`flex min-w-0 items-center gap-2.5 ${i < STEPS.length - 1 ? "flex-1" : ""}`}>
-            <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-full border text-[12px] ${done ? "border-proof/40 bg-proof/15 text-proof" : gate ? "border-cue/60 bg-cue/15 text-cue shadow-[0_0_14px_-2px_var(--color-cue)]" : now ? "border-accent/60 bg-accent/15 text-accent shadow-[0_0_14px_-2px_var(--color-accent)]" : "border-line bg-raised text-faint"}`}>
-              <Icon name={done ? "check" : icon} size={15} /></span>
-            <span className={`truncate text-[13px] ${now ? "font-medium text-ink" : done ? "hidden text-mute lg:inline" : "hidden text-faint lg:inline"}`}>{label}</span>
-            {i < STEPS.length - 1 && <span className={`h-px min-w-4 flex-1 ${done ? "bg-proof/40" : "bg-line"}`} />}
-          </li>
-        );
-      })}
-    </ol>
+    <div className="panel mb-6 px-3 py-3 sm:px-4 sm:py-3.5">
+      <ol className="flex items-center gap-1.5 sm:gap-2" aria-label="Các bước làm video">
+        {STEPS.map(([label, icon], i) => {
+          const done = i < step, now = i === step, gate = now && (i === 2 || i === 4);
+          return (
+            <li key={label} aria-current={now ? "step" : undefined} className={`flex min-w-0 items-center gap-2 sm:gap-2.5 ${i < STEPS.length - 1 ? "sm:flex-1" : ""}`}>
+              <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full border text-[12px] sm:h-8 sm:w-8 ${done ? "border-proof/40 bg-proof/15 text-proof" : gate ? "border-cue/60 bg-cue/15 text-cue shadow-[0_0_14px_-2px_var(--color-cue)]" : now ? "border-accent/60 bg-accent/15 text-accent" : "border-line text-faint"}`} title={label}>
+                <Icon name={done ? "check" : icon} size={15} /></span>
+              <span className={`hidden whitespace-nowrap text-[13px] sm:inline ${now ? "font-medium text-ink" : done ? "text-mute" : "text-faint"}`}>{label}</span>
+              {i < STEPS.length - 1 && <span className={`hidden h-px min-w-2 flex-1 sm:block ${done ? "bg-proof/40" : "bg-line"}`} />}
+            </li>
+          );
+        })}
+        {/* On a phone the names do not fit beside the circles, so only the current step is named, after the row. */}
+        {current && <li className="ml-auto min-w-0 truncate text-[13px] font-medium sm:hidden" aria-hidden="true">{current}</li>}
+      </ol>
+    </div>
   );
 }
 

@@ -214,13 +214,13 @@ function App() {
               <a href={page.path} onClick={(e) => { e.preventDefault(); go(page.path); }} className={crumb ? "text-mute hover:text-ink" : "font-medium"}>{page.label}</a>
               {crumb && <><Icon name="next" size={12} className="text-faint" /><span className="truncate font-medium">{crumb}</span></>}
             </nav>
-            <button type="button" onClick={() => setPalette(true)} className="ml-auto flex h-9 w-full max-w-[360px] items-center gap-2.5 rounded-lg border border-line bg-surface px-3 text-[13px] text-faint transition-colors hover:border-edge hover:text-mute">
+            <button type="button" onClick={() => setPalette(true)} className="ml-auto flex h-9 w-full min-w-0 max-w-[360px] items-center gap-2.5 rounded-lg border border-line bg-surface px-3 text-[13px] text-faint transition-colors hover:border-edge hover:text-mute">
               <Icon name="search" size={15} /><span className="flex-1 truncate text-left">Tìm dự án, màn hình, cảnh…</span><kbd className="mono hidden rounded border border-line px-1.5 text-[11px] sm:inline">⌘K</kbd>
             </button>
             <a href="/thong-bao" onClick={(e) => { e.preventDefault(); go("/thong-bao"); }} className="relative grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-line bg-surface text-mute hover:text-ink" aria-label="Thông báo">
               <Icon name="bell" size={17} />{(notices?.unread ?? 0) > 0 && <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-accent ring-2 ring-surface" />}
             </a>
-            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-line bg-raised text-[13px] font-semibold text-mute" title="Người vận hành" aria-hidden="true">K</span>
+            <span className="hidden h-9 w-9 shrink-0 place-items-center rounded-lg border border-line bg-raised text-[13px] font-semibold text-mute sm:grid" title="Người vận hành" aria-hidden="true">K</span>
           </header>
           {!online && <div role="alert" className="flex shrink-0 items-center gap-3 border-b border-tally/30 bg-tally/10 px-4 py-2 text-[13px] text-tally md:px-8"><Icon name="alert" size={15} />Không kết nối được với máy chủ NEXORA. Màn hình giữ số liệu cũ cho tới khi nối lại; kiểm tra xem <span className="mono">nexora serve</span> còn chạy không.</div>}
           {kill && <div className="flex shrink-0 items-center gap-3 border-b border-tally/30 bg-tally/10 px-4 py-2 text-[13px] text-tally md:px-8"><Icon name="power" size={15} />Đang bật dừng khẩn cấp: hệ thống không bắt đầu việc tốn tiền hay tác động ra ngoài.
