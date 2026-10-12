@@ -58,7 +58,7 @@ class ProjectStore:
         return project_id
 
     def update_project(self, project_id: str, **fields) -> None:
-        allowed = {k: v for k, v in fields.items() if k in ("title", "format", "music_path", "auto_accept", "style", "narration_dir", "budget_cap", "voice", "music_gain", "template", "profile", "research", "due_date", "bible")}
+        allowed = {k: v for k, v in fields.items() if k in ("title", "format", "music_path", "auto_accept", "style", "narration_dir", "budget_cap", "voice", "music_gain", "template", "profile", "research", "due_date", "bible", "options")}
         with db.write(self._conn) as c:
             for key, value in allowed.items():
                 c.execute(f"UPDATE projects SET {key} = ? WHERE project_id = ?", (value, project_id))
@@ -226,9 +226,11 @@ class ProjectStore:
         with db.write(self._conn) as c:
             c.execute("UPDATE renders SET review = ? WHERE render_id = ?", (json.dumps({"approved": approved, "comment": comment, "at": time.time()}, ensure_ascii=False), render_id))
 
-    def renders(self, project_id: str) -> list[dict]:
+    def renders(self, project_id: str, *, previews: bool = False) -> list[dict]:
+        """The cuts of a project, newest first. Quick previews are another kind of thing and are listed only when asked for."""
         rows = self._conn.execute("SELECT * FROM renders WHERE project_id = ? ORDER BY created_at DESC, render_id DESC", (project_id,))
-        return [{**dict(r), "qc": json.loads(r["qc"]), "review": json.loads(r["review"]) if r["review"] else None} for r in rows]
+        out = [{**dict(r), "qc": json.loads(r["qc"]), "review": json.loads(r["review"]) if r["review"] else None} for r in rows]
+        return [r for r in out if bool(r["qc"].get("preview")) == previews]
 
     def render(self, render_id: str) -> dict | None:
         row = self._conn.execute("SELECT * FROM renders WHERE render_id = ?", (render_id,)).fetchone()

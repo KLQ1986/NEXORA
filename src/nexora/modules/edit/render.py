@@ -2,7 +2,12 @@
 
 Narration is made first because its length decides how long each clip must be. Each shot is rendered
 as its own segment and cached, so changing one shot re-renders one segment.
+
+A preview is the same cut made quickly to be judged, not published: half size, the fastest encoding, footage read from
+the proxies, and no new narration recorded (lines already spoken are heard, the rest are silent at their estimated
+length). It has no approval gate and is never packaged.
 """
+import functools
 import hashlib
 import json
 from pathlib import Path
@@ -24,6 +29,13 @@ FORMATS = {
     "square": {"width": 720, "height": 720, "fps": 30},
 }
 FORMAT = FORMATS["landscape"]
+# The same three steps without a voice requirement and without a gate: nothing here is a decision.
+PREVIEW = PipelineDefinition("edit.preview", "1", [
+    StageDef("narration"),
+    StageDef("segments", depends_on=("narration",), requires=("ffmpeg", "graphics")),
+    StageDef("assemble", depends_on=("segments",), requires=("ffmpeg", "ffprobe")),
+])
+SPEEDS = (0.5, 0.75, 1.0, 1.5, 2.0)
 PAD_SECONDS = 0.4
 WORDS_PER_SECOND = 2.6
 
@@ -55,6 +67,28 @@ class Edit:
 
     def register(self, registry: PipelineRegistry) -> None:
         registry.register(RENDER, {"narration": self._narration, "segments": self._segments, "assemble": self._assemble})
+        registry.register(PREVIEW, {key: functools.partial(handler, preview=True) for key, handler in
+                                    (("narration", self._narration), ("segments", self._segments), ("assemble", self._assemble))})
+
+    def start_preview(self, script_id: str) -> str:
+        """A quick look at the cut as it stands, gaps and all. Needs no approval of the clips, and starts over if asked again."""
+        self._orch.supersede(PREVIEW.pipeline_id, script_id)
+        return self._orch.submit_run(PREVIEW, subject_ref=script_id)
+
+    def set_shot_options(self, shot_id: str, **options) -> None:
+        """How one shot is treated in the cut: `speed`, `stabilise`, `live_sound` (keep the clip's own sound instead of narration),
+        `sfx` (an audio asset played under the shot)."""
+        clean = {}
+        if "speed" in options:
+            clean["speed"] = min(SPEEDS, key=lambda s: abs(s - float(options["speed"] or 1.0)))
+        for flag in ("stabilise", "live_sound"):
+            if flag in options:
+                clean[flag] = bool(options[flag])
+        if "sfx" in options:
+            clean["sfx"] = options["sfx"] if options["sfx"] and self._assets.asset(str(options["sfx"])) else None
+        if self._projects.selection(shot_id) is None:
+            raise ValueError("this shot has no clip yet")
+        self._projects.set_extras(shot_id, **clean)
 
     def start_render(self, script_id: str) -> str:
         script = self._projects.script(script_id)
@@ -63,7 +97,7 @@ class Edit:
         self._orch.supersede(RENDER.pipeline_id, script_id)
         return self._orch.submit_run(RENDER, subject_ref=script_id)
 
-    def _narration(self, ctx):
+    def _narration(self, ctx, preview: bool = False):
         """One audio file per line; without a voice, the length is estimated and the line is silent."""
         lines = []
         script = self._projects.script(ctx.subject_ref)
@@ -71,6 +105,11 @@ class Edit:
         recorded = project.get("narration_dir")
         voice = project.get("voice") or self._orch.setting("voice", self._voice_name)      # the project's voice, else the installation's
         for shot in script["shots"]:
+            sel = self._projects.selection(shot.shot_id)
+            if sel and sel.status != "gap" and sel.extras.get("live_sound") and sel.t_out is not None:
+                # The clip speaks for itself: its length on the timeline is the range chosen, at the speed chosen.
+                lines.append({"shot_id": shot.shot_id, "audio": None, "live": True, "duration": round((sel.t_out - sel.t_in) / float(sel.extras.get("speed") or 1.0), 2)})
+                continue
             # The operator's own recording for this line, if one exists, takes the place of the synthetic voice.
             own = next((p for ext in ("wav", "m4a", "mp3", "aiff") for p in [Path(recorded or "/nonexistent") / f"{shot.position + 1}.{ext}"] if p.is_file()), None)
             if own:
@@ -84,6 +123,9 @@ class Edit:
             for written, said in (json.loads(project.get("profile") or "{}").get("pronounce") or {}).items():
                 spoken = spoken.replace(written, said)             # the brand's pronunciation dictionary: written form, spoken form
             out = self._media / "narration" / f"{_key(spoken, voice)}.wav"
+            if preview and not out.is_file():        # a preview records nothing new
+                lines.append({"shot_id": shot.shot_id, "audio": None, "duration": round(max(2.0, len(shot.text.split()) / WORDS_PER_SECOND), 2)})
+                continue
             if out.is_file():
                 import wave
                 with wave.open(str(out)) as w:
@@ -94,16 +136,19 @@ class Edit:
             lines.append({"shot_id": shot.shot_id, "audio": str(out), "duration": round(float(duration), 2)})
         return {"lines": lines}
 
-    def _source(self, asset_id: str, t_in: float, need: float) -> tuple[str, str, float]:
-        """The file to cut from (the original when its volume is online, else the proxy) and a start that leaves room for `need` seconds."""
+    def _source(self, asset_id: str, t_in: float, need: float, *, proxy: bool = False, exact: bool = False) -> tuple[str, str, float]:
+        """The file to cut from (the original when its volume is online, else the proxy) and a start that leaves room for `need` seconds.
+        `proxy` asks for the small copy outright; `exact` keeps the start as given, for a range chosen to the word."""
         versions = {v.role: v for v in self._assets.versions(asset_id)}
         original = versions["original"]
         path = self._assets.path_of(original)
-        if not path.is_file() and "proxy" in versions:
+        if (proxy or not path.is_file()) and "proxy" in versions and self._assets.path_of(versions["proxy"]).is_file():
             path = self._assets.path_of(versions["proxy"])
         if original.metadata.get("probe", {}).get("still"):
             return str(path), original.checksum, 0.0
         usable = original.metadata.get("usable_ranges") or [[0.0, original.metadata.get("probe", {}).get("duration", t_in + need)]]
+        if exact:
+            return str(path), original.checksum, round(t_in, 2)
         start, end = next(((a, b) for a, b in usable if a <= t_in < b), usable[0])
         return str(path), original.checksum, round(max(start, min(t_in, end - need)), 2)
 
@@ -129,10 +174,13 @@ class Edit:
         cache.write_text(json.dumps({"x": x}))
         return x
 
-    def _segments(self, ctx):
+    def _segments(self, ctx, preview: bool = False):
         script = self._projects.script(ctx.subject_ref)
         project = self._projects.project(script["project_id"])
         FORMAT = FORMATS.get(project["format"], FORMATS["landscape"])
+        if preview:
+            FORMAT = {"width": FORMAT["width"] // 2, "height": FORMAT["height"] // 2, "fps": 15}
+        options = json.loads(project.get("options") or "{}")
         fill = "fit" if project["format"] == "landscape" else "cover"
         profile = json.loads(project.get("profile") or "{}")
         look = {"scale": float(profile.get("caption_scale") or 1.0), "position": profile.get("caption_position") or "bottom", "colour": profile.get("caption_colour"),
@@ -141,7 +189,16 @@ class Edit:
         out, draft = [], False
         for shot in script["shots"]:
             line, sel = durations[shot.shot_id], self._projects.selection(shot.shot_id)
-            duration = round(max(line["duration"] + PAD_SECONDS, shot.target_seconds or 0.0), 2)      # never shorter than the narration, longer if the script asks
+            live = bool(line.get("live"))
+            duration = line["duration"] if live else round(max(line["duration"] + PAD_SECONDS, shot.target_seconds or 0.0), 2)      # never shorter than the narration, longer if the script asks
+            extras = sel.extras if sel else {}
+            speed = float(extras.get("speed") or 1.0)
+            sfx = None
+            if extras.get("sfx") and self._assets.asset(extras["sfx"]):
+                sfx_path = self._assets.path_of(self._assets.original(extras["sfx"]))
+                sfx = str(sfx_path) if sfx_path.is_file() else None
+            treat = {"speed": speed, "stabilise": bool(extras.get("stabilise")), "normalise": bool(options.get("match_colour")), "live_sound": live,
+                     "clean_audio": bool(options.get("clean_audio")), "own_voice": bool(line.get("own_voice")) or live, "sfx": sfx, "quality": "preview" if preview else "final"}
             words = shot.screen_text or shot.text
             caption = self._media / "captions" / f"{_key(words, FORMAT, look)}.png"
             if not caption.is_file():
@@ -149,35 +206,37 @@ class Edit:
             has_picture = sel is not None and sel.status != "gap" and sel.asset_id
             inserts, focus = [], 0.5
             if has_picture:
-                path, checksum, t_in = self._source(sel.asset_id, sel.t_in, duration)
+                path, checksum, t_in = self._source(sel.asset_id, sel.t_in, duration * speed, proxy=preview, exact=live)
                 draft = draft or not self._assets.path_of(self._assets.original(sel.asset_id)).is_file()      # cut from the proxy: good to judge, not to publish
                 focus = self._focus(sel, path, checksum, t_in, duration) if fill == "cover" else 0.5
                 for ins in sel.extras.get("inserts", []):
                     at = round(ins["at"] * line["duration"], 2)
                     if at < MIN_BEFORE_INSERT or duration - at < MIN_INSERT:
                         continue
-                    ipath, isum, iin = self._source(ins["asset_id"], ins["t_in"], duration - at)
+                    ipath, isum, iin = self._source(ins["asset_id"], ins["t_in"], duration - at, proxy=preview)
                     inserts.append({"path": ipath, "t_in": iin, "at": at, "checksum": isum, "keyword": ins["keyword"]})
-                key = _key(checksum, t_in, duration, words, look, line["audio"], FORMAT, fill, focus, [(i["checksum"], i["t_in"], i["at"]) for i in inserts])
+                key = _key(checksum, t_in, duration, words, look, line["audio"], FORMAT, fill, focus, [(i["checksum"], i["t_in"], i["at"]) for i in inserts], treat)
             else:
-                path, t_in, key = None, 0.0, _key("gap", duration, words, look, line["audio"], FORMAT)
+                path, t_in, key = None, 0.0, _key("gap", duration, words, look, line["audio"], FORMAT, treat)
             segment = self._media / "segments" / f"{key}.mp4"
             if not segment.is_file():                                   # unchanged shots are reused, not rendered again
                 self._adapters.submit("ffmpeg", Request("segment", inputs={"path": path}, attempt_id=ctx.claim.attempt_id,
                                                        params={"out": str(segment), "t_in": t_in, "duration": duration, "overlay": str(caption),
-                                                               "audio": line["audio"], "fill": fill, "focus_x": focus, "inserts": inserts, **FORMAT}))
+                                                               "audio": line["audio"], "fill": fill, "focus_x": focus, "inserts": inserts, **FORMAT, **treat}))
             out.append({"shot_id": shot.shot_id, "file": str(segment), "duration": duration, "gap": not has_picture, "text": shot.text,
                         "asset_id": sel.asset_id if has_picture else None, "t_in": t_in, "chosen_in": sel.t_in if has_picture else None,
                         "is_fact": shot.is_fact, "source": shot.source, "fact_check": shot.fact_check, "sound_cue": shot.sound_cue,
-                        "own_voice": bool(line.get("own_voice")), "focus_x": focus if fill == "cover" else None,
+                        "own_voice": bool(line.get("own_voice")), "live_sound": live, "speed": speed, "focus_x": focus if fill == "cover" else None,
                         "inserts": [{"keyword": i["keyword"], "at": i["at"]} for i in inserts]})
             ctx.heartbeat()
         return {"segments": out, "draft": draft}
 
-    def _assemble(self, ctx):
+    def _assemble(self, ctx, preview: bool = False):
         script = self._projects.script(ctx.subject_ref)
         project = self._projects.project(script["project_id"])
         FORMAT = FORMATS.get(project["format"], FORMATS["landscape"])
+        if preview:
+            FORMAT = {"width": FORMAT["width"] // 2, "height": FORMAT["height"] // 2, "fps": 15}
         music = project["music_path"] if project["music_path"] and Path(project["music_path"]).is_file() else None
         segments = ctx.inputs["segments"]["segments"]
         out = self._media / "renders" / f"{ctx.subject_ref}_{ctx.claim.attempt_id}.mp4"
@@ -194,9 +253,9 @@ class Edit:
         }
         qc = {"passed": all(checks.values()), "checks": checks, "width": probe["width"], "height": probe["height"], "duration": probe["duration"],
               "has_audio": probe["has_audio"], "shot_durations": [s["duration"] for s in segments], "gaps": sum(1 for s in segments if s["gap"]),
-              "format": project["format"], "music": bool(music), "draft": bool(ctx.inputs["segments"].get("draft")), "mean_db": loud["mean_db"], "max_db": loud["max_db"],
+              "format": project["format"], "music": bool(music), "draft": bool(ctx.inputs["segments"].get("draft")) and not preview, "preview": preview, "mean_db": loud["mean_db"], "max_db": loud["max_db"],
               "findings": self._reviewer(segments) if self._reviewer else [],
               "shots": [{"text": s["text"], "duration": s["duration"], "gap": s["gap"], "asset_id": s.get("asset_id"), "t_in": s.get("chosen_in"),
-                         "is_fact": s.get("is_fact", False), "source": s.get("source"), "fact_check": s.get("fact_check"), "sound_cue": s.get("sound_cue"), "own_voice": s.get("own_voice", False), "focus_x": s.get("focus_x"), "inserts": s.get("inserts", [])} for s in segments]}
+                         "is_fact": s.get("is_fact", False), "source": s.get("source"), "fact_check": s.get("fact_check"), "sound_cue": s.get("sound_cue"), "own_voice": s.get("own_voice", False), "live_sound": s.get("live_sound", False), "speed": s.get("speed", 1.0), "focus_x": s.get("focus_x"), "inserts": s.get("inserts", [])} for s in segments]}
         render_id = self._projects.add_render(script["project_id"], ctx.subject_ref, str(out), qc)
         return {"render_id": render_id, "qc_passed": qc["passed"]}

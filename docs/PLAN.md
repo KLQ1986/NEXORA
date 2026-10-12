@@ -227,7 +227,7 @@ Library (145 test đạt; đã bấm thử trên giao diện, nhận dạng lờ
 
 Ghi nhận để tối ưu sau: whisper nghe giọng đọc máy sai vài từ ("sạp" thành "sạc", "rau" thành "dao"); mốc từ liền nhau không có khoảng lặng nên câu được tách theo dấu phẩy và độ dài.
 
-Sourcing (155 test đạt; đã chạy thật một câu chuyện ba cảnh: ảnh từ Pollinations, clip làm trên máy, dựng ra video dọc):
+Sourcing (154 test đạt; đã chạy thật một câu chuyện ba cảnh: ảnh từ Pollinations, clip làm trên máy, dựng ra video dọc):
 
 - [x] Nhiều nhà cung cấp cho cùng một loại hình, có định tuyến theo từng cảnh và thứ tự ưu tiên; nhà cung cấp hỏng, hết lượt hoặc bị chế độ riêng tư chặn thì chuyển sang nhà kế tiếp
 - [x] Nhà cung cấp ảnh thật không cần khoá (Pollinations). Không có tài khoản thì chỉ được một đến ba ảnh rồi bị từ chối một lúc; hệ thống báo "hết lượt", giữ ảnh đã có và chạy tiếp khi bấm lại. Có token thì đặt `pollinations_token`

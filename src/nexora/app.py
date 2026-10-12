@@ -21,6 +21,7 @@ from nexora.core.worker import Worker
 from nexora.modules.library.ingest import Library
 from nexora.modules.distribution.package import Distribution
 from nexora.modules.edit.render import Edit
+from nexora.modules.edit.roughcut import RoughCut
 from nexora.modules.library.transcribe import Transcription
 from nexora.modules.library.understand import Understanding
 from nexora.modules.planning.scripts import Planning
@@ -47,6 +48,7 @@ class System:
     generation: Generation
     workers: list = None            # one worker per lane, for a long-running server
     producer: Producer = None
+    roughcut: RoughCut = None
 
 
 def fill_gap_from_stock(system: "System", shot_id: str, query: str) -> dict:
@@ -70,9 +72,9 @@ def fill_gap_from_stock(system: "System", shot_id: str, query: str) -> dict:
 
 
 PIPELINE_NAMES = {"library.ingest": "Nhập footage", "library.ingest_image": "Nhập ảnh", "library.ingest_audio": "Nhập nhạc", "library.understand": "Hiểu nội dung footage", "library.transcribe": "Nghe lời nói trong footage",
-                  "sourcing.match": "Chọn clip", "sourcing.generate": "Sinh hình bằng AI", "edit.render": "Dựng video"}
+                  "sourcing.match": "Chọn clip", "sourcing.generate": "Sinh hình bằng AI", "edit.render": "Dựng video", "edit.preview": "Dựng bản xem thử"}
 ANNOUNCE = {"disk_low": "ổ đĩa sắp đầy", "volume_offline": "không tìm thấy nơi chứa footage", "gaps": "còn câu chưa có hình", "waiting_review": "đang chờ bạn duyệt", "blocked": "đang dừng và cần bạn xử lý", "failed": "thất bại", "succeeded": "đã xong"}
-QUIET = frozenset({"library.ingest", "library.ingest_image", "library.ingest_audio", "library.understand", "library.transcribe"})   # finishing these needs nobody's attention
+QUIET = frozenset({"library.ingest", "library.ingest_image", "library.ingest_audio", "library.understand", "library.transcribe", "edit.preview"})   # finishing these needs nobody's attention
 
 
 def announce(system: "System", after: int) -> int:
@@ -213,6 +215,7 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     workers = [Worker(orch, registry, worker_id=f"interactive-{os.getpid()}", lanes=frozenset({"interactive"}), log=log),
                Worker(orch, registry, worker_id=f"background-{os.getpid()}", lanes=frozenset({"background"}), log=log, allowed=night_only)]
     system = System(data_dir, orch, assets, adapters, registry, worker, library, index, projects, planning, sourcing, edit, distribution, generation, workers)
+    system.roughcut = RoughCut(projects, assets, index)
     system.producer = Producer(db_path, orch=orch, projects=projects, planning=planning, sourcing=sourcing, edit=edit, adapters=adapters,
                                fill_gap=lambda shot_id, query: fill_gap_from_stock(system, shot_id, query))
     return system

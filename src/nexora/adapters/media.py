@@ -142,6 +142,7 @@ class FFmpegAdapter(Adapter):
         Without a source it is a plain card (used for a gap). Every segment has the same format, so they join without re-encoding."""
         out, d = Path(params["out"]), float(params["duration"])
         w, h, fps = int(params.get("width", 1280)), int(params.get("height", 720)), int(params.get("fps", 30))
+        speed = max(0.25, min(4.0, float(params.get("speed") or 1.0)))        # above 1 the footage runs faster; `duration` is always the length on the timeline
         args = ["-y"]
         still = src is not None and src.suffix.lower() in IMAGE_EXT
         if src is None:
@@ -149,7 +150,7 @@ class FFmpegAdapter(Adapter):
         elif still:
             args += ["-loop", "1", "-t", str(d), "-i", str(src)]
         else:
-            args += ["-ss", str(params.get("t_in", 0.0)), "-t", str(d), "-i", str(src)]
+            args += ["-ss", str(params.get("t_in", 0.0)), "-t", str(round(d * speed, 3)), "-i", str(src)]
         # "cover" fills the frame and crops the overflow (used when the output shape differs from the footage); "fit" letterboxes.
         # The crop is centred on `focus_x` (0 left, 1 right) so that a subject off to one side stays in a narrower frame.
         fx = max(0.0, min(1.0, float(params.get("focus_x", 0.5))))
@@ -163,7 +164,15 @@ class FFmpegAdapter(Adapter):
             frames = max(1, round(d * fps))
             shape = (f"scale={w * 2}:{h * 2}:force_original_aspect_ratio=increase,{crop(w * 2, h * 2)},"
                      f"zoompan=z='1+0.08*on/{frames}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={frames}:s={w}x{h}:fps={fps}")
-        chain = f"[0:v]{shape},setsar=1,fps={fps},tpad=stop_mode=clone:stop_duration={d}[base]"
+        before = []
+        if not still and src is not None:
+            if speed != 1.0:
+                before.append(f"setpts=PTS/{speed}")
+            if params.get("stabilise"):
+                before.append("deshake=rx=32:ry=32")                # steadies a hand-held shot; the edges it exposes are filled from the frame
+            if params.get("normalise"):
+                before.append("normalize=smoothing=24:strength=0.6")        # pulls each shot towards full range, so shots from different days sit together
+        chain = f"[0:v]{','.join([*before, shape])},setsar=1,fps={fps},tpad=stop_mode=clone:stop_duration={d}[base]"
         n, last = 1, "base"
         # An insert is a second picture laid over the first from its moment to the end of the shot: a cut, without splitting the audio.
         for k, ins in enumerate(params.get("inserts") or []):
@@ -177,13 +186,27 @@ class FFmpegAdapter(Adapter):
             chain += f";[{last}][{n}:v]overlay=0:0[v]"; n += 1
         else:
             chain += f";[{last}]null[v]"
-        if params.get("audio"):
-            args += ["-i", str(params["audio"])]
+        clean = "highpass=f=80,afftdn=nr=12," if params.get("clean_audio") else ""       # rumble out, steady hiss down
+        if params.get("live_sound") and src is not None and not still:
+            # The clip keeps its own sound: what was said on camera, at the speed of the picture.
+            tempo = "".join(f"atempo={step}," for step in ([2.0, speed / 2.0] if speed > 2.0 else [0.5, speed / 0.5] if speed < 0.5 else [speed]) if step != 1.0)
+            chain += f";[0:a]{tempo}{clean}aresample=48000,apad[main]"
         else:
-            args += ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"]
-        chain += f";[{n}:a]aresample=48000,apad[a]"
+            if params.get("audio"):
+                args += ["-i", str(params["audio"])]
+            else:
+                args += ["-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo"]
+            chain += f";[{n}:a]{clean if params.get('audio') and params.get('own_voice') else ''}aresample=48000,apad[main]"
+            n += 1
+        if params.get("sfx"):
+            # A sound effect starts with the shot and sits under whatever else is heard.
+            args += ["-i", str(params["sfx"])]
+            chain += f";[{n}:a]aresample=48000,volume={float(params.get('sfx_gain', 0.6))},apad[fx];[main][fx]amix=inputs=2:duration=first:normalize=0[a]"
+        else:
+            chain += ";[main]anull[a]"
+        preview = params.get("quality") == "preview"
         partial = out.with_name(out.stem + ".partial" + out.suffix)
-        self._run([*args, "-filter_complex", chain, "-map", "[v]", "-map", "[a]", "-t", str(d), "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+        self._run([*args, "-filter_complex", chain, "-map", "[v]", "-map", "[a]", "-t", str(d), "-c:v", "libx264", "-preset", "ultrafast" if preview else "veryfast", "-crf", "32" if preview else "20",
                    "-pix_fmt", "yuv420p", "-c:a", "aac", "-ar", "48000", "-ac", "2", "-b:a", "160k", str(partial)], timeout, "segment")
         partial.replace(out)
         return Result(files=(str(out),))

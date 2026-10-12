@@ -160,7 +160,8 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         return run_view(system, run_id)
 
     def renders_in_use() -> set[str]:
-        return {r["path"] for p in system.projects.projects() for r in system.projects.renders(p["project_id"])}
+        return {r["path"] for p in system.projects.projects() for r in system.projects.renders(p["project_id"])} | \
+               {r["path"] for p in system.projects.projects() for r in system.projects.renders(p["project_id"], previews=True)[:1]}      # only the newest preview is worth keeping
 
     @app.get("/api/v1/storage")
     def storage_usage():
@@ -535,6 +536,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
                                      "decided_by": sel.decided_by, "moment_id": sel.moment_id,
                                      "frame_url": f"/api/v1/moments/{sel.moment_id}/frame" if sel.moment_id else None,
                                      "asset": asset_brief(sel.asset_id) if sel.asset_id else None,
+                                     "speed": float(sel.extras.get("speed") or 1.0), "stabilise": bool(sel.extras.get("stabilise")), "live_sound": bool(sel.extras.get("live_sound")), "sfx": sel.extras.get("sfx"),
                                      "inserts": sel.extras.get("inserts", []), "focus_x": (sel.extras.get("focus") or {}).get("x") if (sel.extras.get("focus") or {}).get("asset_id") == sel.asset_id else None,
                                      "angles": angles_of(sel),
                                      "alternates": [{**a, "frame_url": f"/api/v1/moments/{a['moment_id']}/frame", "asset": asset_brief(a["asset_id"])} for a in sel.alternates]}
@@ -546,6 +548,9 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
                 "shots": shots, "match": latest_run(script["script_id"], "sourcing.match") if script else None,
                 "render": latest_run(script["script_id"], "edit.render") if script else None, "renders": renders,
                 "generate": latest_run(script["script_id"], "sourcing.generate") if script else None, "generators": system.generation.available(),
+                "preview": latest_run(script["script_id"], "edit.preview") if script else None, "options": json.loads(project.get("options") or "{}"),
+                "previews": [{"render_id": r["render_id"], "created_at": r["created_at"], "script_id": r["script_id"], "url": f"/api/v1/renders/{r['render_id']}/file", "duration": r["qc"]["duration"], "gaps": r["qc"]["gaps"]}
+                             for r in system.projects.renders(project["project_id"], previews=True)[:1]],
                 "research": json.loads(project.get("research") or "[]"), "bible": json.loads(project.get("bible") or "[]"),
                 "auto_accept": bool(project.get("auto_accept")), "own_takes": own_takes(project, len(shots)),
                 "spent": system.generation.spent(project["project_id"])}
@@ -706,6 +711,40 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             system.projects.annotate_shot(shot_id, gen={k: (str(v).strip() if v is not None else None) for k, v in body["gen"].items() if k in ("subject", "shot_size", "camera", "provider_image", "provider_video")})
         return {"ok": True}
 
+    @app.patch("/api/v1/shots/{shot_id}/treatment")
+    def treat_shot(shot_id: str, body: dict):
+        """How one shot is treated in the cut: speed, stabilising, its own sound, a sound effect."""
+        try:
+            system.edit.set_shot_options(shot_id, **{k: body[k] for k in ("speed", "stabilise", "live_sound", "sfx") if k in body})
+        except ValueError:
+            raise HTTPException(409, "Câu này chưa có clip")
+        return {"ok": True}
+
+    @app.post("/api/v1/projects/{project_id}/preview", status_code=202)
+    def start_preview(project_id: str):
+        return {"run_id": system.edit.start_preview(current_script_id(project_id))}
+
+    @app.get("/api/v1/assets/{asset_id}/roughcut")
+    def roughcut_plan(asset_id: str):
+        if system.assets.asset(asset_id) is None:
+            raise HTTPException(404, "no such asset")
+        return system.roughcut.plan(asset_id)
+
+    @app.post("/api/v1/assets/{asset_id}/roughcut", status_code=201)
+    def roughcut(asset_id: str, body: dict):
+        """Cut a recording by its words, into a project of its own or into an existing one."""
+        if system.assets.asset(asset_id) is None:
+            raise HTTPException(404, "no such asset")
+        name = system.assets.path_of(system.assets.original(asset_id)).stem
+        project_id = body.get("project_id") or system.planning.create_project(str(body.get("title") or f"Dựng thô: {name}").strip(),
+                                                                              format=body.get("format") if body.get("format") in ("landscape", "portrait", "square") else "landscape")
+        need_project(project_id)
+        try:
+            system.roughcut.apply(project_id, asset_id, keep=[int(i) for i in body["keep"]] if isinstance(body.get("keep"), list) else None)
+        except ValueError:
+            raise HTTPException(422, "Không có câu nào được giữ lại. Bản ghi này có thể chưa được nghe, hoặc không có lời nói.")
+        return project_view(need_project(project_id))
+
     @app.post("/api/v1/shots/{shot_id}/variation")
     def vary_shot(shot_id: str):
         """Ask for another picture of the same thing; it is made the next time generation runs."""
@@ -862,6 +901,9 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         if body.get("narration_dir") and not Path(str(body["narration_dir"])).expanduser().is_dir():
             raise HTTPException(404, "Không tìm thấy thư mục này")
         fields = {k: (str(Path(str(v)).expanduser()) if k in ("music_path", "narration_dir") and v else v) for k, v in body.items()}
+        if "options" in fields:                  # treatments applied to the whole cut
+            current = json.loads(need_project(project_id).get("options") or "{}")
+            fields["options"] = json.dumps({**current, **{k: bool(v) for k, v in (fields["options"] or {}).items() if k in ("clean_audio", "match_colour")}})
         if "bible" in fields:                    # how the project's characters, places and props look, so that every shot shows them the same way
             kinds = ("character", "setting", "prop", "style")
             fields["bible"] = json.dumps([{"name": str(e.get("name", "")).strip(), "kind": e.get("kind") if e.get("kind") in kinds else "character",
