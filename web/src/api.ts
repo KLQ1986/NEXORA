@@ -1,3 +1,4 @@
+import { t as tr, tv } from "./i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export type Stage = { stage_id: string; stage_key: string; status: string; blocked_reason: string | null; attempts: number };
@@ -27,12 +28,12 @@ export async function call<T>(url: string, init?: RequestInit): Promise<T> {
     res = await fetch(url, { headers: { "content-type": "application/json" }, ...init });
   } catch {
     setOnline(false);
-    throw new Error("Không kết nối được với máy chủ NEXORA. Kiểm tra xem `nexora serve` còn chạy không.");
+    throw new Error(tr("Không kết nối được với máy chủ NEXORA. Kiểm tra xem `nexora serve` còn chạy không."));
   }
   setOnline(true);
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.detail ?? `Yêu cầu thất bại (${res.status})`);
+    throw new Error(body.detail ?? tv`Yêu cầu thất bại (${res.status})`);
   }
   return res.json();
 }
@@ -75,20 +76,20 @@ export const timecode = (s: number | null | undefined) => {
 export const megabytes = (b: number) => (b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${Math.round(b / 1e6)} MB`);
 
 export const STAGE_NAMES: Record<string, string> = {
-  checksum: "Kiểm tra file", probe: "Đọc thông số", usable: "Tìm phần dùng được", proxy: "Tạo bản xem", thumbnail: "Ảnh đại diện",
-  structure: "Chia đoạn", describe: "Mô tả hình", understand: "Hiểu nội dung", index: "Lập chỉ mục",
+  checksum: tr("Kiểm tra file"), probe: tr("Đọc thông số"), usable: tr("Tìm phần dùng được"), proxy: tr("Tạo bản xem"), thumbnail: tr("Ảnh đại diện"),
+  structure: tr("Chia đoạn"), describe: tr("Mô tả hình"), understand: tr("Hiểu nội dung"), index: tr("Lập chỉ mục"),
 };
 /** Stage names depend on the pipeline: "segments" means one thing when understanding footage and another when rendering. */
 export const stageName = (key: string, pipeline?: string | null) =>
-  (pipeline === "edit.render" && key === "segments" ? "Dựng từng cảnh" : pipeline === "animation.generate" && key === "segments" ? "Dựng từng cảnh" : STAGE_NAMES[key] ?? key);
+  (pipeline === "edit.render" && key === "segments" ? tr("Dựng từng cảnh") : pipeline === "animation.generate" && key === "segments" ? tr("Dựng từng cảnh") : STAGE_NAMES[key] ?? key);
 export const STATUS_NAMES: Record<string, string> = {
-  queued: "Đang chờ", pending: "Chưa tới lượt", ready: "Sẵn sàng", running: "Đang chạy", waiting_review: "Chờ bạn duyệt",
-  retry_wait: "Sẽ thử lại", blocked: "Cần bạn xử lý", succeeded: "Xong", skipped: "Bỏ qua", failed: "Thất bại", cancelled: "Đã huỷ",
+  queued: tr("Đang chờ"), pending: tr("Chưa tới lượt"), ready: tr("Sẵn sàng"), running: tr("Đang chạy"), waiting_review: tr("Chờ bạn duyệt"),
+  retry_wait: tr("Sẽ thử lại"), blocked: tr("Cần bạn xử lý"), succeeded: "Xong", skipped: tr("Bỏ qua"), failed: tr("Thất bại"), cancelled: tr("Đã huỷ"),
 };
 export const REASONS: Record<string, string> = {
-  daily_budget_exceeded: "Đã dùng hết ngân sách của hôm nay", monthly_budget_exceeded: "Đã dùng hết ngân sách của tháng này",
-  retry_limit: "Đã thử lại hết số lần cho phép", budget_exceeded: "Vượt ngân sách của lần chạy này",
-  insufficient_storage: "Ổ đĩa sắp đầy", auth: "Khoá truy cập không hợp lệ", quota_exhausted: "Hết hạn mức của nhà cung cấp",
+  daily_budget_exceeded: tr("Đã dùng hết ngân sách của hôm nay"), monthly_budget_exceeded: tr("Đã dùng hết ngân sách của tháng này"),
+  retry_limit: tr("Đã thử lại hết số lần cho phép"), budget_exceeded: tr("Vượt ngân sách của lần chạy này"),
+  insufficient_storage: tr("Ổ đĩa sắp đầy"), auth: tr("Khoá truy cập không hợp lệ"), quota_exhausted: tr("Hết hạn mức của nhà cung cấp"),
 };
 
 export type Moment = { level?: string; words?: Word[]; moment_id: string; asset_id: string; t_start: number; t_end: number; text: string; source: string; score: number | null; frame_url: string | null; title?: string | null };
@@ -142,19 +143,19 @@ export type AgentTask = { task_id: string; project_id: string; goal: string; sta
 /** Every change the operator makes refreshes the open screens at once. */
 export const post = <T,>(url: string, body?: unknown, method = "POST") =>
   call<T>(url, { method, body: body === undefined ? undefined : JSON.stringify(body) }).then((r) => { window.dispatchEvent(new Event(CHANGED)); return r; });
-Object.assign(STAGE_NAMES, { segments: "Chia đoạn", summarise: "Tóm tắt", match: "Chọn clip", narration: "Đọc lời dẫn", assemble: "Ghép và kiểm tra" });
+Object.assign(STAGE_NAMES, { segments: tr("Chia đoạn"), summarise: tr("Tóm tắt"), match: tr("Chọn clip"), narration: tr("Đọc lời dẫn"), assemble: tr("Ghép và kiểm tra") });
 
 /** Where a project stands, in the operator's words. `step` counts the five stages from script to approved cut. */
 export function projectState(p: Project): { label: string; tone: "mute" | "cue" | "proof" | "tally"; step: number } {
   const busy = (r: Run | null) => !!r && ["queued", "running"].includes(r.status);
-  if (!p.script) return { label: "Chưa có kịch bản", tone: "mute", step: 0 };
-  if (p.render?.status === "succeeded") return { label: "Đã xong", tone: "proof", step: 5 };
-  if (p.render?.status === "waiting_review") return { label: "Chờ duyệt bản dựng", tone: "cue", step: 4 };
-  if (p.render?.status === "failed" || p.match?.status === "failed") return { label: "Có lỗi", tone: "tally", step: p.render ? 3 : 1 };
-  if (p.render?.status === "blocked" || p.match?.status === "blocked") return { label: "Đang dừng", tone: "cue", step: p.render ? 3 : 1 };
-  if (busy(p.render)) return { label: "Đang dựng", tone: "mute", step: 3 };
-  if (p.match?.status === "waiting_review") return { label: "Chờ duyệt clip", tone: "cue", step: 2 };
-  if (busy(p.match)) return { label: "Đang tìm clip", tone: "mute", step: 1 };
-  if (p.script.match_approved) return { label: "Sẵn sàng dựng", tone: "mute", step: 3 };
-  return { label: p.match ? "Cần tìm lại clip" : "Có kịch bản", tone: "mute", step: 1 };
+  if (!p.script) return { label: tr("Chưa có kịch bản"), tone: "mute", step: 0 };
+  if (p.render?.status === "succeeded") return { label: tr("Đã xong"), tone: "proof", step: 5 };
+  if (p.render?.status === "waiting_review") return { label: tr("Chờ duyệt bản dựng"), tone: "cue", step: 4 };
+  if (p.render?.status === "failed" || p.match?.status === "failed") return { label: tr("Có lỗi"), tone: "tally", step: p.render ? 3 : 1 };
+  if (p.render?.status === "blocked" || p.match?.status === "blocked") return { label: tr("Đang dừng"), tone: "cue", step: p.render ? 3 : 1 };
+  if (busy(p.render)) return { label: tr("Đang dựng"), tone: "mute", step: 3 };
+  if (p.match?.status === "waiting_review") return { label: tr("Chờ duyệt clip"), tone: "cue", step: 2 };
+  if (busy(p.match)) return { label: tr("Đang tìm clip"), tone: "mute", step: 1 };
+  if (p.script.match_approved) return { label: tr("Sẵn sàng dựng"), tone: "mute", step: 3 };
+  return { label: p.match ? tr("Cần tìm lại clip") : tr("Có kịch bản"), tone: "mute", step: 1 };
 }

@@ -1,3 +1,4 @@
+import { t as tr, tv, lang, setLang, type Lang } from "./i18n";
 import { useEffect, useRef, useState } from "react";
 import { STAGE_NAMES, STATUS_NAMES, timecode, type Asset, type Shot, type Stage } from "./api";
 
@@ -14,13 +15,13 @@ export function RangeStrip({ asset, playhead, onSeek, tall = false }: { asset: A
       <div
         className={`relative overflow-hidden rounded-full bg-raised ${tall ? "h-8 rounded-md" : "h-1.5"} ${onSeek ? "cursor-pointer" : ""}`}
         onClick={(e) => { if (!onSeek) return; const r = e.currentTarget.getBoundingClientRect(); onSeek(((e.clientX - r.left) / r.width) * d); }}
-        role={onSeek ? "slider" : "img"} aria-label="Thanh thời gian của video" aria-valuemin={0} aria-valuemax={d} aria-valuenow={playhead ?? 0}
+        role={onSeek ? "slider" : "img"} aria-label={tr("Thanh thời gian của video")} aria-valuemin={0} aria-valuemax={d} aria-valuenow={playhead ?? 0}
       >
         {asset.usable_ranges.map((r, i) => <div key={`u${i}`} className={`absolute inset-y-0 ${tall ? "bg-accent/40" : "bg-accent/75"}`} style={span(r)} />)}
-        {asset.black_ranges.map((r, i) => <div key={`b${i}`} className="hatch absolute inset-y-0 bg-canvas" style={span(r)} title="Khung đen, không dùng được" />)}
-        {asset.frozen_ranges.map((r, i) => <div key={`f${i}`} className="dots absolute inset-y-0 bg-raised/90" style={span(r)} title="Hình đứng yên" />)}
+        {asset.black_ranges.map((r, i) => <div key={`b${i}`} className="hatch absolute inset-y-0 bg-canvas" style={span(r)} title={tr("Khung đen, không dùng được")} />)}
+        {asset.frozen_ranges.map((r, i) => <div key={`f${i}`} className="dots absolute inset-y-0 bg-raised/90" style={span(r)} title={tr("Hình đứng yên")} />)}
         {tall && minutes.map((m) => <div key={m} className="absolute inset-y-0 w-px bg-canvas/70" style={{ left: pct(m) }} />)}
-        {tall && (asset.scene_cuts ?? []).map((c) => <div key={`c${c}`} className="absolute inset-y-1 w-[2px] rounded-full bg-ink/70" style={{ left: pct(c) }} title={`Chuyển cảnh ở ${timecode(c)}`} />)}
+        {tall && (asset.scene_cuts ?? []).map((c) => <div key={`c${c}`} className="absolute inset-y-1 w-[2px] rounded-full bg-ink/70" style={{ left: pct(c) }} title={tv`Chuyển cảnh ở ${timecode(c)}`} />)}
         {playhead != null && <div className="absolute inset-y-0 w-0.5 bg-cue shadow-[0_0_8px_var(--color-cue)]" style={{ left: pct(playhead) }} />}
       </div>
       {tall && (
@@ -42,7 +43,7 @@ const TONE: Record<string, string> = {
 /** One segment per stage, in the order the pipeline declared them. With `labels`, each segment is named underneath. */
 export function StageRail({ stages, labels = false, name }: { stages: Stage[]; labels?: boolean; name?: (key: string) => string }) {
   return (
-    <div className={`flex ${labels ? "gap-1.5" : "gap-[3px]"}`} role="list" aria-label="Các bước">
+    <div className={`flex ${labels ? "gap-1.5" : "gap-[3px]"}`} role="list" aria-label={tr("Các bước")}>
       {stages.map((s) => {
         const label = name ? name(s.stage_key) : STAGE_NAMES[s.stage_key] ?? s.stage_key;
         return (
@@ -197,7 +198,7 @@ export function Filmstrip({ shots, height = 56, numbered = false, className = ""
   const total = items.reduce((sum, i) => sum + i.d, 0) || 1;
   if (!items.length) return <div className={`grid place-items-center bg-raised text-faint ${className}`} style={{ height }}><Icon name="clapper" size={26} /></div>;
   return (
-    <div className={`filmstrip ${className}`} style={{ height }} role="img" aria-label={`Dải phim ${items.length} cảnh`}>
+    <div className={`filmstrip ${className}`} style={{ height }} role="img" aria-label={tv`Dải phim ${items.length} cảnh`}>
       {items.map(({ s, d, src, gap }, i) => (
         <div key={s.shot_id} title={`${i + 1}. ${s.text}`} style={{ width: `${(d / total) * 100}%` }} className={`relative ${gap && !src ? "hatch bg-raised" : "bg-black"}`}>
           {src && <img src={src} alt="" loading="lazy" className="h-full w-full object-cover" />}
@@ -210,7 +211,7 @@ export function Filmstrip({ shots, height = 56, numbered = false, className = ""
 
 /** The five stages of a video, filled up to where the project stands. */
 export function Steps({ step, tone }: { step: number; tone: string }) {
-  return <div className="flex gap-1" role="img" aria-label={`Đã qua ${Math.min(step, 5)} trên 5 công đoạn`}>{[0, 1, 2, 3, 4].map((i) => <span key={i} className={`h-1 w-5 rounded-full ${i < step ? "bg-proof" : i === step ? (tone === "cue" ? "bg-cue" : tone === "tally" ? "bg-tally" : "bg-accent") : "bg-overlay"}`} />)}</div>;
+  return <div className="flex gap-1" role="img" aria-label={tv`Đã qua ${Math.min(step, 5)} trên 5 công đoạn`}>{[0, 1, 2, 3, 4].map((i) => <span key={i} className={`h-1 w-5 rounded-full ${i < step ? "bg-proof" : i === step ? (tone === "cue" ? "bg-cue" : tone === "tally" ? "bg-tally" : "bg-accent") : "bg-overlay"}`} />)}</div>;
 }
 
 /** A key figure: a label, a big number and one line of context. */
@@ -260,6 +261,22 @@ export function TimeChip({ children, className = "" }: { children: React.ReactNo
 
 
 /** A small turning ring, for a button or a line that is waiting on the server. */
+/** The interface language, as two side-by-side options. Picking one reloads the page, so every screen comes back in
+    that language; the choice lives in this browser (see `i18n.ts`). */
+export function LangSwitch({ size = "md" }: { size?: "sm" | "md" }) {
+  const options: [Lang, string][] = [["vi", "Tiếng Việt"], ["en", "English"]];
+  return (
+    <div role="group" aria-label={tr("Ngôn ngữ giao diện")} className={`flex shrink-0 overflow-hidden rounded-lg border border-line bg-surface ${size === "sm" ? "h-8" : "h-9"}`}>
+      {options.map(([code, name]) => (
+        <button key={code} type="button" aria-pressed={lang === code} title={name} onClick={() => { if (lang !== code) setLang(code); }}
+                className={`px-2.5 text-[12px] font-semibold uppercase tracking-wide transition-colors ${lang === code ? "bg-raised text-ink" : "text-faint hover:text-mute"}`}>
+          {code}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function Spinner({ size = 14, className = "" }: { size?: number; className?: string }) {
   return <svg width={size} height={size} viewBox="0 0 20 20" fill="none" aria-hidden="true" className={`spin shrink-0 ${className}`}><circle cx="10" cy="10" r="7" stroke="currentColor" strokeOpacity=".25" strokeWidth="2.5" /><path d="M17 10a7 7 0 0 0-7-7" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" /></svg>;
 }
@@ -272,7 +289,7 @@ export function Skeleton({ lines = 0, height, className = "" }: { lines?: number
 
 /** Cards of the same shape as the ones to come. */
 export function SkeletonCards({ count = 3, height = 180, className = "" }: { count?: number; height?: number; className?: string }) {
-  return <div className={className} aria-busy="true" aria-label="Đang tải…">{Array.from({ length: count }, (_, i) => <div key={i} className="panel overflow-hidden"><Skeleton height={height * 0.55} className="!rounded-none" /><div className="p-3"><Skeleton lines={2} /></div></div>)}</div>;
+  return <div className={className} aria-busy="true" aria-label={tr("Đang tải…")}>{Array.from({ length: count }, (_, i) => <div key={i} className="panel overflow-hidden"><Skeleton height={height * 0.55} className="!rounded-none" /><div className="p-3"><Skeleton lines={2} /></div></div>)}</div>;
 }
 
 // ---------------------------------------------------------------- toasts: a word about what just happened, with a way back
@@ -284,7 +301,7 @@ const notifyToasts = () => toastListeners.forEach((l) => l());
 /** Show a short message at the bottom of the screen. With `undo`, the message carries a button that calls it back. */
 export function toast(text: string, options: { tone?: Toast["tone"]; undo?: () => void; seconds?: number } = {}) {
   const t: Toast = { id: ++toastSeq, text, tone: options.tone ?? "plain", until: Date.now() + (options.seconds ?? (options.undo ? 8 : 4)) * 1000,
-    action: options.undo ? { label: "Hoàn tác", run: options.undo } : undefined };
+    action: options.undo ? { label: tr("Hoàn tác"), run: options.undo } : undefined };
   toasts.push(t); if (toasts.length > 4) toasts.shift();
   notifyToasts();
   setTimeout(() => { const i = toasts.indexOf(t); if (i >= 0) { toasts.splice(i, 1); notifyToasts(); } }, t.until - Date.now());
@@ -300,7 +317,7 @@ export function Toaster() {
           {t.tone !== "plain" && <Icon name={t.tone === "proof" ? "check" : "alert"} size={15} className={t.tone === "proof" ? "text-proof" : "text-tally"} />}
           <span className="min-w-0">{t.text}</span>
           {t.action && <button type="button" className="btn shrink-0 rounded-md px-2.5 py-1 font-medium text-accent hover:bg-accent/12" onClick={() => { t.action!.run(); dismiss(t); }}>{t.action.label}</button>}
-          <button type="button" className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-faint hover:bg-raised hover:text-ink" onClick={() => dismiss(t)} aria-label="Đóng"><Icon name="x" size={14} /></button>
+          <button type="button" className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-faint hover:bg-raised hover:text-ink" onClick={() => dismiss(t)} aria-label={tr("Đóng")}><Icon name="x" size={14} /></button>
         </div>
       ))}
     </div>
@@ -314,7 +331,7 @@ const dialogListeners = new Set<() => void>();
 /** Ask before a destructive step. Resolves true only when the operator pressed the confirming button. */
 export function ask(title: string, options: { body?: React.ReactNode; confirm?: string; danger?: boolean } = {}): Promise<boolean> {
   return new Promise((resolve) => {
-    question = { title, body: options.body, confirm: options.confirm ?? "Xoá", danger: options.danger ?? true, resolve: (yes) => { question = null; dialogListeners.forEach((l) => l()); resolve(yes); } };
+    question = { title, body: options.body, confirm: options.confirm ?? tr("Xoá"), danger: options.danger ?? true, resolve: (yes) => { question = null; dialogListeners.forEach((l) => l()); resolve(yes); } };
     dialogListeners.forEach((l) => l());
   });
 }
@@ -338,7 +355,7 @@ export function Dialogs() {
         <h2 id="ask-title" className="text-[15px] font-semibold">{q.title}</h2>
         {q.body && <div className="mt-1.5 text-[13px] text-mute">{q.body}</div>}
         <div className="mt-5 flex justify-end gap-2">
-          <Button onClick={() => q.resolve(false)}>Thôi</Button>
+          <Button onClick={() => q.resolve(false)}>{tr("Thôi")}</Button>
           <button ref={yes} type="button" onClick={() => q.resolve(true)} className={`btn inline-flex h-9 items-center rounded-lg px-3.5 text-[13.5px] font-medium ${q.danger ? "bg-tally text-white hover:bg-tally/85" : "brand-button"}`}>{q.confirm}</button>
         </div>
       </div>

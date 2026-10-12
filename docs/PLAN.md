@@ -336,6 +336,14 @@ Sự cố trong lượt này: cài `ffmpeg-full` làm Homebrew nâng thư viện
 - [x] Mobile: thanh tab dưới đáy (4 màn hình chính và "Thêm" mở menu đầy đủ) thay cho việc chỉ có menu ẩn
 - Đã kiểm tra bằng trình duyệt ở 1440, 1024, 390 px: không tràn ngang, không lỗi JavaScript; nội dung không bị thanh tab dưới che. Chưa có người xem và cho ý kiến thẩm mỹ
 
+### Hai ngôn ngữ trên giao diện và font Tahoma, 2026-10-12
+
+- [x] Chuyển đổi Việt/Anh: nút `VI | EN` ở thanh đầu trang và thẻ "Ngôn ngữ giao diện" ở Hệ thống › Điều khiển. Lựa chọn nằm trong trình duyệt (`localStorage nx.lang`), mặc định tiếng Việt; đổi ngôn ngữ thì tải lại trang để các hằng số dựng lúc nạp (tên màn hình, tên bước) cũng đổi theo
+- [x] Cách làm: chuỗi tiếng Việt trong mã là khoá (`tr("…")`, mẫu có biến dùng `` tv`…${x}…` `` với `{0}` trong bản dịch); `web/src/en.ts` giữ tiếng Anh cho 1.124 chuỗi; thiếu bản dịch thì hiện tiếng Việt chứ không trống. `npm run i18n:check` liệt kê chuỗi chưa có tiếng Anh và mục tiếng Anh không còn dùng. Ngày giờ theo `locale` (vi-VN / en-US)
+- [x] Font: khi giao diện tiếng Việt dùng Tahoma (có sẵn trên macOS và Windows, cỡ chữ 13,5 px, bỏ nén khoảng cách chữ ở tiêu đề); tiếng Anh giữ Be Vietnam Pro. Tahoma chỉ có hai độ đậm nên chữ 500 hiện như thường, 600 như đậm
+- Không dịch: chuỗi do máy chủ sinh (thông báo, lý do dừng, nhận xét kiểm tra, lỗi API) vẫn tiếng Việt; muốn dịch phải thêm khoá thông điệp phía server. Tên dự án, kịch bản, mô tả footage là dữ liệu của người dùng, giữ nguyên
+- Đã kiểm tra bằng trình duyệt ở 1280 px: Tổng quan, trang dự án, Hệ thống ở cả hai ngôn ngữ; 206 test API vẫn đạt
+
 ### Còn lại sau lượt này
 
 Cần thứ ngoài máy này: tài khoản và khoá API của nền tảng (tự đăng, tự lấy số liệu), khoá của nhà cung cấp video AI, khoá Anthropic để chạy thật adapter Claude, dịch vụ tìm kiếm trên toàn bộ web (hiện chỉ tìm trên Wikipedia).
