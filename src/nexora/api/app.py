@@ -1006,6 +1006,8 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             if subject not in names and subject.startswith("ast_") and system.assets.asset(subject):
                 names[subject] = (system.assets.path_of(system.assets.original(subject)).name, "/thu-vien")
             name, link = names.get(subject, (None, None))
+            if n["kind"] == "metrics_due":
+                name, link = n["reason"], "/ke-hoach?xem=ket-qua"
             out.append({**n, "pipeline": info.get("pipeline_id"), "subject_ref": subject, "subject_name": name, "link": link})
         return {"unread": sum(1 for n in out if n["read_at"] is None), "items": out}
 
@@ -1030,6 +1032,82 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         package = system.distribution.build_package(render_id, title=body.get("title"), description=body.get("description"))
         package = system.distribution.annotate_package(render_id, rights={**rights, "override_reason": reason or None, "checked_at": time.time()})
         return system.distribution.annotate_package(render_id, checks=package_checks(package))
+
+    # ------------------------------------------------------------------ publishing and what is learned from it
+    def published(work):
+        try:
+            return work()
+        except ValueError as err:
+            reasons = {"no_package": (409, "Bản dựng này chưa có gói xuất bản"), "unknown_target": (422, "Không có nơi đăng này"), "bad_url": (422, "Địa chỉ phải bắt đầu bằng http:// hoặc https://"),
+                       "not_published": (409, "Bản này chưa được đăng"), "no_figures": (422, "Hãy nhập ít nhất một con số")}
+            status, text = reasons.get(str(err), (422, "Yêu cầu chưa hợp lệ"))
+            raise HTTPException(status, text)
+
+    @app.get("/api/v1/publishing")
+    def publishing(project_id: str | None = None):
+        rows = system.publishing.publications(project_id=project_id)
+        return {"targets": system.publishing.targets(), "publications": rows, "due": system.publishing.due(), "marks": [1, 24, 72, 168],
+                "experiments": system.publishing.experiments() if project_id is None else [], "breakdown": system.publishing.breakdown() if project_id is None else []}
+
+    @app.post("/api/v1/renders/{render_id}/publish")
+    def publish(render_id: str, body: dict):
+        """Send a packaged cut to a destination, or record where the operator uploaded it by hand. Asking twice never sends twice."""
+        target, variant = str(body.get("target", "")), str(body.get("variant") or "").strip()
+        if body.get("url"):
+            return published(lambda: system.publishing.record_manual(render_id, target, str(body["url"]), variant=variant))
+        return published(lambda: system.publishing.publish(render_id, target, variant=variant))
+
+    @app.post("/api/v1/publications/{publication_id}/reconcile")
+    def reconcile_publication(publication_id: str):
+        row = system.publishing.reconcile(publication_id)
+        if row is None:
+            raise HTTPException(404, "Không có bản đăng này")
+        return row
+
+    @app.post("/api/v1/publications/{publication_id}/metrics")
+    def add_metrics(publication_id: str, body: dict):
+        if system.publishing.publication(publication_id) is None:
+            raise HTTPException(404, "Không có bản đăng này")
+        try:
+            return published(lambda: system.publishing.add_snapshot(publication_id, body))
+        except (TypeError, ValueError):
+            raise HTTPException(422, "Số liệu phải là số")
+
+    @app.get("/api/v1/publications/{publication_id}/forecast")
+    def forecast(publication_id: str):
+        if system.publishing.publication(publication_id) is None:
+            raise HTTPException(404, "Không có bản đăng này")
+        return system.publishing.forecast(publication_id)
+
+    @app.post("/api/v1/experiments", status_code=201)
+    def create_experiment(body: dict):
+        try:
+            return system.publishing.create_experiment(str(body.get("question", "")), [str(p) for p in body.get("publications") or []], metric=str(body.get("metric") or "views"), labels=body.get("labels"))
+        except ValueError:
+            raise HTTPException(422, "Một thí nghiệm cần câu hỏi và ít nhất hai bản đăng khác nhau")
+
+    @app.post("/api/v1/experiments/{experiment_id}/close")
+    def close_experiment(experiment_id: str, body: dict):
+        if system.publishing.experiment(experiment_id) is None:
+            raise HTTPException(404, "Không có thí nghiệm này")
+        return system.publishing.close_experiment(experiment_id, str(body.get("conclusion", "")))
+
+    @app.post("/api/v1/renders/{render_id}/titles")
+    def suggest_titles(render_id: str):
+        if system.distribution.package(render_id) is None:
+            raise HTTPException(409, "Bản dựng này chưa có gói xuất bản")
+        return {"titles": planning_call(lambda: system.distribution.suggest_titles(render_id))}
+
+    @app.patch("/api/v1/renders/{render_id}/package")
+    def edit_package(render_id: str, body: dict):
+        if system.distribution.package(render_id) is None:
+            raise HTTPException(409, "Bản dựng này chưa có gói xuất bản")
+        if body.get("poster_text"):
+            try:
+                return system.distribution.make_poster(render_id, str(body.get("base") or system.distribution.package(render_id)["thumbnails"][0]), str(body["poster_text"]))
+            except ValueError:
+                raise HTTPException(422, "Chọn một ảnh của gói và nhập chữ cho nó")
+        return system.distribution.set_text(render_id, title=body.get("title"), description=body.get("description"))
 
     @app.get("/api/v1/renders/{render_id}/rights")
     def rights(render_id: str):

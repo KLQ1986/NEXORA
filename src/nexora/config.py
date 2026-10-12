@@ -24,6 +24,7 @@ class Config:
     speech_language: str = "vi"
     pollinations: bool = True
     pollinations_token: str = ""
+    publish_folder: str = "~/Movies/NEXORA"
 
     @classmethod
     def load(cls, path: str | Path = "nexora.toml") -> "Config":
@@ -57,4 +58,5 @@ speech_model = "data/models/ggml-large-v3-turbo-q5_0.bin"   # a whisper.cpp mode
 speech_language = "vi"            # the language spoken in the footage
 pollinations = true               # stills from Pollinations (only the prompt leaves this machine); without a token only a few stills at a time
 pollinations_token = ""           # a token from a Pollinations account lifts that limit
+publish_folder = "~/Movies/NEXORA"   # where "publish to folder" puts finished packages; empty turns it off
 """

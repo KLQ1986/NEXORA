@@ -21,6 +21,7 @@ from nexora.core.states import RunStatus
 from nexora.core.worker import Worker
 from nexora.modules.library.ingest import Library
 from nexora.modules.distribution.package import Distribution
+from nexora.modules.distribution.publish import Publishing
 from nexora.modules.edit.render import Edit
 from nexora.modules.edit.roughcut import RoughCut
 from nexora.modules.library.transcribe import Transcription
@@ -57,6 +58,7 @@ class System:
     commands: Commands = None
     viewer: Viewer = None
     evaluation: Evaluation = None
+    publishing: Publishing = None
 
 
 def fill_gap_from_stock(system: "System", shot_id: str, query: str) -> dict:
@@ -104,7 +106,7 @@ def evaluation_config(system: "System") -> dict:
 
 PIPELINE_NAMES = {"library.ingest": "Nhập footage", "library.ingest_image": "Nhập ảnh", "library.ingest_audio": "Nhập nhạc", "library.understand": "Hiểu nội dung footage", "library.transcribe": "Nghe lời nói trong footage",
                   "sourcing.match": "Chọn clip", "sourcing.generate": "Sinh hình bằng AI", "edit.render": "Dựng video", "edit.preview": "Dựng bản xem thử", "library.enhance": "Nâng chất lượng clip"}
-ANNOUNCE = {"disk_low": "ổ đĩa sắp đầy", "volume_offline": "không tìm thấy nơi chứa footage", "gaps": "còn câu chưa có hình", "waiting_review": "đang chờ bạn duyệt", "blocked": "đang dừng và cần bạn xử lý", "failed": "thất bại", "succeeded": "đã xong"}
+ANNOUNCE = {"metrics_due": "đã tới mốc ghi số liệu", "disk_low": "ổ đĩa sắp đầy", "volume_offline": "không tìm thấy nơi chứa footage", "gaps": "còn câu chưa có hình", "waiting_review": "đang chờ bạn duyệt", "blocked": "đang dừng và cần bạn xử lý", "failed": "thất bại", "succeeded": "đã xong"}
 QUIET = frozenset({"library.ingest", "library.ingest_image", "library.ingest_audio", "library.understand", "library.transcribe", "edit.preview"})   # finishing these needs nobody's attention
 
 
@@ -115,6 +117,8 @@ def announce(system: "System", after: int) -> int:
         pipeline = (system.orch.run_info(n["run_id"]) or {}).get("pipeline_id")
         muted = json.loads(system.orch.setting("notify_off", "[]"))
         quiet = system.orch.setting("quiet_hours", "")
+        if n["kind"] == "metrics_due":
+            pipeline = f"Video {n['reason']}"
         if not pipeline and n["kind"] in ("disk_low", "volume_offline"):
             pipeline = "Máy"
         if (system.orch.setting("desktop_notifications", "1") != "1" or n["kind"] not in ANNOUNCE or n["kind"] in muted
@@ -187,7 +191,7 @@ def capabilities(system: "System") -> list[dict]:
 def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Adapter | None = None,
           segment_seconds: float = 12.0, voice: Adapter | None = None, match_threshold: float = 0.5, judge: bool = True,
           generators: list[Adapter] | None = None, stock: Adapter | None = None, desktop: Adapter | None = None, voice_name: str = "Linh",
-          web: Adapter | None = None, speech: Adapter | None = None) -> System:
+          web: Adapter | None = None, speech: Adapter | None = None, publishers: list[Adapter] | None = None) -> System:
     """`model` is the adapter for vision, reasoning and embeddings; without one, footage is ingested but not understood."""
     data_dir = Path(data_dir).resolve()          # tools resolve relative paths differently; keep every path absolute
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -251,6 +255,9 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     system.commands = Commands(adapters, projects, sourcing, edit)
     system.viewer = Viewer(projects, adapters, data_dir / "media") if model is not None else None
     system.evaluation = Evaluation(db_path, index, threshold=match_threshold)
+    for publisher in publishers or []:
+        adapters.register(publisher)
+    system.publishing = Publishing(db_path, projects, adapters, distribution.package, notify=lambda kind, reason: orch.notify(kind, "", reason=reason))
     system.producer = Producer(db_path, orch=orch, projects=projects, planning=planning, sourcing=sourcing, edit=edit, adapters=adapters,
                                fill_gap=lambda shot_id, query: fill_gap_from_stock(system, shot_id, query))
     return system
@@ -262,6 +269,7 @@ def build_from_config(config, **overrides) -> System:
     from nexora.adapters.ollama import OllamaAdapter
     from nexora.adapters.openmontage import OpenMontageStock
     from nexora.adapters.motion import StillMotion
+    from nexora.adapters.outbox import FolderPublisher
     from nexora.adapters.pollinations import PollinationsImage
     from nexora.adapters.speech import WhisperCpp
     from nexora.adapters.voice import SayVoice
@@ -272,7 +280,8 @@ def build_from_config(config, **overrides) -> System:
                  voice=SayVoice(), voice_name=config.voice, match_threshold=config.match_threshold,
                  stock=OpenMontageStock(config.openmontage_repo), desktop=DesktopNotifier(), web=WebReader(),
                  speech=WhisperCpp(config.speech_model, language=config.speech_language) if config.speech_model else None,
-                 generators=[*([PollinationsImage(token=config.pollinations_token)] if config.pollinations else []), StillMotion()], **overrides)
+                 generators=[*([PollinationsImage(token=config.pollinations_token)] if config.pollinations else []), StillMotion()],
+                 publishers=[FolderPublisher(config.publish_folder)] if config.publish_folder else [], **overrides)
 
 
 def doctor(system: System, config=None) -> list[dict]:

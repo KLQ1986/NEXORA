@@ -34,6 +34,11 @@ def vtt(shots: list[dict]) -> str:
 
 
 LANGUAGES = {"en": "tiếng Anh", "zh": "tiếng Trung", "ja": "tiếng Nhật", "ko": "tiếng Hàn", "fr": "tiếng Pháp", "es": "tiếng Tây Ban Nha", "th": "tiếng Thái", "vi": "tiếng Việt"}
+TITLES_PROMPT = (
+    "Đây là lời dẫn của một video ngắn:\n{script}\n\nViết {n} tiêu đề khác nhau cho video này bằng tiếng Việt. Mỗi tiêu đề dưới 60 ký tự, nói đúng nội dung, "
+    "không giật gân, không hứa điều video không có. Chỉ trả về JSON với khoá tieu_de: danh sách các mục có ten (tiêu đề) và ly_do (một câu vì sao người xem sẽ bấm)."
+)
+GOOD_TITLE = (20, 60)        # characters: shorter says too little, longer is cut off in most lists
 TRANSLATE_PROMPT = (
     "Dịch các dòng phụ đề sau sang {language}. Giữ nguyên số dòng và thứ tự, mỗi dòng dịch gọn để đọc kịp trên màn hình, không thêm bớt ý.\n{lines}\n\n"
     "Chỉ trả về JSON với khoá dong: danh sách đúng {n} chuỗi, theo thứ tự."
@@ -118,6 +123,50 @@ class Distribution:
             "credits": sorted(o for o in origins if o == "licensed"),
             "folder": str(folder),
         }
+        (folder / "package.json").write_text(json.dumps(package, ensure_ascii=False, indent=2), encoding="utf-8")
+        return package
+
+    def suggest_titles(self, render_id: str, *, count: int = 5) -> list[dict]:
+        """Title candidates from the model, each with what can be measured about it. A title that repeats words the video
+        never says is marked, since a title must not promise what the video does not hold."""
+        shots = self._projects.render(render_id)["qc"].get("shots") or []
+        script = " ".join(s["text"] for s in shots)
+        out = self._adapters.submit("model", Request("chat", params={"prompt": TITLES_PROMPT.format(script=script, n=count), "json": True, "max_tokens": 500, "task": "titles"})).outputs["json"]
+        said = {w.strip(".,!?:;“”\"").lower() for w in script.split()}
+        titles = []
+        for raw in (out.get("tieu_de") or [])[:count]:
+            name = str(raw.get("ten") if isinstance(raw, dict) else raw).strip()
+            if not name or name in [t["title"] for t in titles]:
+                continue
+            words = [w.strip(".,!?:;“”\"").lower() for w in name.split() if len(w) > 3]
+            outside = [w for w in words if w not in said]
+            notes = []
+            if not GOOD_TITLE[0] <= len(name) <= GOOD_TITLE[1]:
+                notes.append("quá ngắn" if len(name) < GOOD_TITLE[0] else "quá dài, sẽ bị cắt")
+            if words and len(outside) * 2 > len(words):
+                notes.append("phần lớn từ không có trong lời dẫn")
+            titles.append({"title": name, "why": str(raw.get("ly_do") or "").strip() if isinstance(raw, dict) else "", "chars": len(name), "notes": notes})
+        return sorted(titles, key=lambda t: len(t["notes"]))
+
+    def set_text(self, render_id: str, *, title: str | None = None, description: str | None = None) -> dict:
+        package = self.package(render_id)
+        if title and title.strip():
+            package["title"] = title.strip()
+        if description is not None and description.strip():
+            package["description"] = description.strip()
+        (self._exports / render_id / "package.json").write_text(json.dumps(package, ensure_ascii=False, indent=2), encoding="utf-8")
+        return package
+
+    def make_poster(self, render_id: str, base: str, text: str) -> dict:
+        """A thumbnail candidate made from one of the frames with words on it."""
+        package = self.package(render_id)
+        if base not in package["thumbnails"] or not text.strip():
+            raise ValueError("choose one of the package's thumbnails and give it words")
+        folder = self._exports / render_id
+        name = f"poster_{sum(1 for t in package['thumbnails'] if t.startswith('poster_')) + 1}.jpg"
+        self._adapters.submit("graphics", Request("poster", inputs={"image": str(folder / base), "text": text.strip()}, params={"out": str(folder / name)}))
+        package["thumbnails"] = package["thumbnails"] + [name]
+        package["thumbnail"] = name
         (folder / "package.json").write_text(json.dumps(package, ensure_ascii=False, indent=2), encoding="utf-8")
         return package
 

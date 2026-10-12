@@ -123,6 +123,13 @@ class AdapterRegistry:
         found = {name: a.environment() for name, a in self._adapters.items()}
         return {name: value for name, value in found.items() if value is not None}
 
+    def reconcile(self, name: str, request: Request) -> Result | None:
+        """Ask an adapter what became of a request whose outcome is unknown. None means it never happened."""
+        adapter = self._adapters.get(name)
+        if adapter is None:
+            raise AdapterError(ErrorCode.INVALID_REQUEST, f"no adapter named {name}")
+        return adapter.reconcile(request)
+
     def submit(self, name: str, request: Request) -> Result:
         adapter = self._adapters.get(name)
         if adapter is None:
