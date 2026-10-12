@@ -330,6 +330,8 @@ export default function Library() {
                     <span className="block px-3 py-2.5"><span className="block truncate text-[12px] text-faint">{h.asset.name}</span>
                       <span className="mt-0.5 line-clamp-2 text-[13px]">{h.text}</span></span>
                   </button>
+                  {q.trim() && (h.level ?? "segment") === "segment" && <button type="button" className="link mt-1 px-1 text-[12px]" title="Giữ cặp này làm đáp án đúng do chính bạn chọn, để đo hệ thống tìm kiếm"
+                    onClick={async (e) => { const b = e.currentTarget; await post("/api/v1/evaluation/cases", { line: q.trim(), moment_id: h.moment_id }).catch(() => {}); b.textContent = "Đã lưu làm mẫu chuẩn"; b.disabled = true; }}>Đây là cảnh đúng cho “{q.trim().slice(0, 24)}”</button>}
                 </li>
               ))}
             </ul>

@@ -1316,6 +1316,11 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
     @app.post("/api/v1/evaluation/cases", status_code=201)
     def add_case(body: dict):
         """Keep an accepted clip as a known right answer: the line of a shot and the stretch chosen for it."""
+        if body.get("moment_id"):                 # chosen by hand: "for these words, this is the right stretch", whatever the system would have proposed
+            moment, line = system.index.by_id(str(body["moment_id"])), str(body.get("line", "")).strip()
+            if moment is None or not line:
+                raise HTTPException(422, "Cần một câu và một cảnh có thật")
+            return {"case_id": system.evaluation.add_case(line, moment.asset_id, moment.t_start, moment.t_end), "cases": len(system.evaluation.cases()), "by_hand": True}
         shot = system.projects.shot(str(body.get("shot_id", "")))
         sel = system.projects.selection(shot.shot_id) if shot else None
         if sel is None or sel.status == "gap" or not sel.asset_id or sel.t_in is None:

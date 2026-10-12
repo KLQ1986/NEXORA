@@ -103,6 +103,10 @@ def test_accepted_clips_become_a_benchmark_and_a_change_that_loses_them_is_flagg
         assert client.post("/api/v1/evaluation/cases", json={"shot_id": shot["shot_id"]}).status_code == 201
     assert client.post("/api/v1/evaluation/cases", json={"shot_id": shots[0]["shot_id"]}).json()["cases"] == 2          # the same answer twice is one case
     assert client.post("/api/v1/evaluation/cases", json={"shot_id": "sht_none"}).status_code == 409
+    moment = system.index.moments(shots[0]["selection"]["asset"]["asset_id"], level="segment")[-1]
+    by_hand = client.post("/api/v1/evaluation/cases", json={"line": "khung cảnh cuối video", "moment_id": moment.moment_id}).json()        # the operator's own choice, not the system's
+    assert by_hand["by_hand"] and by_hand["cases"] == 3 and client.post("/api/v1/evaluation/cases", json={"line": " ", "moment_id": moment.moment_id}).status_code == 422
+    client.delete(f"/api/v1/evaluation/cases/{by_hand['case_id']}")
     first = client.post("/api/v1/evaluation/run").json()["runs"][0]
     assert (first["cases"], first["first"], first["top3"]) == (2, 1.0, 1.0) and "change" not in first and first["config"]["segment_seconds"] == 2.0
 
