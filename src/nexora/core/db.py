@@ -246,6 +246,9 @@ MIGRATIONS = [
     ("scripts", "critique", "TEXT"),
     ("projects", "due_date", "TEXT"),
     ("assets", "rejected", "INTEGER NOT NULL DEFAULT 0"),
+    ("shots", "gen", "TEXT"),
+    ("projects", "bible", "TEXT"),
+    ("generations", "quality", "TEXT"),
 ]
 
 

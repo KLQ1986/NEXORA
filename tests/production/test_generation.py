@@ -32,7 +32,7 @@ def test_without_a_provider_generation_waits_for_the_operator_instead_of_failing
     drain(system)
     stage = system.orch.stages(run)[0]
     assert stage.status.value == "blocked" and stage.blocked_reason == "auth"
-    assert system.generation.available() == {"image": False, "video": False}
+    assert system.generation.available() == {"image": False, "video": False, "image_providers": [], "video_providers": []}
 
 
 def test_stills_are_approved_before_any_video_is_generated_and_the_result_renders(tmp_path):

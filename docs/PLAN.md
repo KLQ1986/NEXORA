@@ -227,6 +227,18 @@ Library (145 test đạt; đã bấm thử trên giao diện, nhận dạng lờ
 
 Ghi nhận để tối ưu sau: whisper nghe giọng đọc máy sai vài từ ("sạp" thành "sạc", "rau" thành "dao"); mốc từ liền nhau không có khoảng lặng nên câu được tách theo dấu phẩy và độ dài.
 
+Sourcing (155 test đạt; đã chạy thật một câu chuyện ba cảnh: ảnh từ Pollinations, clip làm trên máy, dựng ra video dọc):
+
+- [x] Nhiều nhà cung cấp cho cùng một loại hình, có định tuyến theo từng cảnh và thứ tự ưu tiên; nhà cung cấp hỏng, hết lượt hoặc bị chế độ riêng tư chặn thì chuyển sang nhà kế tiếp
+- [x] Nhà cung cấp ảnh thật không cần khoá (Pollinations). Không có tài khoản thì chỉ được một đến ba ảnh rồi bị từ chối một lúc; hệ thống báo "hết lượt", giữ ảnh đã có và chạy tiếp khi bấm lại. Có token thì đặt `pollinations_token`
+- [x] Nhà cung cấp clip chạy trên máy: biến ảnh đã duyệt thành clip có chuyển động máy (đẩy, kéo, lia). Đây không phải mô hình video; trong hình không có gì chuyển động
+- [x] Hồ sơ nhân vật, bối cảnh, phong cách của dự án: câu nào nhắc tên thì prompt tả đúng như hồ sơ; ảnh tham chiếu được gửi kèm cho nhà cung cấp nhận ảnh
+- [x] Chấm chất lượng ảnh bằng mô hình nhìn và vòng sửa có giới hạn (tối đa 2 lần làm lại), chọn bản tốt nhất, giữ hồ sơ các bản bị loại
+- [x] Sửa từng cảnh: hình cần sinh, cỡ cảnh, chuyển động máy, nhà cung cấp, xin ảnh khác (seed mới). Chạy lại chỉ làm lại cảnh đã đổi
+- [x] Kế hoạch cho câu thiếu hình: cảnh gần nhất trong kho, các cách xử lý máy này làm được, và danh sách cần quay thêm tải về được
+
+Chưa làm: mô hình video thật (cần khoá của nhà cung cấp), huấn luyện mô hình nhân vật (mục P2, cần công cụ huấn luyện), chọn nguồn stock trên giao diện.
+
 ### Lát 1 — Lõi chạy việc
 
 Mục thiết kế: 5, 6, 7.

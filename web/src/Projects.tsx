@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { post, projectState, scriptText, stageName, timecode, usePoll, type Idea, type Source, type AgentTask, type Asset, type Settings, type Candidate, type Project, type RenderItem, type Shot } from "./api";
+import { post, projectState, scriptText, stageName, timecode, usePoll, type Idea, type Source, type AgentTask, type Asset, type Settings, type Candidate, type Project, type RenderItem, type Shot, type BibleEntry, type GapPlan } from "./api";
 import Board from "./Board";
 import { Button, Empty, Filmstrip, Icon, Meter, Page, Section, Seg, StageRail, Steps, Tabs, Tag, TimeChip } from "./parts";
 import Timeline from "./Timeline";
@@ -313,6 +313,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
                        {reviewing && <Button size="sm" kind="primary" disabled={busy} onClick={() => run(() => post(`/api/v1/projects/${id}/match/approve`))}><Icon name="check" size={14} />Duyệt các clip này</Button>}
                      </>}>
               {matching && p.match && <div className="mb-3"><StageRail stages={p.match.stages} labels /></div>}
+              <Gaps id={id} shots={p.shots} run={run} />
               {p.shots.some((s) => s.selection) && <div className="mb-4"><TimelineStrip shots={p.shots} /></div>}
               <ol className="grid gap-3">
                 {p.shots.map((s, i) => <ShotRow key={s.shot_id} shot={s} n={i + 1} locked={!!rendering} changed={reload} heading={s.scene && s.scene !== p.shots[i - 1]?.scene ? s.scene : null} sources={p.research} />)}
@@ -483,11 +484,11 @@ function Detail({ id, back }: { id: string; back: () => void }) {
                     {p.generate && ["queued", "running"].includes(p.generate.status) && <span className="text-[13px] text-ai">Đang sinh…</span>}
                     {p.generate?.status === "blocked" && <span className="text-[13px] text-cue">Đang dừng, xem ở mục Tiến trình</span>}
                   </div>
-                  {p.shots.some((s) => s.keyframe_url) && (
-                    <ol className="grid grid-cols-3 gap-2">
-                      {p.shots.map((s, i) => <li key={s.shot_id} title={`${i + 1}. ${s.text}`}>{s.keyframe_url ? <img src={s.keyframe_url} alt="" className="aspect-video w-full rounded-md bg-black object-cover" /> : <div className="aspect-video rounded-md bg-raised" />}</li>)}
-                    </ol>
-                  )}
+                  <p className="text-[12px] text-faint">Ảnh: {p.generators.image_providers.map((x) => x.label).join(", ")}. Video: {p.generators.video_providers.map((x) => x.label === "motion" ? "chuyển động từ ảnh tĩnh (trên máy)" : x.label).join(", ")}.</p>
+                  <ol className="grid gap-2">
+                    {p.shots.map((s, i) => <GenRow key={s.shot_id} shot={s} n={i + 1} providers={p.generators} changed={reload} />)}
+                  </ol>
+                  <Bible entries={p.bible} save={(bible) => patch({ bible })} />
                 </>
               )}
             </div>
@@ -495,6 +496,92 @@ function Detail({ id, back }: { id: string; back: () => void }) {
         </aside>
       </div>
     </Page>
+  );
+}
+
+const SIZES: [string, string][] = [["wide shot", "Toàn cảnh"], ["medium shot", "Trung cảnh"], ["close-up", "Cận cảnh"], ["extreme close-up", "Đặc tả"]];
+const MOVES: [string, string][] = [["slow push in", "Đẩy vào chậm"], ["slow pull out", "Kéo ra chậm"], ["pan left", "Lia trái"], ["pan right", "Lia phải"], ["static", "Đứng yên"]];
+
+/** One shot of a generated story: its still, what the model made of it, and the operator's choices for making it again. */
+function GenRow({ shot, n, providers, changed }: { shot: Shot; n: number; providers: Project["generators"]; changed: () => void }) {
+  const g = shot.generation, q = g?.quality;
+  const set = (gen: Record<string, string>) => post(`/api/v1/shots/${shot.shot_id}`, { gen }, "PATCH").then(changed);
+  return (
+    <li className="rounded-lg border border-line bg-raised/40 p-2">
+      <div className="flex gap-2.5">
+        {shot.keyframe_url ? <img src={shot.keyframe_url} alt="" className="aspect-video w-24 shrink-0 rounded-md bg-black object-cover" /> : <div className="grid aspect-video w-24 shrink-0 place-items-center rounded-md bg-raised text-faint"><Icon name="image" /></div>}
+        <div className="min-w-0 flex-1 text-[12.5px]">
+          <p className="truncate"><span className="mono mr-1.5 text-faint">{String(n).padStart(2, "0")}</span>{shot.gen.subject || shot.brief || shot.text}</p>
+          <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11.5px] text-faint">
+            {g ? <><span>{g.provider}</span><span className="mono">seed {g.seed}</span></> : <span>Chưa sinh ảnh</span>}
+            {q && <span className={q.score >= 6 ? "text-proof" : "text-cue"} title={q.issues.join(", ") || "Không thấy lỗi"}>{q.score}/10{q.tries > 1 ? `, chọn từ ${q.tries} lần` : ""}</span>}
+            {shot.gen.attempt ? <span className="text-ai">đã yêu cầu ảnh khác</span> : null}
+          </p>
+        </div>
+      </div>
+      <details className="mt-1.5 text-[12px]">
+        <summary className="cursor-pointer list-none text-accent">Sửa ảnh này</summary>
+        <div className="mt-2 grid gap-2">
+          <input defaultValue={shot.gen.subject ?? ""} onBlur={(e) => e.target.value !== (shot.gen.subject ?? "") && set({ subject: e.target.value })} aria-label={`Hình cần sinh cho câu ${n}`} placeholder="Hình cần sinh (để trống thì dùng lời dẫn)" className="h-8 px-2.5" />
+          <div className="grid grid-cols-2 gap-2">
+            <select aria-label="Cỡ cảnh" value={shot.gen.shot_size ?? "medium shot"} onChange={(e) => set({ shot_size: e.target.value })} className="h-8 pl-2">{SIZES.map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
+            <select aria-label="Chuyển động máy" value={shot.gen.camera ?? "slow push in"} onChange={(e) => set({ camera: e.target.value })} className="h-8 pl-2">{MOVES.map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
+            {providers.image_providers.length > 1 && <select aria-label="Nơi sinh ảnh" value={shot.gen.provider_image ?? ""} onChange={(e) => set({ provider_image: e.target.value })} className="h-8 pl-2"><option value="">Ảnh: theo thứ tự chung</option>{providers.image_providers.map((x) => <option key={x.name} value={x.name}>Ảnh: {x.label}</option>)}</select>}
+            {providers.video_providers.length > 1 && <select aria-label="Nơi sinh video" value={shot.gen.provider_video ?? ""} onChange={(e) => set({ provider_video: e.target.value })} className="h-8 pl-2"><option value="">Video: theo thứ tự chung</option>{providers.video_providers.map((x) => <option key={x.name} value={x.name}>Video: {x.label}</option>)}</select>}
+          </div>
+          {g && <div className="flex items-center gap-2"><Button size="sm" onClick={() => post(`/api/v1/shots/${shot.shot_id}/variation`).then(changed)}>Xin ảnh khác</Button><span className="text-faint">Bấm “Sinh lại” ở trên để áp dụng. Ảnh của các câu khác được giữ nguyên.</span></div>}
+          {g && <p className="mono break-words rounded bg-overlay p-2 text-[11px] leading-relaxed text-mute">{g.prompt}</p>}
+        </div>
+      </details>
+    </li>
+  );
+}
+
+const KIND: Record<string, string> = { character: "Nhân vật", setting: "Bối cảnh", prop: "Đồ vật", style: "Phong cách" };
+/** How the project's characters, places and look are described, so that every shot shows them the same way. */
+function Bible({ entries, save }: { entries: BibleEntry[]; save: (b: BibleEntry[]) => void }) {
+  return (
+    <div className="border-t border-line pt-3">
+      <h3 className="flex items-center gap-2 text-[13px] font-semibold"><Icon name="user" size={14} className="text-mute" />Nhân vật và bối cảnh<span className="mono ml-auto text-[12px] font-normal text-faint">{entries.length}</span></h3>
+      <p className="mt-1 text-[12px] text-faint">Câu nào nhắc tới tên ở đây thì ảnh của câu đó được tả đúng như mô tả này. Mục “Phong cách” áp dụng cho mọi ảnh.</p>
+      <ul className="rows mt-2 empty:hidden">
+        {entries.map((e) => (
+          <li key={e.name} className="flex gap-2 py-1.5 text-[12.5px]"><span className="min-w-0 flex-1"><span className="font-medium">{e.name}</span><span className="ml-1.5 text-faint">{KIND[e.kind]}</span><span className="block text-mute">{e.description}</span></span>
+            <button type="button" className="link shrink-0" onClick={() => save(entries.filter((x) => x.name !== e.name))}>Bỏ</button></li>))}
+      </ul>
+      <form className="mt-2 grid gap-2" onSubmit={(ev) => { ev.preventDefault(); const f = new FormData(ev.currentTarget); const name = String(f.get("name") ?? "").trim(); if (!name) return;
+        save([...entries.filter((x) => x.name !== name), { name, kind: String(f.get("kind")) as BibleEntry["kind"], description: String(f.get("description") ?? ""), asset_id: null }]); ev.currentTarget.reset(); }}>
+        <div className="flex gap-2"><input name="name" aria-label="Tên" placeholder="Tên, ví dụ: Mít" className="h-8 min-w-0 flex-1 px-2.5" />
+          <select name="kind" aria-label="Loại" className="h-8 pl-2">{Object.entries(KIND).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>
+        <input name="description" aria-label="Mô tả" placeholder="Mô tả bằng tiếng Anh cho mô hình: an orange tabby cat with a white chest" className="h-8 px-2.5" />
+        <div><Button size="sm" type="submit">Thêm</Button></div>
+      </form>
+    </div>
+  );
+}
+
+/** Lines that have no picture, with what the library holds nearest to each and the ways out this machine has. */
+function Gaps({ id, shots, run }: { id: string; shots: Shot[]; run: (fn: () => Promise<unknown>) => void }) {
+  const count = shots.filter((s) => s.selection?.status === "gap").length;
+  const { data } = usePoll<{ gaps: GapPlan[] }>(`/api/v1/projects/${id}/gaps`, 8000);
+  if (!count || !data?.gaps.length) return null;
+  return (
+    <div className="mb-4 rounded-xl border border-cue/30 bg-cue/[0.05] p-4 text-[13px]">
+      <div className="flex flex-wrap items-center gap-2"><Icon name="image" size={15} className="text-cue" /><span className="font-semibold">{data.gaps.length} câu chưa có hình</span>
+        <a href={`/api/v1/projects/${id}/shotlist`} className="ml-auto flex items-center gap-1.5 rounded-lg border border-edge px-2.5 py-1.5 text-[12.5px] hover:border-accent hover:text-accent" download><Icon name="download" size={14} />Tải danh sách cần quay</a></div>
+      <ul className="mt-3 grid gap-3">
+        {data.gaps.map((g) => (
+          <li key={g.shot_id} className="grid gap-1.5">
+            <p><span className="mono mr-2 text-faint">Câu {g.line}</span>{g.text}<span className="ml-2 text-faint">cần {g.seconds.toFixed(0)} giây</span></p>
+            {g.near && <p className="text-[12.5px] text-mute">Gần nhất trong kho ({Math.round(g.near.score * 100)}%): {g.near.text.slice(0, 140)}</p>}
+            <div className="flex flex-wrap gap-2">
+              {g.ways.some((w) => w.way === "stock") && <Button size="sm" onClick={() => run(async () => { await post(`/api/v1/shots/${g.shot_id}/stock`, { query: g.brief || g.text }); })}>Tìm clip stock</Button>}
+              {g.ways.filter((w) => w.way === "reword" || w.way === "shoot" || w.way === "generate").map((w) => <span key={w.way} className="rounded-md border border-line bg-raised/50 px-2 py-1 text-[12px] text-mute">{w.text}</span>)}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

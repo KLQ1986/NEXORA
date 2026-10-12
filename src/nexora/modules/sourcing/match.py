@@ -230,6 +230,48 @@ class Sourcing:
         sel = self._projects.selection(shot_id)
         self._projects.set_extras(shot_id, focus=None if x is None else {"asset_id": sel.asset_id, "x": max(0.0, min(1.0, float(x)))})
 
+    def gap_plan(self, script_id: str, *, stock: bool = False, generate: bool = False) -> list[dict]:
+        """For every line still without a picture: the nearest thing the library holds, and the ways out that this
+        installation can actually take. The last way out is always to shoot it, so each entry says what to shoot."""
+        script = self._projects.script(script_id)
+        plan = []
+        for n, shot in enumerate(script["shots"], 1):
+            sel = self._projects.selection(shot.shot_id)
+            if sel is None or sel.status != "gap":
+                continue
+            wanted = f"{shot.text} {shot.brief}" if shot.brief else shot.text
+            near = next(iter(self._index.search(wanted, limit=1, exclude_assets=self._rejected())), None)
+            need = max(needed_seconds(shot.text), shot.target_seconds or 0.0)
+            ways = []
+            if near and near.score >= self._threshold * 0.6:
+                ways.append({"way": "near", "text": f"Dùng cảnh gần giống nhất trong kho (khớp {near.score:.0%}) rồi tự xem lại."})
+            if stock:
+                ways.append({"way": "stock", "text": "Tìm một clip stock có giấy phép cho câu này."})
+            if generate:
+                ways.append({"way": "generate", "text": "Sinh hình bằng AI cho câu này."})
+            ways.append({"way": "reword", "text": "Sửa câu để nói về một hình kho đã có."})
+            ways.append({"way": "shoot", "text": f"Quay thêm: {shot.brief or shot.text} Cần ít nhất {need:.0f} giây dùng được."})
+            plan.append({"line": n, "shot_id": shot.shot_id, "text": shot.text, "brief": shot.brief, "scene": shot.scene, "seconds": round(need, 1),
+                         "near": {"moment_id": near.moment.moment_id, "asset_id": near.moment.asset_id, "text": near.moment.text, "score": near.score,
+                                  "t_start": near.moment.t_start, "t_end": near.moment.t_end} if near else None, "ways": ways})
+        return plan
+
+    def shot_list(self, script_id: str, *, title: str = "") -> str:
+        """What is left to shoot, as a list to take on location."""
+        plan = self.gap_plan(script_id)
+        lines = [f"# Danh sách cần quay thêm{': ' + title if title else ''}", ""]
+        if not plan:
+            return "\n".join(lines + ["Mọi câu trong kịch bản đều đã có hình."]) + "\n"
+        scene = object()
+        for g in plan:
+            if g["scene"] != scene:
+                scene = g["scene"]
+                lines += [f"## {scene or 'Chưa xếp cảnh'}", ""]
+            lines.append(f"- [ ] Câu {g['line']}: {g['brief'] or g['text']}")
+            lines.append(f"      Lời dẫn: “{g['text']}”. Cần ít nhất {g['seconds']:.0f} giây dùng được, nên quay dư ra mỗi đầu 2 giây.")
+        total = sum(g["seconds"] for g in plan)
+        return "\n".join(lines + ["", f"Tổng cộng {len(plan)} cảnh, khoảng {total:.0f} giây hình cần có."]) + "\n"
+
     def _script_of(self, shot_id: str) -> str:
         return self._projects._conn.execute("SELECT script_id FROM shots WHERE shot_id = ?", (shot_id,)).fetchone()[0]
 

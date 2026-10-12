@@ -84,8 +84,12 @@ export type Selection = { status: string; t_in: number | null; t_out: number | n
 export type Source = { title: string; publisher: string; date: string; url: string; passage: string; retrieved_at?: number };
 export type FactCheck = { verdict: "supported" | "contradicted" | "not_found"; source: string | null; quote: string; note: string; checked_at: number };
 export type Critique = { line: number; issue: string; fix: string };
-export type Shot = { fact_check: FactCheck | null; target_seconds: number | null; sound_cue: string | null; is_fact: boolean; source: string | null; scene: string | null; brief: string | null; screen_text: string | null; shot_id: string; position: number; text: string; selection: Selection | null; keyframe_url: string | null;
-  generation: { prompt: string; seed: number | null; provider: string } | null };
+export type GenChoice = { subject?: string; shot_size?: string; camera?: string; provider_image?: string; provider_video?: string; attempt?: number };
+export type BibleEntry = { name: string; kind: "character" | "setting" | "prop" | "style"; description: string; asset_id: string | null };
+export type Provider = { name: string; label: string; runs: string };
+export type GapPlan = { line: number; shot_id: string; text: string; brief: string | null; scene: string | null; seconds: number; near: { moment_id: string; asset_id: string; text: string; score: number; t_start: number; t_end: number } | null; ways: { way: string; text: string }[] };
+export type Shot = { gen: GenChoice; fact_check: FactCheck | null; target_seconds: number | null; sound_cue: string | null; is_fact: boolean; source: string | null; scene: string | null; brief: string | null; screen_text: string | null; shot_id: string; position: number; text: string; selection: Selection | null; keyframe_url: string | null;
+  generation: { prompt: string; seed: number | null; provider: string; quality: { score: number; issues: string[]; tries: number } | null; tries: number } | null };
 export type Finding = { check: string; shot: number; severity: string; text: string; fix: string };
 export type Package = { title: string; description: string; thumbnails: string[]; thumbnail: string; folder: string; synthetic_content: boolean; captions: string; video: string };
 export type RenderItem = { render_id: string; created_at: number; url: string; package: Package | null; review: { approved: boolean; comment: string | null; at: number } | null;
@@ -95,7 +99,7 @@ export type BoardEvent = { at: number; kind: string; pipeline: string; stage_key
 export type Notice = { notification_id: number; kind: string; run_id: string; stage_key: string | null; reason: string | null; created_at: number; read_at: number | null; pipeline: string | null; subject_name: string | null; link: string | null };
 export type Project = { project_id: string; title: string; created_at: number; format: string; music_path: string | null;
   due_date: string | null; script: { script_id: string; version: number; match_approved: boolean; critique: Critique[] | null } | null; shots: Shot[]; match: Run | null; render: Run | null; renders: RenderItem[];
-  generate: Run | null; generators: { image: boolean; video: boolean }; auto_accept: boolean; style: string | null; narration_dir: string | null; own_takes: number[]; budget_cap: number | null; spent: number; template: string | null; voice: string | null; research: Source[] };
+  generate: Run | null; generators: { image: boolean; video: boolean; image_providers: Provider[]; video_providers: Provider[] }; bible: BibleEntry[]; auto_accept: boolean; style: string | null; narration_dir: string | null; own_takes: number[]; budget_cap: number | null; spent: number; template: string | null; voice: string | null; research: Source[] };
 export type Template = { name: string; format: string; voice: string; music_gain: number; auto_accept: boolean; caption_scale: number; caption_position: string; pronounce: Record<string, string>; typeface?: string; caption_colour?: number[] | null; logo_path?: string };
 export type CalendarRow = { project_id: string; title: string; format: string; due_date: string | null; stage: string; ready: boolean };
 export type RadarSubject = { subject: string; videos: number; seconds: number; unused_videos: number; unused_seconds: number; examples: { asset_id: string; title: string; summary: string }[] };

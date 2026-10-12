@@ -25,6 +25,7 @@ class Shot:
     is_fact: bool = False             # the line states a fact, so it needs a source
     source: str | None = None         # the title of the source in the project's research that supports it
     fact_check: dict | None = None    # what checking the line against the sources found: verdict, source, quote
+    gen: dict = field(default_factory=dict)   # the operator's choices for a generated picture: subject, framing, provider, variation
 
 
 @dataclass(frozen=True)
@@ -57,7 +58,7 @@ class ProjectStore:
         return project_id
 
     def update_project(self, project_id: str, **fields) -> None:
-        allowed = {k: v for k, v in fields.items() if k in ("title", "format", "music_path", "auto_accept", "style", "narration_dir", "budget_cap", "voice", "music_gain", "template", "profile", "research", "due_date")}
+        allowed = {k: v for k, v in fields.items() if k in ("title", "format", "music_path", "auto_accept", "style", "narration_dir", "budget_cap", "voice", "music_gain", "template", "profile", "research", "due_date", "bible")}
         with db.write(self._conn) as c:
             for key, value in allowed.items():
                 c.execute(f"UPDATE projects SET {key} = ? WHERE project_id = ?", (value, project_id))
@@ -77,7 +78,7 @@ class ProjectStore:
             c.execute("INSERT INTO scripts (script_id, project_id, version, created_at) VALUES (?,?,?,?)", (script_id, project_id, version, time.time()))
             # A line starting with "#" names a scene; the lines after it belong to that scene. Notes a line carried in the
             # previous version follow it into the new one, as long as its words are unchanged.
-            before = {r["text"]: r for r in c.execute("SELECT s.text, s.brief, s.screen_text, s.target_seconds, s.sound_cue, s.is_fact, s.source, s.fact_check FROM shots s JOIN scripts sc USING (script_id) "
+            before = {r["text"]: r for r in c.execute("SELECT s.text, s.brief, s.screen_text, s.target_seconds, s.sound_cue, s.is_fact, s.source, s.fact_check, s.gen FROM shots s JOIN scripts sc USING (script_id) "
                                                       "WHERE sc.project_id = ? AND sc.version = ?", (project_id, version - 1))}
             scene, position = None, 0
             for text in (line.strip() for line in lines if line.strip()):
@@ -85,8 +86,8 @@ class ProjectStore:
                     scene = text.lstrip("# ").strip() or None
                     continue
                 kept = before.get(text)
-                c.execute("INSERT INTO shots (shot_id, script_id, position, text, scene, brief, screen_text, target_seconds, sound_cue, is_fact, source, fact_check) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
-                          (new_id("sht"), script_id, position, text, scene, *((kept["brief"], kept["screen_text"], kept["target_seconds"], kept["sound_cue"], kept["is_fact"], kept["source"], kept["fact_check"]) if kept else (None, None, None, None, 0, None, None))))
+                c.execute("INSERT INTO shots (shot_id, script_id, position, text, scene, brief, screen_text, target_seconds, sound_cue, is_fact, source, fact_check, gen) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                          (new_id("sht"), script_id, position, text, scene, *((kept["brief"], kept["screen_text"], kept["target_seconds"], kept["sound_cue"], kept["is_fact"], kept["source"], kept["fact_check"], kept["gen"]) if kept else (None, None, None, None, 0, None, None, None))))
                 position += 1
         return script_id
 
@@ -105,6 +106,15 @@ class ProjectStore:
                 c.execute("UPDATE shots SET is_fact = ? WHERE shot_id = ?", (int(bool(more["is_fact"])), shot_id))
             if "source" in more:
                 c.execute("UPDATE shots SET source = ? WHERE shot_id = ?", (str(more["source"] or "").strip() or None, shot_id))
+            if "gen" in more:                              # merged, so that one choice can be changed without restating the others
+                row = c.execute("SELECT gen FROM shots WHERE shot_id = ?", (shot_id,)).fetchone()
+                current = {**(json.loads(row[0]) if row and row[0] else {}), **(more["gen"] or {})}
+                current = {k: v for k, v in current.items() if v not in (None, "")}
+                c.execute("UPDATE shots SET gen = ? WHERE shot_id = ?", (json.dumps(current, ensure_ascii=False) if current else None, shot_id))
+
+    def shot(self, shot_id: str) -> Shot | None:
+        row = self._conn.execute("SELECT script_id FROM shots WHERE shot_id = ?", (shot_id,)).fetchone()
+        return next((s for s in self.script(row[0])["shots"] if s.shot_id == shot_id), None) if row else None
 
     def reorder(self, script_id: str, order: list[str]) -> str:
         """The same lines in a new order, as the next version of the script. Each line keeps its clip, so nothing has to be matched again."""
@@ -120,13 +130,13 @@ class ProjectStore:
             for position, shot_id in enumerate(order):
                 fresh = new_id("sht")
                 old_shot = by_id[shot_id]
-                c.execute("INSERT INTO shots (shot_id, script_id, position, text, scene, brief, screen_text, target_seconds, sound_cue, is_fact, source, fact_check) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                c.execute("INSERT INTO shots (shot_id, script_id, position, text, scene, brief, screen_text, target_seconds, sound_cue, is_fact, source, fact_check, gen) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                           (fresh, new_id_, position, old_shot.text, old_shot.scene, old_shot.brief, old_shot.screen_text, old_shot.target_seconds, old_shot.sound_cue, int(old_shot.is_fact), old_shot.source,
-                           json.dumps(old_shot.fact_check, ensure_ascii=False) if old_shot.fact_check else None))
+                           json.dumps(old_shot.fact_check, ensure_ascii=False) if old_shot.fact_check else None, json.dumps(old_shot.gen, ensure_ascii=False) if old_shot.gen else None))
                 c.execute("INSERT INTO selections (shot_id, status, asset_id, moment_id, t_in, t_out, score, reason, alternates, decided_by, extras) "
                           "SELECT ?, status, asset_id, moment_id, t_in, t_out, score, reason, alternates, decided_by, extras FROM selections WHERE shot_id = ?", (fresh, shot_id))
-                c.execute("INSERT INTO generations (record_id, shot_id, kind, spec, prompt, compiler_version, provider, model, seed, asset_id, created_at) "
-                          "SELECT record_id || ?, ?, kind, spec, prompt, compiler_version, provider, model, seed, asset_id, created_at FROM generations WHERE shot_id = ?",
+                c.execute("INSERT INTO generations (record_id, shot_id, kind, spec, prompt, compiler_version, provider, model, seed, asset_id, created_at, quality) "
+                          "SELECT record_id || ?, ?, kind, spec, prompt, compiler_version, provider, model, seed, asset_id, created_at, quality FROM generations WHERE shot_id = ?",
                           (f"-v{version}", fresh, shot_id))
         return new_id_
 
@@ -135,7 +145,7 @@ class ProjectStore:
         if row is None:
             return None
         shots = [Shot(r["shot_id"], r["script_id"], r["position"], r["text"], r["scene"], r["brief"], r["screen_text"], r["target_seconds"], r["sound_cue"], bool(r["is_fact"]), r["source"],
-                      json.loads(r["fact_check"]) if r["fact_check"] else None)
+                      json.loads(r["fact_check"]) if r["fact_check"] else None, json.loads(r["gen"]) if r["gen"] else {})
                  for r in self._conn.execute("SELECT * FROM shots WHERE script_id = ? ORDER BY position", (script_id,))]
         return {**dict(row), "match_approved": bool(row["match_approved"]), "critique": json.loads(row["critique"]) if row["critique"] else None, "shots": shots}
 
@@ -193,17 +203,17 @@ class ProjectStore:
         return [s for s in (self.selection(shot.shot_id) for shot in shots) if s is not None]
 
     def add_generation(self, shot_id: str, *, kind: str, spec: dict, prompt: str, compiler_version: str, provider: str, model: str | None,
-                       seed: int | None, asset_id: str | None) -> str:
+                       seed: int | None, asset_id: str | None, quality: dict | None = None) -> str:
         record_id = new_id("gen")
         with db.write(self._conn) as c:
-            c.execute("INSERT INTO generations (record_id, shot_id, kind, spec, prompt, compiler_version, provider, model, seed, asset_id, created_at) "
-                      "VALUES (?,?,?,?,?,?,?,?,?,?,?)", (record_id, shot_id, kind, json.dumps(spec, ensure_ascii=False), prompt, compiler_version, provider, model,
-                                                       seed, asset_id, time.time()))
+            c.execute("INSERT INTO generations (record_id, shot_id, kind, spec, prompt, compiler_version, provider, model, seed, asset_id, created_at, quality) "
+                      "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", (record_id, shot_id, kind, json.dumps(spec, ensure_ascii=False), prompt, compiler_version, provider, model,
+                                                         seed, asset_id, time.time(), json.dumps(quality, ensure_ascii=False) if quality else None))
         return record_id
 
     def generations(self, shot_id: str, *, kind: str | None = None) -> list[dict]:
         rows = self._conn.execute("SELECT * FROM generations WHERE shot_id = ? AND (? IS NULL OR kind = ?) ORDER BY created_at, record_id", (shot_id, kind, kind))
-        return [{**dict(r), "spec": json.loads(r["spec"])} for r in rows]
+        return [{**dict(r), "spec": json.loads(r["spec"]), "quality": json.loads(r["quality"]) if r["quality"] else None} for r in rows]
 
     def add_render(self, project_id: str, script_id: str, path: str, qc: dict) -> str:
         render_id = new_id("rnd")

@@ -53,7 +53,8 @@ def fill_gap_from_stock(system: "System", shot_id: str, query: str) -> dict:
     """Resolve a gap with licensed stock: search, bring the clip into the Library like any footage, and propose it for the shot.
     Only the query text leaves the machine. Lives here because it joins two modules that may not import each other."""
     out_dir = system.data_dir / "media" / "stock"
-    result = system.adapters.submit("stock", Request("search", inputs={"queries": [query]}, params={"out_dir": str(out_dir), "clips_per_query": 1},
+    sources = json.loads(system.orch.setting("stock_sources", "[]"))          # the operator's choice of stock libraries; empty means the adapter's own
+    result = system.adapters.submit("stock", Request("search", inputs={"queries": [query]}, params={"out_dir": str(out_dir), "clips_per_query": 1, **({"sources": sources} if sources else {})},
                                                     privacy_class=PrivacyClass.CLOUD_ALLOWED))
     if not result.files:
         return {"found": False}
@@ -141,6 +142,7 @@ def watch_health(system: "System", *, min_free_bytes: int = 5 * 1024**3) -> list
 def capabilities(system: "System") -> list[dict]:
     """The capability matrix: for each pipeline, whether this installation can run every stage, and what is missing if not."""
     have = {c.name for c in system.adapters.describe()}
+    have |= {name.partition(".")[0] for name in have}          # image_gen.<provider> answers for image_gen
     out = []
     for pipeline in system.registry.pipelines():
         missing = sorted({r for s in pipeline.stages for r in s.requires if r not in have})
@@ -194,7 +196,8 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
         adapters.register(web)
     for generator in generators or []:
         adapters.register(generator)
-    generation = Generation(orch, projects, assets, adapters, data_dir / "media")
+    generation = Generation(orch, projects, assets, adapters, data_dir / "media", judge=model is not None,
+                            prefer=lambda kind: json.loads(orch.setting(f"providers:{kind}", "[]")))
     generation.register(registry)
     distribution = Distribution(projects, assets, adapters, data_dir / "exports")
     (data_dir / "logs").mkdir(exist_ok=True)
@@ -220,6 +223,8 @@ def build_from_config(config, **overrides) -> System:
     from nexora.adapters.desktop import DesktopNotifier
     from nexora.adapters.ollama import OllamaAdapter
     from nexora.adapters.openmontage import OpenMontageStock
+    from nexora.adapters.motion import StillMotion
+    from nexora.adapters.pollinations import PollinationsImage
     from nexora.adapters.speech import WhisperCpp
     from nexora.adapters.voice import SayVoice
     from nexora.adapters.web import WebReader
@@ -228,7 +233,8 @@ def build_from_config(config, **overrides) -> System:
                                      judge_model=config.judge_model, writer_model=config.writer_model),
                  voice=SayVoice(), voice_name=config.voice, match_threshold=config.match_threshold,
                  stock=OpenMontageStock(config.openmontage_repo), desktop=DesktopNotifier(), web=WebReader(),
-                 speech=WhisperCpp(config.speech_model, language=config.speech_language) if config.speech_model else None, **overrides)
+                 speech=WhisperCpp(config.speech_model, language=config.speech_language) if config.speech_model else None,
+                 generators=[*([PollinationsImage(token=config.pollinations_token)] if config.pollinations else []), StillMotion()], **overrides)
 
 
 def doctor(system: System, config=None) -> list[dict]:

@@ -22,6 +22,8 @@ class Config:
     backups_kept: int = 7
     speech_model: str = "data/models/ggml-large-v3-turbo-q5_0.bin"
     speech_language: str = "vi"
+    pollinations: bool = True
+    pollinations_token: str = ""
 
     @classmethod
     def load(cls, path: str | Path = "nexora.toml") -> "Config":
@@ -53,4 +55,6 @@ min_free_gb = 2.0                 # below this much free disk, work that writes 
 backups_kept = 7                  # how many database backups to keep
 speech_model = "data/models/ggml-large-v3-turbo-q5_0.bin"   # a whisper.cpp model; empty turns speech recognition off
 speech_language = "vi"            # the language spoken in the footage
+pollinations = true               # stills from Pollinations (only the prompt leaves this machine); without a token only a few stills at a time
+pollinations_token = ""           # a token from a Pollinations account lifts that limit
 """

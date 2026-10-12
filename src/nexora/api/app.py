@@ -524,11 +524,12 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         for shot in (script["shots"] if script else []):
             sel = system.projects.selection(shot.shot_id)
             item = {"shot_id": shot.shot_id, "position": shot.position, "text": shot.text, "scene": shot.scene, "brief": shot.brief, "screen_text": shot.screen_text, "target_seconds": shot.target_seconds, "sound_cue": shot.sound_cue,
-                    "is_fact": shot.is_fact, "source": shot.source, "fact_check": shot.fact_check, "selection": None, "keyframe_url": None, "generation": None}
+                    "is_fact": shot.is_fact, "source": shot.source, "fact_check": shot.fact_check, "gen": shot.gen, "selection": None, "keyframe_url": None, "generation": None}
             keys = system.projects.generations(shot.shot_id, kind="keyframe")
             if keys:
                 item["keyframe_url"] = f"/media/{system.assets.original(keys[-1]['asset_id']).version_id}"
-                item["generation"] = {"prompt": keys[-1]["prompt"], "seed": keys[-1]["seed"], "provider": keys[-1]["provider"]}
+                item["generation"] = {"prompt": keys[-1]["prompt"], "seed": keys[-1]["seed"], "provider": keys[-1]["provider"], "quality": keys[-1]["quality"],
+                                      "spec": keys[-1]["spec"], "tries": len(system.projects.generations(shot.shot_id, kind="keyframe_try"))}
             if sel:
                 item["selection"] = {"status": sel.status, "t_in": sel.t_in, "t_out": sel.t_out, "score": sel.score, "reason": sel.reason,
                                      "decided_by": sel.decided_by, "moment_id": sel.moment_id,
@@ -545,7 +546,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
                 "shots": shots, "match": latest_run(script["script_id"], "sourcing.match") if script else None,
                 "render": latest_run(script["script_id"], "edit.render") if script else None, "renders": renders,
                 "generate": latest_run(script["script_id"], "sourcing.generate") if script else None, "generators": system.generation.available(),
-                "research": json.loads(project.get("research") or "[]"),
+                "research": json.loads(project.get("research") or "[]"), "bible": json.loads(project.get("bible") or "[]"),
                 "auto_accept": bool(project.get("auto_accept")), "own_takes": own_takes(project, len(shots)),
                 "spent": system.generation.spent(project["project_id"])}
 
@@ -701,7 +702,38 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
     def annotate_shot(shot_id: str, body: dict):
         system.projects.annotate_shot(shot_id, brief=body.get("brief"), screen_text=body.get("screen_text"),
                                       **{k: body[k] for k in ("target_seconds", "sound_cue", "is_fact", "source") if k in body})
+        if isinstance(body.get("gen"), dict):        # the operator's choices for a generated picture
+            system.projects.annotate_shot(shot_id, gen={k: (str(v).strip() if v is not None else None) for k, v in body["gen"].items() if k in ("subject", "shot_size", "camera", "provider_image", "provider_video")})
         return {"ok": True}
+
+    @app.post("/api/v1/shots/{shot_id}/variation")
+    def vary_shot(shot_id: str):
+        """Ask for another picture of the same thing; it is made the next time generation runs."""
+        if system.projects.shot(shot_id) is None:
+            raise HTTPException(404, "no such shot")
+        return {"attempt": system.generation.vary(shot_id)}
+
+    @app.get("/api/v1/projects/{project_id}/gaps")
+    def gap_plan(project_id: str):
+        have = system.generation.available()
+        return {"gaps": system.sourcing.gap_plan(current_script_id(project_id), stock=any(c.name == "stock" for c in system.adapters.describe()), generate=have["image"] and have["video"])}
+
+    @app.get("/api/v1/projects/{project_id}/shotlist")
+    def shot_list(project_id: str):
+        from fastapi.responses import PlainTextResponse
+        text = system.sourcing.shot_list(current_script_id(project_id), title=need_project(project_id)["title"])
+        return PlainTextResponse(text, media_type="text/markdown; charset=utf-8", headers={"content-disposition": "attachment; filename*=UTF-8''can-quay-them.md"})
+
+    @app.post("/api/v1/control/providers")
+    def set_providers(body: dict):
+        """The order in which providers of one kind of picture are tried."""
+        kind = body.get("kind")
+        if kind not in ("image_gen", "video_gen"):
+            raise HTTPException(422, "kind must be image_gen or video_gen")
+        known = [p["name"] for p in system.generation.providers(kind)]
+        order = [n for n in body.get("order") or [] if n in known]
+        system.orch.set_setting(f"providers:{kind}", json.dumps(order))
+        return system.generation.available()
 
     def planning_call(work):
         """Run a planning step that leans on a tool, and say plainly why it could not be done."""
@@ -830,6 +862,11 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         if body.get("narration_dir") and not Path(str(body["narration_dir"])).expanduser().is_dir():
             raise HTTPException(404, "Không tìm thấy thư mục này")
         fields = {k: (str(Path(str(v)).expanduser()) if k in ("music_path", "narration_dir") and v else v) for k, v in body.items()}
+        if "bible" in fields:                    # how the project's characters, places and props look, so that every shot shows them the same way
+            kinds = ("character", "setting", "prop", "style")
+            fields["bible"] = json.dumps([{"name": str(e.get("name", "")).strip(), "kind": e.get("kind") if e.get("kind") in kinds else "character",
+                                           "description": str(e.get("description") or "").strip(), "asset_id": e.get("asset_id") if system.assets.asset(str(e.get("asset_id") or "")) else None}
+                                          for e in fields["bible"] if str(e.get("name", "")).strip()], ensure_ascii=False)
         if "due_date" in fields:
             day = str(fields["due_date"] or "").strip()
             try:
