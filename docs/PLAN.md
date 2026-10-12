@@ -262,6 +262,19 @@ Quality (167 test đạt; đã bấm thử trên giao diện):
 - [x] Cổng bản quyền và nguồn gốc: liệt kê nguồn của từng hình và nhạc; clip ngoài thiếu giấy phép, nhạc chưa xác nhận quyền, dữ kiện thiếu nguồn hoặc trái nguồn sẽ chặn việc đóng gói, trừ khi người vận hành ghi lý do (lý do được lưu cùng gói)
 - [x] Bộ mẫu chuẩn: lưu cặp câu và clip đã duyệt làm đáp án; mỗi lần chạy ghi tỷ lệ đúng, cấu hình lúc chạy, và so với lần trước (kém đi, mẫu nào không còn tìm ra, cấu hình nào đã đổi)
 
+Distribution (171 test đạt; đã bấm thử trên giao diện):
+
+- [x] Sổ đăng bài: mỗi lần gửi một bản dựng tới một nơi là một dòng; gửi lại cùng bản tới cùng nơi trả về dòng cũ. Lần gửi không rõ kết quả được đối soát với nơi đăng trước khi gửi lại
+- [x] Nơi đăng thật không cần tài khoản: thư mục xuất bản (mặc định `~/Movies/NEXORA`), ghi khoá chống trùng cạnh file
+- [x] Ghi nhận bản đăng tay lên YouTube, TikTok, Facebook, Instagram bằng địa chỉ video
+- [x] Số liệu theo mốc 1 giờ, 1 ngày, 3 ngày, 1 tuần; nhắc một lần khi tới mốc. Số liệu do người vận hành nhập
+- [x] Dự báo một tuần từ tỷ lệ tăng trung vị của các video trước (cần ít nhất 3 video có số liệu tới một tuần)
+- [x] Thí nghiệm và biến thể: so các bản đăng ở cùng tuổi của video; chỉ gọi bên dẫn khi chênh từ 20% và đã qua 24 giờ
+- [x] Bảng "những gì đi cùng nhau" theo khung hình, độ dài, nơi đăng, ghi rõ là tương quan
+- [x] Gợi ý tiêu đề kèm số đo (độ dài, từ không có trong lời dẫn); ảnh đại diện có chữ
+
+Chưa làm: tự đăng lên nền tảng và tự lấy số liệu (cần tài khoản và khoá API của từng nền tảng); phân tích nhân quả và lập kế hoạch chiến dịch (mục P2).
+
 ### Lát 1 — Lõi chạy việc
 
 Mục thiết kế: 5, 6, 7.

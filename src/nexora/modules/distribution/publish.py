@@ -207,6 +207,7 @@ class Publishing:
         """Figures at one mark grouped by what the videos have in common. These are things that went together, not causes:
         with a handful of videos, any of them could be chance."""
         groups: dict[tuple[str, str], list[float]] = {}
+        labels = {t["target"]: t["label"] for t in self.targets()}
         for row in self.publications():
             value = self._at(row, metric, hours)
             render = self._projects.render(row["render_id"])
@@ -214,7 +215,7 @@ class Publishing:
                 continue
             seconds = render["qc"].get("duration") or 0
             for kind, name in (("Khung hình", {"landscape": "Ngang", "portrait": "Dọc", "square": "Vuông"}.get(render["qc"].get("format"), "Khác")),
-                               ("Độ dài", "Dưới 30 giây" if seconds < 30 else "30 đến 90 giây" if seconds < 90 else "Trên 90 giây"), ("Nơi đăng", row["target"])):
+                               ("Độ dài", "Dưới 30 giây" if seconds < 30 else "30 đến 90 giây" if seconds < 90 else "Trên 90 giây"), ("Nơi đăng", labels.get(row["target"], row["target"]))):
                 groups.setdefault((kind, name), []).append(value)
         return [{"kind": kind, "name": name, "videos": len(values), "median": statistics.median(values)} for (kind, name), values in sorted(groups.items())]
 

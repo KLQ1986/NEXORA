@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { post, timecode, usePoll, type CalendarRow, type Radar, type RadarSubject } from "./api";
+import { call, post, timecode, usePoll, type CalendarRow, type Publication, type Publishing, type Radar, type RadarSubject } from "./api";
 import { Button, Empty, Icon, Page, Section, Tabs, Tag } from "./parts";
 
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -136,12 +136,96 @@ function RadarView() {
   );
 }
 
-export default function Plan() {
-  const [tab, setTab] = useState<"calendar" | "radar">(() => (new URLSearchParams(window.location.search).get("xem") === "radar" ? "radar" : "calendar"));
+const FIGURE: [string, string][] = [["views", "Lượt xem"], ["likes", "Thích"], ["comments", "Bình luận"], ["shares", "Chia sẻ"], ["watch_seconds", "Giây xem"]];
+type Forecast = { ready: boolean; reason?: string; week?: number; low?: number; high?: number; based_on?: number; from_hours?: number };
+
+/** One published video: its figures at each mark, a place to add the next ones, and where it may stand after a week. */
+function PublicationRow({ p, target, due, picked, pick, reload }: { p: Publication; target: string; due: number | null; picked: boolean; pick: () => void; reload: () => void }) {
+  const [open, setOpen] = useState(due !== null);
+  const [forecast, setForecast] = useState<Forecast | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const last = p.snapshots[p.snapshots.length - 1];
+  const age = p.published_at ? (Date.now() / 1000 - p.published_at) / 3600 : 0;
   return (
-    <Page eyebrow="Sản xuất" title="Kế hoạch" note="Lịch đăng của các video đang làm, và những gì kho footage còn làm được."
-          tabs={<Tabs value={tab} onChange={setTab} items={[{ key: "calendar", label: "Lịch biên tập", icon: "calendar" }, { key: "radar", label: "Radar cơ hội", icon: "radar" }]} />}>
-      {tab === "calendar" ? <Calendar /> : <RadarView />}
+    <li className="px-4 py-3 text-[13px]">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <input type="checkbox" aria-label={`Chọn ${p.title} để so sánh`} checked={picked} onChange={pick} />
+        <button type="button" className="min-w-0 truncate text-left font-medium hover:text-accent" onClick={() => open_(`/du-an/${p.project_id}`)}>{p.title}</button>
+        <span className="text-faint">{target}{p.variant ? `, biến thể ${p.variant}` : ""}</span>
+        <span className="mono text-faint">{age < 48 ? `${age.toFixed(0)} giờ trước` : `${(age / 24).toFixed(0)} ngày trước`}</span>
+        {due !== null && <Tag tone="cue">Tới mốc {due} giờ, chưa ghi</Tag>}
+        <span className="ml-auto flex items-center gap-3">{last && <span className="mono">{Math.round(last.figures.views ?? 0)} lượt xem</span>}
+          <button type="button" className="link" onClick={() => setOpen(!open)}>{open ? "Đóng" : "Ghi số liệu"}</button></span>
+      </div>
+      {open && (
+        <div className="mt-3 grid gap-3">
+          {p.snapshots.length > 0 && (
+            <div className="overflow-x-auto"><table className="w-full min-w-[420px] text-[12.5px]"><thead><tr className="text-left text-faint"><th className="py-1 font-normal">Sau</th>{FIGURE.map(([k, n]) => <th key={k} className="py-1 font-normal">{n}</th>)}</tr></thead>
+              <tbody>{p.snapshots.map((s) => <tr key={s.snapshot_id} className="border-t border-line"><td className="mono py-1">{s.hours < 48 ? `${s.hours.toFixed(0)} giờ` : `${(s.hours / 24).toFixed(0)} ngày`}</td>{FIGURE.map(([k]) => <td key={k} className="mono py-1">{s.figures[k] !== undefined ? Math.round(s.figures[k]) : ""}</td>)}</tr>)}</tbody></table></div>)}
+          <form className="flex flex-wrap items-end gap-2" onSubmit={async (e) => { e.preventDefault(); const f = e.currentTarget; const body = Object.fromEntries([...new FormData(f).entries()].filter(([, v]) => String(v).trim() !== ""));
+            setNote(null); try { await post(`/api/v1/publications/${p.publication_id}/metrics`, body); f.reset(); } catch (err) { setNote((err as Error).message); } reload(); }}>
+            {FIGURE.map(([k, n]) => <label key={k} className="grid gap-1 text-[12px] text-mute">{n}<input name={k} type="number" min="0" className="mono h-8 w-24 px-2" /></label>)}
+            <Button size="sm" type="submit">Ghi số liệu lúc này</Button>
+            <Button size="sm" onClick={async () => setForecast(await call<Forecast>(`/api/v1/publications/${p.publication_id}/forecast`))}>Dự báo một tuần</Button>
+          </form>
+          {note && <p className="text-tally">{note}</p>}
+          {forecast && <p className="text-mute">{forecast.ready ? <>Sau một tuần có thể vào khoảng <span className="mono text-ink">{forecast.week}</span> lượt xem (từ {forecast.low} đến {forecast.high}), suy từ cách {forecast.based_on} video trước của bạn tăng lên từ cùng thời điểm. Đây là tỷ lệ trung vị, không phải mô hình dự đoán.</> : forecast.reason}</p>}
+        </div>)}
+    </li>
+  );
+}
+const open_ = (path: string) => { window.history.pushState(null, "", path); window.dispatchEvent(new PopStateEvent("popstate")); };
+
+function Results() {
+  const { data, reload } = usePoll<Publishing>("/api/v1/publishing", 20000);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [question, setQuestion] = useState("");
+  const published = (data?.publications ?? []).filter((p) => p.status === "published");
+  const name = (t: string) => data?.targets.find((x) => x.target === t)?.label ?? t;
+  const toggle = (id: string) => setPicked(picked.includes(id) ? picked.filter((x) => x !== id) : [...picked, id]);
+  return (
+    <div className="grid max-w-5xl gap-10">
+      <Section title="Video đã đăng" icon="external" note="Ghi số liệu ở các mốc 1 giờ, 1 ngày, 3 ngày và 1 tuần sau khi đăng. Hệ thống nhắc khi tới mốc. Số liệu do bạn nhập vì chưa có tài khoản nền tảng nào được nối.">
+        {data && published.length === 0 && <Empty icon="external" title="Chưa có video nào được đăng">Sau khi chuẩn bị gói xuất bản của một dự án, đưa nó vào thư mục xuất bản hoặc ghi lại địa chỉ video bạn đã đăng tay.</Empty>}
+        <ul className="panel rows empty:hidden">
+          {published.map((p) => <PublicationRow key={p.publication_id} p={p} target={name(p.target)} due={data!.due.find((d) => d.publication_id === p.publication_id)?.mark ?? null} picked={picked.includes(p.publication_id)} pick={() => toggle(p.publication_id)} reload={reload} />)}
+        </ul>
+        {picked.length >= 2 && (
+          <form className="ai-card mt-3 flex flex-wrap items-center gap-2 p-3 text-[13px]" onSubmit={async (e) => { e.preventDefault(); if (!question.trim()) return; await post("/api/v1/experiments", { question, publications: picked }); setPicked([]); setQuestion(""); reload(); }}>
+            <label htmlFor="question" className="font-medium">So sánh {picked.length} video đã chọn</label>
+            <input id="question" value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="Câu hỏi của thí nghiệm, ví dụ: ảnh đại diện có chữ có hơn không?" className="h-8 min-w-0 flex-1 px-2.5" />
+            <Button size="sm" kind="ai" type="submit" disabled={!question.trim()}>Lập thí nghiệm</Button>
+          </form>)}
+      </Section>
+      {!!data?.experiments.length && (
+        <Section title="Thí nghiệm" icon="sparkles" note="Các biến thể được so ở cùng một tuổi của video, không so tổng số hôm nay.">
+          <ul className="grid gap-3">
+            {data.experiments.map((x) => (
+              <li key={x.experiment_id} className="panel p-4 text-[13px]">
+                <p className="font-medium">{x.question}</p>
+                <div className="mt-2 flex flex-wrap gap-2">{x.variants.map((v) => <span key={v.publication_id} className={`rounded-lg border px-2.5 py-1.5 ${x.verdict.decided && x.verdict.leader === v.label ? "border-proof/50 bg-proof/10" : "border-line bg-raised/50"}`}><span className="font-medium">{v.label}</span> <span className="text-mute">{v.title}</span> <span className="mono">{v.value === null ? "chưa có số" : Math.round(v.value)}</span></span>)}</div>
+                <p className={`mt-2 ${x.verdict.decided ? "" : "text-mute"}`}>{x.verdict.text}</p>
+                {x.conclusion ? <p className="mt-1 text-mute">Kết luận của bạn: {x.conclusion}</p>
+                  : <form className="mt-2 flex gap-2" onSubmit={async (e) => { e.preventDefault(); const c = String(new FormData(e.currentTarget).get("c") ?? "").trim(); if (c) { await post(`/api/v1/experiments/${x.experiment_id}/close`, { conclusion: c }); reload(); } }}>
+                      <input name="c" aria-label="Kết luận" placeholder="Ghi kết luận của bạn rồi khép thí nghiệm" className="h-8 min-w-0 flex-1 px-2.5" /><Button size="sm" type="submit">Khép lại</Button></form>}
+              </li>))}
+          </ul>
+        </Section>)}
+      {!!data?.breakdown.length && (
+        <Section title="Những gì đi cùng nhau" icon="layers" note="Lượt xem trung vị sau một ngày, nhóm theo đặc điểm của video. Đây là những thứ xuất hiện cùng nhau, không phải nguyên nhân; với ít video thì có thể chỉ là ngẫu nhiên.">
+          <ul className="panel rows text-[13px]">{data.breakdown.map((g) => <li key={g.kind + g.name} className="flex gap-3 px-4 py-2"><span className="w-28 shrink-0 text-faint">{g.kind}</span><span className="min-w-0 flex-1">{g.name}</span><span className="mono">{Math.round(g.median)} lượt xem</span><span className="mono w-20 text-right text-faint">{g.videos} video</span></li>)}</ul>
+        </Section>)}
+    </div>
+  );
+}
+
+export default function Plan() {
+  const asked = new URLSearchParams(window.location.search).get("xem");
+  const [tab, setTab] = useState<"calendar" | "radar" | "results">(() => (asked === "radar" ? "radar" : asked === "ket-qua" ? "results" : "calendar"));
+  return (
+    <Page eyebrow="Sản xuất" title="Kế hoạch" note="Lịch đăng của các video đang làm, những gì kho footage còn làm được, và kết quả của các video đã đăng."
+          tabs={<Tabs value={tab} onChange={setTab} items={[{ key: "calendar", label: "Lịch biên tập", icon: "calendar" }, { key: "radar", label: "Radar cơ hội", icon: "radar" }, { key: "results", label: "Kết quả", icon: "pulse" }]} />}>
+      {tab === "calendar" ? <Calendar /> : tab === "radar" ? <RadarView /> : <Results />}
     </Page>
   );
 }

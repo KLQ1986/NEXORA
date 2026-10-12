@@ -119,7 +119,7 @@ def test_uploads_made_by_hand_are_recorded_measured_at_marks_forecast_and_compar
     closed = client.post(f"/api/v1/experiments/{experiment['experiment_id']}/close", json={"conclusion": "Thử lại với 5 video nữa."}).json()
     assert closed["conclusion"] == "Thử lại với 5 video nữa." and closed["closed_at"]
     groups = {(g["kind"], g["name"]): g for g in client.get("/api/v1/publishing").json()["breakdown"]}
-    assert groups[("Khung hình", "Ngang")]["videos"] == 4 and groups[("Nơi đăng", "youtube")]["median"] == 150
+    assert groups[("Khung hình", "Ngang")]["videos"] == 4 and groups[("Nơi đăng", "YouTube")]["median"] == 150
 
 
 def test_titles_are_suggested_with_what_can_be_measured_and_a_frame_becomes_a_poster(tmp_path):

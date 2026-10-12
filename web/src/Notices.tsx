@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { post, REASONS, STAGE_NAMES, usePoll, type Notice } from "./api";
 import { Empty, Icon, Page, Seg, Tag } from "./parts";
 
-const KIND: Record<string, string> = { disk_low: "Ổ đĩa sắp đầy", volume_offline: "Mất nơi chứa footage", gaps: "Thiếu hình", waiting_review: "Chờ bạn duyệt", blocked: "Đang dừng", failed: "Thất bại", succeeded: "Đã xong" };
-const ICON: Record<string, string> = { disk_low: "disk", volume_offline: "folder", gaps: "image", waiting_review: "eye", blocked: "alert", failed: "x", succeeded: "check" };
+const KIND: Record<string, string> = { metrics_due: "Tới mốc ghi số liệu", disk_low: "Ổ đĩa sắp đầy", volume_offline: "Mất nơi chứa footage", gaps: "Thiếu hình", waiting_review: "Chờ bạn duyệt", blocked: "Đang dừng", failed: "Thất bại", succeeded: "Đã xong" };
+const ICON: Record<string, string> = { metrics_due: "pulse", disk_low: "disk", volume_offline: "folder", gaps: "image", waiting_review: "eye", blocked: "alert", failed: "x", succeeded: "check" };
 const PIPE: Record<string, string> = { "library.ingest": "Nhập footage", "library.ingest_image": "Nhập ảnh", "library.ingest_audio": "Nhập nhạc", "sourcing.generate": "Sinh hình bằng AI", "library.understand": "Xem và mô tả video", "sourcing.match": "Chọn clip cho kịch bản", "edit.render": "Dựng video" };
 
 const dayOf = (t: number) => { const d = new Date(t * 1000), now = new Date(); const y = new Date(now.getTime() - 86400000);
@@ -16,7 +16,7 @@ export default function Notices() {
   const items = (data?.items ?? []).filter((n) => !only || n.kind !== "succeeded");
   const days: [string, Notice[]][] = [];
   for (const n of items) { const d = dayOf(n.created_at); if (days.length && days[days.length - 1][0] === d) days[days.length - 1][1].push(n); else days.push([d, [n]]); }
-  const tone = (k: string) => (k === "waiting_review" || k === "blocked" || k === "gaps" || k === "disk_low" || k === "volume_offline" ? "cue" : k === "failed" ? "tally" : k === "succeeded" ? "proof" : "mute") as "cue" | "tally" | "proof" | "mute";
+  const tone = (k: string) => (k === "waiting_review" || k === "blocked" || k === "gaps" || k === "metrics_due" || k === "disk_low" || k === "volume_offline" ? "cue" : k === "failed" ? "tally" : k === "succeeded" ? "proof" : "mute") as "cue" | "tally" | "proof" | "mute";
   const tile = { cue: "bg-cue/12 text-cue", tally: "bg-tally/12 text-tally", proof: "bg-proof/12 text-proof", mute: "bg-raised text-mute" };
   return (
     <Page eyebrow="Vận hành" title="Thông báo" note="Bản ghi đầy đủ của mọi việc đã xong, cần bạn duyệt, hoặc bị dừng."

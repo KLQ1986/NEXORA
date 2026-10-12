@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { post, projectState, scriptText, stageName, timecode, usePoll, type Idea, type Source, type AgentTask, type Asset, type Settings, type Candidate, type Project, type RenderItem, type Shot, type BibleEntry, type GapPlan, type Op, type Rights } from "./api";
+import { post, projectState, scriptText, stageName, timecode, usePoll, type Idea, type Source, type AgentTask, type Asset, type Settings, type Candidate, type Project, type RenderItem, type Shot, type BibleEntry, type GapPlan, type Op, type Rights, type Publishing } from "./api";
 import Board from "./Board";
 import { Button, Empty, Filmstrip, Icon, Meter, Page, Section, Seg, StageRail, Steps, Tabs, Tag, TimeChip } from "./parts";
 import Timeline from "./Timeline";
@@ -194,11 +194,73 @@ function PackagePanel({ render, reload }: { render: RenderItem; reload: () => vo
         <a className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line bg-raised px-3 text-[12.5px] hover:border-edge" href={`${base}/${pkg.thumbnail}`} download><Icon name="image" size={14} />Ảnh đại diện</a>
         {Object.entries(pkg.translations ?? {}).map(([lang, name]) => <a key={lang} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-line bg-raised px-3 text-[12.5px] hover:border-edge" href={`${base}/${name}`} download><Icon name="globe" size={14} />Phụ đề {LANGS[lang] ?? lang}</a>)}
       </div>
+      <PackageText render={render} reload={reload} />
+      <Publish render={render} />
       <form className="mt-3 flex flex-wrap items-center gap-2 border-t border-line pt-3 text-[13px]" onSubmit={async (e) => { e.preventDefault(); const lang = String(new FormData(e.currentTarget).get("lang")); setNote("Đang dịch…"); try { await post(`/api/v1/renders/${render.render_id}/captions/translate`, { language: lang }); setNote(null); } catch (err) { setNote((err as Error).message); } reload(); }}>
         <label htmlFor={`lang-${render.render_id}`} className="text-mute">Dịch phụ đề sang</label>
         <select id={`lang-${render.render_id}`} name="lang" className="h-8 pl-2">{Object.entries(LANGS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
         <Button size="sm" type="submit">Dịch</Button>{note && <span className="text-mute">{note}</span>}
       </form>
+    </div>
+  );
+}
+
+const PUB_STATE: Record<string, [string, "proof" | "cue" | "tally" | "mute"]> = { published: ["Đã đăng", "proof"], unknown: ["Chưa rõ đã tới nơi chưa", "cue"], failed: ["Chưa đăng được", "tally"], publishing: ["Đang gửi", "mute"], pending: ["Chưa gửi", "mute"] };
+
+/** Title candidates with what can be measured about each, and a thumbnail with words on it. */
+function PackageText({ render, reload }: { render: RenderItem; reload: () => void }) {
+  const pkg = render.package!;
+  const [titles, setTitles] = useState<{ title: string; why: string; chars: number; notes: string[] }[] | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const edit = (body: Record<string, unknown>) => post(`/api/v1/renders/${render.render_id}/package`, body, "PATCH").then(reload, (e) => setNote((e as Error).message));
+  return (
+    <details className="mt-3 border-t border-line pt-3 text-[13px]">
+      <summary className="cursor-pointer list-none text-accent">Tiêu đề và ảnh đại diện có chữ</summary>
+      <div className="mt-2 grid gap-3">
+        <div><Button size="sm" kind="ai" onClick={async () => { setNote("Đang nghĩ tiêu đề…"); try { setTitles((await post<{ titles: { title: string; why: string; chars: number; notes: string[] }[] }>(`/api/v1/renders/${render.render_id}/titles`)).titles); setNote(null); } catch (e) { setNote((e as Error).message); } }}>Gợi ý tiêu đề</Button>
+          {note && <span className="ml-2 text-mute">{note}</span>}</div>
+        {titles && titles.length === 0 && <p className="text-mute">Mô hình không đưa ra tiêu đề nào.</p>}
+        {titles && titles.length > 0 && <ul className="rows">{titles.map((t) => (
+          <li key={t.title} className="flex gap-2 py-1.5"><span className="min-w-0 flex-1">{t.title}<span className="mono ml-2 text-[11.5px] text-faint">{t.chars} ký tự</span>{t.notes.map((n) => <span key={n} className="ml-2 text-[12px] text-cue">{n}</span>)}{t.why && <span className="block text-[12.5px] text-mute">{t.why}</span>}</span>
+            <button type="button" className="link shrink-0" onClick={() => edit({ title: t.title })}>Dùng</button></li>))}</ul>}
+        <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); const f = e.currentTarget; const text = String(new FormData(f).get("words") ?? "").trim(); if (text) edit({ poster_text: text, base: pkg.thumbnails.includes(pkg.thumbnail) && !pkg.thumbnail.startsWith("poster_") ? pkg.thumbnail : pkg.thumbnails[0] }).then(() => f.reset()); }}>
+          <input name="words" aria-label="Chữ trên ảnh đại diện" placeholder="Vài chữ lớn đặt lên ảnh đại diện đang chọn" className="h-8 min-w-0 flex-1 px-2.5" /><Button size="sm" type="submit">Tạo ảnh có chữ</Button>
+        </form>
+      </div>
+    </details>
+  );
+}
+
+/** Send the package to a destination, or record where it was uploaded by hand; then take its figures at each mark. */
+function Publish({ render }: { render: RenderItem }) {
+  const { data, reload } = usePoll<Publishing>("/api/v1/publishing", 20000);
+  const [note, setNote] = useState<string | null>(null);
+  const mine = (data?.publications ?? []).filter((p) => p.render_id === render.render_id);
+  const send = async (body: Record<string, unknown>) => { setNote(null); try { await post(`/api/v1/renders/${render.render_id}/publish`, body); } catch (e) { setNote((e as Error).message); } reload(); };
+  if (!data) return null;
+  const name = (t: string) => data.targets.find((x) => x.target === t)?.label ?? t;
+  return (
+    <div className="mt-3 border-t border-line pt-3 text-[13px]">
+      <p className="mb-2 flex items-center gap-2 font-semibold"><Icon name="external" size={15} className="text-accent" />Đăng</p>
+      <ul className="rows empty:hidden">
+        {mine.map((p) => (
+          <li key={p.publication_id} className="py-2">
+            <p className="flex flex-wrap items-center gap-2"><span className="font-medium">{name(p.target)}</span><Tag tone={PUB_STATE[p.status]?.[1] ?? "mute"}>{PUB_STATE[p.status]?.[0] ?? p.status}</Tag>
+              {p.url && (/^https?:/i.test(p.url) ? <a href={p.url} target="_blank" rel="noreferrer" className="truncate underline decoration-edge underline-offset-2">{p.url}</a> : <span className="mono truncate text-[12px] text-mute">{decodeURI(p.url.replace("file://", ""))}</span>)}
+              {p.status === "unknown" && <button type="button" className="link" onClick={async () => { await post(`/api/v1/publications/${p.publication_id}/reconcile`).catch(() => {}); reload(); }}>Hỏi lại nơi đăng</button>}</p>
+            {p.error && p.status !== "published" && <p className="mt-0.5 text-[12.5px] text-cue">{p.error}</p>}
+            {p.status === "published" && <p className="mt-0.5 text-[12.5px] text-mute">{p.snapshots.length ? `Lần ghi gần nhất: ${Math.round(p.snapshots[p.snapshots.length - 1].figures.views ?? 0)} lượt xem sau ${p.snapshots[p.snapshots.length - 1].hours.toFixed(0)} giờ.` : "Chưa ghi số liệu."} <a href="/ke-hoach?xem=ket-qua" className="link">Ghi số liệu</a></p>}
+          </li>))}
+      </ul>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {data.targets.filter((t) => !t.manual && !mine.some((p) => p.target === t.target && p.status === "published")).map((t) => <Button key={t.target} size="sm" kind="primary" onClick={() => send({ target: t.target })}><Icon name="folder" size={14} />Đưa vào {t.label.toLowerCase()}</Button>)}
+      </div>
+      <form className="mt-2 flex flex-wrap gap-2" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); const url = String(f.get("url") ?? "").trim(); if (url) { send({ target: f.get("target"), url }); e.currentTarget.reset(); } }}>
+        <select name="target" aria-label="Nền tảng đã đăng" className="h-8 pl-2">{data.targets.filter((t) => t.manual).map((t) => <option key={t.target} value={t.target}>{t.label}</option>)}</select>
+        <input name="url" type="url" aria-label="Địa chỉ video đã đăng" placeholder="Bạn đã đăng tay? Dán địa chỉ video vào đây" className="h-8 min-w-0 flex-1 px-2.5" /><Button size="sm" type="submit">Ghi nhận</Button>
+      </form>
+      {note && <p className="mt-2 text-cue">{note}</p>}
+      <p className="mt-2 text-[12px] text-faint">Hệ thống chưa nối tài khoản nền tảng nào nên chưa tự đăng lên YouTube, TikTok hay Facebook. Cùng một bản dựng không bao giờ được gửi hai lần tới cùng một nơi.</p>
     </div>
   );
 }

@@ -93,6 +93,12 @@ export type GapPlan = { line: number; shot_id: string; text: string; brief: stri
 export type Shot = { gen: GenChoice; fact_check: FactCheck | null; target_seconds: number | null; sound_cue: string | null; is_fact: boolean; source: string | null; scene: string | null; brief: string | null; screen_text: string | null; shot_id: string; position: number; text: string; selection: Selection | null; keyframe_url: string | null;
   generation: { prompt: string; seed: number | null; provider: string; quality: { score: number; issues: string[]; tries: number } | null; tries: number } | null };
 export type Finding = { check: string; shot: number; severity: string; text: string; fix: string };
+export type Snapshot = { snapshot_id: string; at: number; hours: number; figures: Record<string, number> };
+export type Publication = { publication_id: string; render_id: string; project_id: string; target: string; variant: string; status: string; url: string | null; title: string; error: string | null; attempts: number; manual: boolean; published_at: number | null; snapshots: Snapshot[] };
+export type Experiment = { experiment_id: string; question: string; metric: string; closed_at: number | null; conclusion: string | null; compared_at_hours: number; verdict: { decided: boolean; text: string; leader?: string };
+  variants: { publication_id: string; label: string; title: string; target: string; value: number | null }[] };
+export type Publishing = { targets: { target: string; label: string; manual: boolean }[]; publications: Publication[]; due: { publication_id: string; title: string; target: string; mark: number }[];
+  experiments: Experiment[]; breakdown: { kind: string; name: string; videos: number; median: number }[] };
 export type Rights = { items: { asset_id: string | null; name: string; origin: string; ok: boolean; note: string }[]; blockers: string[]; disclosures: string[]; clear: boolean; override_reason?: string | null };
 export type EvalRun = { run_id: string; created_at: number; cases: number; first: number; top3: number; config: Record<string, unknown>; change?: { first: number; top3: number; regression: boolean; lost: string[]; config: Record<string, [unknown, unknown]> } };
 export type Package = { rights?: Rights; checks?: Record<string, boolean>; captions_vtt?: string; translations?: Record<string, string>; title: string; description: string; thumbnails: string[]; thumbnail: string; folder: string; synthetic_content: boolean; captions: string; video: string };
