@@ -11,8 +11,25 @@ export type Asset = {
   thumbnail_url: string | null; proxy_url: string | null; ingest: Run | null; understand: Run | null; still: boolean; kind: string; mean_db: number | null; rating: number; collections: string[]; note: string | null; angles: { asset_id: string; offset: number }[];
 };
 
+/** Whether the server answered the last request. Every screen polls, so this is known within a few seconds of it changing. */
+const CONNECTION = "nexora:connection";
+let online = true;
+const setOnline = (now: boolean) => { if (now !== online) { online = now; window.dispatchEvent(new Event(CONNECTION)); } };
+export function useConnection() {
+  const [state, setState] = useState(online);
+  useEffect(() => { const on = () => setState(online); window.addEventListener(CONNECTION, on); return () => window.removeEventListener(CONNECTION, on); }, []);
+  return state;
+}
+
 export async function call<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, { headers: { "content-type": "application/json" }, ...init });
+  let res: Response;
+  try {
+    res = await fetch(url, { headers: { "content-type": "application/json" }, ...init });
+  } catch {
+    setOnline(false);
+    throw new Error("Không kết nối được với máy chủ NEXORA. Kiểm tra xem `nexora serve` còn chạy không.");
+  }
+  setOnline(true);
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.detail ?? `Yêu cầu thất bại (${res.status})`);

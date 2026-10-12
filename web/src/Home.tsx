@@ -1,5 +1,5 @@
 import { megabytes, projectState, REASONS, stageName, timecode, usePoll, type AgentTask, type Project, type Stage } from "./api";
-import { Button, Empty, Filmstrip, Icon, Meter, Page, Section, StageRail, Stat, Steps, Tag } from "./parts";
+import { Button, Empty, Filmstrip, Icon, Meter, Page, Section, Skeleton, SkeletonCards, StageRail, Stat, Steps, Tag } from "./parts";
 
 type Item = { gaps?: number; run_id: string; pipeline: string; name: string; link: string; status: string; held: boolean; stage_key: string | null; reason?: string | null; stages?: Stage[] };
 type HomeData = {
@@ -28,12 +28,18 @@ export default function Home({ go }: { go: (to: string) => void }) {
   const { data: d, error } = usePoll<HomeData>("/api/v1/home", 3000);
   const { data: projects } = usePoll<Project[]>("/api/v1/projects", 6000);
   const open = (to: string) => (e: React.MouseEvent) => { e.preventDefault(); go(to); };
-  if (!d) return <Page title="Tổng quan"><p className="text-mute">{error ? `Không tải được: ${error}` : "Đang mở…"}</p></Page>;
+  const hour = new Date().getHours();
+  const greet = hour < 11 ? "Chào buổi sáng" : hour < 14 ? "Chào buổi trưa" : hour < 18 ? "Chào buổi chiều" : "Chào buổi tối";
+  if (!d) return (
+    <Page eyebrow={new Date().toLocaleDateString("vi-VN", { weekday: "long", day: "numeric", month: "long" })} title={greet} note={error ? `Không tải được: ${error}` : "Đang mở…"}>
+      <div className="grid gap-8" aria-busy="true">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">{[0, 1, 2, 3, 4].map((i) => <div key={i} className="panel grid gap-3 p-4"><Skeleton height={12} className="w-24" /><Skeleton height={28} className="w-20" /><Skeleton height={12} className="w-32" /></div>)}</div>
+        <SkeletonCards count={2} className="grid gap-4 md:grid-cols-2" />
+      </div>
+    </Page>);
   const asks = d.attention.length + d.gaps.length + d.offline_volumes.length + d.problems.length;
   const c = d.counts;
   const used = 1 - d.disk.free_bytes / d.disk.total_bytes;
-  const hour = new Date().getHours();
-  const greet = hour < 11 ? "Chào buổi sáng" : hour < 14 ? "Chào buổi trưa" : hour < 18 ? "Chào buổi chiều" : "Chào buổi tối";
   const ask = (key: string, to: string, icon: string, title: React.ReactNode, what: React.ReactNode, tone: "cue" | "tally" = "cue") => (
     <li key={key}><a href={to} onClick={open(to)} className="group flex items-center gap-4 px-4 py-3.5 transition-colors hover:bg-white/[0.02]">
       <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${tone === "tally" ? "bg-tally/12 text-tally" : "bg-cue/12 text-cue"}`}><Icon name={icon} size={17} /></span>

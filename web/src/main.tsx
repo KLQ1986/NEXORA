@@ -1,7 +1,7 @@
 import { StrictMode, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
-import { listenForChanges, megabytes, post, projectState, usePoll, type Project, type Run } from "./api";
+import { listenForChanges, megabytes, post, projectState, useConnection, usePoll, type Project, type Run } from "./api";
 import Costs from "./Costs";
 import Home from "./Home";
 import Library from "./Library";
@@ -10,7 +10,7 @@ import Plan from "./Plan";
 import Projects from "./Projects";
 import Runs from "./Runs";
 import System from "./System";
-import { Icon } from "./parts";
+import { Dialogs, Icon, Toaster, toast } from "./parts";
 
 const PAGES = [
   { path: "/", label: "Tổng quan", icon: "home", view: null, group: 0 },
@@ -35,32 +35,39 @@ const write = (k: string, v: string) => { try { localStorage.setItem(k, v); } ca
 function Mark({ size = 26 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 28 28" aria-hidden="true">
-      <defs><linearGradient id="nx" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#a194ff" /><stop offset="1" stopColor="#38d9d0" /></linearGradient></defs>
-      <rect width="28" height="28" rx="8" fill="#14161d" stroke="url(#nx)" strokeOpacity=".55" />
-      <rect x="6" y="7.5" width="16" height="3" rx="1.5" fill="url(#nx)" /><rect x="6" y="12.5" width="10" height="3" rx="1.5" fill="#eef0f5" /><rect x="6" y="17.5" width="13" height="3" rx="1.5" fill="url(#nx)" opacity=".55" />
+      <rect width="28" height="28" rx="8" fill="#14161d" stroke="#8a7cf5" strokeOpacity=".5" />
+      <rect x="6" y="7.5" width="16" height="3" rx="1.5" fill="#8a7cf5" /><rect x="6" y="12.5" width="10" height="3" rx="1.5" fill="#eef0f5" /><rect x="6" y="17.5" width="13" height="3" rx="1.5" fill="#8a7cf5" opacity=".55" />
     </svg>
   );
 }
 
 /** ⌘K: jump to a screen or a project, or search footage by words. */
-function Palette({ close, go, projects }: { close: () => void; go: (to: string) => void; projects: Project[] }) {
+function Palette({ close, go, projects, kill }: { close: () => void; go: (to: string) => void; projects: Project[]; kill: boolean }) {
   const [q, setQ] = useState("");
   const [at, setAt] = useState(0);
   const input = useRef<HTMLInputElement>(null);
   useEffect(() => { input.current?.focus(); }, []);
   const term = q.trim().toLowerCase();
   const items = useMemo(() => {
-    const out: { key: string; icon: string; label: string; hint: string; to: string }[] = [];
+    const out: { key: string; icon: string; label: string; hint: string; to: string; run?: () => void }[] = [];
     if (term) out.push({ key: "search", icon: "sparkles", label: `Tìm cảnh “${q.trim()}” trong footage`, hint: "Tìm bằng lời", to: `/thu-vien?q=${encodeURIComponent(q.trim())}` });
+    const actions = [
+      { key: "add", icon: "plus", label: "Thêm footage", hint: "Thư viện", to: "/thu-vien?them=1" },
+      { key: "kill", icon: "power", label: kill ? "Cho hệ thống chạy lại" : "Dừng khẩn cấp", hint: "Điều khiển", to: "", run: () => post("/api/v1/control/kill-switch", { on: !kill }).then(() => toast(kill ? "Hệ thống chạy lại." : "Đã bật dừng khẩn cấp.", { tone: kill ? "proof" : "tally" })).catch((e) => toast((e as Error).message, { tone: "tally" })) },
+      { key: "settings", icon: "sliders", label: "Giọng đọc và mô hình", hint: "Hệ thống", to: "/he-thong?muc=ai" },
+      { key: "autonomy", icon: "bolt", label: "Mức tự chủ", hint: "Hệ thống", to: "/he-thong?muc=autonomy" },
+    ];
+    for (const a of actions) if (term && a.label.toLowerCase().includes(term)) out.push(a);
     for (const p of PAGES) if (!term || p.label.toLowerCase().includes(term)) out.push({ key: p.path, icon: p.icon, label: p.label, hint: "Màn hình", to: p.path });
     for (const p of projects) if (!term || p.title.toLowerCase().includes(term)) out.push({ key: p.project_id, icon: "clapper", label: p.title, hint: projectState(p).label, to: `/du-an/${p.project_id}` });
     out.push({ key: "new", icon: "plus", label: "Làm video mới", hint: "Dự án", to: "/du-an?moi=1" });
+    if (!term) out.push(...actions);
     return out.slice(0, 12);
-  }, [term, q, projects]);
-  const pick = (i: number) => { const it = items[i]; if (it) { go(it.to); close(); } };
+  }, [term, q, projects, kill]);
+  const pick = (i: number) => { const it = items[i]; if (it) { if (it.run) it.run(); else go(it.to); close(); } };
   return (
-    <div className="fixed inset-0 z-50 grid place-items-start justify-center bg-black/60 px-4 pt-[12vh] backdrop-blur-sm" onMouseDown={close}>
-      <div className="panel glow rise w-full max-w-xl overflow-hidden shadow-2xl shadow-black/60" onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-label="Tìm nhanh">
+    <div className="scrim fixed inset-0 z-50 grid place-items-start justify-center px-4 pt-[12vh]" onMouseDown={close}>
+      <div className="dialog w-full max-w-xl overflow-hidden" onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="Tìm nhanh">
         <div className="flex items-center gap-3 border-b border-line px-4">
           <Icon name="search" size={18} className="text-faint" />
           <input ref={input} value={q} onChange={(e) => { setQ(e.target.value); setAt(0); }} placeholder="Tìm màn hình, dự án, hoặc mô tả một cảnh…" aria-label="Tìm nhanh"
@@ -77,6 +84,25 @@ function Palette({ close, go, projects }: { close: () => void; go: (to: string) 
             </button></li>
           ))}
         </ul>
+        <div className="mono flex items-center gap-4 border-t border-line px-4 py-2 text-[11px] text-faint">
+          <span><kbd className="rounded border border-line px-1">↑</kbd> <kbd className="rounded border border-line px-1">↓</kbd> chọn</span>
+          <span><kbd className="rounded border border-line px-1">↵</kbd> mở</span>
+          <span className="ml-auto"><kbd className="rounded border border-line px-1">?</kbd> phím tắt</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const SHORTCUTS: [string, string][] = [["⌘ K", "Tìm nhanh: màn hình, dự án, cảnh, lệnh"], ["?", "Bảng phím tắt này"], ["Esc", "Đóng hộp thoại, bảng, hoặc menu"], ["← →", "Chọn cảnh trước hoặc sau trên dòng thời gian"],
+  ["Space", "Phát hoặc dừng video đang mở"], ["⌘ Enter", "Lưu kịch bản đang sửa"]];
+function Shortcuts({ close }: { close: () => void }) {
+  useEffect(() => { const key = (e: KeyboardEvent) => { if (e.key === "Escape") close(); }; window.addEventListener("keydown", key); return () => window.removeEventListener("keydown", key); }, [close]);
+  return (
+    <div className="scrim fixed inset-0 z-50 grid place-items-center px-4" onMouseDown={close}>
+      <div className="dialog w-full max-w-sm p-5" onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="keys-title">
+        <h2 id="keys-title" className="text-[15px] font-semibold">Phím tắt</h2>
+        <dl className="mt-3 grid gap-2 text-[13px]">{SHORTCUTS.map(([k, what]) => <div key={k} className="flex items-center gap-3"><dt className="mono w-20 shrink-0 rounded-md border border-line bg-raised px-2 py-1 text-center text-[11.5px]">{k}</dt><dd className="text-mute">{what}</dd></div>)}</dl>
       </div>
     </div>
   );
@@ -88,9 +114,16 @@ function App() {
   const [collapsed, setCollapsed] = useState(read("nx.sidebar") === "1");
   const [drawer, setDrawer] = useState(false);
   const [palette, setPalette] = useState(false);
+  const [keys, setKeys] = useState(false);
+  const online = useConnection();
   useEffect(() => { const on = () => setHref(window.location.pathname + window.location.search); window.addEventListener("popstate", on); return () => window.removeEventListener("popstate", on); }, []);
   useEffect(() => {
-    const on = (e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setPalette((v) => !v); } };
+    const typing = (e: KeyboardEvent) => { const t = e.target as HTMLElement | null; return !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable); };
+    const on = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); setPalette((v) => !v); return; }
+      if (e.key === "Escape") { setDrawer(false); return; }
+      if (e.key === "?" && !typing(e) && !e.metaKey && !e.ctrlKey) { e.preventDefault(); setKeys((v) => !v); }
+    };
     window.addEventListener("keydown", on); return () => window.removeEventListener("keydown", on);
   }, []);
   const go = (to: string) => { window.history.pushState({}, "", to); setHref(window.location.pathname + window.location.search); setDrawer(false); };
@@ -158,7 +191,7 @@ function App() {
               {home?.disk && <div><div className="mb-1 flex justify-between text-mute"><span>Ổ đĩa</span><span className={`mono ${used > 0.9 ? "text-cue" : "text-ink"}`}>còn {megabytes(home.disk.free_bytes)}</span></div>
                 <div className="h-1 overflow-hidden rounded-full bg-overlay"><div className={`h-full rounded-full ${used > 0.9 ? "bg-cue" : "bg-gradient-to-r from-accent to-ai"}`} style={{ width: `${used * 100}%` }} /></div></div>}
             </div>
-            <button type="button" onClick={async () => { await post("/api/v1/control/kill-switch", { on: !kill }).catch(() => {}); }}
+            <button type="button" onClick={async () => { await post("/api/v1/control/kill-switch", { on: !kill }).then(() => toast(kill ? "Hệ thống chạy lại." : "Đã bật dừng khẩn cấp: không bắt đầu thêm việc tốn tiền.", { tone: kill ? "proof" : "tally" })).catch((e) => toast((e as Error).message, { tone: "tally" })); }}
                     className={`mt-3 flex h-7 w-full items-center justify-center gap-1.5 rounded-md text-[12px] font-medium transition-colors ${kill ? "bg-proof/15 text-proof hover:bg-proof/25" : "border border-line text-mute hover:border-tally/60 hover:text-tally"}`}>
               <Icon name="power" size={13} />{kill ? "Cho chạy lại" : "Dừng khẩn cấp"}</button>
           </div>
@@ -169,6 +202,7 @@ function App() {
 
   return (
     <div className="backdrop flex h-full flex-col">
+      <a href="#main" className="skip" onClick={(e) => { e.preventDefault(); document.getElementById("main")?.focus(); }}>Tới nội dung chính</a>
       <div className="flex min-h-0 flex-1">
         <div className="hidden shrink-0 md:block">{nav}</div>
         {drawer && <div className="fixed inset-0 z-40 md:hidden" onClick={() => setDrawer(false)}><div className="absolute inset-0 bg-black/60" /><div className="relative h-full w-fit" onClick={(e) => e.stopPropagation()}>{nav}</div></div>}
@@ -186,11 +220,20 @@ function App() {
             <a href="/thong-bao" onClick={(e) => { e.preventDefault(); go("/thong-bao"); }} className="relative grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-line bg-surface text-mute hover:text-ink" aria-label="Thông báo">
               <Icon name="bell" size={17} />{(notices?.unread ?? 0) > 0 && <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-accent ring-2 ring-surface" />}
             </a>
-            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-gradient-to-br from-accent to-ai text-[13px] font-semibold text-canvas" aria-hidden="true">K</span>
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-line bg-raised text-[13px] font-semibold text-mute" title="Người vận hành" aria-hidden="true">K</span>
           </header>
+          {!online && <div role="alert" className="flex shrink-0 items-center gap-3 border-b border-tally/30 bg-tally/10 px-4 py-2 text-[13px] text-tally md:px-8"><Icon name="alert" size={15} />Không kết nối được với máy chủ NEXORA. Màn hình giữ số liệu cũ cho tới khi nối lại; kiểm tra xem <span className="mono">nexora serve</span> còn chạy không.</div>}
           {kill && <div className="flex shrink-0 items-center gap-3 border-b border-tally/30 bg-tally/10 px-4 py-2 text-[13px] text-tally md:px-8"><Icon name="power" size={15} />Đang bật dừng khẩn cấp: hệ thống không bắt đầu việc tốn tiền hay tác động ra ngoài.
             <button type="button" className="ml-auto font-medium underline underline-offset-2" onClick={() => post("/api/v1/control/kill-switch", { on: false }).catch(() => {})}>Cho chạy lại</button></div>}
-          <main className="flex min-h-0 min-w-0 flex-1 flex-col">{View ? <View /> : page.path === "/" ? <Home go={go} /> : <Projects sub={sub} go={go} />}</main>
+          <main id="main" tabIndex={-1} className="flex min-h-0 min-w-0 flex-1 flex-col outline-none">{View ? <View /> : page.path === "/" ? <Home go={go} /> : <Projects sub={sub} go={go} />}</main>
+          <nav aria-label="Điều hướng nhanh" className="grid shrink-0 grid-cols-5 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] md:hidden">
+            {[...PAGES.slice(0, 4), { path: "", label: "Thêm", icon: "list", view: null, group: 2 }].map((p) => {
+              const on = p.path ? p === page : false, n = p.path ? count(p) : 0;
+              return <button key={p.label} type="button" onClick={() => (p.path ? go(p.path) : setDrawer(true))} aria-current={on ? "page" : undefined}
+                             className={`relative flex h-14 flex-col items-center justify-center gap-1 text-[10.5px] ${on ? "text-accent" : "text-mute"}`}>
+                <Icon name={p.icon} size={20} />{p.label}{n > 0 && <span className="absolute right-[18%] top-2 h-2 w-2 rounded-full bg-cue" />}</button>;
+            })}
+          </nav>
         </div>
       </div>
       <footer className="mono hidden h-7 shrink-0 items-center gap-5 border-t border-line bg-surface/70 px-4 text-[10.5px] uppercase tracking-wider text-faint md:flex">
@@ -204,7 +247,10 @@ function App() {
           {home?.spent_today != null && <span>Hôm nay <span className="text-mute">{home.spent_today.toFixed(2)} USD</span></span>}
         </span>
       </footer>
-      {palette && <Palette close={() => setPalette(false)} go={go} projects={projects ?? []} />}
+      {palette && <Palette close={() => setPalette(false)} go={go} projects={projects ?? []} kill={kill} />}
+      {keys && <Shortcuts close={() => setKeys(false)} />}
+      <Toaster />
+      <Dialogs />
     </div>
   );
 }

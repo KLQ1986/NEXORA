@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { call, megabytes, post, timecode, usePoll, type Asset, type Hit, type Moment, type Project, type RoughPlan } from "./api";
 
 const LEVEL: Record<string, string> = { segment: "CẢNH", speech: "LỜI NÓI", note: "GHI CHÚ", frame: "KHUNG HÌNH" };
-import { Button, Icon, Page, RangeStrip, StageRail, StatusText, Tabs, TimeChip } from "./parts";
+import { Button, Icon, Page, RangeStrip, SkeletonCards, StageRail, StatusText, Tabs, TimeChip } from "./parts";
 
 function AddFootage({ onDone }: { onDone: () => void }) {
   const [path, setPath] = useState("");
@@ -270,7 +270,8 @@ export default function Library() {
   const [start, setStart] = useState<number | undefined>();
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<Hit[] | null>(null);
-  const [adding, setAdding] = useState(false);
+  const params = new URLSearchParams(window.location.search);
+  const [adding, setAdding] = useState(params.get("them") === "1");
   const [searching, setSearching] = useState(false);
   const runSearch = async (text: string) => { if (!text.trim()) { setHits(null); return; } setSearching(true); try { const r = await call<{ hits: Hit[] }>(`/api/v1/library/search?q=${encodeURIComponent(text.trim())}`); setHits(r.hits); } finally { setSearching(false); } };
   const search = () => runSearch(q);
@@ -279,13 +280,17 @@ export default function Library() {
   useEffect(() => { if (asked) { setQ(asked); runSearch(asked); window.history.replaceState({}, "", "/thu-vien"); } }, [asked]);
   const assets = data?.assets ?? [];
   const current = assets.find((a) => a.asset_id === picked) ?? null;
-  const [kind, setKind] = useState("");
-  const [group, setGroup] = useState("");
+  const [kind, setKindState] = useState(params.get("loai") ?? "");
+  const [group, setGroupState] = useState(params.get("bo") ?? "");
+  const remember = (key: string, value: string) => { const u = new URL(window.location.href); if (value) u.searchParams.set(key, value); else u.searchParams.delete(key); u.searchParams.delete("them"); window.history.replaceState({}, "", u.pathname + (u.search || "")); };
+  const setKind = (v: string) => { setKindState(v); remember("loai", v); };
+  const setGroup = (v: string) => { setGroupState(v); remember("bo", v); };
   const [least, setLeast] = useState(0);
   const [session, setSession] = useState("");
   const [use, setUse] = useState<"" | "unused" | "used" | "rejected">("");
   const [sort, setSort] = useState<Sort>("name");
-  const [view, setView] = useState<"grid" | "list">("grid");
+  const [view, setViewState] = useState<"grid" | "list">(params.get("xem") === "list" ? "list" : "grid");
+  const setView = (v: "grid" | "list") => { setViewState(v); remember("xem", v === "list" ? "list" : ""); };
   const groups = [...new Set(assets.flatMap((a) => a.collections))].sort();
   const sessions = [...new Set(assets.filter((a) => a.kind !== "audio" && a.session).map((a) => a.session))].sort().reverse();
   const shown = assets.filter((a) => (!kind || a.kind === kind) && (!group || a.collections.includes(group)) && a.rating >= least && (!session || a.session === session)
@@ -381,7 +386,8 @@ export default function Library() {
                   <button type="button" role="radio" aria-checked={view === "list"} onClick={() => setView("list")} aria-label="Danh sách"><Icon name="list" size={15} /></button>
                 </div>
               </div>
-              {view === "grid" ? (
+              {!data && <SkeletonCards count={6} className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4" />}
+              {data && view === "grid" ? (
                 <ul className={`grid gap-4 ${current ? "sm:grid-cols-2 2xl:grid-cols-3" : "sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"}`}>
                   {shown.map((a) => {
                     const working = a.ingest && a.ingest.status !== "succeeded";
@@ -392,7 +398,7 @@ export default function Library() {
                                 className={`panel group block w-full overflow-hidden text-left transition-[border-color,box-shadow] ${picked === a.asset_id ? "!border-accent shadow-[0_0_0_1px_var(--color-accent),0_8px_30px_-12px_var(--color-accent)]" : "hover:border-edge"}`}>
                           <span className="relative block bg-black">
                             {a.thumbnail_url ? <img src={a.thumbnail_url} alt="" loading="lazy" className="aspect-video w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" />
-                              : <span className="grid aspect-video place-items-center bg-gradient-to-br from-raised to-surface text-faint"><Icon name={a.kind === "audio" ? "music" : "film"} size={30} /></span>}
+                              : <span className="grid aspect-video place-items-center bg-raised text-faint"><Icon name={a.kind === "audio" ? "music" : "film"} size={30} /></span>}
                             <TimeChip className="absolute bottom-2 right-2">{a.still ? "ẢNH" : a.duration ? timecode(a.duration) : "…"}</TimeChip>
                             {a.rating > 0 && <span className="chip absolute left-2 top-2 !text-cue"><Icon name="star" size={11} />{a.rating}</span>}
                             {seen && <span className="chip absolute right-2 top-2 !text-ai" title="Đã được AI mô tả"><Icon name="sparkles" size={11} />AI</span>}

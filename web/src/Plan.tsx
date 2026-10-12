@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { call, post, timecode, usePoll, type Campaign, type Channel, type CalendarRow, type Publication, type Publishing, type Radar, type RadarSubject } from "./api";
-import { Button, Empty, Icon, Page, Section, Tabs, Tag } from "./parts";
+import { Button, Empty, Icon, Page, Section, Tabs, Tag, ask, toast } from "./parts";
 
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const WEEKDAYS = ["Th 2", "Th 3", "Th 4", "Th 5", "Th 6", "Th 7", "CN"];
@@ -73,14 +73,14 @@ function Calendar() {
         <ul className="panel rows empty:hidden">
           {(data?.channels ?? []).map((c) => { const gap = data!.cadence.find((x) => x.channel === c.name); return (
             <li key={c.name} className="px-3 py-2.5 text-[13px]"><div className="flex items-center gap-2"><span className="font-medium">{c.name}</span><span className="text-faint">{[c.platform, c.per_week ? `${c.per_week} video mỗi tuần` : "", c.audience].filter(Boolean).join(", ")}</span>
-              <button type="button" className="link ml-auto" onClick={() => saveChannels(data!.channels.filter((x) => x.name !== c.name))}>Bỏ</button></div>
+              <button type="button" className="link ml-auto" onClick={() => { const before = data!.channels; saveChannels(before.filter((x) => x.name !== c.name)); toast(`Đã bỏ kênh “${c.name}”.`, { undo: () => saveChannels(before) }); }}>Bỏ</button></div>
               {gap && <p className="mt-1 flex flex-wrap gap-1.5">{gap.weeks.map((w) => <span key={w.from} title={`Tuần từ ${w.from}`} className={`mono rounded-md border px-1.5 py-0.5 text-[11.5px] ${w.short ? "border-cue/40 bg-cue/10 text-cue" : "border-proof/40 bg-proof/10 text-proof"}`}>{w.from.slice(5)}: {w.short ? `thiếu ${w.short}` : "đủ"}</span>)}</p>}
             </li>); })}
         </ul>
         <form className="mt-2 grid gap-2 text-[13px]" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); const name = String(f.get("name") ?? "").trim(); if (!name || !data) return;
           saveChannels([...data.channels.filter((c) => c.name !== name), { name, platform: String(f.get("platform") ?? ""), audience: String(f.get("audience") ?? ""), per_week: Number(f.get("per_week") || 0), template: null }]); e.currentTarget.reset(); }}>
           <div className="flex gap-2"><input name="name" aria-label="Tên kênh" placeholder="Tên kênh" className="h-8 min-w-0 flex-1 px-2.5" /><input name="platform" aria-label="Nền tảng" placeholder="Nền tảng" className="h-8 w-28 px-2.5" /></div>
-          <div className="flex items-center gap-2"><input name="audience" aria-label="Người xem" placeholder="Người xem là ai" className="h-8 min-w-0 flex-1 px-2.5" /><input name="per_week" type="number" min="0" max="21" aria-label="Số video mỗi tuần" placeholder="0" className="mono h-8 w-16 px-2" /><span className="text-faint">mỗi tuần</span></div>
+          <div className="flex items-center gap-2"><input name="audience" aria-label="Người xem" placeholder="Người xem là ai" className="h-8 min-w-0 flex-1 px-2.5" /><input name="per_week" type="number" inputMode="decimal" min="0" max="21" aria-label="Số video mỗi tuần" placeholder="0" className="mono h-8 w-16 px-2" /><span className="text-faint">mỗi tuần</span></div>
           <div><Button size="sm" type="submit">Thêm kênh</Button></div>
         </form>
       </Section>
@@ -182,7 +182,7 @@ function PublicationRow({ p, target, due, picked, pick, reload }: { p: Publicati
               <tbody>{p.snapshots.map((s) => <tr key={s.snapshot_id} className="border-t border-line"><td className="mono py-1">{s.hours < 48 ? `${s.hours.toFixed(0)} giờ` : `${(s.hours / 24).toFixed(0)} ngày`}</td>{FIGURE.map(([k]) => <td key={k} className="mono py-1">{s.figures[k] !== undefined ? Math.round(s.figures[k]) : ""}</td>)}</tr>)}</tbody></table></div>)}
           <form className="flex flex-wrap items-end gap-2" onSubmit={async (e) => { e.preventDefault(); const f = e.currentTarget; const body = Object.fromEntries([...new FormData(f).entries()].filter(([, v]) => String(v).trim() !== ""));
             setNote(null); try { await post(`/api/v1/publications/${p.publication_id}/metrics`, body); f.reset(); } catch (err) { setNote((err as Error).message); } reload(); }}>
-            {FIGURE.map(([k, n]) => <label key={k} className="grid gap-1 text-[12px] text-mute">{n}<input name={k} type="number" min="0" className="mono h-8 w-24 px-2" /></label>)}
+            {FIGURE.map(([k, n]) => <label key={k} className="grid gap-1 text-[12px] text-mute">{n}<input name={k} type="number" inputMode="decimal" min="0" className="mono h-8 w-24 px-2" /></label>)}
             <Button size="sm" type="submit">Ghi số liệu lúc này</Button>
             <Button size="sm" onClick={async () => setForecast(await call<Forecast>(`/api/v1/publications/${p.publication_id}/forecast`))}>Dự báo một tuần</Button>
           </form>
@@ -208,7 +208,7 @@ function Campaigns() {
           <li key={c.campaign_id} className="panel p-4 text-[13px]">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1"><span className="font-medium">{c.name}</span><span className="mono text-faint">{c.starts ?? "?"} đến {c.ends ?? "?"}</span>
               {c.late > 0 && <Tag tone="cue">{c.late} video quá ngày</Tag>}{c.pace && <Tag tone={c.pace.on_pace ? "proof" : "cue"}>{c.pace.on_pace ? "Đúng tiến độ" : "Chậm tiến độ"}</Tag>}
-              <button type="button" className="link ml-auto" onClick={async () => { await call(`/api/v1/campaigns/${c.campaign_id}`, { method: "DELETE" }); reload(); }}>Xoá</button></div>
+              <button type="button" className="link ml-auto" onClick={async () => { if (!(await ask(`Xoá chiến dịch “${c.name}”?`, { body: "Các video và số liệu của chúng vẫn còn; chỉ nhóm này và mục tiêu của nó bị xoá.", confirm: "Xoá chiến dịch" }))) return; await call(`/api/v1/campaigns/${c.campaign_id}`, { method: "DELETE" }); reload(); }}>Xoá</button></div>
             <div className="mt-2 h-2 overflow-hidden rounded-full bg-raised"><div className="h-full rounded-full bg-accent" style={{ width: `${Math.min(100, (c.share ?? 0) * 100)}%` }} /></div>
             <p className="mt-1.5 text-mute"><span className="mono text-ink">{Math.round(c.reached)}</span> trên <span className="mono">{Math.round(c.target)}</span> lượt xem, {c.published} trên {c.videos.length} video đã đăng. {c.pace?.text}</p>
             <ul className="mt-2 flex flex-wrap gap-2">{c.videos.map((v) => <li key={v.project_id}><button type="button" onClick={() => open_(`/du-an/${v.project_id}`)} className={`rounded-lg border px-2.5 py-1 text-left ${v.late ? "border-cue/40 bg-cue/10" : v.published ? "border-proof/40 bg-proof/10" : "border-line bg-raised/50"}`}>{v.title} <span className="mono text-faint">{v.published ? Math.round(v.value) : v.due_date ?? "chưa có ngày"}</span></button></li>)}</ul>
@@ -218,7 +218,7 @@ function Campaigns() {
         <form className="panel mt-2 grid gap-3 p-4" onSubmit={async (e) => { e.preventDefault(); const f = new FormData(e.currentTarget); setNote(null);
           try { await post("/api/v1/campaigns", { name: f.get("name"), target: Number(f.get("target") || 0), starts: f.get("starts"), ends: f.get("ends"), projects: picked }); e.currentTarget.reset(); setPicked([]); } catch (err) { setNote((err as Error).message); } reload(); }}>
           <div className="flex flex-wrap gap-2"><input name="name" aria-label="Tên chiến dịch" placeholder="Tên chiến dịch, ví dụ: Tháng ẩm thực đường phố" className="h-9 min-w-0 flex-1 px-3" />
-            <label className="flex items-center gap-2 text-mute">Mục tiêu<input name="target" type="number" min="0" aria-label="Số lượt xem mục tiêu" className="mono h-9 w-28 px-2" />lượt xem</label></div>
+            <label className="flex items-center gap-2 text-mute">Mục tiêu<input name="target" type="number" inputMode="decimal" min="0" aria-label="Số lượt xem mục tiêu" className="mono h-9 w-28 px-2" />lượt xem</label></div>
           <div className="flex flex-wrap items-center gap-2 text-mute"><label className="flex items-center gap-2">Từ<input name="starts" type="date" className="mono h-9 px-2" /></label><label className="flex items-center gap-2">đến<input name="ends" type="date" className="mono h-9 px-2" /></label></div>
           <div className="flex flex-wrap gap-2">{(cal?.projects ?? []).map((p) => <label key={p.project_id} className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-1.5 ${picked.includes(p.project_id) ? "border-accent/60 bg-accent/[0.08]" : "border-line"}`}><input type="checkbox" checked={picked.includes(p.project_id)} onChange={() => setPicked(picked.includes(p.project_id) ? picked.filter((x) => x !== p.project_id) : [...picked, p.project_id])} />{p.title}</label>)}</div>
           <div className="flex items-center gap-3"><Button type="submit" kind="primary">Lập chiến dịch</Button>{note && <span className="text-tally">{note}</span>}</div>

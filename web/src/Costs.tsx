@@ -53,8 +53,8 @@ export default function Costs() {
             <div className="panel p-5">
               <div className="grid gap-5"><Budget label="Hôm nay" spent={u.spent_today} cap={u.budget_day} /><Budget label="Tháng này" spent={u.spent_month} cap={u.budget_month} /></div>
               <form className="mt-5 flex flex-wrap items-end gap-3 border-t border-line pt-5" onSubmit={(e) => { e.preventDefault(); save(); }}>
-                <div><label htmlFor="bd" className="field-label">Mỗi ngày (USD)</label><input id="bd" type="number" min="0" step="0.5" value={day ?? u.budget_day ?? ""} onChange={(e) => setDay(e.target.value)} placeholder="Không giới hạn" className="mono w-40 px-3" /></div>
-                <div><label htmlFor="bm" className="field-label">Mỗi tháng (USD)</label><input id="bm" type="number" min="0" step="1" value={month ?? u.budget_month ?? ""} onChange={(e) => setMonth(e.target.value)} placeholder="Không giới hạn" className="mono w-40 px-3" /></div>
+                <div><label htmlFor="bd" className="field-label">Mỗi ngày (USD)</label><input id="bd" type="number" inputMode="decimal" min="0" step="0.5" value={day ?? u.budget_day ?? ""} onChange={(e) => setDay(e.target.value)} placeholder="Không giới hạn" className="mono w-40 px-3" /></div>
+                <div><label htmlFor="bm" className="field-label">Mỗi tháng (USD)</label><input id="bm" type="number" inputMode="decimal" min="0" step="1" value={month ?? u.budget_month ?? ""} onChange={(e) => setMonth(e.target.value)} placeholder="Không giới hạn" className="mono w-40 px-3" /></div>
                 <Button kind="primary" disabled={day === null && month === null} onClick={save}>Lưu ngân sách</Button>
                 {note && <p className="w-full text-tally">{note}</p>}
               </form>
@@ -65,7 +65,7 @@ export default function Costs() {
               {u.by_day.length > 0 ? (
                 <>
                   <div className="flex h-40 items-end gap-1.5" role="img" aria-label="Chi phí theo ngày">
-                    {u.by_day.map((d) => <div key={d.day} className="group relative flex-1 rounded-t-md bg-gradient-to-t from-accent-deep/70 to-accent transition-[filter] hover:brightness-125" style={{ height: `${Math.max(3, (d.cost / peak) * 100)}%` }}>
+                    {u.by_day.map((d) => <div key={d.day} className="group relative flex-1 rounded-t-md bg-accent/80 transition-[filter] hover:brightness-125" style={{ height: `${Math.max(3, (d.cost / peak) * 100)}%` }}>
                       <span className="mono pointer-events-none absolute -top-6 left-1/2 hidden -translate-x-1/2 whitespace-nowrap rounded bg-overlay px-1.5 text-[10.5px] group-hover:block">{d.cost.toFixed(2)}</span></div>)}
                   </div>
                   <div className="mono mt-2 flex justify-between text-[10.5px] text-faint"><span>{u.by_day[0].day}</span><span>{u.by_day[u.by_day.length - 1].day}</span></div>

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { call, megabytes, post, usePoll, type EvalRun, type Settings, type Template } from "./api";
-import { Button, Icon, Meter, Page, Tag } from "./parts";
+import { Button, Icon, Meter, Page, Tag, ask, toast } from "./parts";
 
 type Env = { ffmpeg?: { filters: Record<string, boolean>; encoders: Record<string, boolean> }; disk: { free_bytes: number; total_bytes: number };
              adapters: { name: string; runs: string; operations: string[] }[] };
@@ -61,8 +61,8 @@ function NoticePrefs() {
           <label key={kind} className={`flex h-8 cursor-pointer items-center gap-2 rounded-lg border px-3 text-[13px] transition-colors ${on ? "border-accent/40 bg-accent/10" : "border-line text-mute"}`}><input type="checkbox" checked={on} onChange={() => toggle(kind)} />{name}</label>); })}</div></div>
       <form className="flex flex-wrap items-center gap-2 text-[13px]" onSubmit={async (e) => { e.preventDefault(); const f = new FormData(e.currentTarget); const a = String(f.get("qf") ?? ""), b = String(f.get("qt") ?? ""); await post("/api/v1/control/settings", { quiet_hours: a !== "" && b !== "" ? `${a}-${b}` : "" }).catch(() => {}); reload(); }}>
         <span className="field-label !mb-0 w-full">Giờ yên lặng</span>
-        <label htmlFor="qf">Từ</label><input id="qf" name="qf" type="number" min="0" max="23" defaultValue={data.quiet_hours.split("-")[0] ?? ""} key={`a${data.quiet_hours}`} className={hourCls} />
-        <label htmlFor="qt">giờ đến</label><input id="qt" name="qt" type="number" min="0" max="23" defaultValue={data.quiet_hours.split("-")[1] ?? ""} key={`b${data.quiet_hours}`} className={hourCls} /><span>giờ</span>
+        <label htmlFor="qf">Từ</label><input id="qf" name="qf" type="number" inputMode="decimal" min="0" max="23" defaultValue={data.quiet_hours.split("-")[0] ?? ""} key={`a${data.quiet_hours}`} className={hourCls} />
+        <label htmlFor="qt">giờ đến</label><input id="qt" name="qt" type="number" inputMode="decimal" min="0" max="23" defaultValue={data.quiet_hours.split("-")[1] ?? ""} key={`b${data.quiet_hours}`} className={hourCls} /><span>giờ</span>
         <Button type="submit" size="sm">Lưu</Button>
         <span className="w-full text-[12.5px] text-faint">{data.quiet_hours ? "Trong giờ này thông báo chỉ nằm ở mục Thông báo." : "Để trống cả hai ô để báo bất cứ lúc nào."}</span>
       </form>
@@ -197,7 +197,7 @@ function Benchmark() {
       {!!data?.cases.length && (
         <details className="text-[13px]"><summary className="cursor-pointer list-none text-accent">{data.cases.length} mẫu đang giữ</summary>
           <ul className="rows mt-2">{data.cases.map((c) => <li key={c.case_id} className="flex gap-3 py-1.5"><span className="min-w-0 flex-1 truncate">{c.line}</span><span className="mono shrink-0 text-faint">{c.t_in.toFixed(1)} đến {c.t_out.toFixed(1)} giây</span>
-            <button type="button" className="link shrink-0" onClick={async () => { await call(`/api/v1/evaluation/cases/${c.case_id}`, { method: "DELETE" }); reload(); }}>Bỏ</button></li>)}</ul></details>)}
+            <button type="button" className="link shrink-0" onClick={async () => { if (!(await ask("Bỏ mẫu chuẩn này?", { body: `“${c.line}” sẽ không còn được dùng để đo hệ thống tìm kiếm.`, confirm: "Bỏ mẫu" }))) return; await call(`/api/v1/evaluation/cases/${c.case_id}`, { method: "DELETE" }); reload(); }}>Bỏ</button></li>)}</ul></details>)}
     </Card>
   );
 }
@@ -283,7 +283,7 @@ function Templates() {
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               <label className={lab}>Khung hình<select value={t.format} onChange={(e) => edit(i, { format: e.target.value })} className="h-9 pl-2.5 text-ink">{Object.entries(SHAPES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
               <label className={lab}>Giọng<select value={t.voice} onChange={(e) => edit(i, { voice: e.target.value })} className="h-9 pl-2.5 text-ink"><option value="">Theo máy</option>{s.voices.map((v) => <option key={v}>{v}</option>)}</select></label>
-              <label className={lab}>Mức nhạc<input type="number" min="0.05" max="1" step="0.05" value={t.music_gain} onChange={(e) => edit(i, { music_gain: Number(e.target.value) })} className="mono h-9 px-2.5 text-ink" /></label>
+              <label className={lab}>Mức nhạc<input type="number" inputMode="decimal" min="0.05" max="1" step="0.05" value={t.music_gain} onChange={(e) => edit(i, { music_gain: Number(e.target.value) })} className="mono h-9 px-2.5 text-ink" /></label>
               <label className={lab}>Cỡ phụ đề<select value={String(t.caption_scale ?? 1)} onChange={(e) => edit(i, { caption_scale: Number(e.target.value) })} className="h-9 pl-2.5 text-ink"><option value="0.85">Nhỏ</option><option value="1">Vừa</option><option value="1.15">Lớn</option><option value="1.3">Rất lớn</option></select></label>
               <label className={lab}>Vị trí phụ đề<select value={t.caption_position ?? "bottom"} onChange={(e) => edit(i, { caption_position: e.target.value })} className="h-9 pl-2.5 text-ink"><option value="bottom">Dưới</option><option value="middle">Giữa</option><option value="top">Trên</option></select></label>
               <label className={lab}>Kiểu chữ<select value={t.typeface ?? "sans"} onChange={(e) => edit(i, { typeface: e.target.value })} className="h-9 pl-2.5 text-ink"><option value="sans">Không chân</option><option value="serif">Có chân</option></select></label>
@@ -308,7 +308,9 @@ function StoreCards() {
   const [note, setNote] = useState<string | null>(null);
   const cleanable = (data?.stores ?? []).filter((s) => s.cleanable && s.bytes > 0);
   const total = (data?.stores ?? []).reduce((sum, s) => sum + s.bytes, 0) || 1;
-  const clean = async () => { const r = await post<{ freed_bytes: number }>("/api/v1/storage/clean", { keys: cleanable.map((s) => s.key) }); setNote(`Đã dọn ${megabytes(r.freed_bytes)}.`); reload(); };
+  const clean = async () => {
+    if (!(await ask("Dọn dữ liệu tạm?", { body: `Xoá ${megabytes(cleanable.reduce((sum, s) => sum + s.bytes, 0))} bản xem, khung hình và cảnh đã dựng. Hệ thống làm lại chúng khi cần; footage và bản dựng không bị đụng tới.`, confirm: "Dọn", danger: false }))) return;
+    const r = await post<{ freed_bytes: number }>("/api/v1/storage/clean", { keys: cleanable.map((s) => s.key) }); setNote(`Đã dọn ${megabytes(r.freed_bytes)}.`); toast(`Đã dọn ${megabytes(r.freed_bytes)}.`, { tone: "proof" }); reload(); };
   const backup = async () => { const r = await post<{ name: string }>("/api/v1/storage/backup"); setNote(`Đã sao lưu: ${r.name}`); reload(); };
   return (
     <>
@@ -386,7 +388,9 @@ const AREAS: [Area, string, string][] = [["control", "Điều khiển", "power"]
 
 export default function System() {
   const { data: control, reload } = usePoll<Control>("/api/v1/control", 3000);
-  const [area, setArea] = useState<Area>("control");
+  const wanted = new URLSearchParams(window.location.search).get("muc");
+  const [area, setAreaState] = useState<Area>(AREAS.some(([k]) => k === wanted) ? (wanted as Area) : "control");
+  const setArea = (k: Area) => { setAreaState(k); window.history.replaceState({}, "", k === "control" ? "/he-thong" : `/he-thong?muc=${k}`); };
   const toggle = async () => { await call("/api/v1/control/kill-switch", { method: "POST", body: JSON.stringify({ on: !control?.kill_switch }) }); reload(); };
   const kill = !!control?.kill_switch;
   return (
@@ -407,8 +411,8 @@ export default function System() {
                     actions={<Button kind={kill ? "primary" : "danger"} onClick={toggle}>{kill ? "Cho chạy lại" : "Dừng khẩn cấp"}</Button>} />
               <Card title="Giờ phân tích footage" icon="clock" note="Xem và mô tả footage là việc nặng nhất của máy. Bạn có thể chỉ cho nó chạy trong một khung giờ, ví dụ ban đêm. Chọn clip và dựng video không bị ảnh hưởng.">
                 <form className="flex flex-wrap items-center gap-2 text-[13px]" onSubmit={async (e) => { e.preventDefault(); const f = new FormData(e.currentTarget); const a = String(f.get("from") ?? ""), b = String(f.get("to") ?? ""); await post("/api/v1/control/background-window", { window: a !== "" && b !== "" ? `${a}-${b}` : "" }).catch(() => {}); reload(); }}>
-                  <label htmlFor="from">Từ</label><input id="from" name="from" type="number" min="0" max="23" defaultValue={control?.background_window.split("-")[0] ?? ""} key={`f${control?.background_window}`} className={hourCls} />
-                  <label htmlFor="to">giờ đến</label><input id="to" name="to" type="number" min="0" max="23" defaultValue={control?.background_window.split("-")[1] ?? ""} key={`t${control?.background_window}`} className={hourCls} /><span>giờ</span>
+                  <label htmlFor="from">Từ</label><input id="from" name="from" type="number" inputMode="decimal" min="0" max="23" defaultValue={control?.background_window.split("-")[0] ?? ""} key={`f${control?.background_window}`} className={hourCls} />
+                  <label htmlFor="to">giờ đến</label><input id="to" name="to" type="number" inputMode="decimal" min="0" max="23" defaultValue={control?.background_window.split("-")[1] ?? ""} key={`t${control?.background_window}`} className={hourCls} /><span>giờ</span>
                   <Button type="submit" size="sm">Lưu</Button>
                   <span className={`w-full text-[12.5px] ${control?.background_window && !control.background_running_now ? "text-cue" : "text-faint"}`}>{!control?.background_window ? "Đang cho chạy bất cứ lúc nào. Để trống cả hai ô để giữ như vậy." : control.background_running_now ? "Đang trong khung giờ, việc phân tích được chạy." : "Ngoài khung giờ, việc phân tích đang chờ."}</span>
                 </form>

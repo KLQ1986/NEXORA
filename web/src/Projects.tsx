@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { call, post, projectState, scriptText, stageName, timecode, usePoll, type Idea, type Source, type AgentTask, type Asset, type Settings, type Candidate, type Project, type RenderItem, type Shot, type BibleEntry, type GapPlan, type Op, type Rights, type Publishing, type Channel } from "./api";
 import Board from "./Board";
-import { Button, Empty, Filmstrip, Icon, Meter, Page, Section, Seg, StageRail, Steps, Tabs, Tag, TimeChip } from "./parts";
+import { Button, Empty, Filmstrip, Icon, Meter, Page, Section, Seg, SkeletonCards, StageRail, Steps, Tabs, Tag, TimeChip, toast } from "./parts";
 import Timeline from "./Timeline";
 
 const VERDICT: Record<string, [string, "proof" | "tally" | "cue"]> = { supported: ["Nguồn xác nhận", "proof"], contradicted: ["Trái với nguồn", "tally"], not_found: ["Chưa có căn cứ", "cue"] };
@@ -98,7 +98,7 @@ function ShotRow({ shot, n, locked, changed, heading, sources = [], effects = []
                   <label className="grid gap-1"><span className="text-mute">Chữ trên màn hình (để trống thì hiện đúng lời dẫn)</span><input value={screen ?? shot.screen_text ?? ""} onChange={(e) => setScreen(e.target.value)} placeholder="Ví dụ: Hội An, 6 giờ sáng" className="px-3" /></label>
                   <div><Button size="sm" disabled={brief === null && screen === null} onClick={saveNotes}>Lưu ghi chú</Button></div>
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line pt-3">
-                    <label className="flex items-center gap-2 text-mute">Giữ hình ít nhất<input type="number" min="0" step="0.5" defaultValue={shot.target_seconds ?? ""} onBlur={(e) => note({ target_seconds: e.target.value })} className="mono h-8 w-20 px-2" />giây</label>
+                    <label className="flex items-center gap-2 text-mute">Giữ hình ít nhất<input type="number" inputMode="decimal" min="0" step="0.5" defaultValue={shot.target_seconds ?? ""} onBlur={(e) => note({ target_seconds: e.target.value })} className="mono h-8 w-20 px-2" />giây</label>
                     <label className="flex min-w-0 flex-1 items-center gap-2 text-mute">Âm thanh<input defaultValue={shot.sound_cue ?? ""} onBlur={(e) => note({ sound_cue: e.target.value })} placeholder="Ví dụ: tiếng chợ, ngừng nhạc" className="h-8 min-w-0 flex-1 px-2" /></label>
                   </div>
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -424,7 +424,9 @@ function Detail({ id, back }: { id: string; back: () => void }) {
   const [topic, setTopic] = useState("");
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [tab, setTab] = useState<"work" | "timeline" | "board">("work");
+  const asked = new URLSearchParams(window.location.search).get("tab");
+  const [tab, setTabState] = useState<"work" | "timeline" | "board">(asked === "timeline" || asked === "board" ? asked : "work");
+  const setTab = (k: "work" | "timeline" | "board") => { setTabState(k); window.history.replaceState({}, "", k === "work" ? `/du-an/${id}` : `/du-an/${id}?tab=${k}`); };
   const [takes, setTakes] = useState<string | null>(null);
   const [music, setMusic] = useState<string | null>(null);
   const [style, setStyle] = useState<string | null>(null);
@@ -439,7 +441,13 @@ function Detail({ id, back }: { id: string; back: () => void }) {
   const last = useRef<string | null>(null);
   // The editor follows the stored script (after a reorder on the timeline, for example) unless the operator has typed something not yet saved.
   useEffect(() => { if (stored === null) return; if (text === null || text.trim() === (last.current ?? "").trim()) setText(stored); last.current = stored; }, [stored]);
-  if (!p) return <Page title="Dự án" back={{ label: "Dự án", onClick: back }}><p className="text-mute">Đang mở dự án…</p></Page>;
+  const unsaved = text !== null && stored !== null && text.trim() !== stored.trim();
+  useEffect(() => {
+    if (!unsaved) return;
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); };       // the browser asks before the unsaved script is lost
+    window.addEventListener("beforeunload", warn); return () => window.removeEventListener("beforeunload", warn);
+  }, [unsaved]);
+  if (!p) return <Page title="Đang mở dự án…" back={{ label: "Dự án", onClick: back }}><div className="grid gap-4" aria-busy="true"><div className="panel h-16" /><div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]"><div className="panel h-72" /><div className="panel h-72" /></div></div></Page>;
   const run = async (fn: () => Promise<unknown>) => { setBusy(true); setNote(null); try { await fn(); } catch (e) { setNote((e as Error).message); } setBusy(false); reload(); };
   const saved = scriptText(p.shots);
   const dirty = text !== null && text.trim() !== saved.trim();
@@ -473,7 +481,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
             <span className="flex items-center gap-1.5"><Icon name="image" size={13} />{FORMATS[p.format] ?? p.format}</span>{latest && <span className="mono flex items-center gap-1.5"><Icon name="play" size={12} />{timecode(latest.qc.duration)}</span>}
             {p.template && <span className="flex items-center gap-1.5"><Icon name="layers" size={13} />{p.template}</span>}</span>}
           tabs={<Tabs value={tab} onChange={(k) => { setTab(k); document.querySelector("main .overflow-y-auto")?.scrollTo(0, 0); }} items={[{ key: "work", label: "Làm video", icon: "edit" }, { key: "timeline", label: "Dòng thời gian", icon: "timeline" }, { key: "board", label: "Bảng theo dõi", icon: "board" }]} />}
-          actions={next && <Button kind="primary" disabled={busy || (next.label === "Lưu kịch bản" && !(text ?? "").trim())} onClick={next.go}><Icon name={next.icon} />{next.label}</Button>}>
+          actions={next && <Button kind="primary" busy={busy} disabled={next.label === "Lưu kịch bản" && !(text ?? "").trim()} onClick={next.go}>{!busy && <Icon name={next.icon} />}{next.label}</Button>}>
       {tab === "work" && <Pipeline step={step} />}
       {note && <p className="mb-5 flex items-center gap-2 rounded-xl border border-tally/40 bg-tally/10 px-4 py-3 text-tally"><Icon name="alert" />{note}</p>}
       <AgentLog projectId={id} />
@@ -676,7 +684,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
             <ul className="rows empty:hidden">
               {p.research.map((src) => (
                 <li key={src.title} className="py-2 text-[13px]"><div className="flex justify-between gap-2"><span className="min-w-0 font-medium">{/^https?:\/\//i.test(src.url) ? <a href={src.url} target="_blank" rel="noreferrer" className="underline decoration-edge underline-offset-2">{src.title}</a> : src.title}</span>
-                  <button type="button" className="link shrink-0" onClick={() => patch({ research: p.research.filter((x) => x.title !== src.title) })}>Bỏ</button></div>
+                  <button type="button" className="link shrink-0" onClick={() => { const before = p.research; patch({ research: before.filter((x) => x.title !== src.title) }); toast(`Đã bỏ nguồn “${src.title}”.`, { undo: () => patch({ research: before }) }); }}>Bỏ</button></div>
                   <p className="text-mute">{[src.publisher, src.date].filter(Boolean).join(", ")}</p>{src.passage && <p className="mt-0.5 border-l-2 border-edge pl-2 text-mute">“{src.passage}”</p>}</li>
               ))}
             </ul>
@@ -718,7 +726,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
                   </form>
                   <form onSubmit={(e) => { e.preventDefault(); patch({ budget_cap: budget === "" || budget === null ? null : Number(budget) }); }}>
                     <label htmlFor="budget" className={field}>Ngân sách cho dự án (USD)</label>
-                    <div className="flex gap-2"><input id="budget" type="number" min="0" step="0.5" value={budget ?? p.budget_cap ?? ""} onChange={(e) => setBudget(e.target.value)} placeholder="Không giới hạn" className="mono min-w-0 flex-1 px-3" />
+                    <div className="flex gap-2"><input id="budget" type="number" inputMode="decimal" min="0" step="0.5" value={budget ?? p.budget_cap ?? ""} onChange={(e) => setBudget(e.target.value)} placeholder="Không giới hạn" className="mono min-w-0 flex-1 px-3" />
                       <Button disabled={busy || budget === null} onClick={() => patch({ budget_cap: budget === "" || budget === null ? null : Number(budget) })}>Lưu</Button></div>
                     <p className="mono mt-1.5 text-[12px] text-mute">Đã tiêu {p.spent.toFixed(2)} USD{p.budget_cap != null ? ` trên ${p.budget_cap.toFixed(2)} USD` : ""}</p>
                     {p.budget_cap != null && <div className="mt-1.5"><Meter share={p.spent / p.budget_cap} tone={p.spent >= p.budget_cap ? "cue" : "ai"} /></div>}
@@ -796,7 +804,7 @@ function Bible({ entries, save, images = [], train }: { entries: BibleEntry[]; s
         {entries.map((e) => (
           <li key={e.name} className="flex gap-2 py-1.5 text-[12.5px]"><span className="min-w-0 flex-1"><span className="font-medium">{e.name}</span><span className="ml-1.5 text-faint">{KIND[e.kind]}{e.voice ? `, giọng ${e.voice}` : ""}</span><span className="block text-mute">{e.description}</span></span>
             <span className="flex shrink-0 flex-col items-end gap-1">
-              <button type="button" className="link" onClick={() => save(entries.filter((x) => x.name !== e.name))}>Bỏ</button>
+              <button type="button" className="link" onClick={() => { save(entries.filter((x) => x.name !== e.name)); toast(`Đã bỏ “${e.name}” khỏi hồ sơ.`, { undo: () => save(entries) }); }}>Bỏ</button>
               {e.kind === "character" && (e.model ? <span className="text-[11.5px] text-proof">đã có mô hình riêng</span> : e.training?.status === "queued" ? <span className="text-[11.5px] text-ai">đang huấn luyện</span>
                 : train && sets.length > 0 && <select aria-label={`Huấn luyện mô hình cho ${e.name} từ bộ sưu tập`} value="" onChange={(ev) => ev.target.value && train(e.name, images.filter((a) => a.collections.includes(ev.target.value)).map((a) => a.asset_id))} className="h-7 max-w-[150px] pl-1.5 text-[11.5px]">
                     <option value="">Huấn luyện từ…</option>{sets.map((g) => <option key={g} value={g}>{g} ({images.filter((a) => a.collections.includes(g)).length} ảnh)</option>)}</select>)}
@@ -939,7 +947,8 @@ export default function Projects({ sub, go }: { sub: string | null; go: (to: str
         </div>
       )}
       {shown.length === 0 && all.length > 0 && <p className="panel px-5 py-6 text-mute">Không có dự án nào ở mục này.</p>}
-      {view === "grid" ? (
+      {!data && <SkeletonCards count={6} className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4" />}
+      {data && view === "grid" ? (
         <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           {shown.map((p) => {
             const st = projectState(p); const task = working.get(p.project_id); const latest = p.renders[0];

@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { STAGE_NAMES, STATUS_NAMES, timecode, type Asset, type Shot, type Stage } from "./api";
 
 /** The time bar of a clip: what can be used, what is black, what is frozen. */
@@ -15,7 +16,7 @@ export function RangeStrip({ asset, playhead, onSeek, tall = false }: { asset: A
         onClick={(e) => { if (!onSeek) return; const r = e.currentTarget.getBoundingClientRect(); onSeek(((e.clientX - r.left) / r.width) * d); }}
         role={onSeek ? "slider" : "img"} aria-label="Thanh thời gian của video" aria-valuemin={0} aria-valuemax={d} aria-valuenow={playhead ?? 0}
       >
-        {asset.usable_ranges.map((r, i) => <div key={`u${i}`} className={`absolute inset-y-0 ${tall ? "bg-gradient-to-r from-accent/45 to-ai/35" : "bg-gradient-to-r from-accent/80 to-ai/70"}`} style={span(r)} />)}
+        {asset.usable_ranges.map((r, i) => <div key={`u${i}`} className={`absolute inset-y-0 ${tall ? "bg-accent/40" : "bg-accent/75"}`} style={span(r)} />)}
         {asset.black_ranges.map((r, i) => <div key={`b${i}`} className="hatch absolute inset-y-0 bg-canvas" style={span(r)} title="Khung đen, không dùng được" />)}
         {asset.frozen_ranges.map((r, i) => <div key={`f${i}`} className="dots absolute inset-y-0 bg-raised/90" style={span(r)} title="Hình đứng yên" />)}
         {tall && minutes.map((m) => <div key={m} className="absolute inset-y-0 w-px bg-canvas/70" style={{ left: pct(m) }} />)}
@@ -62,13 +63,13 @@ export function StatusText({ status }: { status: string }) {
 }
 
 type Kind = "plain" | "primary" | "danger" | "quiet" | "ai";
-export function Button({ children, onClick, kind = "plain", disabled, size = "md", title, type = "button" }: { children: React.ReactNode; onClick?: () => void; kind?: Kind; disabled?: boolean; size?: "sm" | "md"; title?: string; type?: "button" | "submit" }) {
+export function Button({ children, onClick, kind = "plain", disabled, busy, size = "md", title, type = "button" }: { children: React.ReactNode; onClick?: () => void; kind?: Kind; disabled?: boolean; busy?: boolean; size?: "sm" | "md"; title?: string; type?: "button" | "submit" }) {
   const look = kind === "primary" ? "brand-button"
     : kind === "danger" ? "border border-tally/50 bg-tally/10 text-tally hover:bg-tally hover:text-white disabled:opacity-40"
     : kind === "quiet" ? "text-mute hover:bg-raised hover:text-ink disabled:opacity-40"
     : kind === "ai" ? "border border-ai/35 bg-ai/10 text-ai hover:bg-ai/20 disabled:opacity-40"
     : "border border-edge bg-raised text-ink hover:border-[#454c5c] hover:bg-overlay disabled:border-line disabled:text-faint disabled:hover:bg-raised";
-  return <button type={type} title={title} onClick={onClick} disabled={disabled} className={`inline-flex shrink-0 items-center justify-center gap-2 rounded-lg font-medium transition-[background-color,border-color,color,filter] ${size === "sm" ? "h-7 px-2.5 text-[12.5px]" : "h-9 px-3.5 text-[13.5px]"} ${look}`}>{children}</button>;
+  return <button type={type} title={title} onClick={onClick} disabled={disabled || busy} aria-busy={busy || undefined} className={`btn inline-flex shrink-0 items-center justify-center gap-2 rounded-lg font-medium ${size === "sm" ? "h-7 px-2.5 text-[12.5px]" : "h-9 px-3.5 text-[13.5px]"} ${look}`}>{busy && <Spinner size={size === "sm" ? 12 : 14} />}{children}</button>;
 }
 
 const ICONS: Record<string, string> = {
@@ -134,7 +135,7 @@ export function Page({ title, eyebrow, note, actions, back, tabs, children, wide
   back?: { label: string; onClick: () => void }; tabs?: React.ReactNode; children: React.ReactNode; wide?: boolean; flush?: boolean }) {
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <header className={`shrink-0 px-4 pt-5 md:px-8 ${tabs ? "" : "pb-5"}`}>
+      <header id="page-top" className={`shrink-0 px-4 pt-5 md:px-8 ${tabs ? "" : "pb-5"}`}>
         <div className={`flex flex-wrap items-end gap-x-6 gap-y-3 ${wide ? "max-w-[1800px]" : "max-w-[1440px]"}`}>
           <div className="min-w-0 grow basis-72">
             {back && <button type="button" onClick={back.onClick} className="-ml-1 mb-1.5 flex items-center gap-1 text-[12.5px] text-mute transition-colors hover:text-ink"><Icon name="back" size={14} />{back.label}</button>}
@@ -194,7 +195,7 @@ export function Filmstrip({ shots, height = 56, numbered = false, className = ""
     return { s, d, src, gap: !sel || sel.status === "gap" };
   });
   const total = items.reduce((sum, i) => sum + i.d, 0) || 1;
-  if (!items.length) return <div className={`grid place-items-center bg-gradient-to-br from-raised to-surface text-faint ${className}`} style={{ height }}><Icon name="clapper" size={26} /></div>;
+  if (!items.length) return <div className={`grid place-items-center bg-raised text-faint ${className}`} style={{ height }}><Icon name="clapper" size={26} /></div>;
   return (
     <div className={`filmstrip ${className}`} style={{ height }} role="img" aria-label={`Dải phim ${items.length} cảnh`}>
       {items.map(({ s, d, src, gap }, i) => (
@@ -227,7 +228,7 @@ export function Stat({ label, value, sub, icon, tone, children }: { label: strin
 
 /** A thin bar of a share. */
 export function Meter({ share, tone = "accent" }: { share: number; tone?: "accent" | "cue" | "proof" | "ai" }) {
-  const c = { accent: "bg-gradient-to-r from-accent-deep to-accent", cue: "bg-cue", proof: "bg-proof", ai: "bg-gradient-to-r from-accent to-ai" }[tone];
+  const c = { accent: "bg-accent", cue: "bg-cue", proof: "bg-proof", ai: "bg-ai" }[tone];
   return <div className="h-1.5 overflow-hidden rounded-full bg-overlay"><div className={`h-full rounded-full ${c}`} style={{ width: `${Math.max(0, Math.min(1, share)) * 100}%` }} /></div>;
 }
 
@@ -255,4 +256,92 @@ export function Seg<T extends string | number | boolean>({ items, value, onChang
 /** A timecode chip laid over a picture. */
 export function TimeChip({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return <span className={`chip mono ${className}`}>{children}</span>;
+}
+
+
+/** A small turning ring, for a button or a line that is waiting on the server. */
+export function Spinner({ size = 14, className = "" }: { size?: number; className?: string }) {
+  return <svg width={size} height={size} viewBox="0 0 20 20" fill="none" aria-hidden="true" className={`spin shrink-0 ${className}`}><circle cx="10" cy="10" r="7" stroke="currentColor" strokeOpacity=".25" strokeWidth="2.5" /><path d="M17 10a7 7 0 0 0-7-7" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" /></svg>;
+}
+
+/** The shape of content that has not arrived: lines of text, or a block of the given height. */
+export function Skeleton({ lines = 0, height, className = "" }: { lines?: number; height?: number | string; className?: string }) {
+  if (lines > 0) return <div className={`grid gap-2 ${className}`} aria-hidden="true">{Array.from({ length: lines }, (_, i) => <div key={i} className="skeleton h-3.5" style={{ width: `${[92, 70, 84, 60, 78][i % 5]}%` }} />)}</div>;
+  return <div className={`skeleton ${className}`} style={{ height }} aria-hidden="true" />;
+}
+
+/** Cards of the same shape as the ones to come. */
+export function SkeletonCards({ count = 3, height = 180, className = "" }: { count?: number; height?: number; className?: string }) {
+  return <div className={className} aria-busy="true" aria-label="Đang tải…">{Array.from({ length: count }, (_, i) => <div key={i} className="panel overflow-hidden"><Skeleton height={height * 0.55} className="!rounded-none" /><div className="p-3"><Skeleton lines={2} /></div></div>)}</div>;
+}
+
+// ---------------------------------------------------------------- toasts: a word about what just happened, with a way back
+type Toast = { id: number; text: string; tone: "plain" | "proof" | "tally"; action?: { label: string; run: () => void }; until: number };
+const toasts: Toast[] = [];
+const toastListeners = new Set<() => void>();
+let toastSeq = 0;
+const notifyToasts = () => toastListeners.forEach((l) => l());
+/** Show a short message at the bottom of the screen. With `undo`, the message carries a button that calls it back. */
+export function toast(text: string, options: { tone?: Toast["tone"]; undo?: () => void; seconds?: number } = {}) {
+  const t: Toast = { id: ++toastSeq, text, tone: options.tone ?? "plain", until: Date.now() + (options.seconds ?? (options.undo ? 8 : 4)) * 1000,
+    action: options.undo ? { label: "Hoàn tác", run: options.undo } : undefined };
+  toasts.push(t); if (toasts.length > 4) toasts.shift();
+  notifyToasts();
+  setTimeout(() => { const i = toasts.indexOf(t); if (i >= 0) { toasts.splice(i, 1); notifyToasts(); } }, t.until - Date.now());
+}
+const dismiss = (t: Toast) => { const i = toasts.indexOf(t); if (i >= 0) { toasts.splice(i, 1); notifyToasts(); } };
+export function Toaster() {
+  const [, tick] = useState(0);
+  useEffect(() => { const l = () => tick((n) => n + 1); toastListeners.add(l); return () => { toastListeners.delete(l); }; }, []);
+  return (
+    <div className="pointer-events-none fixed inset-x-0 bottom-[calc(16px+env(safe-area-inset-bottom))] z-50 flex flex-col items-center gap-2 px-4 md:bottom-10" aria-live="polite" aria-atomic="false">
+      {toasts.map((t) => (
+        <div key={t.id} className="toast pointer-events-auto flex max-w-[520px] items-center gap-3 py-2.5 pl-4 pr-2 text-[13px]" role="status">
+          {t.tone !== "plain" && <Icon name={t.tone === "proof" ? "check" : "alert"} size={15} className={t.tone === "proof" ? "text-proof" : "text-tally"} />}
+          <span className="min-w-0">{t.text}</span>
+          {t.action && <button type="button" className="btn shrink-0 rounded-md px-2.5 py-1 font-medium text-accent hover:bg-accent/12" onClick={() => { t.action!.run(); dismiss(t); }}>{t.action.label}</button>}
+          <button type="button" className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-faint hover:bg-raised hover:text-ink" onClick={() => dismiss(t)} aria-label="Đóng"><Icon name="x" size={14} /></button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------- the one dialog: a question before something that cannot be undone
+type Question = { title: string; body?: React.ReactNode; confirm: string; danger?: boolean; resolve: (yes: boolean) => void };
+let question: Question | null = null;
+const dialogListeners = new Set<() => void>();
+/** Ask before a destructive step. Resolves true only when the operator pressed the confirming button. */
+export function ask(title: string, options: { body?: React.ReactNode; confirm?: string; danger?: boolean } = {}): Promise<boolean> {
+  return new Promise((resolve) => {
+    question = { title, body: options.body, confirm: options.confirm ?? "Xoá", danger: options.danger ?? true, resolve: (yes) => { question = null; dialogListeners.forEach((l) => l()); resolve(yes); } };
+    dialogListeners.forEach((l) => l());
+  });
+}
+export function Dialogs() {
+  const [, tick] = useState(0);
+  const yes = useRef<HTMLButtonElement>(null);
+  useEffect(() => { const l = () => tick((n) => n + 1); dialogListeners.add(l); return () => { dialogListeners.delete(l); }; }, []);
+  const q = question;
+  useEffect(() => {
+    if (!q) return;
+    const before = document.activeElement as HTMLElement | null;
+    yes.current?.focus();
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") q.resolve(false); };
+    window.addEventListener("keydown", key);
+    return () => { window.removeEventListener("keydown", key); before?.focus(); };
+  }, [q]);
+  if (!q) return null;
+  return (
+    <div className="scrim fixed inset-0 z-50 grid place-items-center px-4" onMouseDown={() => q.resolve(false)}>
+      <div role="dialog" aria-modal="true" aria-labelledby="ask-title" className="dialog w-full max-w-sm p-5" onMouseDown={(e) => e.stopPropagation()}>
+        <h2 id="ask-title" className="text-[15px] font-semibold">{q.title}</h2>
+        {q.body && <div className="mt-1.5 text-[13px] text-mute">{q.body}</div>}
+        <div className="mt-5 flex justify-end gap-2">
+          <Button onClick={() => q.resolve(false)}>Thôi</Button>
+          <button ref={yes} type="button" onClick={() => q.resolve(true)} className={`btn inline-flex h-9 items-center rounded-lg px-3.5 text-[13.5px] font-medium ${q.danger ? "bg-tally text-white hover:bg-tally/85" : "brand-button"}`}>{q.confirm}</button>
+        </div>
+      </div>
+    </div>
+  );
 }

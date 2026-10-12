@@ -324,6 +324,18 @@ Sự cố trong lượt này: cài `ffmpeg-full` làm Homebrew nâng thư viện
 - [x] Footage nhập từ trước được dò chỗ chuyển cảnh ở chế độ nền; vạch chuyển cảnh hiện trên thanh thời gian. Chạy trên 6 video thật: 33, 3, 2, 1, 0, 0 chỗ cắt; chưa kiểm bằng mắt, và 1 chỗ cắt cho cả một bộ phim dài có vẻ thấp
 - [x] Thử Reciprocal Rank Fusion (thiết kế nêu) trên bộ 17 mẫu chuẩn thật ngày 2026-10-12, dùng bản sao cơ sở dữ liệu: đúng ngay lần đầu 10/17 và trong ba kết quả đầu 14/17, kém cách đang dùng (12/17 và 17/17). Vì vậy giữ cách đang dùng làm mặc định; RRF còn lại như một lựa chọn (`MomentIndex.fusion`). Bộ mẫu nhỏ và nghiêng về cách đang dùng, nên nên đo lại khi có mẫu do người vận hành tự chọn
 
+### Rà soát giao diện theo các skill design, 2026-10-12
+
+Đọc hiện trạng theo `redesign-existing-projects` (kiểm toán rồi sửa có chủ đích) và bộ quy tắc Web Interface Guidelines; hai skill về landing page chỉ lấy phần quy tắc chung vì đây là công cụ vận hành dày dữ liệu.
+
+- [x] Bỏ dấu hiệu "AI design": mọi gradient tím→xanh lơ (nút chính, thanh đo, avatar, nền toả sáng) thành màu phẳng; giữ tím làm màu thương hiệu đã duyệt; đổ bóng nhuốm màu nền; một thang bo góc (khung 12, ô lồng 10, điều khiển 8, chip 6, riêng nhãn trạng thái là viên thuốc)
+- [x] Trạng thái: khung chờ (skeleton) ở Tổng quan, danh sách dự án, thư viện, trang dự án; nút có trạng thái đang gửi (vòng xoay, `aria-busy`); nút nhấn lún 1 px; toast có "Hoàn tác" khi bỏ nguồn, nhân vật, kênh; hộp thoại hỏi trước khi bỏ mẫu chuẩn, xoá chiến dịch, dọn dữ liệu tạm; dải báo khi mất kết nối máy chủ, tự ẩn khi nối lại
+- [x] Chuẩn UI/UX: skip link tới nội dung chính, `color-scheme: dark`, `theme-color`, favicon, `inputMode` cho ô số, `touch-action`, vùng an toàn của màn hình có tai thỏ, cảnh báo khi rời trang mà kịch bản chưa lưu
+- [x] URL phản ánh trạng thái: tab của dự án (`?tab=`), bộ lọc và cách xem của thư viện (`?loai=`, `?bo=`, `?xem=`), mục của Hệ thống (`?muc=`); mọi liên kết này mở lại đúng chỗ
+- [x] Bàn phím: `?` mở bảng phím tắt, Esc đóng menu; ⌘K thêm lệnh (thêm footage, dừng khẩn cấp, tới mục cài đặt) và chân hộp có gợi ý phím
+- [x] Mobile: thanh tab dưới đáy (4 màn hình chính và "Thêm" mở menu đầy đủ) thay cho việc chỉ có menu ẩn
+- Đã kiểm tra bằng trình duyệt ở 1440, 1024, 390 px: không tràn ngang, không lỗi JavaScript; nội dung không bị thanh tab dưới che. Chưa có người xem và cho ý kiến thẩm mỹ
+
 ### Còn lại sau lượt này
 
 Cần thứ ngoài máy này: tài khoản và khoá API của nền tảng (tự đăng, tự lấy số liệu), khoá của nhà cung cấp video AI, khoá Anthropic để chạy thật adapter Claude, dịch vụ tìm kiếm trên toàn bộ web (hiện chỉ tìm trên Wikipedia).
