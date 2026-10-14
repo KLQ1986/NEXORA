@@ -406,6 +406,8 @@ class Understanding:
             if out is None:
                 unreadable += 1                      # one bad answer must not cost the whole video; the segment stays undescribed
                 continue
+            if self._assets.asset(ctx.subject_ref) is None:
+                break                                # the footage was deleted while it was being described: nothing more is written for it
             data = {"frame": seg["frames"][len(seg["frames"]) // 2], "frames": seg["frames"], **measured,
                     # Provenance (design 2026-10-14, group 16): which model said it, asked what, shown how many frames, when.
                     "provenance": {"model": who, "prompt": BEAT_PROMPT_VERSION if measured else PROMPT_VERSION, "vocabulary": vocab.VERSION,

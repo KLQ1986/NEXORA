@@ -72,3 +72,20 @@ def test_rank_fusion_is_an_option_that_reorders_results_without_changing_their_s
     system.index.fusion = "rrf"
     fused = system.index.search("chợ rau củ cá tươi", limit=5)
     assert {h.moment.moment_id: h.score for h in fused} == {h.moment.moment_id: h.score for h in plain} and len(fused) == len(plain) > 0
+
+
+def test_footage_deleted_while_it_is_described_gets_nothing_more_written(tmp_path):
+    from nexora.app import build, remove_asset
+    from tests.conftest import make_video
+    from tests.fakes import FakeModel
+
+    class DeletesMidway(FakeModel):
+        def submit(self, request):
+            if request.operation == "describe" and request.params.get("index") == 1 and system.assets.asset(asset):
+                remove_asset(system, asset)              # the operator deletes the clip while its second beat is being described
+            return super().submit(request)
+    system = build(tmp_path / "data", model=DeletesMidway(), segment_seconds=2.0)
+    asset, _ = system.library.ingest(make_video(tmp_path / "f.mp4", picture=8))
+    while system.worker.run_once():
+        pass
+    assert system.assets.asset(asset) is None and system.index.moments(asset) == []

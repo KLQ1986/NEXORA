@@ -451,6 +451,8 @@ class Profiler:
     def _publish(self, asset_id: str, made: dict) -> None:
         """Beats that have been described get their profile beside their description; text seen and sounds heard become
         moments of their own, so that a search finds them."""
+        if self._assets.asset(asset_id) is None:
+            return                                   # deleted while it was being measured
         fields = {(b["start"], b["end"]): b["profile"] for b in made["beats"]}
         for moment in self._index.moments(asset_id, level="segment"):
             got = fields.get((round(moment.t_start, 2), round(moment.t_end, 2)))
