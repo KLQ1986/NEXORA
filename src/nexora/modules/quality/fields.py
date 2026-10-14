@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS field_runs (run_id TEXT PRIMARY KEY, created_at REAL 
 CREATE TABLE IF NOT EXISTS field_status (field TEXT PRIMARY KEY, status TEXT NOT NULL, accuracy REAL, labels INTEGER NOT NULL, changed_at REAL NOT NULL);
 """
 MIN_LABELS = 10          # a field is not released on fewer labels than this, however right it was
+MIN_COVERAGE = 0.8       # nor if it gave no value for more than a fifth of the labelled stretches: silence on the hard cases is not accuracy
 HIGH_MUST_BE = 0.95      # "high" confidence must be right at least this often
 MEDIUM_MUST_BE = 0.75
 SIZES = ("cực toàn", "toàn", "trung", "cận", "đặc tả")
@@ -57,9 +58,10 @@ FIELDS: dict[str, dict] = {
     "text_present": {"name": "Có chữ trên hình (nhận diện)", "read": _text_present, "values": ("có", "không"), "bar": 0.90, "source": "recognized"},
     "speaker": {"name": "Người nói ở trong khung (đo)", "read": _profile("speaker"), "values": ("trong khung", "ngoài khung"), "bar": 0.90, "source": "measured"},
     "camera": {"name": "Chuyển động máy (đo)", "read": _measured("camera"), "values": ("static", "pan", "tilt", "push_in", "pull_out", "handheld"), "bar": 0.95, "source": "measured"},
-    "model.co_canh": {"name": "Cỡ cảnh (mô hình)", "read": _model("co_canh"), "values": SIZES, "bar": 0.85, "source": "model"},
-    "model.so_nguoi": {"name": "Số người (mô hình)", "read": _model("so_nguoi"), "values": ("không", "một", "hai", "nhóm", "đám đông"), "bar": 0.85, "source": "model"},
-    "model.noi_chon": {"name": "Trong nhà hay ngoài trời (mô hình)", "read": _model("noi_chon"), "values": ("trong nhà", "ngoài trời"), "bar": 0.85, "source": "model"},
+    # What a model says is measured against the same answers as the measured field it shadows.
+    "model.co_canh": {"name": "Cỡ cảnh (mô hình)", "read": _model("co_canh"), "values": SIZES, "bar": 0.85, "source": "model", "truth": "shot_size"},
+    "model.so_nguoi": {"name": "Số người (mô hình)", "read": _model("so_nguoi"), "values": ("không", "một", "hai", "nhóm", "đám đông"), "bar": 0.85, "source": "model", "truth": "people"},
+    "model.noi_chon": {"name": "Trong nhà hay ngoài trời (mô hình)", "read": _model("noi_chon"), "values": ("trong nhà", "ngoài trời"), "bar": 0.85, "source": "model", "truth": "place"},
 }
 
 
@@ -80,7 +82,7 @@ class Fields:
 
     # ------------------------------------------------------------------------------------------------- golden labels
     def label(self, asset_id: str, t_start: float, t_end: float, field: str, value: str, *, by: str = "operator") -> str:
-        if field not in FIELDS:
+        if field not in FIELDS or FIELDS[field].get("truth"):
             raise ValueError(f"unknown field {field}")
         if value not in FIELDS[field]["values"]:
             raise ValueError(f"{value} is not a value of {field}")
@@ -121,7 +123,7 @@ class Fields:
         """Compare every field with every label; set each field's status; keep the run with the configuration it was made under."""
         results: dict[str, dict] = {}
         for field, spec in FIELDS.items():
-            labels = [l for l in self.labels() if l["field"] == field]
+            labels = [{**l, "field": field} for l in self.labels() if l["field"] == spec.get("truth", field)]
             right = wrong = missing = 0
             by_conf: dict[str, list[int]] = {}
             mistakes, confusion = [], {}
@@ -145,23 +147,24 @@ class Fields:
             calibration = {c: {"right": v[0], "wrong": v[1], "share": round(v[0] / (v[0] + v[1]), 3)} for c, v in by_conf.items()}
             calibrated = all(calibration[c]["share"] >= bar for c, bar in (("high", HIGH_MUST_BE), ("medium", MEDIUM_MUST_BE)) if c in calibration and
                              calibration[c]["right"] + calibration[c]["wrong"] >= 5)
+            coverage = round(answered / len(labels), 3) if labels else None
             near = None
             if field in ("shot_size", "model.co_canh") and answered:
                 near = round(sum(1 for l in labels for _, h in [self._held(l)] if h.get("value") in SIZES and abs(SIZES.index(h["value"]) - SIZES.index(l["value"])) <= 1)
                              / answered, 3)
-            results[field] = {"name": spec["name"], "source": spec["source"], "bar": spec["bar"], "labels": len(labels), "answered": answered, "missing": missing,
+            results[field] = {"name": spec["name"], "source": spec["source"], "bar": spec["bar"], "labels": len(labels), "answered": answered, "missing": missing, "coverage": coverage,
                               "accuracy": accuracy, "within_one": near, "calibration": calibration, "calibrated": calibrated,
                               "confusion": dict(sorted(confusion.items(), key=lambda kv: -kv[1])), "mistakes": mistakes,
-                              "status": self._decide(field, accuracy, answered, spec["bar"])}
+                              "status": self._decide(field, accuracy, answered, spec["bar"], coverage)}
         run_id = new_id("fld")
         with db.write(self._conn) as c:
             c.execute("INSERT INTO field_runs (run_id, created_at, config, results) VALUES (?,?,?,?)",
                       (run_id, time.time(), json.dumps(config or {}, ensure_ascii=False), json.dumps(results, ensure_ascii=False)))
         return {"run_id": run_id, "fields": results}
 
-    def _decide(self, field: str, accuracy: float | None, answered: int, bar: float) -> str:
+    def _decide(self, field: str, accuracy: float | None, answered: int, bar: float, coverage: float | None = 1.0) -> str:
         before = self.status(field)
-        if accuracy is not None and answered >= MIN_LABELS and accuracy >= bar:
+        if accuracy is not None and answered >= MIN_LABELS and accuracy >= bar and (coverage or 0) >= MIN_COVERAGE:
             status = "released"
         elif before == "released" or (before == "withdrawn" and (accuracy is None or accuracy < bar)):
             status = "withdrawn"

@@ -2,6 +2,7 @@ import { t as tr, tv, locale } from "./i18n";
 import { useState } from "react";
 import { call, megabytes, post, usePoll, type EvalRun, type Settings, type Template } from "./api";
 import { Button, Icon, LangSwitch, Meter, OpsSide, Page, SideLink, Tag, ask, toast } from "./parts";
+import { FieldAccuracy, ReviewQueue } from "./Profile";
 
 type Env = { ffmpeg?: { filters: Record<string, boolean>; encoders: Record<string, boolean> }; disk: { free_bytes: number; total_bytes: number };
              adapters: { name: string; runs: string; operations: string[] }[] };
@@ -419,8 +420,8 @@ function Tools() {
   );
 }
 
-type Area = "control" | "autonomy" | "ai" | "library" | "templates" | "storage" | "health" | "audit";
-const AREAS: [Area, string, string][] = [["control", tr("Điều khiển"), "power"], ["autonomy", tr("Mức tự chủ"), "bolt"], ["ai", tr("Giọng & mô hình"), "sparkles"], ["library", "Footage", "folder"], ["templates", tr("Mẫu định dạng"), "layers"], ["storage", tr("Lưu trữ & sao lưu"), "disk"], ["health", tr("Sức khoẻ máy"), "shield"], ["audit", tr("Nhật ký thao tác"), "list"]];
+type Area = "control" | "autonomy" | "ai" | "library" | "templates" | "storage" | "quality" | "health" | "audit";
+const AREAS: [Area, string, string][] = [["control", tr("Điều khiển"), "power"], ["autonomy", tr("Mức tự chủ"), "bolt"], ["ai", tr("Giọng & mô hình"), "sparkles"], ["library", "Footage", "folder"], ["templates", tr("Mẫu định dạng"), "layers"], ["storage", tr("Lưu trữ & sao lưu"), "disk"], ["quality", tr("Độ chính xác"), "check"], ["health", tr("Sức khoẻ máy"), "shield"], ["audit", tr("Nhật ký thao tác"), "list"]];
 
 export default function System() {
   const { data: control, reload } = usePoll<Control>("/api/v1/control", 3000);
@@ -469,7 +470,8 @@ export default function System() {
           {area === "library" && <><WatchFolders /><Volumes /></>}
           {area === "templates" && <Templates />}
           {area === "storage" && <StoreCards />}
-          {area === "health" && <><Health /><Capabilities /><Benchmark /><DivisionBenchmark /><Tools /></>}
+          {area === "quality" && <><FieldAccuracy /><ReviewQueue /><Benchmark /><DivisionBenchmark /></>}
+          {area === "health" && <><Health /><Capabilities /><Tools /></>}
         </div>
       </div>
     </Page>

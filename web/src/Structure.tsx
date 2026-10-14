@@ -2,6 +2,7 @@ import { t as tr, tv } from "./i18n";
 import { useState } from "react";
 import { post, timecode, usePoll, type Asset, type BeatView, type Label, type StructureView } from "./api";
 import { Button, Icon } from "./parts";
+import { BeatFlags, GoldenLabels, ProfileFacts } from "./Profile";
 
 const CAMERA: Record<string, string> = { static: tr("máy tĩnh"), pan: tr("lia ngang"), tilt: tr("lia dọc"), push_in: tr("đẩy vào"), pull_out: tr("kéo ra"), handheld: tr("cầm tay") };
 const GRADE: Record<string, string> = { good: tr("tốt"), fair: tr("chấp nhận được"), poor: tr("kém") };
@@ -89,6 +90,9 @@ export function StructureStrip({ asset, t, seek }: { asset: Asset; t: number; se
           <p className="flex flex-wrap items-baseline gap-x-2 text-[12.5px]"><span className="mono text-ink">{timecode(beat.t_start)} – {timecode(beat.t_end)}</span><span className="text-faint">{tv`cú máy ${beat.shot + 1}`}</span>
             {!beat.moment && <span className="text-faint">{tr("chưa mô tả")}</span>}</p>
           <BeatFacts beat={beat} />
+          <ProfileFacts beat={beat} />
+          <BeatFlags beat={beat} reload={reload} />
+          <GoldenLabels assetId={asset.asset_id} beat={beat} reload={reload} />
         </div>
       )}
       <div className="flex flex-wrap items-center gap-2 text-[12px]">

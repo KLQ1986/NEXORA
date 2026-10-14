@@ -94,7 +94,10 @@ export const REASONS: Record<string, string> = {
 
 export type Moment = { level?: string; words?: Word[]; moment_id: string; asset_id: string; t_start: number; t_end: number; text: string; source: string; score: number | null; frame_url: string | null; title?: string | null };
 export type Label = { value: unknown; source: string; confidence: string; fault?: string; measure?: number };
-export type BeatView = { t_start: number; t_end: number; shot: number; pinned: boolean; labels: Record<string, Label>; frames: number[]; moment: Moment | null };
+export type Flag = { rule: string; message: string; state: string };
+export type Golden = { label_id: string; field: string; value: string; t_start: number; t_end: number; labelled_by: string };
+export type BeatView = { t_start: number; t_end: number; shot: number; pinned: boolean; labels: Record<string, Label>; frames: number[]; moment: Moment | null;
+  profile?: Record<string, Label & Record<string, unknown>>; model_labels?: Record<string, Label>; flags?: Flag[]; new_things?: string[]; golden?: Golden[] };
 export type StructureView = { asset_id: string; measured: boolean; reference: boolean; run: Run | null; duration: number | null; faults: string[]; bars: Label | null;
   shots: { t_start: number; t_end: number; transition_in: string; pinned: boolean }[]; beats: BeatView[]; transitions: number[][];
   marks: { kind: string; op: string; t: number }[]; boundaries: { shot: number[]; beat: number[] } };

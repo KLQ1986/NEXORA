@@ -23,6 +23,64 @@ MIN_SECONDS = 2.5
 AUTO_ACCEPT = 8          # judge points (0-10) every selection must reach for a match to be accepted without review
 
 
+# What a line asks to see, in words an operator writes (design 2026-10-14, group 15): the field it names and the value wanted.
+ASKS = [
+    (r"đặc tả|extreme close", "shot_size", "đặc tả"), (r"cận cảnh|cận mặt|\bcận\b|close[- ]?up", "shot_size", "cận"),
+    (r"trung cảnh|\bmedium shot", "shot_size", "trung"), (r"toàn cảnh|cảnh rộng|\btoàn\b|wide shot|flycam|từ trên cao", "shot_size", "toàn"),
+    (r"không (có )?(một )?(ai|người)|vắng (vẻ|người|tanh)", "people", "không"), (r"\bmột (người|cô|anh|chị|bạn|ông|bà)\b", "people", "một"),
+    (r"\bhai (người|bạn)|cặp đôi", "people", "hai"), (r"đám đông|đông (người|nghịt)|tấp nập", "people", "đám đông"), (r"nhóm (người|bạn)", "people", "nhóm"),
+    (r"trong nhà|trong phòng|nội thất|trong bếp", "place", "trong nhà"), (r"ngoài trời|ngoài đường|ngoài phố|ngoài biển", "place", "ngoài trời"),
+    (r"nói (trước|vào|với) (máy|camera|ống kính)|nhìn vào (máy|camera)|talking head", "speaker", "trong khung"),
+]
+LABEL_BONUS, LABEL_PENALTY = 0.08, 0.15       # a released field that agrees with what a line asks for lifts a candidate; one that disagrees sinks it
+
+
+def asked(line: str) -> dict[str, str]:
+    """The fields a line names, with the value it wants: "cận cảnh tay pha cà phê" asks for a close shot."""
+    import re
+    out: dict[str, str] = {}
+    for pattern, field, value in ASKS:
+        if field not in out and re.search(pattern, line, re.IGNORECASE):
+            out[field] = value
+    return out
+
+
+def held(moment_data: dict, field: str):
+    profile = moment_data.get("profile") or {}
+    return (profile.get(field) or {}).get("value")
+
+
+def label_fit(wanted: dict[str, str], moment_data: dict, released: set[str]) -> tuple[float, list[str]]:
+    """How much the measured labels of a moment agree with what a line asks for, counting released fields only."""
+    change, why = 0.0, []
+    for field, value in wanted.items():
+        if field not in released:
+            continue
+        have = held(moment_data, field)
+        if have is None:
+            continue
+        if have == value:
+            change += LABEL_BONUS
+            why.append(f"{field} {value} (đo được)")
+        else:
+            change -= LABEL_PENALTY
+    return change, why
+
+
+def spread(hits: list, keep: int) -> list:
+    """Keep the best hit of each stretch: hits from the same footage whose times touch, or nearly, say the same thing, so the
+    alternates offered are different places, not the next beat of the same view."""
+    out = []
+    for hit in hits:
+        m = hit.moment
+        if any(o.moment.asset_id == m.asset_id and m.t_start <= o.moment.t_end + 1.0 and o.moment.t_start <= m.t_end + 1.0 for o in out):
+            continue
+        out.append(hit)
+        if len(out) >= keep:
+            break
+    return out
+
+
 def _fields(candidate: dict) -> dict:
     return {k: candidate[k] for k in ("moment_id", "asset_id", "t_in", "t_out", "score", "reason")}
 
@@ -63,13 +121,14 @@ def clear_of_cuts(t_in: float, t_out: float, cuts: list[float], *, floor: float 
 
 class Sourcing:
     def __init__(self, orch: Orchestrator, projects: ProjectStore, index: MomentIndex, *, threshold: float = 0.5, alternates: int = 3,
-                 adapters: AdapterRegistry | None = None, judge: bool = False, judge_pass: int = 5, rejected=None, may_accept=None, cuts=None):
+                 adapters: AdapterRegistry | None = None, judge: bool = False, judge_pass: int = 5, rejected=None, may_accept=None, cuts=None, released=None):
         self._orch, self._projects, self._index = orch, projects, index
         self._adapters, self._judge, self._judge_pass = adapters, judge and adapters is not None, judge_pass
         self._threshold, self._alternates = threshold, alternates
         self._rejected = rejected or (lambda: frozenset())       # assets the operator has set aside: never proposed
         self._cuts = cuts or (lambda asset_id: ([], None))      # asset id -> (where its shots change, how long it is)
         self._may_accept = may_accept or (lambda project: bool(project.get("auto_accept")))      # whether a confident match needs no review; the autonomy level decides
+        self._released = released or (lambda: set())            # the profile fields accurate enough to be relied on (design 2026-10-14, section 8.3)
 
     def register(self, registry: PipelineRegistry) -> None:
         registry.register(MATCH, {"match": self._match})
@@ -148,7 +207,12 @@ class Sourcing:
             # What the operator said before about clips for these very words: a clip they turned down is not offered again,
             # and one they chose goes first.
             judged = len(self._projects.feedback(shot.text))
-            hits = self._index.search(wanted, limit=self._alternates + 1 + judged, min_score=self._threshold, exclude=frozenset(used), exclude_assets=self._rejected())
+            hits = self._index.search(wanted, limit=3 * (self._alternates + 1) + judged, min_score=self._threshold, exclude=frozenset(used), exclude_assets=self._rejected())
+            # What the line asks to see, held against the measured labels that have proved accurate; then one hit per stretch.
+            asks, released = asked(wanted), self._released()
+            fits = {h.moment.moment_id: label_fit(asks, h.moment.data, released) for h in hits}
+            hits = sorted(hits, key=lambda h: h.score + fits[h.moment.moment_id][0], reverse=True)
+            hits = spread(hits, self._alternates + 1 + judged)
             told = {h.moment.moment_id: self._said(shot.text, h.moment) for h in hits}
             hits = [h for h in hits if told[h.moment.moment_id] != "rejected"]
             hits = sorted(hits, key=lambda h: told.get(h.moment.moment_id) != "accepted")[:self._alternates + 1]
@@ -164,6 +228,10 @@ class Sourcing:
                 gaps += 1
                 continue
             best, rest = self._candidate(hits[0], need), [self._candidate(h, need) for h in hits[1:]]
+            for cand in [best, *rest]:
+                why = fits.get(cand["moment_id"], (0.0, []))[1]
+                if why:
+                    cand["reason"] = f"Khớp {', '.join(why)}. {cand['reason']}"
             if self._judge:
                 best["t_in"], best["t_out"] = self._whole_shot(best["asset_id"], *self._locate(shot.text, hits[0], need))
                 confident.append(verdicts[best["moment_id"]][0])

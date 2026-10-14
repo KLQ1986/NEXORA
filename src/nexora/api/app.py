@@ -593,12 +593,17 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         if made is None:
             return {**base, "shots": [], "beats": [], "transitions": [], "marks": [], "faults": [], "bars": None, "boundaries": {"shot": [], "beat": []}}
         said = {(m.t_start, m.t_end): m for m in system.index.moments(asset_id, level="segment")}
+        fields = system.library.profiler.beat_fields(asset_id) if system.library.profiler else {}
+        golden = system.fields.labels(asset_id)
         beats = []
         for beat in made["beats"]:
             t0, t1 = to_seconds(beat["start"], 2), to_seconds(beat["end"], 2)
             m = said.get((t0, t1))
             beats.append({"t_start": t0, "t_end": t1, "shot": beat["shot"], "pinned": beat["pinned"], "labels": beat["labels"], "frames": beat["frames"],
-                          "moment": moment_view(m) if m else None})
+                          "moment": moment_view(m) if m else None, "profile": fields.get((t0, t1)) or (m.data.get("profile") if m else None) or {},
+                          "model_labels": (m.data.get("model_labels") if m else None) or {}, "flags": (m.data.get("flags") if m else None) or [],
+                          "new_things": (m.data.get("new_things") if m else None) or [],
+                          "golden": [g for g in golden if t0 <= (g["t_start"] + g["t_end"]) / 2 < t1]})
         return {**base, "beats": beats, "bars": made["bars"], "faults": system.library.analysis.faults(asset_id), "marks": system.library.analysis.pinned(asset_id),
                 "shots": [{"t_start": to_seconds(s["start"], 2), "t_end": to_seconds(s["end"], 2), "transition_in": s["transition_in"], "pinned": s["pinned"]} for s in made["shots"]],
                 "transitions": [[to_seconds(a, 2), to_seconds(b, 2)] for a, b in made["transitions"]], "boundaries": boundaries(made)}
@@ -1501,6 +1506,38 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
     def remove_golden_label(label_id: str):
         system.fields.unlabel(label_id)
         return {"ok": True}
+
+    @app.get("/api/v1/flags")
+    def open_flags(state: str = "open", limit: int = 200):
+        """The review queue (design 10-13, section 10): beats where a model's description disagrees with what was measured."""
+        names = {a["asset_id"]: (a.get("title") or Path(system.assets.path_of(system.assets.original(a["asset_id"]))).name) for a in system.assets.assets()}
+        out = []
+        for asset_id in names:
+            for m in system.index.moments(asset_id, level="segment"):
+                for k, flag in enumerate(m.data.get("flags") or []):
+                    if flag.get("state", "open") == state:
+                        out.append({"moment_id": m.moment_id, "index": k, "asset_id": asset_id, "name": names[asset_id], "t_start": m.t_start, "t_end": m.t_end,
+                                    "rule": flag.get("rule"), "message": flag.get("message"), "state": flag.get("state", "open"), "frame": m.data.get("frame"),
+                                    "text": m.text, "model_labels": m.data.get("model_labels") or {}, "profile": m.data.get("profile") or {}})
+        counts: dict[str, int] = {}
+        for f in out:
+            counts[f["rule"]] = counts.get(f["rule"], 0) + 1
+        return {"flags": out[:limit], "total": len(out), "by_rule": counts}
+
+    @app.post("/api/v1/flags")
+    def settle_flag(body: dict):
+        """Close a flag: "resolved" (the operator put it right, or the model was right after all) or "ignored"."""
+        moment = system.index.by_id(str(body.get("moment_id", "")))
+        state = str(body.get("state", ""))
+        if moment is None or state not in ("open", "resolved", "ignored"):
+            raise HTTPException(422, "Cần một cảnh có thật và một trạng thái: open, resolved, ignored")
+        flags = list(moment.data.get("flags") or [])
+        k = int(body.get("index", -1))
+        if not 0 <= k < len(flags):
+            raise HTTPException(404, "no such flag")
+        flags[k] = {**flags[k], "state": state, "settled_at": time.time(), **({"note": str(body["note"])} if body.get("note") else {})}
+        system.index.merge_data(moment.moment_id, flags=flags)
+        return {"flags": flags}
 
     @app.post("/api/v1/assets/{asset_id}/profile", status_code=202)
     def profile_again(asset_id: str):

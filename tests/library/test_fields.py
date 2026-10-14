@@ -54,3 +54,30 @@ def test_labels_are_given_and_read_through_the_api_and_an_unknown_value_is_refus
     assert shot["accuracy"] == 1.0 and shot["status"] == "trial" and report["labels"] == 1
     assert api.get(f"/api/v1/assets/{asset}/profile").json()["beats"]
     assert api.post(f"/api/v1/assets/{asset}/profile").status_code == 202
+
+
+def test_a_line_asking_for_a_close_shot_lifts_a_close_beat_only_once_the_field_is_released():
+    from types import SimpleNamespace
+    from nexora.modules.sourcing.match import asked, label_fit, spread
+    assert asked("Cận cảnh tay pha cà phê") == {"shot_size": "cận"}
+    assert asked("Toàn cảnh bãi biển vắng người") == {"shot_size": "toàn", "people": "không"}
+    assert asked("Cô ấy nói trước camera trong phòng") == {"place": "trong nhà", "speaker": "trong khung"}
+    close, wide = {"profile": {"shot_size": {"value": "cận"}}}, {"profile": {"shot_size": {"value": "toàn"}}}
+    assert label_fit({"shot_size": "cận"}, close, set()) == (0.0, [])                       # on trial: not relied on
+    assert label_fit({"shot_size": "cận"}, close, {"shot_size"})[0] > 0 > label_fit({"shot_size": "cận"}, wide, {"shot_size"})[0]
+    hit = lambda asset, a, b: SimpleNamespace(moment=SimpleNamespace(asset_id=asset, t_start=a, t_end=b))
+    kept = spread([hit("x", 0, 4), hit("x", 4, 8), hit("y", 0, 4), hit("x", 20, 24)], 3)
+    assert [(h.moment.asset_id, h.moment.t_start) for h in kept] == [("x", 0), ("y", 0), ("x", 20)]
+
+
+def test_a_field_that_gives_no_value_on_the_hard_cases_is_not_released(tmp_path):
+    system = build(tmp_path / "data", model=FakeModel(), segment_seconds=2.0, recognisers=[FakeVision(), FakeSound()])
+    asset, _ = system.library.ingest(make_video(tmp_path / "f.mp4", picture=8))
+    drain(system)
+    beats = system.index.moments(asset, level="segment")
+    for k in range(12):
+        b = beats[k % len(beats)]
+        system.fields.label(asset, b.t_start + 0.001 * k, b.t_end, "speaker", "trong khung")       # nobody speaks: the field never answers
+    result = system.fields.measure({})["fields"]["speaker"]
+    assert result["coverage"] == 0.0 and result["status"] == "trial"
+    assert system.fields.measure({})["fields"]["model.co_canh"]["labels"] == 0
