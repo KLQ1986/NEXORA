@@ -1,9 +1,9 @@
 import { t as tr, tv } from "./i18n";
 import { useEffect, useRef, useState } from "react";
-import { call, megabytes, post, timecode, usePoll, type Asset, type Hit, type Moment, type Project, type RoughPlan } from "./api";
+import { call, megabytes, post, timecode, usePoll, type Asset, type Hit, type Moment, type Project, type RoughPlan, type TrashView } from "./api";
 
 const LEVEL: Record<string, string> = { segment: tr("CẢNH"), speech: tr("LỜI NÓI"), note: tr("GHI CHÚ"), frame: tr("KHUNG HÌNH") };
-import { ask, Button, Icon, Page, RangeStrip, SkeletonCards, StageRail, StatusText, Tabs, TimeChip, toast } from "./parts";
+import { ask, Button, Icon, Page, RangeStrip, SkeletonCards, StageRail, StatusText, Tabs, TimeChip, toast, goTo } from "./parts";
 import { StructureStrip } from "./Structure";
 
 function AddFootage({ onDone }: { onDone: () => void }) {
@@ -152,6 +152,11 @@ function Speech({ asset, t, seek }: { asset: Asset; t: number; seek: (s: number)
 }
 
 function Player({ asset, start, others, close, similar }: { asset: Asset; start?: number; others: Asset[]; close: () => void; similar: (m: Moment) => void }) {
+  const trashIt = async () => {
+    if (!(await ask(tr("Chuyển nguyên liệu này vào thùng rác?"), { body: asset.used_in.length ? tv`${asset.name} đang được dùng trong ${asset.used_in.length} dự án. Các câu dùng nó sẽ thiếu hình cho tới khi bạn khôi phục.` : asset.name, confirm: tr("Chuyển vào thùng rác"), danger: true }))) return;
+    await call(`/api/v1/assets/${asset.asset_id}`, { method: "DELETE" }); close();
+    toast(tv`Đã chuyển “${asset.name}” vào thùng rác.`, { undo: () => { post("/api/v1/trash/restore", { assets: [asset.asset_id] }).catch(() => {}); } });
+  };
   const [memo, setMemo] = useState<string | null>(null);
   const [other, setOther] = useState("");
   const [sync, setSync] = useState<string | null>(null);
@@ -176,6 +181,7 @@ function Player({ asset, start, others, close, similar }: { asset: Asset; start?
       <div className="flex items-center gap-2 border-b border-line px-4 py-2.5">
         <Icon name={asset.kind === "audio" ? "music" : asset.still ? "image" : "film"} size={15} className="text-mute" />
         <h2 className="min-w-0 flex-1 truncate text-[13.5px] font-medium">{asset.name}</h2>
+        <button type="button" onClick={trashIt} title={tr("Chuyển vào thùng rác")} className="grid h-7 w-7 place-items-center rounded-md text-faint hover:bg-tally/10 hover:text-tally" aria-label={tr("Chuyển vào thùng rác")}><Icon name="trash" size={15} /></button>
         <button type="button" onClick={close} className="grid h-7 w-7 place-items-center rounded-md text-faint hover:bg-raised hover:text-ink" aria-label={tr("Đóng")}><Icon name="x" size={15} /></button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto">
@@ -221,11 +227,7 @@ function Player({ asset, start, others, close, similar }: { asset: Asset; start?
                 )}
                 <div className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-raised/50 p-3">
                   <p className="min-w-0 flex-1 text-[12.5px] text-mute">{tr("Chuyển vào thùng rác: nguyên liệu biến khỏi thư viện và tìm kiếm, các câu đang dùng nó tạm thiếu hình. Khôi phục được trong 30 ngày; file gốc không bị đụng tới.")}</p>
-                  <Button size="sm" onClick={async () => {
-                    if (!(await ask(tr("Chuyển nguyên liệu này vào thùng rác?"), { body: asset.used_in.length ? tv`${asset.name} đang được dùng trong ${asset.used_in.length} dự án. Các câu dùng nó sẽ thiếu hình cho tới khi bạn khôi phục.` : asset.name, confirm: tr("Chuyển vào thùng rác"), danger: true }))) return;
-                    await call(`/api/v1/assets/${asset.asset_id}`, { method: "DELETE" }); close();
-                    toast(tv`Đã chuyển “${asset.name}” vào thùng rác.`, { undo: () => { post("/api/v1/trash/restore", { assets: [asset.asset_id] }).catch(() => {}); } });
-                  }}><Icon name="trash" size={14} />{tr("Chuyển vào thùng rác")}</Button>
+                  <Button size="sm" onClick={trashIt}><Icon name="trash" size={14} />{tr("Chuyển vào thùng rác")}</Button>
                 </div>
                 <label className="flex items-start gap-2.5 rounded-lg border border-line bg-raised/50 p-3"><input type="checkbox" className="mt-0.5" checked={asset.rejected} onChange={(e) => post(`/api/v1/assets/${asset.asset_id}`, { rejected: e.target.checked }, "PATCH")} />
                   <span>{tr("Không dùng nguyên liệu này")}<span className="block text-[12px] text-faint">{tr("Nó vẫn nằm trong thư viện nhưng không được đề xuất cho kịch bản nào và không hiện khi tìm kiếm.")}</span></span></label>
@@ -282,6 +284,8 @@ const KINDS = [["", tr("Tất cả"), "layers"], ["video", tr("Video"), "film"],
 
 export default function Library() {
   const { data, error, reload } = usePoll<{ assets: Asset[] }>("/api/v1/library");
+  const { data: bin } = usePoll<TrashView>("/api/v1/trash", 15000);
+  const binned = bin?.assets.length ?? 0;
   const [picked, setPicked] = useState<string | null>(null);
   const [start, setStart] = useState<number | undefined>();
   const [q, setQ] = useState("");
@@ -359,6 +363,9 @@ export default function Library() {
               <div>
                 <p className="eyebrow mb-1.5 px-2.5">{tr("Đánh giá")}</p>
                 <button type="button" onClick={() => setLeast(least ? 0 : 4)} aria-pressed={least > 0} className={facet(least > 0)}><Icon name="star" size={15} className={least ? "text-cue" : ""} /><span className="flex-1">{tr("Từ 4 sao")}</span></button>
+              </div>
+              <div>
+                <button type="button" onClick={() => goTo("/thung-rac")} className={facet(false)}><Icon name="trash" size={15} /><span className="flex-1">{tr("Thùng rác")}</span>{binned > 0 && <span className="mono text-[11px] text-faint">{binned}</span>}</button>
               </div>
             </nav>
             ) : undefined}

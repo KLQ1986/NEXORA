@@ -1516,6 +1516,8 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
 
         @app.get("/{full_path:path}", include_in_schema=False)
         def spa(full_path: str):
-            return FileResponse(Path(web_dir) / "index.html")
+            # The page names the build's script files, so it is asked for afresh every time: a new build shows at the next load.
+            # The script files themselves carry their content's hash in their name and may be kept.
+            return FileResponse(Path(web_dir) / "index.html", headers={"cache-control": "no-cache"})
 
     return app
