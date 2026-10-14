@@ -292,3 +292,11 @@ def test_a_template_takes_the_shape_captions_and_pace_of_a_reference_video():
     made = P.template_from_style(whole, "Như kênh X")
     assert (made["format"], made["caption_position"], made["caption_scale"], made["music_gain"]) == ("portrait", "bottom", 1.4, 0.5)
     assert made["style"] == {"cuts_per_minute": 24, "shot_size": "cận", "look": "rực rỡ", "loudness_lufs": -14}
+
+
+def test_a_phone_held_up_by_the_operator_is_sized_by_the_phone_not_by_the_operator():
+    pov = lambda hand: {"faces": [], "humans": [{"box": [0.0, 0.0, 0.9, 0.95], "confidence": 0.9}], "hands": [{"box": [0.5, 0.3, 0.3, hand], "confidence": 0.9}],
+                        "classes": [], "salient": [[0.3, 0.2, 0.4, 0.5]]}
+    beat = lambda pictures: P.profile_beat(0.0, 1.5, pictures, [], words=[], events=[], momentary=[], audio={}, camera=None, spans=[], log_profile=False)
+    assert beat([pov(0.6)] * 3)["shot_size"]["value"] == "cận" and beat([pov(0.6)] * 3)["shot_size"]["by"] == "tay cầm vật"
+    assert "shot_size" not in beat([pov(0.3)] * 3)                  # small hands: close or very close cannot be told, so nothing is said

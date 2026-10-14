@@ -408,6 +408,27 @@ Người vận hành đưa ra 16 nhóm thông tin cần nhận diện trên mộ
 - Clip Osmo Action 6 có luồng metadata máy theo từng khung (4.309 bản ghi), chưa giải.
 - Mô hình hiện tại ghi cỡ cảnh "cận" cho một khung toàn cảnh lối đi: lý do cỡ cảnh cần nguồn đo thứ hai.
 
+### Hồ sơ footage: triển khai và đo, 2026-10-14 và 15
+
+Đã xây theo `docs/superpowers/specs/2026-10-14-footage-profile-design.md` (trạng thái chi tiết ở mục 14 của bản đó). Mỗi lát có test tự động; cả kho 10 clip DJI đã được đo, nhận diện, chép lời và mô tả lại bằng code mới.
+
+**Lời nói.** Bản chép lời cũ của 8/10 clip là câu bịa của whisper ("Hãy subscribe cho kênh Ghiền Mì Gõ…", "à à à…"); clip 0050 có 119 giây "lời nói" mà phần lớn là một câu bịa lặp lại. Bật VAD (Silero), bỏ ngữ cảnh mang theo (`-mc 0`), lọc câu bịa và siết ranh giới từ: 0050 còn 40,2 giây lời nói (SoundAnalysis nghe được 36,5 giây), các clip không ai nói không còn chữ nào, clip 0073 (8 phút) ra đúng cuộc gọi điện thoại thật. Chép lời nhanh hơn khoảng 12 lần.
+
+**Mô tả.** Phiên bản 2 (cho mô hình xem mô tả nhịp trước) làm các nhịp giống nhau hơn: 0,95 so với 0,79. Phiên bản 3 ít đòi hỏi hơn, "điểm mới" do code tính: 0,78, và mô tả cụ thể hơn (tường trắng, đèn đường, xe điện).
+
+**Độ chính xác so với nhãn do Claude gán (30 nhịp của 9 clip, lần đo đầu):**
+
+| Trường | Đúng | Ghi chú |
+|---|---|---|
+| Cỡ cảnh do máy đo | 92,6% (25/27) | phủ 90% |
+| Cỡ cảnh do mô hình 7B nói | 6,7% (2/30) | gần như luôn nói "cận" cho cảnh toàn: không dùng |
+| Số người (nhận diện) | 96,7% | sai một nhịp có người trong gương |
+| Trong nhà hay ngoài trời (nhận diện) | 100% | phủ 90%: bỏ trống phòng tắm |
+| Trong nhà hay ngoài trời (mô hình) | 100% | phủ cả phòng tắm; đứng thay khi nhận diện bỏ trống |
+| Có chữ trên hình | 96,7% | sót số phòng nhỏ |
+
+Nhãn do Claude gán là tạm, ghi `labelled_by = claude`; người vận hành xác nhận hoặc sửa ở Thư viện, mỗi thay đổi được ghi lịch sử. Bộ nhãn này lệch về cảnh toàn ngoài trời; 25 nhịp của clip 0073 (tay, điện thoại, chữ trên màn hình, trong nhà) được thêm để cân lại.
+
 ### Còn lại sau lượt này
 
 Cần thứ ngoài máy này: tài khoản và khoá API của nền tảng (tự đăng, tự lấy số liệu), khoá của nhà cung cấp video AI, khoá Anthropic để chạy thật adapter Claude, dịch vụ tìm kiếm trên toàn bộ web (hiện chỉ tìm trên Wikipedia).

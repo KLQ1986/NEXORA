@@ -235,6 +235,18 @@ CLOSE_THINGS = frozenset({"food", "dish", "drink", "beverage", "cup", "mug", "co
                           "jewelry", "watch", "phone", "document", "printed_page", "handwriting", "computer_keyboard", "texture", "insect"})
 
 
+def size_from_thing(salient: list) -> tuple[str, str] | None:
+    """How tight the frame is on a thing held up to it: by how much of the frame the main salient region fills."""
+    if not salient:
+        return None
+    area = _area(salient[0])
+    if area >= 0.45:
+        return "đặc tả", "medium"
+    if area >= 0.08:
+        return "cận", "medium"
+    return "trung", "low"
+
+
 def size_from_scene(classes: list, salient: list) -> tuple[str, str] | None:
     """Without people the size of a frame is read from what it shows: open sky or landscape is wide, one small thing filling the
     frame is close. Never better than medium confidence; a model's answer is the second source."""
@@ -433,11 +445,20 @@ def profile_beat(start: float, end: float, pictures: list[dict], measures: list[
         fields["people"] = label(name, "recognized", "high" if agree >= 0.8 else "medium", count=n, most=counts[-1],
                                  faces=max(f["faces"] for f in found))
         sizes, how = [], None
-        for p, f in zip(pictures, found):
-            got = size_from_people(f["face_height"], f["body_height"])
-            if got:
-                sizes.append(got); how = "người"
-        if not sizes:
+        # A body with no face filling the frame, or hands with no face, is most often the one holding the camera; the shot is about
+        # what is in their hands. Measured on the operator's footage (0073), neither that body nor the salient region tells close
+        # from very close; big hands seen in most frames do mean close. Otherwise this beat is left unmeasured, not guessed.
+        holders = [not f["faces"] and (f["hands"] or f["body_height"] >= 0.75) for f in found]
+        if sum(holders) > len(found) / 2:
+            hands = [max(h["box"][3] for h in p.get("hands") or []) for p in pictures if p.get("hands")]
+            if len(hands) >= len(pictures) / 2 and float(np.median(hands)) >= 0.5:
+                sizes, how = [("cận", "medium")] * len(pictures), "tay cầm vật"
+        else:
+            for p, f in zip(pictures, found):
+                got = size_from_people(f["face_height"], f["body_height"])
+                if got:
+                    sizes.append(got); how = "người"
+        if not sizes and sum(holders) <= len(found) / 2:
             for p in pictures:
                 got = size_from_scene(p.get("classes") or [], p.get("salient") or [])
                 if got:
@@ -780,7 +801,7 @@ def events_of(beats: list[dict], shots: list[dict], motion=None, series: tuple |
         out.append({"start": first["start"], "end": last["end"], "shot": e["shot"], "who": who, "actions": what, "beats": len(e["beats"]),
                     "moving_from": exact[0] if exact else None, "moving_to": exact[1] if exact else None,
                     "phases": {"bắt đầu": [first["start"], first["end"]], "cao trào": [peak["start"], peak["end"]], "kết thúc": [last["start"], last["end"]]},
-                    "cut_start": first["start"] - shot["start"] <= EDGE and shot["start"] > 0.0 or first["start"] <= EDGE and first["start"] - shot["start"] <= EDGE,
+                    "cut_start": first["start"] - shot["start"] <= EDGE,
                     "cut_end": shot["end"] - last["end"] <= EDGE, "source": "measured+model"})
     return out
 
