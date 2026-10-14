@@ -81,7 +81,7 @@ def main() -> None:
             system.worker.run_forever()
     elif args.command == "understand":
         for asset in system.assets.assets():
-            print(asset["asset_id"], system.library.understand(asset["asset_id"], force=args.force))
+            print(asset["asset_id"], system.intelligence.understand(asset["asset_id"], force=args.force))
     elif args.command == "runs":
         for run_id in system.orch.runs():
             info = system.orch.run_info(run_id)
@@ -151,7 +151,7 @@ def main() -> None:
         print(f"NEXORA: http://127.0.0.1:{port}" + ("" if web.is_dir() else "  (Web UI not built: run `npm run build` in web/)"))
         system.library.measure_unmeasured_music()        # tracks taken in by an older version are listened to once more
         system.library.find_missing_cuts()               # and footage taken in by an older version is looked through for scene cuts
-        system.library.find_unmeasured()                 # and measured, so that it is divided into shots and beats like the rest
+        system.intelligence.find_unmeasured()                 # and measured, so that it is divided into shots and beats like the rest
         from nexora.app import TRASH_DAYS, purge_trash
         purge_trash(system, older_than_days=TRASH_DAYS)  # what has been in the Trash a month is deleted for good
         uvicorn.run(create_app(system, web_dir=web, config=config), host="127.0.0.1", port=port, log_level="warning", timeout_graceful_shutdown=2)

@@ -544,7 +544,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         """Describe the footage again, for example after a note was added that names what is in it."""
         if system.assets.asset(asset_id) is None:
             raise HTTPException(404, "no such asset")
-        run_id = system.library.understand(asset_id, force=True)
+        run_id = system.intelligence.understand(asset_id, force=True)
         if run_id is None:
             raise HTTPException(409, "Máy này chưa có mô hình để mô tả footage, hoặc đây là bản trùng")
         return {"run_id": run_id}
@@ -553,7 +553,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
     def transcribe(asset_id: str):
         if system.assets.asset(asset_id) is None:
             raise HTTPException(404, "no such asset")
-        run_id = system.library.transcribe(asset_id, force=True)
+        run_id = system.intelligence.transcribe(asset_id, force=True)
         if run_id is None:
             raise HTTPException(409, "Footage này không có tiếng, hoặc máy chưa có công cụ nhận dạng giọng nói")
         return {"run_id": run_id}
@@ -561,10 +561,10 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
     @app.post("/api/v1/moments/{moment_id}/deepen")
     def deepen(moment_id: str):
         """Describe one stretch frame by frame."""
-        if not system.library.understands or system.index.by_id(moment_id) is None:
+        if not system.intelligence.understands or system.index.by_id(moment_id) is None:
             raise HTTPException(404, "no such moment, or no model to look with")
         try:
-            made = system.library.deepen(moment_id)
+            made = system.intelligence.deepen(moment_id)
         except ValueError:
             raise HTTPException(422, "Chỉ xem kỹ được một đoạn đã mô tả")
         except AdapterError as err:
@@ -596,9 +596,9 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
     # ------------------------------------------------------------------ shots and beats
     def structure_view(asset_id: str) -> dict:
         from nexora.core.timebase import to_seconds
-        from nexora.modules.library.structure import boundaries
+        from nexora.modules.intelligence.structure import boundaries
         asset = need_asset(asset_id)
-        made = system.library.analysis.structure(asset_id)
+        made = system.intelligence.analysis.structure(asset_id)
         runs = system.orch.runs_for_subject(asset_id)
         run = next((run_view(system, r) for r in runs if system.orch.pipeline_of(r) == "library.structure"), None)
         base = {"asset_id": asset_id, "measured": made is not None, "run": run, "reference": asset_id in system.evaluation.references(),
@@ -606,7 +606,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         if made is None:
             return {**base, "shots": [], "beats": [], "transitions": [], "marks": [], "faults": [], "bars": None, "boundaries": {"shot": [], "beat": []}}
         said = {(m.t_start, m.t_end): m for m in system.index.moments(asset_id, level="segment")}
-        fields = system.library.profiler.beat_fields(asset_id) if system.library.profiler else {}
+        fields = system.intelligence.profiler.beat_fields(asset_id) if system.intelligence.profiler else {}
         golden = system.fields.labels(asset_id)
         beats = []
         for beat in made["beats"]:
@@ -617,7 +617,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
                           "model_labels": (m.data.get("model_labels") if m else None) or {}, "flags": (m.data.get("flags") if m else None) or [],
                           "new_things": (m.data.get("new_things") if m else None) or [],
                           "golden": [g for g in golden if t0 <= (g["t_start"] + g["t_end"]) / 2 < t1]})
-        return {**base, "beats": beats, "bars": made["bars"], "faults": system.library.analysis.faults(asset_id), "marks": system.library.analysis.pinned(asset_id),
+        return {**base, "beats": beats, "bars": made["bars"], "faults": system.intelligence.analysis.faults(asset_id), "marks": system.intelligence.analysis.pinned(asset_id),
                 "shots": [{"t_start": to_seconds(s["start"], 2), "t_end": to_seconds(s["end"], 2), "transition_in": s["transition_in"], "pinned": s["pinned"]} for s in made["shots"]],
                 "transitions": [[to_seconds(a, 2), to_seconds(b, 2)] for a, b in made["transitions"]], "boundaries": boundaries(made)}
 
@@ -684,10 +684,10 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
                 to = float(body["to"])
                 if not 0.0 < to < duration:
                     raise ValueError
-                system.library.analysis.pin(asset_id, kind=kind, op="remove", t=t)
-                made = system.library.mark_boundary(asset_id, kind=kind, op="add", t=to)
+                system.intelligence.analysis.pin(asset_id, kind=kind, op="remove", t=t)
+                made = system.intelligence.mark_boundary(asset_id, kind=kind, op="add", t=to)
             else:
-                made = system.library.mark_boundary(asset_id, kind=kind, op=op, t=t)
+                made = system.intelligence.mark_boundary(asset_id, kind=kind, op=op, t=t)
         except (KeyError, TypeError, ValueError):
             raise HTTPException(422, "a mark needs a kind (shot or beat), an op (add, remove, move or clear) and a time inside the footage") from None
         if made is None:
@@ -712,7 +712,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
     @app.post("/api/v1/assets/{asset_id}/structure/analyse", status_code=202)
     def analyse_structure(asset_id: str):
         need_asset(asset_id)
-        return {"run_id": system.library.analyse(asset_id)}
+        return {"run_id": system.intelligence.analyse(asset_id)}
 
     @app.patch("/api/v1/moments/{moment_id}")
     def correct_moment(moment_id: str, body: dict):
@@ -884,7 +884,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
     @app.post("/api/v1/assets/sync")
     def sync_assets(body: dict):
         try:
-            return system.library.sync(str(body["a"]), str(body["b"]))
+            return system.intelligence.sync(str(body["a"]), str(body["b"]), media_dir=system.data_dir / "media")
         except ValueError as err:
             raise HTTPException(409, {"no_audio": "Một trong hai clip không có âm thanh nên không đồng bộ theo tiếng được.",
                                       "too_short": "Clip quá ngắn để đồng bộ.",
@@ -1557,7 +1557,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         """Measure and recognise the footage again (people, size of frame, light, colour, text, sound), then describe it."""
         if system.assets.asset(asset_id) is None:
             raise HTTPException(404, "no such asset")
-        run_id = system.library.profile(asset_id)
+        run_id = system.intelligence.profile(asset_id)
         if run_id is None:
             raise HTTPException(409, "Đây là bản trùng của một footage đã có")
         return {"run_id": run_id}
@@ -1566,11 +1566,11 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
     def alike(moment_id: str, limit: int = 8):
         """Stretches anywhere in the library whose pictures look like this one (Apple's feature print, design group 15)."""
         moment = system.index.by_id(moment_id)
-        if moment is None or system.library.profiler is None:
+        if moment is None or system.intelligence.profiler is None:
             raise HTTPException(404, "no such moment")
         among = [a["asset_id"] for a in system.assets.assets() if a["kind"] == "video"]
         out = []
-        for score, asset_id, a, b in system.library.profiler.alike(moment.asset_id, moment.t_start, moment.t_end, among=among, limit=limit):
+        for score, asset_id, a, b in system.intelligence.profiler.alike(moment.asset_id, moment.t_start, moment.t_end, among=among, limit=limit):
             m = system.index.get(asset_id, "segment", a, b)
             if m is not None:
                 out.append({**moment_view(m, score), "asset": asset_brief(asset_id)})
@@ -1580,8 +1580,8 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
     def template_from_asset(asset_id: str, body: dict):
         """Make a format template from the style of this recording, typically a reference video (design group 13)."""
         from nexora.app import templates
-        from nexora.modules.library.profile import template_from_style
-        made = system.library.profiler.profile(asset_id) if system.library.profiler else None
+        from nexora.modules.intelligence.profile import template_from_style
+        made = system.intelligence.profiler.profile(asset_id) if system.intelligence.profiler else None
         name = str(body.get("name") or "").strip()
         if made is None or not name:
             raise HTTPException(409, "Cần một tên, và footage phải được đo và nhận diện trước")
@@ -1598,28 +1598,28 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
     @app.get("/api/v1/people")
     def people():
         """The people of the library, faces grouped by likeness, with the names the operator gave (design group 06)."""
-        return {"people": system.library.profiler.people([a["asset_id"] for a in system.assets.assets() if a["kind"] == "video"])}
+        return {"people": system.intelligence.profiler.people([a["asset_id"] for a in system.assets.assets() if a["kind"] == "video"])}
 
     @app.get("/api/v1/places")
     def places():
         """Places seen in the library, grouped across shots and recordings by how alike their pictures look (design group 06)."""
-        return {"places": system.library.profiler.places([a["asset_id"] for a in system.assets.assets() if a["kind"] == "video"])}
+        return {"places": system.intelligence.profiler.places([a["asset_id"] for a in system.assets.assets() if a["kind"] == "video"])}
 
     @app.post("/api/v1/people/name")
     def name_person(body: dict):
-        system.library.profiler.name_person(str(body.get("key", "")), str(body.get("name", "")))
+        system.intelligence.profiler.name_person(str(body.get("key", "")), str(body.get("name", "")))
         return people()
 
     @app.get("/api/v1/assets/{asset_id}/scenes")
     def shoot_scenes(asset_id: str):
         """The scenes of the shoot this recording belongs to, across its files (design group 03)."""
         need_asset(asset_id)
-        shoot = system.library.profiler.shoot_of(asset_id)
-        return {"assets": shoot, "scenes": system.library.profiler.scenes(shoot)}
+        shoot = system.intelligence.profiler.shoot_of(asset_id)
+        return {"assets": shoot, "scenes": system.intelligence.profiler.scenes(shoot)}
 
     @app.get("/api/v1/assets/{asset_id}/profile")
     def asset_profile(asset_id: str):
-        made = system.library.profiler.profile(asset_id) if system.library.profiler else None
+        made = system.intelligence.profiler.profile(asset_id) if system.intelligence.profiler else None
         if made is None:
             raise HTTPException(404, "Footage này chưa được đo và nhận diện")
         return made

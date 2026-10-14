@@ -23,7 +23,7 @@ from pathlib import Path
 
 import numpy as np
 
-from nexora.modules.library import vocab
+from nexora.modules.intelligence import vocab
 
 VERSION = "2"
 LOOK_FPS = 2.0                    # frames looked at a second

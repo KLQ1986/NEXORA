@@ -4,6 +4,8 @@ Each camera hears the same room, so the loudness of one, slid along the other, f
 """
 import math
 
+MIN_SYNC_CONFIDENCE = 0.35       # below this the two sounds are not the same event
+
 
 def _shape(env: list[float]) -> list[float]:
     """Keep what changes: the level around its mean. Steady noise then counts for nothing and events count for a lot."""

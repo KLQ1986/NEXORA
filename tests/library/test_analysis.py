@@ -8,7 +8,7 @@ import pytest
 from nexora.app import build
 from nexora.core.states import RunStatus
 from nexora.core.timebase import to_seconds
-from nexora.modules.library.structure import Rules, beat_seconds
+from nexora.modules.intelligence.structure import Rules, beat_seconds
 
 from tests.conftest import make_video
 from tests.fakes import FakeModel, FakeSpeech
@@ -48,9 +48,9 @@ def test_footage_is_divided_at_its_cut_as_it_is_taken_in_and_no_moment_runs_acro
     asset = taken_in(system, film(tmp_path / "two.mp4", TWO_SHOTS))
     runs = [system.orch.run_info(r) for r in system.orch.runs_for_subject(asset)]
     assert all(system.orch.run_status(r["run_id"]) is RunStatus.SUCCEEDED for r in runs)
-    made = system.library.analysis.structure(asset)
+    made = system.intelligence.analysis.structure(asset)
     assert shot_starts(made) == [0.0, 4.0] and [s["transition_in"] for s in made["shots"]] == ["start", "cut"]
-    assert system.library.analysis.faults(asset) == []
+    assert system.intelligence.analysis.faults(asset) == []
     meta = system.assets.original(asset).metadata
     assert meta["scene_cuts"] == [4.0] and meta["structure"]["shots"] == 2
     segments = system.index.moments(asset, level="segment")
@@ -64,7 +64,7 @@ def test_footage_is_divided_at_its_cut_as_it_is_taken_in_and_no_moment_runs_acro
 def test_without_any_model_footage_still_has_its_shots_beats_and_measured_labels(tmp_path):
     system = build(tmp_path / "data")
     asset = taken_in(system, film(tmp_path / "two.mp4", TWO_SHOTS))
-    made = system.library.analysis.structure(asset)
+    made = system.intelligence.analysis.structure(asset)
     assert shot_starts(made) == [0.0, 4.0] and len(made["beats"]) >= 2
     assert all({"camera", "shake", "exposure", "quality", "speech", "speed", "still", "direction", "position"} <= set(b["labels"]) for b in made["beats"])
     assert system.index.moments(asset, level="segment") == []              # nothing has been said about it; its structure is known all the same
@@ -75,33 +75,33 @@ def test_a_photograph_and_a_second_copy_of_a_file_are_not_measured(tmp_path):
     system = build(tmp_path / "data", model=FakeModel())
     Image.new("RGB", (640, 360), (90, 140, 200)).save(tmp_path / "p.jpg")
     photo = taken_in(system, tmp_path / "p.jpg")
-    assert system.library.analysis.structure(photo) is None
+    assert system.intelligence.analysis.structure(photo) is None
     assert len(system.index.moments(photo, level="segment")) == 1         # one moment, itself its only frame
     first = taken_in(system, film(tmp_path / "a.mp4", TWO_SHOTS))
     (tmp_path / "copy").mkdir()
     (tmp_path / "copy" / "b.mp4").write_bytes((tmp_path / "a.mp4").read_bytes())
     second = taken_in(system, tmp_path / "copy" / "b.mp4")
-    assert system.library.analysis.structure(first) is not None
+    assert system.intelligence.analysis.structure(first) is not None
     assert "duplicate_of" in system.assets.original(second).metadata and "structure" not in system.assets.original(second).metadata
 
 
 def test_footage_shot_at_a_high_rate_is_thinned_for_measuring_and_named_slow_motion(tmp_path):
     system = build(tmp_path / "data")
     asset = taken_in(system, film(tmp_path / "fast.mp4", [("testsrc2", 2)], rate=120))
-    assert system.library.analysis.signals(asset).fps == 30.0
-    assert system.library.analysis.structure(asset)["beats"][0]["labels"]["speed"]["value"] == "slow_motion"
+    assert system.intelligence.analysis.signals(asset).fps == 30.0
+    assert system.intelligence.analysis.structure(asset)["beats"][0]["labels"]["speed"]["value"] == "slow_motion"
 
 
 def test_a_cut_in_footage_of_uneven_frame_timing_is_placed_at_its_real_time(tmp_path):
     system = build(tmp_path / "data")
     uneven = film(tmp_path / "vfr.mp4", TWO_SHOTS, filters="select='not(eq(mod(n\\,7)\\,3)+eq(mod(n\\,11)\\,5))'", extra=["-fps_mode", "vfr"])
-    made = system.library.analysis.structure(taken_in(system, uneven))
+    made = system.intelligence.analysis.structure(taken_in(system, uneven))
     assert len(made["shots"]) == 2 and abs(shot_starts(made)[1] - 4.0) <= 0.1
 
 
 def test_black_bars_in_real_footage_are_named_and_the_cut_is_still_found(tmp_path):
     system = build(tmp_path / "data")
-    made = system.library.analysis.structure(taken_in(system, film(tmp_path / "wide.mp4", TWO_SHOTS, filters="pad=320:240:0:30:black", size="320x180")))
+    made = system.intelligence.analysis.structure(taken_in(system, film(tmp_path / "wide.mp4", TWO_SHOTS, filters="pad=320:240:0:30:black", size="320x180")))
     assert made["bars"]["value"] == "top_bottom" and shot_starts(made) == [0.0, 4.0]
     assert system.assets.original(system.assets.assets()[0]["asset_id"]).metadata["structure"]["bars"] == "top_bottom"
 
@@ -113,26 +113,26 @@ def test_with_the_footage_away_the_proxy_is_measured_and_measuring_twice_reads_w
     original = system.assets.original(asset)
     kept = tmp_path / "data" / "media" / original.checksum[:2] / f"{original.checksum}_signals.npz"
     assert kept.is_file()
-    run = system.library.analyse(asset)
+    run = system.intelligence.analyse(asset)
     drain(system)
     assert system.orch.stages(run)[0].outputs == {"cached": True}
     kept.unlink()
     source.unlink()                                                        # the drive that holds it has been taken away
-    run = system.library.analyse(asset)
+    run = system.intelligence.analyse(asset)
     drain(system)
     assert system.orch.run_status(run) is RunStatus.SUCCEEDED and kept.is_file()
-    assert shot_starts(system.library.analysis.structure(asset)) == [0.0, 4.0]
+    assert shot_starts(system.intelligence.analysis.structure(asset)) == [0.0, 4.0]
 
 
 def test_a_mark_of_the_operator_is_kept_through_later_divisions_and_only_changed_beats_are_described_again(tmp_path):
     model = FakeModel()
     system = build(tmp_path / "data", model=model, segment_seconds=15.0)
     asset = taken_in(system, film(tmp_path / "two.mp4", TWO_SHOTS))
-    before = beat_seconds(system.library.analysis.structure(asset))
+    before = beat_seconds(system.intelligence.analysis.structure(asset))
     assert before == [(0.0, 4.0), (4.0, 8.0)]
     calls = model.calls["describe"]
     first_frames = [f for m in system.index.moments(asset, level="segment") for f in m.data["frames"]]
-    made = system.library.mark_boundary(asset, kind="beat", op="add", t=6.0)
+    made = system.intelligence.mark_boundary(asset, kind="beat", op="add", t=6.0)
     drain(system)
     assert beat_seconds(made) == [(0.0, 4.0), (4.0, 6.0), (6.0, 8.0)]
     assert model.calls["describe"] == calls + 2                            # the first shot was left alone and nobody looked at it again
@@ -141,19 +141,19 @@ def test_a_mark_of_the_operator_is_kept_through_later_divisions_and_only_changed
     assert [p.name for p in folder.parent.iterdir() if p.name.startswith(folder.name + ".")] == []     # and no run leaves its own folder behind
     assert [(m.t_start, m.t_end) for m in system.index.moments(asset, level="segment")] == beat_seconds(made)
 
-    system.library.analysis.rules = Rules(max_beat_seconds=15.0, cut_sensitivity=100.0, min_beat_seconds=1.0)      # a rule is changed
+    system.intelligence.analysis.rules = Rules(max_beat_seconds=15.0, cut_sensitivity=100.0, min_beat_seconds=1.0)      # a rule is changed
     calls = model.calls["describe"]
-    again = system.library.redivide(asset)
+    again = system.intelligence.redivide(asset)
     drain(system)
     assert 6.0 in [a for a, _ in beat_seconds(again)]                       # the mark is still there
     assert beat_seconds(again) == beat_seconds(made) and model.calls["describe"] == calls      # nothing moved, so nothing was asked
 
-    system.library.mark_boundary(asset, kind="shot", op="remove", t=4.0)
+    system.intelligence.mark_boundary(asset, kind="shot", op="remove", t=4.0)
     drain(system)
-    made = system.library.analysis.structure(asset)
+    made = system.intelligence.analysis.structure(asset)
     assert shot_starts(made) == [0.0] and system.assets.original(asset).metadata["scene_cuts"] == []
-    system.library.mark_boundary(asset, kind="shot", op="clear", t=4.0)    # the mark is let go: the rules decide again
-    assert shot_starts(system.library.analysis.structure(asset)) == [0.0, 4.0]
+    system.intelligence.mark_boundary(asset, kind="shot", op="clear", t=4.0)    # the mark is let go: the rules decide again
+    assert shot_starts(system.intelligence.analysis.structure(asset)) == [0.0, 4.0]
 
 
 def test_what_the_operator_wrote_about_a_stretch_outlives_the_division_it_was_written_on(tmp_path):
@@ -161,7 +161,7 @@ def test_what_the_operator_wrote_about_a_stretch_outlives_the_division_it_was_wr
     asset = taken_in(system, film(tmp_path / "two.mp4", TWO_SHOTS))
     second = system.index.moments(asset, level="segment")[1]
     system.index.correct(second.moment_id, "Người đàn ông quăng lưới xuống sông.")
-    system.library.mark_boundary(asset, kind="beat", op="add", t=6.0)       # the stretch it was written on is divided in two
+    system.intelligence.mark_boundary(asset, kind="beat", op="add", t=6.0)       # the stretch it was written on is divided in two
     drain(system)
     assert [(m.t_start, m.t_end) for m in system.index.moments(asset, level="segment")] == [(0.0, 4.0), (4.0, 6.0), (6.0, 8.0)]
     kept = system.index.moments(asset, level="note")
@@ -181,20 +181,20 @@ def test_once_the_words_are_known_no_beat_begins_inside_one(tmp_path):
     asset = taken_in(system, source)
     words = [(w["start"], w["end"]) for m in system.index.moments(asset, level="speech") for w in m.data["words"]]
     assert len(words) == 14
-    system.library.analysis.rules = Rules(max_beat_seconds=3.2, min_beat_seconds=3.2)      # even pieces of 3.2 s would begin inside the words at 3.0 and 6.0
-    made = system.library.redivide(asset)
+    system.intelligence.analysis.rules = Rules(max_beat_seconds=3.2, min_beat_seconds=3.2)      # even pieces of 3.2 s would begin inside the words at 3.0 and 6.0
+    made = system.intelligence.redivide(asset)
     drain(system)
     starts = [a for a, _ in beat_seconds(made)][1:]
     assert len(starts) == 2 and not any(a < t < b for t in starts for a, b in words), starts
     assert all(b["labels"]["speech"]["value"] for b in made["beats"])
-    assert system.library.analysis.faults(asset) == []
+    assert system.intelligence.analysis.faults(asset) == []
     assert [(m.t_start, m.t_end) for m in system.index.moments(asset, level="segment")] == beat_seconds(made)
 
 
 def test_a_clip_longer_than_its_moment_runs_on_inside_the_shot_and_never_past_the_footage_or_across_a_cut(tmp_path):
     system = build(tmp_path / "data", model=FakeModel(), segment_seconds=15.0)
     asset = taken_in(system, film(tmp_path / "two.mp4", TWO_SHOTS))
-    system.library.mark_boundary(asset, kind="beat", op="add", t=6.0)
+    system.intelligence.mark_boundary(asset, kind="beat", op="add", t=6.0)
     drain(system)
     assert system.sourcing._whole_shot(asset, 6.0, 9.5) == (4.5, 8.0)       # past the end: moved back, still inside the second shot
     assert system.sourcing._whole_shot(asset, 2.0, 5.0)[1] <= 4.0 - 0.1     # across the cut: moved to the side that has room
@@ -206,7 +206,7 @@ def test_a_verdict_on_a_clip_still_counts_after_the_footage_is_divided_anew(tmp_
     asset = taken_in(system, film(tmp_path / "two.mp4", TWO_SHOTS))
     old = system.index.moments(asset, level="segment")[1]
     system.projects.add_feedback("cá tươi trên sạp", old.moment_id, "rejected", asset_id=asset, span=(old.t_start, old.t_end))
-    system.library.mark_boundary(asset, kind="beat", op="add", t=6.0)
+    system.intelligence.mark_boundary(asset, kind="beat", op="add", t=6.0)
     drain(system)
     new = system.index.moments(asset, level="segment")
     assert old.moment_id not in {m.moment_id for m in new}
@@ -247,7 +247,7 @@ def test_the_structure_of_an_asset_is_served_marked_and_measured_against_the_ope
     detail = run["runs"][0]["details"][0]
     assert detail["shot"]["extra"] == [8.0] and detail["beat"]["missed"] == [2.5]
 
-    system.library.analysis.rules = Rules(max_beat_seconds=15.0, cut_sensitivity=0.0)                          # a rule is changed, and measured again
+    system.intelligence.analysis.rules = Rules(max_beat_seconds=15.0, cut_sensitivity=0.0)                          # a rule is changed, and measured again
     run = client.post("/api/v1/evaluation/structure/run").json()["structure"]["runs"]
     assert run[0]["change"]["config"]["cut_sensitivity"] == [50.0, 0.0] and "regression" in run[0]["change"]
     assert client.post(f"/api/v1/assets/{asset}/structure/reference", json={"on": False}).json()["reference"] is False
@@ -284,7 +284,7 @@ def test_a_beat_the_model_could_not_answer_for_is_shown_again_with_fewer_frames(
     system = build(tmp_path / "data", model=model, segment_seconds=15.0)
     asset = taken_in(system, film(tmp_path / "long.mp4", [("testsrc2", 10)]))
     segments = system.index.moments(asset, level="segment")
-    assert segments and all(m.text for m in segments) and len(segments) == len(beat_seconds(system.library.analysis.structure(asset)))
+    assert segments and all(m.text for m in segments) and len(segments) == len(beat_seconds(system.intelligence.analysis.structure(asset)))
     assert max(model.shown) > 3 and 3 in model.shown
     assert all(len(m.data["frames"]) > 3 for m in segments)                 # the beat keeps all its frames; only the question was made smaller
 

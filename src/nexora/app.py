@@ -22,15 +22,18 @@ from nexora.core.projects import ProjectStore
 from nexora.core.states import RunStatus
 from nexora.core.worker import Worker
 from nexora.modules.library.ingest import Library
-from nexora.modules.library.analysis import Analysis
-from nexora.modules.library.profiler import Profiler
-from nexora.modules.library.structure import Rules, boundaries
+from nexora.core.intelligence import VideoIntelligence
+from nexora.core.intelligence_store import IntelligenceStore
+from nexora.modules.intelligence.service import Intelligence
+from nexora.modules.intelligence.analysis import Analysis
+from nexora.modules.intelligence.profiler import Profiler
+from nexora.modules.intelligence.structure import Rules, boundaries
 from nexora.modules.distribution.package import Distribution
 from nexora.modules.distribution.publish import Publishing
 from nexora.modules.edit.render import Edit
 from nexora.modules.edit.roughcut import RoughCut
-from nexora.modules.library.transcribe import Transcription
-from nexora.modules.library.understand import Understanding
+from nexora.modules.intelligence.transcribe import Transcription
+from nexora.modules.intelligence.understand import Understanding
 from nexora.modules.planning.scripts import Planning
 from nexora.modules.quality.evaluation import Evaluation
 from nexora.modules.quality.fields import Fields
@@ -65,6 +68,8 @@ class System:
     viewer: Viewer = None
     evaluation: Evaluation = None
     fields: "Fields" = None
+    intelligence: "Intelligence" = None          # the analysis domain: the only writer of the canonical model
+    vi: "VideoIntelligence" = None               # the canonical model, read by every other module
     publishing: Publishing = None
     autonomy: Autonomy = None
 
@@ -82,7 +87,7 @@ def fill_gap_from_stock(system: "System", shot_id: str, query: str) -> dict:
     rights = {"source": clip.get("source"), "source_url": clip.get("source_url"), "license": clip.get("license"), "creator": clip.get("creator"), "query": query}
     asset_id, run_id = system.library.ingest(result.files[0], origin="licensed", rights=rights)
     # Proposed at once so the operator sees something; placed properly, or withdrawn, once the clip has been watched (see build()).
-    system.sourcing.use_asset(shot_id, asset_id, pending=system.library.understands,
+    system.sourcing.use_asset(shot_id, asset_id, pending=system.intelligence.understands,
                               reason=f"Clip stock từ {clip.get('source')}. Giấy phép: {clip.get('license')}. Nguồn: {clip.get('source_url')}")
     if system.orch.run_status(run_id) is RunStatus.SUCCEEDED and system.index.moments(asset_id, level="segment"):
         system.sourcing.refine_from_asset(shot_id, asset_id)     # the same clip was fetched before and has already been watched
@@ -109,6 +114,7 @@ def remove_asset(system: "System", asset_id: str, *, discard_file: bool = False,
     cases = system.evaluation.forget_asset(asset_id)
     system.fields.forget_asset(asset_id)
     moments = system.index.remove_asset(asset_id)
+    system.intelligence.forget(asset_id)
     system.assets.remove(asset_id)
     shared = bool(original.checksum and system.assets.find_original_by_checksum(original.checksum))      # a second copy of the same file still uses what was made from it
     if original.checksum and not shared:
@@ -282,7 +288,7 @@ def footage_insights(system: "System") -> dict:
     """What the channel's own figures say about the footage used: for each published video, the share of it watched on average
     and the measured traits of the stretches it was cut from (design 2026-10-14, group 12). Lives here because it joins three
     modules: what went out, the cut, and the profile of the footage."""
-    from nexora.modules.library.profile import what_works
+    from nexora.modules.intelligence.profile import what_works
     rows = system.publishing._conn.execute("SELECT p.publication_id, p.render_id, (SELECT figures FROM metric_snapshots m WHERE m.publication_id = p.publication_id "
                                            "ORDER BY at DESC LIMIT 1) AS figures FROM publications p WHERE p.status = 'published'").fetchall()
     videos = []
@@ -295,7 +301,7 @@ def footage_insights(system: "System") -> dict:
             continue
         sizes, faces, words = [], 0, 0
         for s in shots:
-            made = system.library.profiler.profile(s.get("asset_id") or "") if s.get("asset_id") else None
+            made = system.intelligence.profiler.profile(s.get("asset_id") or "") if s.get("asset_id") else None
             for b in (made or {}).get("beats", []):
                 if b["start"] < (s.get("t_out") or 0) and b["end"] > (s.get("t_in") or 0):
                     p = b["profile"]
@@ -319,7 +325,7 @@ def render_rights(system: "System", render_id: str) -> dict:
         if asset:
             original = system.assets.original(asset["asset_id"])
             used = [s for s in render["qc"].get("shots") or [] if s.get("asset_id") == asset["asset_id"]]
-            made = system.library.profiler.profile(asset["asset_id"]) if system.library.profiler else None
+            made = system.intelligence.profiler.profile(asset["asset_id"]) if system.intelligence.profiler else None
             with_people = sum(1 for b in (made or {}).get("beats", []) if (b["profile"].get("people") or {}).get("count", 0) > 0 and (b["profile"]["people"].get("faces") or 0) > 0
                               and any(u.get("t_in") is None or (b["start"] < (u.get("t_out") or 1e9) and b["end"] > (u.get("t_in") or 0)) for u in used))
             by_id[asset["asset_id"]] = {"origin": asset["origin"], "name": system.assets.path_of(original).name, "rights": original.metadata.get("rights"),
@@ -331,17 +337,17 @@ def render_rights(system: "System", render_id: str) -> dict:
 
 def evaluation_config(system: "System") -> dict:
     """What describes the installation for a benchmark run: the models in use and the versions of the prompts."""
-    from nexora.modules.library.understand import PROMPT_VERSION
+    from nexora.modules.intelligence.understand import PROMPT_VERSION
     env = (system.adapters.environment().get("model") or {}).get("models") or {}
-    return {"models": ", ".join(sorted(env)) or "không có mô hình", "describe_prompt": PROMPT_VERSION, "segment_seconds": system.library.segment_seconds,
+    return {"models": ", ".join(sorted(env)) or "không có mô hình", "describe_prompt": PROMPT_VERSION, "segment_seconds": system.intelligence.segment_seconds,
             "moments": system.index.count()}
 
 
 def structure_config(system: "System") -> dict:
     """What describes how footage is divided, for a benchmark run: the version of the rules and every level they decide against."""
     from dataclasses import asdict
-    from nexora.modules.library import signals, structure
-    return {"signals": signals.VERSION, "structure": structure.VERSION, **asdict(system.library.analysis.rules)}
+    from nexora.modules.intelligence import signals, structure
+    return {"signals": signals.VERSION, "structure": structure.VERSION, **asdict(system.intelligence.analysis.rules)}
 
 
 PIPELINE_NAMES = {"library.ingest": "Nhập footage", "library.ingest_image": "Nhập ảnh", "library.ingest_audio": "Nhập nhạc", "library.understand": "Hiểu nội dung footage", "library.transcribe": "Nghe lời nói trong footage", "library.profile": "Đo và nhận diện footage",
@@ -486,9 +492,18 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
         understanding = Understanding(assets, index, adapters, data_dir / "media", segment_seconds=segment_seconds, structure_of=analysis.structure,
                                       profile_of=profiler.beat_fields, signals_of=analysis.signals)
     registry = PipelineRegistry()
-    library = Library(orch, assets, adapters, data_dir / "media", min_free_bytes=min_free_bytes, understanding=understanding, transcription=transcription,
-                      analysis=analysis, profiler=profiler)
+    library = Library(orch, assets, adapters, data_dir / "media", min_free_bytes=min_free_bytes)
     library.register(registry)
+    # Video Intelligence: analyses every recording once and keeps what it learns; everything else reads it (design 2026-10-15).
+    store = IntelligenceStore(db_path)
+    profiler.store = store
+    intelligence = Intelligence(orch, assets, store, analysis, profiler=profiler, understanding=understanding, transcription=transcription)
+    intelligence.register(registry)
+    library.on_taken_in.append(intelligence.taken_in)
+    library.on_note.append(intelligence.noted)
+    vi = VideoIntelligence(db_path, released=lambda: system.fields.released(), exists=lambda asset_id: assets.asset(asset_id) is not None,
+                           search=lambda query, limit, levels, exclude_assets: index.search(query, limit=limit, level=levels, min_score=0.3, exclude_assets=exclude_assets),
+                           alike=lambda asset_id, a, b, limit: profiler.alike(asset_id, a, b, among=[x["asset_id"] for x in assets.assets() if x["kind"] == "video"], limit=limit))
     projects = ProjectStore(db_path)
     planning = Planning(projects, assets, index, adapters)
     sourcing = Sourcing(orch, projects, index, threshold=match_threshold, adapters=adapters, judge=judge and model is not None, rejected=assets.rejected,
@@ -496,7 +511,7 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
                         cuts=lambda asset_id: (assets.original(asset_id).metadata.get("scene_cuts") or [], assets.original(asset_id).metadata.get("probe", {}).get("duration")),
                         released=lambda: system.fields.released())
     sourcing.register(registry)
-    library.on_understood.append(lambda asset_id: [sourcing.refine_from_asset(shot_id, asset_id) for shot_id in sourcing.pending_for(asset_id)])
+    intelligence.on_understood.append(lambda asset_id: [sourcing.refine_from_asset(shot_id, asset_id) for shot_id in sourcing.pending_for(asset_id)])
     edit = Edit(orch, projects, assets, adapters, data_dir / "media", voice=voice is not None, voice_name=voice_name, reviewer=review_cut, model=model is not None,
                 inspector={"file": picture_and_sound, "captions": caption_findings})
     edit.register(registry)
@@ -525,6 +540,7 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     workers = [Worker(orch, registry, worker_id=f"interactive-{os.getpid()}", lanes=frozenset({"interactive"}), log=log),
                Worker(orch, registry, worker_id=f"background-{os.getpid()}", lanes=frozenset({"background"}), log=log, allowed=night_only)]
     system = System(data_dir, orch, assets, adapters, registry, worker, library, index, projects, planning, sourcing, edit, distribution, generation, workers)
+    system.intelligence, system.vi = intelligence, vi
     system.roughcut = RoughCut(projects, assets, index)
     system.commands = Commands(adapters, projects, sourcing, edit)
     system.viewer = Viewer(projects, adapters, data_dir / "media") if model is not None else None

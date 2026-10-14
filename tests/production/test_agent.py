@@ -70,14 +70,14 @@ def test_footage_analysis_is_held_outside_the_window_while_other_work_goes_on(tm
     interactive, background = system.workers
     while interactive.run_once() or background.run_once():
         pass
-    profile = next(r for r in system.orch.runs_for_subject(asset_id) if system.orch.pipeline_of(r) == "library.profile")
+    structure = next(r for r in system.orch.runs_for_subject(asset_id) if system.orch.pipeline_of(r) == "library.structure")
     assert system.orch.run_status(ingest) is RunStatus.SUCCEEDED
-    assert {s.stage_key: s.status.value for s in system.orch.stages(profile)}["look"] == "ready"         # waiting for its hours
+    assert {s.stage_key: s.status.value for s in system.orch.stages(structure)}["signals"] == "ready"    # waiting for its hours
     system.orch.set_setting("background_window", "")
     while interactive.run_once() or background.run_once():
         pass
     understand = next(r for r in system.orch.runs_for_subject(asset_id) if system.orch.pipeline_of(r) == "library.understand")
-    assert system.orch.run_status(profile) is RunStatus.SUCCEEDED and system.orch.run_status(understand) is RunStatus.SUCCEEDED
+    assert system.orch.run_status(structure) is RunStatus.SUCCEEDED and system.orch.run_status(understand) is RunStatus.SUCCEEDED
 
 
 def test_a_project_budget_already_spent_stops_paid_generation_before_it_starts(tmp_path):

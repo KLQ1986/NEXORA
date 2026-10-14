@@ -14,7 +14,7 @@ from nexora.core.assets import AssetStore
 from nexora.core.index import MomentIndex
 from nexora.core.pipeline import PipelineDefinition, StageDef
 from nexora.core.timebase import to_seconds
-from nexora.modules.library import profile as P
+from nexora.modules.intelligence import profile as P
 
 PROFILE = PipelineDefinition("library.profile", P.VERSION, [
     StageDef("probe"),
@@ -231,7 +231,7 @@ class Profiler:
         info = self._adapters.submit("ffprobe", Request("probe", inputs={"path": str(path)}, attempt_id=ctx.claim.attempt_id)).outputs
         info["content_credentials"] = P.has_content_credentials(path)
         # The camera's own record of its angle and turning, frame by frame, where it kept one (DJI).
-        from nexora.modules.library import telemetry
+        from nexora.modules.intelligence import telemetry
         try:
             packets = self._adapters.submit("ffmpeg", Request("telemetry", inputs={"path": str(path)}, attempt_id=ctx.claim.attempt_id,
                                                              params={"out": str(self._path(ctx.subject_ref, f"_meta.{ctx.claim.attempt_id or 'x'}.bin"))})).outputs["packets"]
@@ -427,7 +427,7 @@ class Profiler:
                                              camera=(beat["labels"].get("camera") or {}).get("value"), spans=spans, log_profile=log_profile)
         sensed = _read_json(self._path(asset_id, "_telemetry.json"))
         if sensed:
-            from nexora.modules.library import telemetry
+            from nexora.modules.intelligence import telemetry
             for beat in beats:
                 got = telemetry.beat_fields(sensed["frames"], float(sensed["fps"]), beat["start"], beat["end"])
                 beat["profile"].update(got)

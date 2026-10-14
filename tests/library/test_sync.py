@@ -35,14 +35,14 @@ def test_two_recordings_of_one_event_are_lined_up_and_unrelated_ones_are_refused
     while system.worker.run_once():
         pass
     a, b, c = ids
-    found = system.library.sync(a, b)
+    found = system.intelligence.sync(a, b, media_dir=system.data_dir / "media")
     assert found["offset"] == pytest.approx(-3.2, abs=0.08) and found["confidence"] > 0.6     # what A shows at 5.0 s, B shows at 1.8 s
     assert system.assets.original(b).metadata["angles"][a] == pytest.approx(3.2, abs=0.08)
     with pytest.raises(ValueError, match="not_alike"):
-        system.library.sync(a, c)
+        system.intelligence.sync(a, c, media_dir=system.data_dir / "media")
     silent = system.library.ingest(subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=25:duration=3",
                                                    "-pix_fmt", "yuv420p", str(tmp_path / "mute.mp4")], check=True) and None or tmp_path / "mute.mp4")[0]
     while system.worker.run_once():
         pass
     with pytest.raises(ValueError, match="no_audio"):
-        system.library.sync(a, silent)
+        system.intelligence.sync(a, silent, media_dir=system.data_dir / "media")

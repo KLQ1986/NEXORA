@@ -13,7 +13,7 @@ from dataclasses import dataclass, asdict
 import numpy as np
 
 from nexora.core.timebase import to_seconds, to_ticks
-from nexora.modules.library.signals import Signals, difference
+from nexora.modules.intelligence.signals import Signals, difference
 
 VERSION = 1
 

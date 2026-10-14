@@ -2,7 +2,7 @@
 (a pan), grow (a push in), fade into another (a dissolve) or stand still, with a little noise on top like a real sensor."""
 import numpy as np
 
-from nexora.modules.library.signals import HEIGHT, WIDTH
+from nexora.modules.intelligence.signals import HEIGHT, WIDTH
 
 CANVAS = 4          # the picture a shot is cut from is this many times the frame, so that a window can slide and grow in it
 

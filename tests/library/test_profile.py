@@ -6,9 +6,9 @@ import numpy as np
 import pytest
 
 from nexora.app import build
-from nexora.modules.library import profile as P
-from nexora.modules.library import vocab
-from nexora.modules.library.understand import facts_of, model_labels, tidy, text_of
+from nexora.modules.intelligence import profile as P
+from nexora.modules.intelligence import vocab
+from nexora.modules.intelligence.understand import facts_of, model_labels, tidy, text_of
 
 from tests.conftest import make_video
 from tests.fakes import FakeModel, FakeSound, FakeVision
@@ -182,7 +182,7 @@ def test_footage_is_profiled_after_ingest_and_the_profile_reaches_the_beats_and_
     system = build(tmp_path / "data", model=FakeModel(), segment_seconds=2.0, recognisers=[FakeVision(), FakeSound()])
     asset, _ = system.library.ingest(make_video(tmp_path / "f.mp4", picture=4))
     drain(system)
-    made = system.library.profiler.profile(asset)
+    made = system.intelligence.profiler.profile(asset)
     assert made and made["recognised"] and made["beats"]
     beat = made["beats"][0]["profile"]
     assert beat["people"]["value"] == "một" and beat["shot_size"]["value"] == "cận" and beat["place"]["value"] == "ngoài trời"
@@ -193,14 +193,14 @@ def test_footage_is_profiled_after_ingest_and_the_profile_reaches_the_beats_and_
     found = system.index.search("Chợ Hội An buổi sáng", level=("text",))
     assert found and found[0].moment.asset_id == asset and found[0].moment.data["span"]["kind"] == "phụ đề"
     assert system.assets.original(asset).metadata["profile"]["platforms"]["YouTube"]["fits"]
-    assert system.library.profiler.prints(asset) is not None
+    assert system.intelligence.profiler.prints(asset) is not None
 
 
 def test_without_recognisers_the_measured_fields_are_still_there(tmp_path):
     system = build(tmp_path / "data", model=FakeModel(), segment_seconds=2.0)
     asset, _ = system.library.ingest(make_video(tmp_path / "f.mp4", picture=4))
     drain(system)
-    made = system.library.profiler.profile(asset)
+    made = system.intelligence.profiler.profile(asset)
     assert made and not made["recognised"]
     beat = made["beats"][0]["profile"]
     assert "people" not in beat and beat["light"]["value"] and beat["colour"]["value"]
@@ -251,7 +251,7 @@ def test_hands_seen_from_the_operators_eyes_are_one_person():
 
 
 def test_a_summary_keeps_only_what_the_footage_shows_for_it():
-    from nexora.modules.library.understand import grounded
+    from nexora.modules.intelligence.understand import grounded
     out = grounded({"chu_de": ["bãi biển", "tàu vũ trụ"], "the_loai": "vlog du lịch", "cau_truc": [{"phan": "mở đầu", "tu": "0:00"}, {"phan": "cao trào", "tu": "9:99"}],
                     "cam_xuc": [{"tu": "0:05", "cam_xuc": "vui"}, {"tu": "0:05", "cam_xuc": "phấn khích"}], "khan_gia": "người thích du lịch"},
                    ["Bãi biển vắng, thuyền thúng trên cát."], {"0:00", "0:05"})
@@ -306,7 +306,7 @@ def test_a_phone_held_up_by_the_operator_is_sized_by_the_phone_not_by_the_operat
 
 def test_the_cameras_own_record_gives_its_angle_tilt_and_turning():
     import struct
-    from nexora.modules.library import telemetry
+    from nexora.modules.intelligence import telemetry
     def varint(n):
         out = b""
         while True:

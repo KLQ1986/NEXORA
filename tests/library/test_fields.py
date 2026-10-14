@@ -118,7 +118,7 @@ def test_search_reads_what_a_query_asks_to_see_and_a_reference_video_is_left_out
 
 def test_faces_are_grouped_into_people_and_a_name_follows_its_person(tmp_path):
     import numpy as np
-    from nexora.modules.library.profile import group_faces
+    from nexora.modules.intelligence.profile import group_faces
     a, b = np.array([1, 0, 0], np.float32), np.array([0, 1, 0], np.float32)
     assert group_faces(np.array([a, b, a * 0.99 + b * 0.05, b])) == [[0, 2], [1, 3]]
     system = build(tmp_path / "data", model=FakeModel(), segment_seconds=2.0, recognisers=[FakeVision(), FakeSound()])

@@ -11,19 +11,16 @@ from nexora.core.assets import AssetStore, sha256_file
 from nexora.core.orchestrator import Orchestrator
 from nexora.core.pipeline import PipelineDefinition, PipelineRegistry, StageDef
 
-INGEST = PipelineDefinition("library.ingest", "2", [
+# Taking a file in ends here; what is in it is the Video Intelligence domain's work, started through `on_taken_in`.
+INGEST = PipelineDefinition("library.ingest", "3", [
     StageDef("checksum"),
     StageDef("probe", depends_on=("checksum",)),
     StageDef("usable", depends_on=("probe",)),
     StageDef("proxy", depends_on=("usable",)),
     StageDef("thumbnail", depends_on=("usable",)),
-    # Measured and divided into shots and beats before anyone looks at it, so that what is described is one thing at a time.
-    StageDef("signals", depends_on=("proxy",), timeout_seconds=6 * 3600, requires=("ffmpeg",)),
-    StageDef("structure", depends_on=("signals",)),
 ])
 
 MIN_USABLE_SECONDS = 0.1
-MIN_SYNC_CONFIDENCE = 0.35       # below this the two sounds are not the same event
 IMAGE_EXT = frozenset({".jpg", ".jpeg", ".png", ".webp"})
 AUDIO_EXT = frozenset({".mp3", ".wav", ".m4a", ".aiff", ".flac"})
 
@@ -50,115 +47,27 @@ def usable_ranges(duration: float, black: list[list[float]]) -> list[list[float]
 
 
 class Library:
-    def __init__(self, orch: Orchestrator, assets: AssetStore, adapters: AdapterRegistry, media_dir: str | Path,
-                 *, min_free_bytes: int = 2 * 1024**3, understanding=None, transcription=None, analysis=None, profiler=None):
-        from nexora.modules.library.analysis import Analysis
+    """The files of the operator's library: taking them in, their proxies and thumbnails, photographs, music, larger copies,
+    the operator's marks, shoots. What is in a recording is not the library's business: once a file is taken in, every
+    callable in `on_taken_in` is told (the Video Intelligence domain analyses it), and every note goes to `on_note`."""
+
+    def __init__(self, orch: Orchestrator, assets: AssetStore, adapters: AdapterRegistry, media_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3):
         self._orch, self._assets, self._adapters = orch, assets, adapters
-        self.analysis = analysis or Analysis(assets, adapters, media_dir)     # measures footage and divides it into shots and beats
         self._min_free = min_free_bytes
-        self._understanding = understanding          # None when no model is available
-        self._transcription = transcription          # None when no speech tool is available
-        self.profiler = profiler                     # what can be measured and recognised in footage without a language model
-        self.on_understood = []                      # called with an asset id once that asset has been described and indexed
+        self.on_taken_in = []                        # called with an asset id once a file has been taken in
+        self.on_note = []                            # called with an asset id and the operator's note when it changes
         self._media = Path(media_dir)
         self._media.mkdir(parents=True, exist_ok=True)
         assets.add_volume("managed", self._media, kind="internal")
 
     def register(self, registry: PipelineRegistry) -> None:
-        from nexora.modules.library.analysis import STRUCTURE
-        registry.register(INGEST, {"checksum": self._checksum, "probe": self._probe, "usable": self._usable,
-                                   "proxy": self._proxy, "thumbnail": self._thumbnail, **self.analysis.handlers()},
-                          on_success=lambda run_id, asset_id: (self.profile(asset_id), self.transcribe(asset_id)))
-        registry.register(INGEST_IMAGE, {"checksum": self._checksum, "measure": self._measure},
-                          on_success=(lambda run_id, asset_id: self.understand(asset_id)) if self._understanding else None)
+        taken = lambda run_id, asset_id: [listener(asset_id) for listener in self.on_taken_in]
+        registry.register(INGEST, {"checksum": self._checksum, "probe": self._probe, "usable": self._usable, "proxy": self._proxy, "thumbnail": self._thumbnail},
+                          on_success=taken)
+        registry.register(INGEST_IMAGE, {"checksum": self._checksum, "measure": self._measure}, on_success=taken)
         registry.register(INGEST_AUDIO, {"checksum": self._checksum, "listen": self._listen})
         registry.register(ENHANCE, {"enhance": self._enhance})
         registry.register(FIND_CUTS, {"cuts": self._find_cuts})
-        registry.register(STRUCTURE, self.analysis.handlers(), on_success=lambda run_id, asset_id: self.profile(asset_id))
-        if self.profiler is not None:
-            from nexora.modules.library.profiler import PROFILE
-            # The profile comes before the description: what was measured and recognised is what the model is told about.
-            registry.register(PROFILE, self.profiler.handlers(), on_success=lambda run_id, asset_id: self.understand(asset_id, force=True))
-        if self._transcription:
-            from nexora.modules.library.transcribe import TRANSCRIBE
-            registry.register(TRANSCRIBE, self._transcription.handlers(), on_success=lambda run_id, asset_id: self.redivide(asset_id))
-        if self._understanding:
-            from nexora.modules.library.understand import UNDERSTAND
-            registry.register(UNDERSTAND, self._understanding.handlers(),
-                              on_success=lambda run_id, asset_id: [listener(asset_id) for listener in self.on_understood])
-
-    @property
-    def segment_seconds(self) -> float | None:
-        return self._understanding._seconds if self._understanding else None
-
-    @property
-    def understands(self) -> bool:
-        return self._understanding is not None
-
-    def understand(self, asset_id: str, *, force: bool = False) -> str | None:
-        """Start understanding an ingested asset. Duplicates are skipped; `force` starts a new run."""
-        from nexora.modules.library.understand import UNDERSTAND
-        if self._understanding is None or "duplicate_of" in self._assets.original(asset_id).metadata:
-            return None
-        if force:
-            self._orch.supersede(UNDERSTAND.pipeline_id, asset_id)       # an earlier run still waiting would only do the same work again
-        return self._orch.submit_run(UNDERSTAND, subject_ref=asset_id, idempotency_key=None if force else f"understand:{asset_id}")
-
-    def profile(self, asset_id: str) -> str | None:
-        """Measure and recognise what is in a recording, beat by beat, then describe it. Without a profiler, describe at once."""
-        from nexora.modules.library.profiler import PROFILE
-        if self.profiler is None:
-            return self.understand(asset_id, force=True)
-        if "duplicate_of" in self._assets.original(asset_id).metadata:
-            return None
-        self._orch.supersede(PROFILE.pipeline_id, asset_id)          # an earlier run still waiting would only do the same work again
-        return self._orch.submit_run(PROFILE, subject_ref=asset_id)
-
-    def transcribe(self, asset_id: str, *, force: bool = False) -> str | None:
-        """Start listening to an ingested asset for speech. Footage without sound is left alone."""
-        from nexora.modules.library.transcribe import TRANSCRIBE
-        if self._transcription is None or not self._transcription.wanted(asset_id):
-            return None
-        return self._orch.submit_run(TRANSCRIBE, subject_ref=asset_id, idempotency_key=None if force else f"transcribe:{asset_id}")
-
-    def redivide(self, asset_id: str) -> dict | None:
-        """Work out the shots and beats of an asset again from what was measured in it: after its words became known, after the
-        operator placed a mark, after a rule changed. When the beats come out different, the new ones are described; a beat
-        the new division leaves alone keeps its description, so nothing is asked of a model twice."""
-        from nexora.modules.library.structure import beat_seconds
-        before = beat_seconds(self.analysis.structure(asset_id) or {})
-        made = self.analysis.restructure(asset_id)
-        if made is not None and beat_seconds(made) != before:
-            self.profile(asset_id)
-        return made
-
-    def mark_boundary(self, asset_id: str, *, kind: str, op: str, t: float) -> dict | None:
-        """The operator places, removes or lets go of a boundary; it is kept through every later division."""
-        from nexora.modules.library.structure import beat_seconds
-        before = beat_seconds(self.analysis.structure(asset_id) or {})
-        made = self.analysis.pin(asset_id, kind=kind, op=op, t=t)
-        if made is not None and beat_seconds(made) != before:
-            self.profile(asset_id)
-        return made
-
-    def analyse(self, asset_id: str) -> str:
-        """Measure an asset (again if need be) and divide it. For footage taken in before footage was measured."""
-        from nexora.modules.library.analysis import STRUCTURE
-        return self._orch.submit_run(STRUCTURE, subject_ref=asset_id)
-
-    def find_unmeasured(self) -> list[str]:
-        """Start measuring every video that was taken in before footage was divided into shots and beats. Runs with the background work."""
-        from nexora.modules.library.analysis import STRUCTURE
-        runs = []
-        for asset in self._assets.assets():
-            if asset["kind"] != "video":
-                continue
-            original = self._assets.original(asset["asset_id"])
-            meta = original.metadata
-            if "duplicate_of" in meta or "structure" in meta or not meta.get("probe", {}).get("duration") or not original.checksum:
-                continue
-            runs.append(self._orch.submit_run(STRUCTURE, subject_ref=asset["asset_id"], idempotency_key=f"structure:{asset['asset_id']}"))
-        return runs
 
     def ingest(self, path: str | Path, *, origin: str = "self_shot", rights: dict | None = None) -> tuple[str, str]:
         """Register a file and start its ingest run. Ingesting the same file again returns the same asset and run.
@@ -179,19 +88,11 @@ class Library:
         return asset_id, run_id
 
     def annotate(self, asset_id: str, *, note: str | None = None, **marks) -> None:
-        """The operator's marks. A note is also put in the index, so that what the operator knows about a silent clip can be searched for."""
+        """The operator's marks on an asset. A note is also handed on, so that what the operator knows about a silent clip can be searched for."""
         self._assets.annotate(asset_id, note=note, **marks)
-        if note is not None and self._understanding is not None:
-            index = self._understanding._index
-            index.remove(asset_id, "note", only=lambda m: not m.data.get("kept"))     # a correction kept from an earlier division is not the note
-            if note.strip():
-                duration = self._assets.original(asset_id).metadata.get("probe", {}).get("duration") or 0.0
-                index.upsert(asset_id, "note", 0.0, round(float(duration), 1), note.strip())
-                index.correct(index.get(asset_id, "note", 0.0, round(float(duration), 1)).moment_id, note.strip())      # the operator's words
-                try:
-                    self._understanding.embed_pending(asset_id)
-                except AdapterError:
-                    pass                                 # found by its words until the embedding model is back
+        if note is not None:
+            for listener in self.on_note:
+                listener(asset_id, note)
 
     def enhance(self, asset_id: str, *, upscale: int = 1, smooth_fps: int | None = None) -> str:
         """Start making a larger (`upscale` 2) or smoother (`smooth_fps` 50 or 60) copy of a clip. Renders use it once it exists."""
@@ -263,9 +164,6 @@ class Library:
                            "rating": asset.get("rating", 0), **original.metadata["music"]})
         return rank(tracks, seconds=seconds, energy=energy)[:limit]
 
-    def deepen(self, moment_id: str) -> list[str]:
-        return self._understanding.deepen(moment_id)
-
     def sessions(self) -> list[dict]:
         """Shoots: recordings that sat in the same folder and were made on the same day."""
         import time
@@ -284,26 +182,6 @@ class Library:
         return sorted(groups.values(), key=lambda g: (g["date"], g["folder"]), reverse=True)
 
     # ------------------------------------------------------------------ stage handlers
-    def sync(self, first: str, second: str) -> dict:
-        """Line up two recordings of the same event by their sound and remember it on both, so that a cut can switch camera at the same instant."""
-        from nexora.modules.library.sync import best_offset
-        envelopes = []
-        for asset_id in (first, second):
-            original = self._assets.original(asset_id)
-            if not original.metadata.get("probe", {}).get("has_audio"):
-                raise ValueError("no_audio")
-            versions = {v.role: v for v in self._assets.versions(asset_id)}
-            path = self._assets.path_of(original)
-            path = path if path.is_file() else self._assets.path_of(versions["proxy"])
-            envelopes.append(self._adapters.submit("ffmpeg", Request("envelope", inputs={"path": str(path)}, params={"out": str(self._media / f"{asset_id}.raw")})).outputs)
-        offset, sure = best_offset(envelopes[0]["envelope"], envelopes[1]["envelope"], envelopes[0]["rate"])
-        if sure < MIN_SYNC_CONFIDENCE:
-            raise ValueError("not_alike")
-        for asset_id, other, shift in ((first, second, offset), (second, first, -offset)):
-            original = self._assets.original(asset_id)
-            self._assets.update_metadata(original.version_id, angles={**original.metadata.get("angles", {}), other: shift})
-        return {"offset": offset, "confidence": sure}
-
     def _source(self, ctx):
         original = self._assets.original(ctx.subject_ref)
         path = self._assets.path_of(original)

@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from nexora.api.app import create_app
 from nexora.app import build
 from nexora.core.states import RunStatus
-from nexora.modules.library.transcribe import sentences
+from nexora.modules.intelligence.transcribe import sentences
 
 from tests.conftest import make_video
 from tests.fakes import FakeModel, FakeSpeech
@@ -45,12 +45,12 @@ def test_the_shoot_the_date_and_the_operators_note_reach_the_description_and_a_c
     system.library.annotate(asset, note="Bà Tư bán cao lầu ở chợ Hội An")
     assert system.index.search("cao lầu", level=("segment", "note"))[0].moment.level == "note"       # found by the note at once
     model.prompts.clear()
-    system.library.understand(asset, force=True)
+    system.intelligence.understand(asset, force=True)
     drain(system)
     again = [p for p in model.prompts if "khung hình liên tiếp" in p]
     assert len(again) == 2 and all("Ghi chú của người quay: Bà Tư bán cao lầu" in p for p in again)       # the old answers were to another question
     model.prompts.clear()
-    system.library.understand(asset, force=True)
+    system.intelligence.understand(asset, force=True)
     drain(system)
     assert not [p for p in model.prompts if "khung hình liên tiếp" in p]                                  # same note: cached
 
@@ -65,14 +65,14 @@ def test_one_stretch_can_be_looked_at_frame_by_frame(tmp_path):
     drain(system)
     segment = system.index.moments(asset, level="segment")[0]
     looked = model.calls["describe"]
-    made = system.library.deepen(segment.moment_id)
+    made = system.intelligence.deepen(segment.moment_id)
     frames = system.index.moments(asset, level="frame")
     assert len(made) == len(frames) == len(segment.data["frames"]) == model.calls["describe"] - looked
     assert all(segment.t_start <= f.t_start < f.t_end <= segment.t_end for f in frames) and [f.t_start for f in frames] == sorted(f.t_start for f in frames)
     assert system.index.without_vectors(asset) == []
     assert system.index.search("cá tươi", level="frame") and len(system.index.moments(asset, level="segment")) == 2      # segments untouched
     with pytest.raises(ValueError):
-        system.library.deepen(frames[0].moment_id)
+        system.intelligence.deepen(frames[0].moment_id)
 
 
 def test_words_are_grouped_into_sentences_at_a_stop_a_pause_or_when_they_run_long():
@@ -90,7 +90,7 @@ def test_footage_with_sound_is_listened_to_and_what_was_said_is_searchable_while
     talking, _ = system.library.ingest(camera(tmp_path / "noi.mp4", room_sound(tmp_path / "s.wav", 1), seconds=8))
     silent, _ = system.library.ingest(make_video(tmp_path / "im.mp4", picture=4))
     drain(system)
-    assert speech.calls == 1 and system.library.transcribe(silent) is None
+    assert speech.calls == 1 and system.intelligence.transcribe(silent) is None
     run = next(r for r in system.orch.runs_for_subject(talking) if system.orch.pipeline_of(r) == "library.transcribe")
     assert system.orch.run_status(run) is RunStatus.SUCCEEDED
     said = system.index.moments(talking, level="speech")
@@ -103,7 +103,7 @@ def test_footage_with_sound_is_listened_to_and_what_was_said_is_searchable_while
     assert system.index.search("hội an buổi sáng") == [] or all(h.moment.level == "segment" for h in system.index.search("hội an buổi sáng"))   # matching to pictures is unchanged
 
     speech.text = "một bản ghi khác."
-    system.library.transcribe(talking, force=True)
+    system.intelligence.transcribe(talking, force=True)
     drain(system)
     assert [m.text for m in system.index.moments(talking, level="speech")] == ["một bản ghi khác."]         # listening again replaces, never piles up
 
@@ -167,7 +167,7 @@ def test_the_real_speech_tool_hears_vietnamese_with_a_time_for_every_word(tmp_pa
 
 
 def test_a_sentence_the_speech_model_invents_in_silence_is_taken_out_with_its_reason():
-    from nexora.modules.library.transcribe import drop_invented, sentences
+    from nexora.modules.intelligence.transcribe import drop_invented, sentences
     words, t = [], 0.0
     for text in ["em đi đâu anh đi theo đó.", *["hãy subscribe cho kênh la school để không bỏ lỡ những video hấp dẫn."] * 4, "cá tươi nằm trên sạp."]:
         for token in text.split():
@@ -180,7 +180,7 @@ def test_a_sentence_the_speech_model_invents_in_silence_is_taken_out_with_its_re
 
 
 def test_a_sentence_said_twice_by_a_person_stays_and_one_heard_without_any_voice_goes_only_when_the_model_was_unsure():
-    from nexora.modules.library.transcribe import drop_invented
+    from nexora.modules.intelligence.transcribe import drop_invented
     said = [{"t_start": 0.0, "t_end": 1.0, "text": "ngon quá.", "words": [{"p": 0.9}]}, {"t_start": 1.5, "t_end": 2.5, "text": "ngon quá.", "words": [{"p": 0.9}]},
             {"t_start": 10.0, "t_end": 11.0, "text": "trăng bí bên này.", "words": [{"p": 0.3}]}, {"t_start": 12.0, "t_end": 13.0, "text": "chào anh.", "words": [{"p": 0.95}]}]
     windows = [{"t": t / 2, "d": 1.0, "top": [["speech", 0.9]] if t < 6 else [["wind", 0.8]]} for t in range(0, 28)]
@@ -190,7 +190,7 @@ def test_a_sentence_said_twice_by_a_person_stays_and_one_heard_without_any_voice
 
 
 def test_words_are_brought_in_to_where_their_sound_is():
-    from nexora.modules.library.transcribe import tighten
+    from nexora.modules.intelligence.transcribe import tighten
     envelope = [5.0] * 100 + [3000.0] * 30 + [5.0] * 2000 + [3000.0] * 40 + [5.0] * 100      # 100 per second: voice at 1.0-1.3 s and 21.3-21.7 s
     words = [{"text": "phim", "start": 0.9, "end": 21.0, "p": 0.9}, {"text": "đẹp", "start": 21.0, "end": 23.0, "p": 0.9}]
     out = tighten(words, envelope, 100)
@@ -199,7 +199,7 @@ def test_words_are_brought_in_to_where_their_sound_is():
 
 
 def test_a_word_left_over_from_an_invented_sentence_goes_with_it():
-    from nexora.modules.library.transcribe import drop_invented
+    from nexora.modules.intelligence.transcribe import drop_invented
     said = [{"t_start": 0.0, "t_end": 2.0, "text": "Hãy subscribe cho kênh Ghiền", "words": [{"p": 0.5}]},
             {"t_start": 2.0, "t_end": 2.3, "text": "Mì", "words": [{"p": 0.5}]},
             {"t_start": 2.3, "t_end": 5.0, "text": "Gõ để không bỏ lỡ những video hấp dẫn", "words": [{"p": 0.5}]},
@@ -210,7 +210,7 @@ def test_a_word_left_over_from_an_invented_sentence_goes_with_it():
 
 def test_two_voices_are_told_apart_by_their_sound():
     import numpy as np
-    from nexora.modules.library.transcribe import speakers, voice_print
+    from nexora.modules.intelligence.transcribe import speakers, voice_print
     rate = 16000
     t = np.arange(int(rate * 1.5)) / rate
     def voice(pitch, seed):

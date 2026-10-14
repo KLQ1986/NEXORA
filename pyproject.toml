@@ -42,8 +42,23 @@ type = "independence"
 modules = [
     "nexora.modules.planning",
     "nexora.modules.library",
+    "nexora.modules.intelligence",
     "nexora.modules.sourcing",
     "nexora.modules.edit",
     "nexora.modules.quality",
     "nexora.modules.distribution",
 ]
+
+[[tool.importlinter.contracts]]
+name = "Only the Video Intelligence domain writes the canonical model; every other module reads it"
+type = "forbidden"
+source_modules = [
+    "nexora.modules.planning",
+    "nexora.modules.library",
+    "nexora.modules.sourcing",
+    "nexora.modules.edit",
+    "nexora.modules.quality",
+    "nexora.modules.distribution",
+    "nexora.agents",
+]
+forbidden_modules = ["nexora.core.intelligence_store"]

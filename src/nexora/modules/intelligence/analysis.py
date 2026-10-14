@@ -13,8 +13,8 @@ from nexora.core.adapter import AdapterError, AdapterRegistry, ErrorCode, Reques
 from nexora.core.assets import AssetStore
 from nexora.core.pipeline import PipelineDefinition, StageDef
 from nexora.core.timebase import to_seconds
-from nexora.modules.library import signals as measures
-from nexora.modules.library.structure import Rules, build, coverage_faults
+from nexora.modules.intelligence import signals as measures
+from nexora.modules.intelligence.structure import Rules, build, coverage_faults
 
 STRUCTURE = PipelineDefinition("library.structure", "1", [
     StageDef("signals", timeout_seconds=6 * 3600, lane="background", requires=("ffmpeg",)),

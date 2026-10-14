@@ -56,7 +56,7 @@ def test_library_lists_assets_with_what_the_screen_needs_and_serves_their_media(
         pass
     item = client.get("/api/v1/library").json()["assets"][0]
     assert item["name"] == "tail.mp4" and item["ingest"]["status"] == "succeeded" and item["online"] is True
-    assert item["duration"] > 3 and len(item["black_ranges"]) == 1 and len(item["ingest"]["stages"]) == 7
+    assert item["duration"] > 3 and len(item["black_ranges"]) == 1 and len(item["ingest"]["stages"]) == 5      # taking a file in; analysing it is Video Intelligence's work
     thumb = client.get(item["thumbnail_url"])
     assert thumb.status_code == 200 and thumb.headers["content-type"] == "image/jpeg"
     part = client.get(item["proxy_url"], headers={"Range": "bytes=0-99"})

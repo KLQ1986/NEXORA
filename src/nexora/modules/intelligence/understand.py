@@ -13,8 +13,8 @@ from nexora.core.assets import AssetStore
 from nexora.core.index import MomentIndex
 from nexora.core.pipeline import PipelineDefinition, StageDef
 from nexora.core.timebase import to_seconds
-from nexora.modules.library import vocab
-from nexora.modules.library.profile import cross_checks
+from nexora.modules.intelligence import vocab
+from nexora.modules.intelligence.profile import cross_checks
 
 UNDERSTAND = PipelineDefinition("library.understand", "1", [
     StageDef("segments", requires=("ffmpeg",)),
@@ -83,7 +83,7 @@ def model_labels(out: dict, profile: dict) -> dict:
             continue
         confidence = "medium"
         if key == "co_canh" and profile.get("shot_size"):
-            from nexora.modules.library.profile import SIZE_RANK
+            from nexora.modules.intelligence.profile import SIZE_RANK
             gap = abs(SIZE_RANK[value] - SIZE_RANK[profile["shot_size"]["value"]])
             confidence = "high" if gap == 0 else ("medium" if gap == 1 else "low")
         elif key == "noi_chon" and profile.get("place"):
@@ -435,7 +435,7 @@ class Understanding:
 
     def _events(self, asset_id: str, segments) -> int:
         """Join beats showing one action into events (design group 07) and make them findable."""
-        from nexora.modules.library.profile import events_of
+        from nexora.modules.intelligence.profile import events_of
         structure = self._structure_of(asset_id) or {}
         shots = [{"start": to_seconds(s["start"], 2), "end": to_seconds(s["end"], 2)} for s in structure.get("shots", [])]
         found = self._signals_of(asset_id)

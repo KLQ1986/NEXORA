@@ -5,8 +5,8 @@ import tracemalloc
 import numpy as np
 
 from nexora.core.timebase import TICKS_PER_SECOND, frame_ticks, frame_time, to_seconds, to_ticks
-from nexora.modules.library.signals import HEIGHT, WIDTH, Signals, analyse
-from nexora.modules.library.structure import Rules, build, coverage_faults, detect_cuts, detect_dissolves
+from nexora.modules.intelligence.signals import HEIGHT, WIDTH, Signals, analyse
+from nexora.modules.intelligence.structure import Rules, build, coverage_faults, detect_cuts, detect_dissolves
 
 from tests.library.synthetic import dissolve, film, panning_shot, still_shot, view
 
