@@ -95,6 +95,8 @@ class Library:
         from nexora.modules.library.understand import UNDERSTAND
         if self._understanding is None or "duplicate_of" in self._assets.original(asset_id).metadata:
             return None
+        if force:
+            self._orch.supersede(UNDERSTAND.pipeline_id, asset_id)       # an earlier run still waiting would only do the same work again
         return self._orch.submit_run(UNDERSTAND, subject_ref=asset_id, idempotency_key=None if force else f"understand:{asset_id}")
 
     def transcribe(self, asset_id: str, *, force: bool = False) -> str | None:

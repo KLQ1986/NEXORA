@@ -382,6 +382,8 @@ Thiết kế: `docs/superpowers/specs/2026-10-13-footage-understanding-design.md
 
 Ba nhịp ấy sau đó đã có mô tả: khi mô hình trả lời hỏng cả với ba khung, nó được hỏi lần cuối với riêng khung giữa. 10 clip DJI tự quay được nhập vào kho thật cùng ngày. Trên clip `0050` (144 giây, máy lùi dọc một lối đi), nhãn đo khớp với hình: các nhịp mang nhãn "kéo ra" đúng là lúc máy lùi ra xa, hai nhịp "máy tĩnh" là lúc dừng.
 
+Việc nhập clip dài 8 phút lộ ra một lỗi, đã sửa: hai lượt mô tả của cùng một video chạy chồng nhau (lượt sau bắt đầu khi lời nói vừa được chép xong) và lượt sau xoá khung hình lượt trước đang dùng. Nay mỗi lượt xuất khung vào thư mục riêng rồi chuyển khung được chọn vào thư mục chung, và khung đã giữ thì không bị xoá. Sau khi sửa, cả 16 video của kho thật đều được chia và mô tả đủ mọi nhịp, không video nào hở hoặc chồng nhịp.
+
 **Người vận hành nghiệm thu đợt 1 ngày 2026-10-14.**
 
 Cùng lượt đo đó lộ ra một lỗi thật, đã sửa: mô hình 7B trả lời hỏng khi được xem tới 8 khung một lúc (18 nhịp không có mô tả). Nay nó được hỏi lại với ba khung.

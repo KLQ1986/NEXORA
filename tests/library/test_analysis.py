@@ -131,10 +131,14 @@ def test_a_mark_of_the_operator_is_kept_through_later_divisions_and_only_changed
     before = beat_seconds(system.library.analysis.structure(asset))
     assert before == [(0.0, 4.0), (4.0, 8.0)]
     calls = model.calls["describe"]
+    first_frames = [f for m in system.index.moments(asset, level="segment") for f in m.data["frames"]]
     made = system.library.mark_boundary(asset, kind="beat", op="add", t=6.0)
     drain(system)
     assert beat_seconds(made) == [(0.0, 4.0), (4.0, 6.0), (6.0, 8.0)]
     assert model.calls["describe"] == calls + 2                            # the first shot was left alone and nobody looked at it again
+    assert all(Path(f).is_file() for f in first_frames)                    # frames an earlier run chose are never taken away by a later one
+    folder = Path(first_frames[0]).parent
+    assert [p.name for p in folder.parent.iterdir() if p.name.startswith(folder.name + ".")] == []     # and no run leaves its own folder behind
     assert [(m.t_start, m.t_end) for m in system.index.moments(asset, level="segment")] == beat_seconds(made)
 
     system.library.analysis.rules = Rules(max_beat_seconds=15.0, cut_sensitivity=100.0, min_beat_seconds=1.0)      # a rule is changed

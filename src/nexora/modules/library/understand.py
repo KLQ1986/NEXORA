@@ -4,6 +4,8 @@ Works from the picture alone; no stage depends on speech. Descriptions are cache
 analyzer, and a text corrected by the operator is never overwritten.
 """
 import hashlib
+import os
+import shutil
 from pathlib import Path
 
 from nexora.core.adapter import AdapterError, AdapterRegistry, ErrorCode, Request
@@ -143,18 +145,29 @@ class Understanding:
     def _beats(self, ctx, original, source: Path, structure: dict) -> list[dict]:
         """The beats of measured footage as the segments to describe, each with the frames it chose to be looked at. Segments
         left over from an earlier division go: one the operator corrected is kept as a note on the same stretch."""
-        out_dir = self._media / original.checksum[:2] / f"{original.checksum}_beats"
-        frames = self._adapters.submit("ffmpeg", Request("frames", inputs={"path": str(source)}, params={"out_dir": str(out_dir), "fps": BEAT_FRAME_FPS},
-                                                        attempt_id=ctx.claim.attempt_id)).outputs["frames"]
-        segments, wanted = [], set()
-        for beat in structure["beats"]:
-            picks = list(dict.fromkeys(frames[min(len(frames) - 1, max(0, round(t * BEAT_FRAME_FPS)))] for t in beat["frames"])) if frames else []
-            wanted.update(picks)
-            segments.append({"t_start": to_seconds(beat["start"], 2), "t_end": to_seconds(beat["end"], 2), "frames": picks, "labels": beat["labels"],
-                             "shot": beat["shot"], "start_tick": beat["start"], "end_tick": beat["end"]})
-        for path in frames:
-            if path not in wanted:
-                Path(path).unlink(missing_ok=True)
+        # Frames are drawn into a folder of this attempt's own and the chosen ones are then moved into the footage's folder
+        # under the name of their place in time. Two runs over the same footage (one started when its words became known,
+        # while another was still describing) therefore never take a frame from under each other: a frame, once kept, stays.
+        kept = self._media / original.checksum[:2] / f"{original.checksum}_beats"
+        kept.mkdir(parents=True, exist_ok=True)
+        drawn = kept.with_name(f"{kept.name}.{ctx.claim.attempt_id or 'draw'}")
+        try:
+            frames = self._adapters.submit("ffmpeg", Request("frames", inputs={"path": str(source)}, params={"out_dir": str(drawn), "fps": BEAT_FRAME_FPS},
+                                                            attempt_id=ctx.claim.attempt_id)).outputs["frames"]
+            segments = []
+            for beat in structure["beats"]:
+                picks = []
+                for t in beat["frames"] if frames else []:
+                    made = Path(frames[min(len(frames) - 1, max(0, round(t * BEAT_FRAME_FPS)))])
+                    place = kept / made.name
+                    if not place.is_file() and made.is_file():
+                        os.replace(made, place)
+                    if str(place) not in picks:
+                        picks.append(str(place))
+                segments.append({"t_start": to_seconds(beat["start"], 2), "t_end": to_seconds(beat["end"], 2), "frames": picks, "labels": beat["labels"],
+                                 "shot": beat["shot"], "start_tick": beat["start"], "end_tick": beat["end"]})
+        finally:
+            shutil.rmtree(drawn, ignore_errors=True)
         ranges = {(s["t_start"], s["t_end"]) for s in segments}
         for old in self._index.moments(ctx.subject_ref, level="segment"):
             if (old.t_start, old.t_end) in ranges:
