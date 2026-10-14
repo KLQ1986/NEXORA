@@ -93,6 +93,12 @@ class Intelligence:
                 publish.summary(self.store, asset_id, video[0].data["detail"])
             sentences = index.moments(asset_id, level="speech")
             publish.speech(self.store, asset_id, sentences, BY_NAME["speech"]); done["sentences"] = len(sentences)
+        if self.profiler is not None and done.get("profile"):
+            shoot = self.profiler.shoot_of(asset_id)
+            publish.scenes(self.store, self.profiler.scenes(shoot), shoot, BY_NAME["scenes"])
+            everyone = [a["asset_id"] for a in self._assets.assets() if a["kind"] == "video"]
+            publish.entities(self.store, "person", self.profiler.people(everyone))
+            publish.entities(self.store, "place", self.profiler.places(everyone))
         return done
 
     def settle_flag(self, moment_id: str, index: int, state: str, note: str | None = None) -> list[dict]:
