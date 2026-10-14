@@ -60,7 +60,7 @@ class AppleVision(Adapter):
         self._tool = tool
 
     def describe(self) -> Capability:
-        return Capability(name="vision", operations=("look",), runs="local")
+        return Capability(name="vision", operations=("look", "read"), runs="local")
 
     def environment(self) -> dict:
         return self._tool.environment()
@@ -76,7 +76,7 @@ class AppleVision(Adapter):
         with tempfile.TemporaryDirectory() as work:
             listing = Path(work) / "frames.json"
             listing.write_text(json.dumps(paths), encoding="utf-8")
-            done = run_process([str(binary), "look", str(listing)], timeout=request.deadline_seconds or 60 + 5 * len(paths))
+            done = run_process([str(binary), request.operation, str(listing)], timeout=request.deadline_seconds or 60 + 5 * len(paths))
         if done.returncode != 0:
             raise AdapterError(ErrorCode.INTERNAL, f"the picture helper failed: {done.stderr.strip()[-200:]}")
         pictures = [json.loads(line) for line in done.stdout.splitlines() if line.startswith("{")]

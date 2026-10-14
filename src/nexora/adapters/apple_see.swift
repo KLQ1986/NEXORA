@@ -142,6 +142,25 @@ switch args[1] {
 case "look":
     let list = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: args[2]))) as! [String]
     for path in list { autoreleasepool { emit(look(path)) } }
+case "read":
+    // Text only, for a second look at frames drawn larger where small text was likely (a phone, a screen, a page).
+    let list = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: args[2]))) as! [String]
+    for path in list {
+        autoreleasepool {
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.recognitionLanguages = ["vi-VT", "en-US"]
+            request.usesLanguageCorrection = true
+            request.minimumTextHeight = 0.008
+            let handler = VNImageRequestHandler(url: URL(fileURLWithPath: path))
+            try? handler.perform([request])
+            let text = (request.results ?? []).compactMap { t -> [String: Any]? in
+                guard let c = t.topCandidates(1).first else { return nil }
+                return ["text": c.string, "confidence": round4(Double(c.confidence)), "box": box(t.boundingBox)]
+            }
+            emit(["path": path, "text": text])
+        }
+    }
 case "listen":
     let window = args.count > 3 ? Double(args[3]) ?? 1.0 : 1.0
     let hop = args.count > 4 ? Double(args[4]) ?? 0.5 : 0.5

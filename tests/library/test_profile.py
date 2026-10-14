@@ -326,3 +326,9 @@ def test_the_cameras_own_record_gives_its_angle_tilt_and_turning():
     second = telemetry.beat_fields(records, 30.0, 1.0, 2.0)
     assert first["angle"]["value"] == "từ trên xuống" and second["angle"]["value"] == "ngang tầm"
     assert second["turning"]["value"] == pytest.approx(60.0, abs=3) and first["turning"]["value"] == 0.0
+
+
+def test_a_hand_over_the_main_thing_is_holding_it():
+    pictures = [{"faces": [], "humans": [], "hands": [{"box": [0.4, 0.4, 0.2, 0.2], "confidence": 0.9}], "classes": [["phone", 0.8]], "salient": [[0.3, 0.3, 0.4, 0.4]]}] * 3
+    fields = P.profile_beat(0.0, 1.5, pictures, [], words=[], events=[], momentary=[], audio={}, camera=None, spans=[], log_profile=False)
+    assert fields["holding"]["value"] == ["người", "cầm", "điện thoại"]

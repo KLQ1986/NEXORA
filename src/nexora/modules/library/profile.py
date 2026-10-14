@@ -229,6 +229,8 @@ def size_from_people(face_h: float, body_h: float) -> tuple[str, str] | None:
     return None
 
 
+TEXTY = frozenset({"phone", "computer", "computer_monitor", "laptop", "screenshot", "document", "printed_page", "handwriting", "sign", "street_sign",
+                   "billboards", "banner", "book", "magazine", "newspaper", "television", "chalkboard", "whiteboard", "receipt", "menu"})
 WIDE_SCENE = frozenset({"sky", "blue_sky", "cloudy", "cityscape", "mountain", "hill", "ocean", "beach", "landscape", "forest", "rice_field", "lake",
                         "river", "desert", "canyon", "night_sky", "sunset_sunrise", "skyscraper", "harbour", "island", "waterfall", "field"})
 CLOSE_THINGS = frozenset({"food", "dish", "drink", "beverage", "cup", "mug", "coffee", "plate", "bowl", "flower", "dessert", "cake", "fruit", "hand",
@@ -321,6 +323,12 @@ def r128_between(momentary: list[float], start: float, end: float) -> float | No
 
 
 # ------------------------------------------------------------------------------------------------------------------ text
+def _inside(a, b) -> bool:
+    """Whether box `a` lies mostly within box `b`."""
+    w, h = max(0.0, min(a[0] + a[2], b[0] + b[2]) - max(a[0], b[0])), max(0.0, min(a[1] + a[3], b[1] + b[3]) - max(a[1], b[1]))
+    return a[2] * a[3] > 0 and w * h / (a[2] * a[3]) > 0.5
+
+
 def _iou(a, b) -> float:
     ax1, ay1, bx1, by1 = a[0] + a[2], a[1] + a[3], b[0] + b[2], b[1] + b[3]
     w, h = max(0.0, min(ax1, bx1) - max(a[0], b[0])), max(0.0, min(ay1, by1) - max(a[1], b[1]))
@@ -467,6 +475,12 @@ def profile_beat(start: float, end: float, pictures: list[dict], measures: list[
             value = median_size([s for s, _ in sizes])
             conf = "high" if all(c == "high" for _, c in sizes) else ("low" if any(c == "low" for _, c in sizes) else "medium")
             fields["shot_size"] = label(value, "measured", conf, by=how, face_height=max(f["face_height"] for f in found) or None)
+        held = sum(1 for p in pictures if any(_iou(h["box"], (p.get("salient") or [[0, 0, 0, 0]])[0]) > 0.05 or _inside(h["box"], (p.get("salient") or [[0, 0, 0, 0]])[0])
+                                               for h in p.get("hands") or []))
+        if held >= max(2, len(pictures) // 2):
+            thing = next((vocab.VISION[c] for c, conf in sorted(((c, conf) for p in pictures for c, conf in p.get("classes") or []), key=lambda x: -x[1])
+                          if c in vocab.VISION and c not in ("outdoor", "interior_room", "people", "adult", "sky", "blue_sky")), "vật")
+            fields["holding"] = label(["người", "cầm", thing], "measured", "medium", frames=held, note="tay chồng lên vật nổi bật")
         postures = [x for f in found for x in f["postures"]]
         if postures:
             fields["posture"] = label(max(set(postures), key=postures.count), "recognized", "medium")
