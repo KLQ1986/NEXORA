@@ -155,7 +155,8 @@ def test_the_radar_measures_unused_footage_and_how_well_the_library_answers_a_to
     shot = system.projects.script(script)["shots"][0]
     system.projects.set_selection(shot.shot_id, status="accepted", asset_id=used, t_in=0.0, t_out=2.0)
     radar = system.planning.radar(["cá tươi trên sạp", "tên lửa phóng lên quỹ đạo"])
-    assert [(s["subject"], s["videos"], s["unused_videos"]) for s in radar["subjects"]] == [("thử nghiệm", 2, 1)]
+    # The fake model's topic ("thử nghiệm") appears in no described beat, so a grounded summary drops it.
+    assert [(s["subject"], s["videos"], s["unused_videos"]) for s in radar["subjects"]] == [("chưa rõ chủ đề", 2, 1)]
     assert radar["unused"][0]["examples"][0]["asset_id"] == spare and radar["unused"][0]["unused_seconds"] == pytest.approx(8, abs=1)
     fish, rocket = radar["watched"]
     assert fish["moments"] >= 1 and fish["verdict"] != "chưa có hình" and (rocket["moments"], rocket["verdict"]) == (0, "chưa có hình")
