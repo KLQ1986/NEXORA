@@ -233,3 +233,16 @@ def test_a_shoot_is_grouped_into_scenes_across_files_by_time_place_and_picture()
 def test_a_beat_print_is_the_unit_mean_of_its_frames():
     prints = np.array([[1, 0], [1, 0], [0, 1], [0, 1]], np.float16)
     assert np.allclose(P.beat_print(prints, 0.5, 0.0, 1.0), [1, 0]) and np.allclose(P.beat_print(prints, 0.5, 0.0, 2.0), [0.7071, 0.7071], atol=1e-3)
+
+
+def test_text_being_typed_is_one_stretch_and_a_fragment_read_once_is_dropped():
+    box = [0.3, 0.4, 0.3, 0.05]
+    typed = ["Anh Cần", "Anh Cần cho em", "Anh Cần cho em hỏi", "Anh Cần cho em hỏi hồ sơ"]
+    pictures = [{"text": [_text(t, box)]} for t in typed] + [{"text": [_text("Gang câu", [0.1, 0.1, 0.1, 0.04], 0.5)]}]
+    spans = P.text_spans(pictures, step=0.5, duration=3.0)
+    assert [s["text"] for s in spans] == ["Anh Cần cho em hỏi hồ sơ"]
+
+
+def test_hands_seen_from_the_operators_eyes_are_one_person():
+    hands = {"faces": [], "humans": [], "hands": [{"box": [0.4, 0.5, 0.2, 0.3], "confidence": 0.9}, {"box": [0.1, 0.5, 0.2, 0.3], "confidence": 0.8}]}
+    assert P.people_in(hands)["count"] == 1 and P.people_in({"faces": [], "humans": [], "hands": []})["count"] == 0

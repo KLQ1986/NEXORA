@@ -46,6 +46,8 @@ func look(_ path: String) -> [String: Any] {
     let humans = VNDetectHumanRectanglesRequest()
     humans.upperBodyOnly = false
     let poses = VNDetectHumanBodyPoseRequest()
+    let hands = VNDetectHumanHandPoseRequest()
+    hands.maximumHandCount = 4
     let animals = VNRecognizeAnimalsRequest()
     let text = VNRecognizeTextRequest()
     text.recognitionLevel = .accurate
@@ -56,7 +58,7 @@ func look(_ path: String) -> [String: Any] {
     let aesthetics = VNCalculateImageAestheticsScoresRequest()
     let print = VNGenerateImageFeaturePrintRequest()
     do {
-        try handler.perform([classify, faces, humans, poses, animals, text, horizon, salient, aesthetics, print])
+        try handler.perform([classify, faces, humans, poses, hands, animals, text, horizon, salient, aesthetics, print])
         try? handler.perform([quality])
     } catch {
         out["error"] = "\(error)"
@@ -82,6 +84,14 @@ func look(_ path: String) -> [String: Any] {
         var joints: [String: Any] = [:]
         for (name, joint) in names { if let p = point(try? pose.recognizedPoint(joint)) { joints[name] = p } }
         return joints
+    }
+    out["hands"] = (hands.results ?? []).compactMap { h -> [String: Any]? in
+        guard h.confidence > 0.3, let pts = try? h.recognizedPoints(.all) else { return nil }
+        let seen = pts.values.filter { $0.confidence > 0.3 }
+        guard seen.count >= 6 else { return nil }
+        let xs = seen.map { Double($0.location.x) }, ys = seen.map { Double(1 - $0.location.y) }
+        return ["box": [xs.min()!, ys.min()!, xs.max()! - xs.min()!, ys.max()! - ys.min()!].map(round4), "confidence": round4(Double(h.confidence)),
+                "chirality": h.chirality == .left ? "left" : h.chirality == .right ? "right" : "unknown"]
     }
     out["animals"] = (animals.results ?? []).map { a -> [String: Any] in
         ["box": box(a.boundingBox), "label": a.labels.first?.identifier ?? "", "confidence": round4(Double(a.labels.first?.confidence ?? 0))]

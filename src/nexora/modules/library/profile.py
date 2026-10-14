@@ -25,9 +25,9 @@ import numpy as np
 
 from nexora.modules.library import vocab
 
-VERSION = "1"
+VERSION = "2"
 LOOK_FPS = 2.0                    # frames looked at a second
-LOOK_WIDTH = 448
+LOOK_WIDTH = 960                  # wide enough to read the text on a phone held in the frame; at 448 it came out garbled
 LEVEL_RATE = 10                   # loudness values a second
 
 
@@ -180,10 +180,12 @@ def people_in(picture: dict) -> dict:
     """People in one looked-at picture: how many, the biggest face and body, poses."""
     faces = [f for f in picture.get("faces") or [] if f.get("confidence", 1) >= 0.5]
     humans = [h for h in picture.get("humans") or [] if h.get("confidence", 1) >= 0.4]
-    count = max(len(faces), len(humans))
+    hands = [h for h in picture.get("hands") or [] if h.get("confidence", 1) >= 0.5]
+    # Footage filmed from the operator's own eyes shows hands and no face or body: one or two hands are one person.
+    count = max(len(faces), len(humans), (len(hands) + 1) // 2 if hands else 0)
     face_h = max((f["box"][3] for f in faces), default=0.0)
     body_h = max((h["box"][3] for h in humans), default=0.0)
-    return {"count": count, "faces": len(faces), "face_height": round(face_h, 3), "body_height": round(body_h, 3),
+    return {"count": count, "faces": len(faces), "hands": len(hands), "face_height": round(face_h, 3), "body_height": round(body_h, 3),
             "postures": [p for p in (posture(j) for j in picture.get("poses") or []) if p]}
 
 
@@ -325,8 +327,7 @@ def text_spans(pictures: list[dict], *, step: float, duration: float, camera_mov
         seen = [x for x in picture.get("text") or [] if x.get("confidence", 0) >= 0.5 and len(x.get("text", "").strip()) >= 2]
         still_open = []
         for span in open_spans:
-            match = next((x for x in seen if _iou(x["box"], span["boxes"][-1]) > 0.3 and
-                          difflib.SequenceMatcher(None, x["text"].lower(), span["texts"][-1].lower()).ratio() >= 0.7), None)
+            match = next((x for x in seen if _iou(x["box"], span["boxes"][-1]) > 0.2 and _same_line(x["text"], span["texts"][-1])), None)
             if match is not None:
                 span["texts"].append(match["text"]); span["boxes"].append(match["box"]); span["times"].append(t); span["conf"].append(match["confidence"])
                 seen.remove(match)
@@ -341,7 +342,10 @@ def text_spans(pictures: list[dict], *, step: float, duration: float, camera_mov
     done += open_spans
     spans = []
     for span in done:
-        text = max(set(span["texts"]), key=span["texts"].count)
+        if len(span["times"]) == 1 and min(span["conf"]) < 0.9:
+            continue                     # read once and not surely: a fragment, most often of text going past or being typed
+        # The longest reading that most others agree with: text being typed grows, and its last full form is what was meant.
+        text = max(span["texts"], key=lambda t: (sum(_same_line(t, o) for o in span["texts"]), len(t)))
         start, end = max(0.0, span["times"][0] - step / 2), min(duration, span["times"][-1] + step / 2)
         boxes = np.array(span["boxes"])
         box = [round(float(v), 4) for v in boxes.mean(0)]
@@ -351,6 +355,15 @@ def text_spans(pictures: list[dict], *, step: float, duration: float, camera_mov
                       "confidence": "high" if min(span["conf"]) >= 0.8 and len(span["times"]) >= 2 else "medium",
                       "source": "recognized", "frames": len(span["times"]), "size": round(box[3], 4)})
     return sorted(spans, key=lambda s: (s["start"], s["box"][1]))
+
+
+def _same_line(a: str, b: str) -> bool:
+    """Two readings of one line of text: alike, or one the start of the other (a line being typed)."""
+    a, b = a.lower().strip(), b.lower().strip()
+    if not a or not b:
+        return False
+    short, long = sorted((a, b), key=len)
+    return difflib.SequenceMatcher(None, a, b).ratio() >= 0.7 or (len(short) >= 4 and long.startswith(short[: max(4, len(short) - 2)]))
 
 
 def text_kind(box, start: float, end: float, duration: float, *, moved: float, camera_moved: bool, text: str, words: list[dict] | None) -> str:
