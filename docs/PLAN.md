@@ -427,6 +427,23 @@ Người vận hành đưa ra 16 nhóm thông tin cần nhận diện trên mộ
 | Trong nhà hay ngoài trời (mô hình) | 100% | phủ cả phòng tắm; đứng thay khi nhận diện bỏ trống |
 | Có chữ trên hình | 96,7% | sót số phòng nhỏ |
 
+**Đo lại trên 55 nhịp (thêm 25 nhịp của clip 0073: tay, điện thoại, trong nhà), sau các sửa đổi, 2026-10-15:**
+
+| Trường | Đúng | Phủ | Trạng thái |
+|---|---|---|---|
+| Góc máy (cảm biến DJI) | 100% (55/55) | 100% | phát hành |
+| Số người (nhận diện, có bàn tay) | 96,4% | 100% | phát hành |
+| Số người (mô hình) | 94,5% | 100% | phát hành |
+| Trong nhà hay ngoài trời (mô hình) | 100% | 98% | phát hành; đứng thay khi nhận diện bỏ trống |
+| Cỡ cảnh (đo) | 88,6% | 64% | rút: footage cầm tay không đo được cỡ cảnh; hệ thống bỏ trống thay vì đoán |
+| Có chữ trên hình | 87,3% | 100% | rút: chữ nghiêng và mờ trên màn hình điện thoại |
+| Cỡ cảnh (mô hình) | 21,8% | | không dùng |
+| Góc máy (mô hình) | 47,3% | | không dùng |
+
+**So hai mô hình nhìn trên cùng 55 nhịp, cùng prompt phiên bản 3:** `qwen3-vl:8b-instruct` không có câu trả lời hỏng (bản `qwen2.5vl:7b` hỏng 6/55), không lẫn tiếng Anh, số người 95% và nơi chốn 100% như nhau, cỡ cảnh đều kém (36–39%), chậm hơn khoảng 9%. Đề xuất đổi sang `qwen3-vl:8b-instruct`; chờ người vận hành quyết.
+
+Hai nhãn "không có chữ" của Claude ở clip 0050 là sai (số phòng nhỏ trên tường nhà mà OCR đọc được) và đã sửa; nhãn chữ của Claude trên 0050 nhìn chung còn sơ sài.
+
 Nhãn do Claude gán là tạm, ghi `labelled_by = claude`; người vận hành xác nhận hoặc sửa ở Thư viện, mỗi thay đổi được ghi lịch sử. Bộ nhãn này lệch về cảnh toàn ngoài trời; 25 nhịp của clip 0073 (tay, điện thoại, chữ trên màn hình, trong nhà) được thêm để cân lại.
 
 ### Còn lại sau lượt này
