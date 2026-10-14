@@ -64,6 +64,11 @@ class Producer:
         rows = self._conn.execute("SELECT task_id FROM agent_tasks WHERE (? IS NULL OR project_id = ?) ORDER BY created_at DESC", (project_id, project_id))
         return [self.task(r[0]) for r in rows]
 
+    def forget_project(self, project_id: str) -> int:
+        """A project has been deleted: what the producer did for it goes with it. Returns how many tasks were dropped."""
+        with db.write(self._conn) as c:
+            return c.execute("DELETE FROM agent_tasks WHERE project_id = ?", (project_id,)).rowcount
+
     def _say(self, task_id: str, role: str, text: str) -> None:
         with db.write(self._conn) as c:
             log = json.loads(c.execute("SELECT log FROM agent_tasks WHERE task_id = ?", (task_id,)).fetchone()[0])

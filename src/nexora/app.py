@@ -112,17 +112,48 @@ def remove_asset(system: "System", asset_id: str, *, discard_file: bool = False,
     for path in derived:
         if media in path.resolve().parents:
             shutil.rmtree(path, ignore_errors=True) if path.is_dir() else path.unlink(missing_ok=True)
-    trashed = None
-    if discard_file and source.is_file():
-        bin_ = Path(trash).expanduser() if trash else Path.home() / ".Trash"
-        bin_.mkdir(parents=True, exist_ok=True)
-        target = bin_ / source.name
-        n = 1
-        while target.exists():
-            target, n = bin_ / f"{source.stem} ({n}){source.suffix}", n + 1
-        shutil.move(str(source), str(target))
-        trashed = str(target)
+    trashed = _to_trash(source, trash) if discard_file and source.is_file() else None
     return {"name": name, "gaps": gaps, "cases": cases, "moments": moments, "trashed": trashed}
+
+
+def _to_trash(path: Path, trash: str | Path | None = None) -> str:
+    """Move a file to the Trash under a name that does not overwrite one already there. Returns where it went."""
+    import shutil
+    bin_ = Path(trash).expanduser() if trash else Path.home() / ".Trash"
+    bin_.mkdir(parents=True, exist_ok=True)
+    target, n = bin_ / path.name, 1
+    while target.exists():
+        target, n = bin_ / f"{path.stem} ({n}){path.suffix}", n + 1
+    shutil.move(str(path), str(target))
+    return str(target)
+
+
+def remove_project(system: "System", project_id: str, *, trash: str | Path | None = None) -> dict:
+    """Delete a project. Work still running for it is stopped, its scripts, lines, choices and cuts are forgotten, and the
+    cut files are moved to the Trash, not erased. A project with a video already published is refused: the record of what
+    went out, and the figures gathered for it, must not vanish with it. The footage it used stays in the library."""
+    from nexora.core.states import RunStatus
+    if system.projects.project(project_id) is None:
+        raise LookupError(project_id)
+    if system.publishing.publications(project_id=project_id):
+        raise ValueError("Dự án này đã có video được đăng. Không xoá được để giữ lại hồ sơ đăng và số liệu của nó.")
+    scripts = system.projects.script_ids(project_id)
+    renders = [r["render_id"] for r in system.projects.renders(project_id) + system.projects.renders(project_id, previews=True)]
+    shots = [s.shot_id for sid in scripts for s in (system.projects.script(sid) or {}).get("shots", [])]
+    for subject in [project_id, *scripts, *shots, *renders]:
+        for run_id in system.orch.runs_for_subject(subject):
+            if system.orch.run_status(run_id) in (RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.WAITING_REVIEW, RunStatus.BLOCKED):
+                system.orch.cancel_run(run_id)
+    title = system.projects.project(project_id)["title"]
+    tasks = system.producer.forget_project(project_id)
+    removed = system.projects.remove(project_id)
+    media = (system.data_dir / "media").resolve()
+    trashed = []
+    for render in removed["renders"]:
+        path = Path(render["path"])
+        if path.is_file() and media in path.resolve().parents:            # only cuts NEXORA made itself; an imported finished file stays where the operator keeps it
+            trashed.append(_to_trash(path, trash))
+    return {"title": title, "scripts": len(removed["scripts"]), "lines": len(removed["shots"]), "renders": len(removed["renders"]), "tasks": tasks, "trashed": trashed}
 
 
 def render_rights(system: "System", render_id: str) -> dict:

@@ -287,6 +287,27 @@ class ProjectStore:
             c.execute("DELETE FROM match_feedback WHERE asset_id = ?", (asset_id,))
         return gaps
 
+    def remove(self, project_id: str) -> dict:
+        """Delete a project with every version of its script, its lines, what was chosen and generated for them, and the
+        records of its cuts. The cut files are not touched here; their paths are returned so the caller decides what to do
+        with them. What the operator said about clips stays, since it is about the footage, not about this project."""
+        with db.write(self._conn) as c:
+            scripts = [r[0] for r in c.execute("SELECT script_id FROM scripts WHERE project_id = ?", (project_id,))]
+            marks = ",".join("?" * len(scripts))
+            shots = [r[0] for r in c.execute(f"SELECT shot_id FROM shots WHERE script_id IN ({marks})", scripts)] if scripts else []
+            renders = [dict(r) for r in c.execute("SELECT render_id, path FROM renders WHERE project_id = ?", (project_id,))]
+            for i in range(0, len(shots), 500):
+                part = shots[i:i + 500]
+                held = ",".join("?" * len(part))
+                c.execute(f"DELETE FROM selections WHERE shot_id IN ({held})", part)
+                c.execute(f"DELETE FROM generations WHERE shot_id IN ({held})", part)
+                c.execute(f"DELETE FROM shots WHERE shot_id IN ({held})", part)
+            if scripts:
+                c.execute(f"DELETE FROM scripts WHERE script_id IN ({marks})", scripts)
+            c.execute("DELETE FROM renders WHERE project_id = ?", (project_id,))
+            c.execute("DELETE FROM projects WHERE project_id = ?", (project_id,))
+        return {"scripts": scripts, "shots": shots, "renders": renders}
+
     def feedback_spans(self, line: str) -> list[dict]:
         """For one line: each stretch of footage the operator has judged for it, latest first."""
         rows = self._conn.execute("SELECT asset_id, t_in, t_out, verdict FROM match_feedback WHERE line = ? AND asset_id IS NOT NULL AND t_in IS NOT NULL ORDER BY at DESC",

@@ -1199,6 +1199,17 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         system.projects.update_project(project_id, **fields)
         return project_view(need_project(project_id))
 
+    @app.delete("/api/v1/projects/{project_id}")
+    def delete_project(project_id: str):
+        """Delete a project and its cuts (the cut files go to the Trash). Refused once a video of it has been published."""
+        from nexora.app import remove_project
+        try:
+            return remove_project(system, project_id)
+        except LookupError:
+            raise HTTPException(404, "no such project") from None
+        except ValueError as e:
+            raise HTTPException(409, str(e)) from None
+
     @app.get("/api/v1/projects/{project_id}/board")
     def board(project_id: str):
         """Everything the Board shows that the project view does not: the activity of its runs, in time order."""

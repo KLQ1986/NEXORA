@@ -1,5 +1,6 @@
 """The minimal API of slice 2."""
 import json
+import sqlite3
 
 import pytest
 from fastapi.testclient import TestClient
@@ -374,3 +375,42 @@ def test_sources_for_facts_hold_times_sound_cues_and_the_brand_look(tmp_path):
     assert render["qc"]["passed"] and render["qc"]["shots"][0]["duration"] == 5.0                     # the picture is held as long as the script asks
     assert [(f["shot"], f["check"]) for f in render["qc"]["findings"] if f["check"] == "Dữ kiện"] == [(1, "Dữ kiện")]      # only the unsourced fact is flagged
     assert "* SOUND: tiếng chợ" in client.get(f"/api/v1/renders/{render['render_id']}/edl").text
+
+
+def test_a_project_can_be_deleted_with_its_cuts_unless_a_video_of_it_went_out(tmp_path):
+    from nexora.app import remove_project
+    system = build(tmp_path / "data")
+    client = TestClient(create_app(system))
+    project = system.projects.create_project("Dự án thử")
+    first = system.projects.save_script(project, ["Câu một.", "Câu hai."])
+    second = system.projects.save_script(project, ["Câu một, sửa lại."])
+    shot = system.projects.script(second)["shots"][0]
+    system.projects.set_selection(shot.shot_id, status="gap", reason="chưa có hình")
+    cut = tmp_path / "data" / "media" / "renders" / "cut.mp4"
+    cut.parent.mkdir(parents=True, exist_ok=True)
+    cut.write_bytes(b"cut")
+    outside = tmp_path / "ban-cuoi.mp4"
+    outside.write_bytes(b"finished")
+    system.projects.add_render(project, first, str(cut), {"duration": 3.0})
+    system.projects.add_render(project, second, str(outside), {"duration": 3.0, "external": True})
+    with sqlite3.connect(tmp_path / "data" / "nexora.db") as c:
+        c.execute("INSERT INTO agent_tasks (task_id, project_id, goal, status, step, options, created_at, updated_at) VALUES ('tsk_1', ?, 'x', 'done', 'done', '{}', 0, 0)", (project,))
+    staying = system.projects.create_project("Ở lại")
+    system.projects.save_script(staying, ["Câu ở lại."])
+
+    assert client.delete("/api/v1/projects/nope").status_code == 404
+    out = remove_project(system, project, trash=tmp_path / "bin")
+    assert out == {"title": "Dự án thử", "scripts": 2, "lines": 3, "renders": 2, "tasks": 1, "trashed": [str(tmp_path / "bin" / "cut.mp4")]}
+    assert not cut.exists() and outside.is_file()                       # an imported finished file stays where the operator keeps it
+    assert system.projects.project(project) is None and system.projects.script(first) is None and system.projects.selection(shot.shot_id) is None
+    assert system.projects.renders(project) == [] and system.producer.tasks(project_id=project) == []
+    assert [p["project_id"] for p in client.get("/api/v1/projects").json()] == [staying]
+    assert client.get("/api/v1/home").status_code == 200 and client.get("/api/v1/runs").status_code == 200
+
+    script = system.projects.current_script(staying)["script_id"]
+    render = system.projects.add_render(staying, script, str(tmp_path / "x.mp4"), {"duration": 3.0})
+    with sqlite3.connect(tmp_path / "data" / "nexora.db") as c:
+        c.execute("INSERT INTO publications (publication_id, render_id, project_id, target, idempotency_key, status, created_at) VALUES ('pub_1', ?, ?, 'youtube', 'k1', 'published', 0)", (render, staying))
+    refused = client.delete(f"/api/v1/projects/{staying}")
+    assert refused.status_code == 409 and "đã có video được đăng" in refused.json()["detail"]
+    assert system.projects.project(staying) is not None

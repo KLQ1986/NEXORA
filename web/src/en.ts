@@ -1698,6 +1698,12 @@ const en: Record<string, string> = {
   "Xoá khỏi thư viện: mô tả và bản xem bị xoá, các câu kịch bản đang dùng nó trở về thiếu hình. File gốc vẫn nằm nguyên chỗ cũ.": "Remove from the library: its descriptions and preview are deleted, and script lines using it go back to having no picture. The original file stays where it is.",
   "Xoá nguyên liệu này khỏi thư viện?": "Remove this from the library?",
   "Xoá khỏi thư viện": "Remove from the library",
+  "Xoá dự án: kịch bản, các lựa chọn clip và các bản dựng bị xoá. File bản dựng được chuyển vào Thùng rác. Footage trong thư viện vẫn giữ nguyên.": "Delete project: the script, the clip choices and the cuts are deleted. Cut files are moved to the Trash. Footage in the library is kept.",
+  "Xoá dự án này?": "Delete this project?",
+  "Xoá dự án": "Delete project",
+  "{0}. Kịch bản, các lựa chọn clip và các bản dựng bị xoá; file bản dựng vào Thùng rác. Footage trong thư viện vẫn giữ nguyên.": "{0}. The script, the clip choices and the cuts are deleted; cut files go to the Trash. Footage in the library is kept.",
+  "Đã xoá dự án “{0}”.": "Project “{0}” deleted.",
+  "Xoá dự án {0}": "Delete project {0}",
   "{0} đang được dùng trong {1} dự án. Các câu dùng nó sẽ trở về thiếu hình.": "{0} is used in {1} projects. The lines using it will go back to having no picture.",
 };
 

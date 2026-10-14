@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { call, post, projectState, scriptText, stageName, timecode, usePoll, type Idea, type Source, type AgentTask, type Asset, type Settings, type Candidate, type Project, type RenderItem, type Shot, type BibleEntry, type GapPlan, type Op, type Rights, type Publishing, type Channel } from "./api";
 import Board from "./Board";
-import { Button, Empty, Filmstrip, goTo, Icon, Meter, Page, Section, Seg, SideGroup, SideLink, SkeletonCards, StageRail, Steps, Tabs, Tag, TimeChip, toast, Readout } from "./parts";
+import { ask, Button, Empty, Filmstrip, goTo, Icon, Meter, Page, Section, Seg, SideGroup, SideLink, SkeletonCards, StageRail, Steps, Tabs, Tag, TimeChip, toast, Readout } from "./parts";
 import Timeline from "./Timeline";
 
 const VERDICT: Record<string, [string, "proof" | "tally" | "cue"]> = { supported: [tr("Nguồn xác nhận"), "proof"], contradicted: [tr("Trái với nguồn"), "tally"], not_found: [tr("Chưa có căn cứ"), "cue"] };
@@ -957,6 +957,10 @@ function Detail({ id, back }: { id: string; back: () => void }) {
                 <input id="due" type="date" defaultValue={p.due_date ?? ""} key={p.due_date ?? "none"} onChange={(e) => patch({ due_date: e.target.value })} className="mono mt-1.5 h-9 w-full px-3" /></div>
               <label className="flex items-start gap-2.5 rounded-lg border border-line bg-raised/50 p-3"><input type="checkbox" className="mt-0.5" checked={p.auto_accept} disabled={busy} onChange={(e) => patch({ auto_accept: e.target.checked ? 1 : 0 })} />
                 <span className="text-[13px]">{tr("Tự duyệt clip")}<span className="block text-[12px] text-faint">{tr("Chỉ khi mọi câu đều có clip và mô hình chấm chắc chắn.")}</span></span></label>
+              <div className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-raised/50 p-3">
+                <p className="min-w-0 flex-1 text-[12.5px] text-mute">{tr("Xoá dự án: kịch bản, các lựa chọn clip và các bản dựng bị xoá. File bản dựng được chuyển vào Thùng rác. Footage trong thư viện vẫn giữ nguyên.")}</p>
+                <Button size="sm" disabled={busy} onClick={async () => { if (!(await ask(tr("Xoá dự án này?"), { body: p.title, confirm: tr("Xoá dự án"), danger: true }))) return; try { await call(`/api/v1/projects/${id}`, { method: "DELETE" }); setSettings(false); back(); } catch (e) { setNote((e as Error).message); } }}>{tr("Xoá dự án")}</Button>
+              </div>
             </div>
         </Drawer>
       )}
@@ -1077,6 +1081,13 @@ export default function Projects({ sub, go }: { sub: string | null; go: (to: str
   const [seek, setSeek] = useState(false);
   useEffect(() => { if (!sub && new URLSearchParams(window.location.search).has("moi")) setMode("new"); }, [sub, window.location.search]);
   if (sub) return <Detail key={sub} id={sub} back={() => go("/du-an")} />;
+  const remove = async (p: Project) => {
+    if (!(await ask(tr("Xoá dự án này?"), { body: tv`${p.title}. Kịch bản, các lựa chọn clip và các bản dựng bị xoá; file bản dựng vào Thùng rác. Footage trong thư viện vẫn giữ nguyên.`, confirm: tr("Xoá dự án"), danger: true }))) return;
+    try { await call(`/api/v1/projects/${p.project_id}`, { method: "DELETE" }); toast(tv`Đã xoá dự án “${p.title}”.`); } catch (e) { toast((e as Error).message); }
+    reload();
+  };
+  const bin = (p: Project, cls: string) => <button type="button" onClick={() => remove(p)} aria-label={tv`Xoá dự án ${p.title}`} title={tr("Xoá dự án")}
+    className={`grid h-8 w-8 place-items-center rounded-md border border-line bg-surface/80 text-mute backdrop-blur transition hover:border-tally/50 hover:text-tally ${cls}`}><Icon name="trash" size={15} /></button>;
   const create = async () => { const p = await post<Project>("/api/v1/projects", { title: title.trim(), format }); setTitle(""); reload(); go(`/du-an/${p.project_id}`); };
   const assign = async () => { setAgentNote(null); try { const t = await post<AgentTask>("/api/v1/agent/tasks", { goal: goal.trim(), format, find_sources: seek, urls: urls.split("\n").map((u) => u.trim()).filter(Boolean) }); setGoal(""); setUrls(""); reloadAgent(); reload(); go(`/du-an/${t.project_id}`); } catch (err) { setAgentNote((err as Error).message); } };
   const working = new Map((agent?.tasks ?? []).filter((t) => t.status === "working" || t.status === "waiting_operator").map((t) => [t.project_id, t]));
@@ -1163,7 +1174,7 @@ export default function Projects({ sub, go }: { sub: string | null; go: (to: str
           {shown.map((p) => {
             const st = projectState(p); const task = working.get(p.project_id); const latest = p.renders[0];
             return (
-              <li key={p.project_id}><a href={`/du-an/${p.project_id}`} onClick={(e) => { e.preventDefault(); go(`/du-an/${p.project_id}`); }}
+              <li key={p.project_id} className="group/card relative"><a href={`/du-an/${p.project_id}`} onClick={(e) => { e.preventDefault(); go(`/du-an/${p.project_id}`); }}
                  className="panel group block overflow-hidden transition-[border-color,transform] duration-200 hover:-translate-y-0.5 hover:border-edge">
                 <div className="relative"><Filmstrip shots={p.shots} height={150} />
                   <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-surface via-surface/10 to-transparent" />
@@ -1174,9 +1185,9 @@ export default function Projects({ sub, go }: { sub: string | null; go: (to: str
                 <div className="px-4 pb-4 pt-1.5">
                   <p className="display truncate text-[15.5px] leading-snug">{p.title}</p>
                   <p className="mt-0.5 flex gap-3 truncate text-[12.5px] text-mute"><span>{p.shots.length ? tv`${p.shots.length} câu` : tr("Chưa có kịch bản")}</span><span>{FORMATS[p.format] ?? p.format}</span></p>
-                  <div className="mt-3 flex items-center justify-between"><Steps step={st.step} tone={st.tone} /><span className="mono text-[11px] text-faint">{new Date(p.created_at * 1000).toLocaleDateString(locale)}</span></div>
+                  <div className="mt-3 flex items-center justify-between pr-10"><Steps step={st.step} tone={st.tone} /><span className="mono text-[11px] text-faint">{new Date(p.created_at * 1000).toLocaleDateString(locale)}</span></div>
                 </div>
-              </a></li>
+              </a>{bin(p, "absolute bottom-3 right-3")}</li>
             );
           })}
         </ul>
@@ -1185,7 +1196,7 @@ export default function Projects({ sub, go }: { sub: string | null; go: (to: str
           {shown.map((p) => {
             const st = projectState(p); const task = working.get(p.project_id); const latest = p.renders[0];
             return (
-              <li key={p.project_id}>
+              <li key={p.project_id} className="group/card relative">
                 <a href={`/du-an/${p.project_id}`} onClick={(e) => { e.preventDefault(); go(`/du-an/${p.project_id}`); }}
                    className="grid items-center gap-x-6 gap-y-3 p-3 transition-colors hover:bg-white/[0.02] sm:grid-cols-[220px_minmax(0,1fr)_auto]">
                   <Filmstrip shots={p.shots} height={56} className="rounded-md" />
@@ -1193,8 +1204,8 @@ export default function Projects({ sub, go }: { sub: string | null; go: (to: str
                     <p className="truncate text-[15px] font-medium">{p.title}</p>
                     <p className="truncate text-[13px] text-mute">{p.shots.length ? tv`${p.shots.length} câu` : tr("Chưa có kịch bản")}, {FORMATS[p.format] ?? p.format}{latest ? <span className="mono">, {timecode(latest.qc.duration)}</span> : ""}{task ? <span className="text-ai">{tr(", trợ lý đang làm")}</span> : ""}</p>
                   </div>
-                  <div className="flex items-center gap-4 sm:justify-end sm:pr-2"><Steps step={st.step} tone={st.tone} /><span className="sm:w-40 sm:text-right"><Tag tone={st.tone}>{st.label}</Tag></span></div>
-                </a>
+                  <div className="flex items-center gap-4 sm:justify-end sm:pr-12"><Steps step={st.step} tone={st.tone} /><span className="sm:w-40 sm:text-right"><Tag tone={st.tone}>{st.label}</Tag></span></div>
+                </a>{bin(p, "absolute right-3 top-3 sm:top-1/2 sm:-translate-y-1/2")}
               </li>
             );
           })}
