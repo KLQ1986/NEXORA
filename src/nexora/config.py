@@ -9,7 +9,7 @@ class Config:
     data_dir: str = "data"
     port: int = 8600
     ollama_host: str = "http://127.0.0.1:11434"
-    vision_model: str = "qwen2.5vl:7b"
+    vision_model: str = "qwen3-vl:8b-instruct"
     embed_model: str = "bge-m3"
     judge_model: str = ""
     writer_model: str = ""
@@ -61,7 +61,7 @@ TEMPLATE = """# NEXORA settings. Delete a line to fall back to its default.
 data_dir = "data"                 # database, managed media, backups, logs
 port = 8600                       # the Web UI and API listen on 127.0.0.1 at this port
 ollama_host = "http://127.0.0.1:11434"
-vision_model = "qwen2.5vl:7b"     # sees frames: describes footage, judges candidates, finds the subject
+vision_model = "qwen3-vl:8b-instruct"     # sees frames: describes footage, judges candidates, finds the subject
 embed_model = "bge-m3"            # turns text into vectors for search
 judge_model = ""                  # judges candidates and finds the subject; empty means the vision model
 writer_model = ""                 # drafts scripts and search words; empty means the vision model

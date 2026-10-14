@@ -9,7 +9,7 @@ from nexora.core.adapter import Adapter, AdapterError, Capability, ErrorCode, Re
 
 
 class OllamaAdapter(Adapter):
-    def __init__(self, *, host: str = "http://127.0.0.1:11434", vision_model: str = "qwen2.5vl:7b", embed_model: str = "bge-m3",
+    def __init__(self, *, host: str = "http://127.0.0.1:11434", vision_model: str = "qwen3-vl:8b-instruct", embed_model: str = "bge-m3",
                  judge_model: str = "", writer_model: str = ""):
         self._host, self.vision_model, self.embed_model = host, vision_model, embed_model
         # A model per kind of work, each falling back to the vision model: looking at footage in bulk, judging a candidate, writing.

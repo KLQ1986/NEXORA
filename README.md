@@ -10,7 +10,7 @@ The design is in `NEXORA_System_Design_v4.0.docx` (with an `.html` twin). The bu
 
 - macOS on Apple Silicon, Python 3.12 with [uv](https://docs.astral.sh/uv/), Node 20 or newer
 - FFmpeg and FFprobe (`brew install ffmpeg`)
-- [Ollama](https://ollama.com) with the two models: `ollama pull qwen2.5vl:7b` and `ollama pull bge-m3`
+- [Ollama](https://ollama.com) with the two models: `ollama pull qwen3-vl:8b-instruct` and `ollama pull bge-m3`
 - A Vietnamese voice for the `say` command (System Settings > Accessibility > Spoken Content)
 - Optional: OpenMontage at `~/openmontage`, for free stock clips when the library has no picture for a line
 - Optional: whisper.cpp (`brew install whisper-cpp`) and a ggml model at `data/models/ggml-large-v3-turbo-q5_0.bin`, for speech with a time for every word and the rough cut built on it
