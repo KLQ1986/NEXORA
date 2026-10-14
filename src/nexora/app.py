@@ -23,6 +23,7 @@ from nexora.core.states import RunStatus
 from nexora.core.worker import Worker
 from nexora.modules.library.ingest import Library
 from nexora.modules.library.analysis import Analysis
+from nexora.modules.library.profiler import Profiler
 from nexora.modules.library.structure import Rules, boundaries
 from nexora.modules.distribution.package import Distribution
 from nexora.modules.distribution.publish import Publishing
@@ -304,10 +305,10 @@ def structure_config(system: "System") -> dict:
     return {"signals": signals.VERSION, "structure": structure.VERSION, **asdict(system.library.analysis.rules)}
 
 
-PIPELINE_NAMES = {"library.ingest": "Nhập footage", "library.ingest_image": "Nhập ảnh", "library.ingest_audio": "Nhập nhạc", "library.understand": "Hiểu nội dung footage", "library.transcribe": "Nghe lời nói trong footage",
+PIPELINE_NAMES = {"library.ingest": "Nhập footage", "library.ingest_image": "Nhập ảnh", "library.ingest_audio": "Nhập nhạc", "library.understand": "Hiểu nội dung footage", "library.transcribe": "Nghe lời nói trong footage", "library.profile": "Đo và nhận diện footage",
                   "sourcing.match": "Chọn clip", "sourcing.generate": "Sinh hình bằng AI", "edit.render": "Dựng video", "edit.preview": "Dựng bản xem thử", "library.enhance": "Nâng chất lượng clip", "sourcing.train": "Huấn luyện mô hình nhân vật", "library.cuts": "Tìm chỗ chuyển cảnh", "library.structure": "Đo và chia footage thành cú máy, nhịp"}
 ANNOUNCE = {"model_fallback": "không dùng được mô hình cloud đã chọn, mô hình trên máy làm thay", "autonomy_lowered": "mức tự chủ vừa bị hạ", "metrics_due": "đã tới mốc ghi số liệu", "disk_low": "ổ đĩa sắp đầy", "volume_offline": "không tìm thấy nơi chứa footage", "gaps": "còn câu chưa có hình", "waiting_review": "đang chờ bạn duyệt", "blocked": "đang dừng và cần bạn xử lý", "failed": "thất bại", "succeeded": "đã xong"}
-QUIET = frozenset({"library.ingest", "library.ingest_image", "library.ingest_audio", "library.understand", "library.transcribe", "edit.preview", "library.cuts", "library.enhance", "library.structure"})   # finishing these needs nobody's attention
+QUIET = frozenset({"library.ingest", "library.ingest_image", "library.ingest_audio", "library.understand", "library.transcribe", "library.profile", "edit.preview", "library.cuts", "library.enhance", "library.structure"})   # finishing these needs nobody's attention
 
 
 def announce(system: "System", after: int) -> int:
@@ -393,7 +394,8 @@ def capabilities(system: "System") -> list[dict]:
 def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Adapter | None = None,
           segment_seconds: float = 12.0, voice: Adapter | None = None, match_threshold: float = 0.5, judge: bool = True,
           generators: list[Adapter] | None = None, stock: Adapter | None = None, desktop: Adapter | None = None, voice_name: str = "Linh",
-          ffmpeg_binary: str = "", web: Adapter | None = None, speech: Adapter | None = None, publishers: list[Adapter] | None = None, shot_models: list[Adapter] | None = None, cloud_models: list[Adapter] | None = None) -> System:
+          ffmpeg_binary: str = "", web: Adapter | None = None, speech: Adapter | None = None, publishers: list[Adapter] | None = None, shot_models: list[Adapter] | None = None, cloud_models: list[Adapter] | None = None,
+          recognisers: list[Adapter] | None = None) -> System:
     """`model` is the adapter for vision, reasoning and embeddings; without one, footage is ingested but not understood."""
     data_dir = Path(data_dir).resolve()          # tools resolve relative paths differently; keep every path absolute
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -434,14 +436,19 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     # Footage is measured and divided into shots and beats with no model at all; the longest beat is the old length of a segment.
     analysis = Analysis(assets, adapters, data_dir / "media", rules=Rules(max_beat_seconds=segment_seconds),
                         words=(lambda asset_id: [(w["start"], w["end"]) for w in transcription.words(asset_id)]) if transcription else None)
+    for recogniser in recognisers or []:            # Apple's picture and sound recognisers, where this machine has them
+        adapters.register(recogniser)
+    profiler = Profiler(assets, index, adapters, data_dir / "media", structure_of=analysis.structure, signals_of=analysis.signals,
+                        words=transcription.words if transcription else (lambda asset_id: []))
     understanding = None
     if model is not None:
         adapters.register(model)
         index.embed = lambda texts: adapters.submit("model", Request("embed", inputs={"texts": texts})).outputs["vectors"]
-        understanding = Understanding(assets, index, adapters, data_dir / "media", segment_seconds=segment_seconds, structure_of=analysis.structure)
+        understanding = Understanding(assets, index, adapters, data_dir / "media", segment_seconds=segment_seconds, structure_of=analysis.structure,
+                                      profile_of=profiler.beat_fields)
     registry = PipelineRegistry()
     library = Library(orch, assets, adapters, data_dir / "media", min_free_bytes=min_free_bytes, understanding=understanding, transcription=transcription,
-                      analysis=analysis)
+                      analysis=analysis, profiler=profiler)
     library.register(registry)
     projects = ProjectStore(db_path)
     planning = Planning(projects, assets, index, adapters)
@@ -521,6 +528,7 @@ def build_from_config(config, **overrides) -> System:
     rented_image = [RunPodImage(runpod_key, config.runpod_image_endpoint, price_per_second=config.runpod_price_per_second)] if runpod_key and config.runpod_image_endpoint else []
     rented = [RunPodVideo(runpod_key, config.runpod_video_endpoint, price_per_second=config.runpod_price_per_second)] if runpod_key and config.runpod_video_endpoint else []
     from nexora.adapters.speech import WhisperCpp
+    from nexora.adapters.apple import AppleSound, AppleTool, AppleVision
     from nexora.adapters.voice import SayVoice
     from nexora.adapters.web import WebReader
     from nexora.adapters.youtube import YouTubePublisher
@@ -529,7 +537,8 @@ def build_from_config(config, **overrides) -> System:
                                      judge_model=config.judge_model, writer_model=config.writer_model),
                  voice=SayVoice(), voice_name=config.voice, match_threshold=config.match_threshold,
                  stock=OpenMontageStock(config.openmontage_repo), desktop=DesktopNotifier(), web=WebReader(),
-                 speech=WhisperCpp(config.speech_model, language=config.speech_language) if config.speech_model else None,
+                 recognisers=[AppleVision(AppleTool(Path(config.data_dir) / "tools")), AppleSound(AppleTool(Path(config.data_dir) / "tools"))] if AppleTool(Path(config.data_dir) / "tools").available() else [],
+                 speech=WhisperCpp(config.speech_model, language=config.speech_language, vad_model=config.speech_vad_model or None) if config.speech_model else None,
                  generators=[*rented_image, *([PollinationsImage(token=config.pollinations_token)] if config.pollinations else []), *rented, StillMotion()],
                  shot_models=[cls(runpod_key, endpoint, price_per_second=config.runpod_price_per_second) for cls, endpoint in
                               ((RunPodLipSync, config.runpod_lipsync_endpoint), (RunPodUpscale, config.runpod_upscale_endpoint), (RunPodTrainer, config.runpod_train_endpoint)) if runpod_key and endpoint],

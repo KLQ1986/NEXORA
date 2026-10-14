@@ -39,7 +39,82 @@ class FFprobeAdapter(Adapter):
             "color_transfer": video.get("color_transfer"),
             "has_audio": any(s.get("codec_type") == "audio" for s in info.get("streams", [])),
             "created": fmt.get("tags", {}).get("creation_time"),
+            **technical(info, video),
         })
+
+
+def _int(value) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _bit_depth(video: dict) -> int | None:
+    """Bits a colour sample: given by the stream, else read from the pixel format's name (yuv420p10le is 10)."""
+    given = _int(video.get("bits_per_raw_sample"))
+    if given:
+        return given
+    import re
+    found = re.search(r"p(\d{2})(le|be)?$", video.get("pix_fmt") or "")
+    return int(found.group(1)) if found else (8 if video.get("pix_fmt") else None)
+
+
+def _rotation(video: dict) -> int:
+    """How far a player turns the picture (phones record upright footage on its side and say so)."""
+    for side in video.get("side_data_list") or []:
+        if "rotation" in side:
+            return int(round(float(side["rotation"]))) % 360
+    return int(video.get("tags", {}).get("rotate") or 0) % 360
+
+
+def technical(info: dict, video: dict) -> dict:
+    """Everything else a file says about itself (design 2026-10-14, group 01): container, rates, colour, rotation, the
+    streams it carries and the device that made it. What the file declares is kept as declared; where two declarations
+    disagree (the nominal and the average frame rate of variable-rate footage) both are kept and the disagreement named."""
+    fmt, tags = info.get("format", {}), info.get("format", {}).get("tags", {}) or {}
+    streams = info.get("streams", [])
+    width, height, rotation = video.get("width") or 0, video.get("height") or 0, _rotation(video)
+    shown_w, shown_h = (height, width) if rotation in (90, 270) else (width, height)
+    sar = video.get("sample_aspect_ratio") or "1:1"
+    sn, _, sd = sar.partition(":")
+    sar_value = float(sn) / float(sd) if sd and float(sd or 0) and float(sn or 0) else 1.0
+    display = shown_w * sar_value / shown_h if shown_h else 0.0
+    nominal, average = _rate(video.get("r_frame_rate")), _rate(video.get("avg_frame_rate"))
+    audio = [{"codec": s.get("codec_name"), "channels": s.get("channels"), "layout": s.get("channel_layout"),
+              "sample_rate": _int(s.get("sample_rate")), "bit_rate": _int(s.get("bit_rate")), "language": (s.get("tags") or {}).get("language")}
+             for s in streams if s.get("codec_type") == "audio"]
+    data = [(s.get("tags") or {}).get("handler_name") or s.get("codec_tag_string") for s in streams if s.get("codec_type") == "data"]
+    timecode = tags.get("timecode") or next(((s.get("tags") or {}).get("timecode") for s in streams if (s.get("tags") or {}).get("timecode")), None)
+    make = tags.get("com.apple.quicktime.make") or tags.get("make")
+    model = tags.get("com.apple.quicktime.model") or tags.get("model")
+    return {
+        "container": fmt.get("format_name"),
+        "size": _int(fmt.get("size")),
+        "bit_rate": _int(fmt.get("bit_rate")),
+        "video_bit_rate": _int(video.get("bit_rate")),
+        "profile": video.get("profile"),
+        "pixel_format": video.get("pix_fmt"),
+        "bit_depth": _bit_depth(video),
+        "color_primaries": video.get("color_primaries"),
+        "color_space": video.get("color_space"),
+        "color_range": video.get("color_range"),
+        "hdr": video.get("color_transfer") in HDR_TRANSFERS,
+        "rotation": rotation,
+        "display_width": shown_w, "display_height": shown_h,
+        "display_aspect": round(display, 4),
+        "orientation": "vuông" if abs(display - 1) < 0.05 else ("ngang" if display > 1 else "dọc"),
+        "nominal_frame_rate": round(nominal, 3),
+        "variable_frame_rate": bool(nominal and average and abs(nominal - average) / nominal > 0.01),
+        "frames_declared": _int(video.get("nb_frames")),
+        "field_order": video.get("field_order"),
+        "audio_streams": audio,
+        "data_streams": [d for d in data if d],
+        "timecode": timecode,
+        "encoder": tags.get("encoder"),
+        "device": " ".join(v for v in (make, model) if v) or tags.get("encoder"),
+        "location": tags.get("com.apple.quicktime.location.ISO6709") or tags.get("location"),
+    }
 
 
 _BLACK = __import__("re").compile(r"black_start:([\d.]+)\s+black_end:([\d.]+)")
@@ -79,6 +154,7 @@ class FFmpegAdapter(Adapter):
         self._binary = find_ffmpeg(binary)
         self._can_tonemap: bool | None = None
         self._can_blurdetect: bool | None = None
+        self.hardware_decoding = __import__("platform").system() == "Darwin"
 
     def environment(self) -> dict:
         return ffmpeg_capabilities(self._binary)
@@ -96,7 +172,7 @@ class FFmpegAdapter(Adapter):
         return [HDR_TO_SDR]
 
     def describe(self) -> Capability:
-        return Capability(name="ffmpeg", operations=("blackdetect", "freezedetect", "proxy", "thumbnail", "frames", "segment", "concat", "loudness", "envelope", "enhance", "silencedetect", "scenecuts", "analysis", "unusable"), runs="local", supports_cancel=True)
+        return Capability(name="ffmpeg", operations=("blackdetect", "freezedetect", "proxy", "thumbnail", "frames", "segment", "concat", "loudness", "envelope", "enhance", "silencedetect", "scenecuts", "analysis", "unusable", "r128", "pcm"), runs="local", supports_cancel=True)
 
     def submit(self, request: Request) -> Result:
         timeout = request.deadline_seconds or 3600
@@ -115,16 +191,29 @@ class FFmpegAdapter(Adapter):
             raise AdapterError(ErrorCode.INVALID_REQUEST, f"ffmpeg {what} failed: {done.stderr.strip()[-300:]}")
         return done
 
+    def _decode(self, args: list[str], timeout: float, what: str):
+        """A pass that decodes every frame of a file. On a Mac the decoding is done by the media engine (VideoToolbox), about
+        five times faster for 4K HEVC than the processor; when the hardware refuses a file, the same pass runs on the processor.
+        `args` holds the input as "-i", path; the hardware option is put before it."""
+        if self.hardware_decoding:
+            at = args.index("-i")
+            try:
+                return self._run([*args[:at], "-hwaccel", "videotoolbox", *args[at:]], timeout, what)
+            except AdapterError as err:
+                if err.code is not ErrorCode.INVALID_REQUEST:
+                    raise
+        return self._run(args, timeout, what)
+
     def _blackdetect(self, src: Path, params: dict, timeout: float) -> Result:
         min_duration = params.get("min_duration", 0.5)
-        done = self._run(["-i", str(src), "-vf", f"blackdetect=d={min_duration}:pix_th=0.10", "-an", "-f", "null", "-"], timeout, "blackdetect")
+        done = self._decode(["-i", str(src), "-vf", f"blackdetect=d={min_duration}:pix_th=0.10", "-an", "-f", "null", "-"], timeout, "blackdetect")
         ranges = [[round(float(a), 3), round(float(b), 3)] for a, b in _BLACK.findall(done.stderr)]
         return Result(outputs={"black_ranges": ranges})
 
     def _unusable(self, src: Path, params: dict, timeout: float) -> Result:
         """Black stretches and frozen stretches in one pass over the file. Long 4K footage takes minutes to decode, so the two
         are looked for together instead of one after the other."""
-        done = self._run(["-i", str(src), "-vf", f"blackdetect=d={params.get('min_black', 0.5)}:pix_th=0.10,freezedetect=n=-60dB:d={params.get('min_frozen', 2.0)}",
+        done = self._decode(["-i", str(src), "-vf", f"blackdetect=d={params.get('min_black', 0.5)}:pix_th=0.10,freezedetect=n=-60dB:d={params.get('min_frozen', 2.0)}",
                           "-an", "-f", "null", "-"], timeout, "unusable")
         black = [[round(float(a), 3), round(float(b), 3)] for a, b in _BLACK.findall(done.stderr)]
         frozen, start = [], None
@@ -141,7 +230,7 @@ class FFmpegAdapter(Adapter):
         """The instants at which the picture changes outright: one shot ends and another begins. Measured on a small copy of
         each frame, which is enough to see a cut and far quicker."""
         threshold = float(params.get("threshold", 0.35))
-        done = self._run(["-i", str(src), "-vf", f"{','.join([*self._sdr(params), 'scale=320:-2'])},select='gt(scene,{threshold})',showinfo", "-an", "-f", "null", "-"], timeout, "scenecuts")
+        done = self._decode(["-i", str(src), "-vf", f"{','.join([*self._sdr(params), 'scale=320:-2'])},select='gt(scene,{threshold})',showinfo", "-an", "-f", "null", "-"], timeout, "scenecuts")
         times = [round(float(t), 2) for t in __import__("re").findall(r"pts_time:([\d.]+)", done.stderr)]
         return Result(outputs={"cuts": sorted(t for t in dict.fromkeys(times) if t > 0.2)})
 
@@ -160,7 +249,7 @@ class FFmpegAdapter(Adapter):
             maps = ["-map", "[small]", "-f", "rawvideo", str(out), "-map", "[soft]", "-f", "null", "-"]
         else:
             graph, maps = f"[0:v]{head},{small}[small]", ["-map", "[small]", "-f", "rawvideo", str(out)]
-        self._run(["-y", "-i", str(src), "-filter_complex", graph, "-an", *maps], timeout, "analysis")
+        self._decode(["-y", "-i", str(src), "-filter_complex", graph, "-an", *maps], timeout, "analysis")
         blur = [round(float(v), 3) for v in __import__("re").findall(r"lavfi\.blur=([\d.]+)", notes.read_text())] if notes.is_file() else []
         notes.unlink(missing_ok=True)
         return Result(outputs={"fps": fps, "width": width, "height": height, "frames": out.stat().st_size // (width * height * 3),
@@ -172,7 +261,7 @@ class FFmpegAdapter(Adapter):
         return self._can_blurdetect
 
     def _freezedetect(self, src: Path, params: dict, timeout: float) -> Result:
-        done = self._run(["-i", str(src), "-vf", f"freezedetect=n=-60dB:d={params.get('min_duration', 2.0)}", "-an", "-f", "null", "-"],
+        done = self._decode(["-i", str(src), "-vf", f"freezedetect=n=-60dB:d={params.get('min_duration', 2.0)}", "-an", "-f", "null", "-"],
                          timeout, "freezedetect")
         ranges, start = [], None
         for kind, value in _FREEZE.findall(done.stderr):
@@ -196,7 +285,7 @@ class FFmpegAdapter(Adapter):
         last = None
         for encoder in encoders:
             try:
-                self._run([*common, *encoder, *audio], timeout, "proxy")
+                self._decode([*common, *encoder, *audio], timeout, "proxy")
                 break
             except AdapterError as err:
                 if err.code is not ErrorCode.INVALID_REQUEST:
@@ -214,7 +303,7 @@ class FFmpegAdapter(Adapter):
         out_dir.mkdir(parents=True, exist_ok=True)
         for old in out_dir.glob("f_*.jpg"):
             old.unlink()
-        self._run(["-y", "-i", str(src), "-vf", ",".join([*self._sdr(params), f"fps={fps},scale={int(params.get('width', 448))}:-2"]), "-q:v", "4", str(out_dir / "f_%05d.jpg")],
+        self._decode(["-y", "-i", str(src), "-vf", ",".join([*self._sdr(params), f"fps={fps},scale={int(params.get('width', 448))}:-2"]), "-q:v", "4", str(out_dir / "f_%05d.jpg")],
                   timeout, "frames")
         return Result(outputs={"frames": [str(p) for p in sorted(out_dir.glob("f_*.jpg"))], "fps": fps})
 
@@ -354,6 +443,24 @@ class FFmpegAdapter(Adapter):
         found = dict(__import__("re").findall(r"(mean_volume|max_volume): (-?[\d.]+|-inf) dB", done.stderr))
         number = lambda v: -120.0 if v in (None, "-inf") else float(v)
         return Result(outputs={"mean_db": number(found.get("mean_volume")), "max_db": number(found.get("max_volume"))})
+
+    def _r128(self, src: Path, params: dict, timeout: float) -> Result:
+        """Loudness to EBU R 128: the momentary loudness ten times a second, the integrated loudness of the whole file, its
+        loudness range and its true peak."""
+        done = self._run(["-i", str(src), "-vn", "-af", "ebur128=peak=true", "-f", "null", "-"], timeout, "r128")
+        re = __import__("re")
+        momentary = [None if float(m) <= -120 else round(float(m), 1) for m in re.findall(r"t:\s*[\d.]+\s+TARGET:[^M]*M:\s*(-?[\d.]+|-inf)", done.stderr.replace("-inf", "-120.7"))]
+        summary = done.stderr[done.stderr.rfind("Summary:"):]
+        grab = lambda pattern: (lambda m: float(m.group(1)) if m else None)(re.search(pattern, summary))
+        return Result(outputs={"rate": 10, "momentary": momentary, "integrated": grab(r"I:\s*(-?[\d.]+) LUFS"), "range": grab(r"LRA:\s*(-?[\d.]+) LU"),
+                               "true_peak": grab(r"Peak:\s*(-?[\d.]+) dBFS")})
+
+    def _pcm(self, src: Path, params: dict, timeout: float) -> Result:
+        """The sound as raw 32-bit float samples, one channel, written to `out`."""
+        out = Path(params["out"])
+        rate = int(params.get("rate", 16000))
+        self._run(["-y", "-i", str(src), "-vn", "-ac", "1", "-ar", str(rate), "-f", "f32le", str(out)], timeout, "pcm")
+        return Result(outputs={"rate": rate, "samples": out.stat().st_size // 4}, files=(str(out),))
 
     def _thumbnail(self, src: Path, params: dict, timeout: float) -> Result:
         out = Path(params["out"])

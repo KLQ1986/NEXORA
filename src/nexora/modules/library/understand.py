@@ -13,6 +13,8 @@ from nexora.core.assets import AssetStore
 from nexora.core.index import MomentIndex
 from nexora.core.pipeline import PipelineDefinition, StageDef
 from nexora.core.timebase import to_seconds
+from nexora.modules.library import vocab
+from nexora.modules.library.profile import cross_checks
 
 UNDERSTAND = PipelineDefinition("library.understand", "1", [
     StageDef("segments", requires=("ffmpeg",)),
@@ -22,6 +24,7 @@ UNDERSTAND = PipelineDefinition("library.understand", "1", [
 ])
 
 PROMPT_VERSION = "v1"
+BEAT_PROMPT_VERSION = "v2"       # beats of measured footage are described with what was measured and with the beat before
 FRAME_FPS = 0.5
 BEAT_FRAME_FPS = 2.0             # frames are drawn at this rate for footage that has been divided into beats; each beat keeps the few it chose
 DESCRIBE_PROMPT = (
@@ -32,6 +35,80 @@ DESCRIBE_PROMPT = (
     "hanh_dong (danh sách hành động), boi_canh (một cụm từ về nơi chốn), chu_tren_hinh (chữ đọc được trên hình, hoặc chuỗi rỗng), "
     "co_canh (toàn, trung hoặc cận)."
 )
+# Version 2 (design 2026-10-14, sections 6 and 7): the model is told what the machine measured and recognised, which it is
+# not to contradict, and what the beat before showed, so that it says what is new here; every label is chosen from a list.
+BEAT_PROMPT = (
+    "Đây là {n} khung hình liên tiếp, cách nhau {gap:g} giây, của cùng một đoạn video. Hãy mô tả đúng những gì nhìn thấy, bằng tiếng Việt "
+    "(không dùng từ tiếng Anh), gọi tên cụ thể đồ vật, món ăn, con vật, địa điểm, hành động của tay và người. Không suy đoán điều không thấy.\n"
+    "{facts}{before}"
+    "Chỉ trả về JSON với các khoá:\n"
+    "mo_ta: 1 đến 2 câu ngắn, cụ thể: ai hoặc cái gì đang làm gì, ở đâu;\n"
+    "khac_truoc: điều làm đoạn này khác đoạn trước (chủ thể mới, góc nhìn mới, vật mới xuất hiện, hành động đổi), hoặc \"tiếp diễn\" nếu không có gì khác;\n"
+    "chu_the: danh sách vật thể và người thấy rõ, mỗi mục kèm một đặc điểm thấy được (màu, chất liệu, trang phục);\n"
+    "hanh_dong: danh sách, mỗi mục là {{\"ai\": ..., \"lam_gi\": ..., \"voi\": ...}}, rỗng nếu không ai làm gì;\n"
+    "quan_he: danh sách bộ ba [chủ thể, quan hệ, đối tượng], quan hệ chọn trong: {relations};\n"
+    "boi_canh: một cụm từ về nơi chốn;\n"
+    "noi_chon: một trong {places}; thoi_diem: một trong {times}; so_nguoi: một trong không, một, hai, nhóm, đám đông;\n"
+    "co_canh: một trong {sizes}; goc_may: một trong {angles}; goc_nhin: một trong {views};\n"
+    "loai_noi_dung: một trong {kinds}; huong_sang: một trong {lights}; cam_xuc: một trong {emotions} (\"không rõ\" nếu không có người);\n"
+    "chu_tren_hinh: chữ đọc được trên hình, hoặc chuỗi rỗng.\n"
+    "Nếu không chắc một nhãn, ghi \"không rõ\"."
+)
+MODEL_LABELS = {"noi_chon": vocab.PLACES, "thoi_diem": vocab.TIMES, "so_nguoi": ("không", "một", "hai", "nhóm", "đám đông"), "co_canh": vocab.SHOT_SIZES,
+                "goc_may": vocab.ANGLES, "goc_nhin": vocab.VIEWPOINTS, "loai_noi_dung": vocab.CONTENT_KINDS, "huong_sang": vocab.LIGHT_DIRECTIONS,
+                "cam_xuc": vocab.EMOTIONS}
+CAMERA_WORDS = {"static": "máy đứng yên", "pan": "máy lia ngang", "tilt": "máy lia dọc", "push_in": "máy đẩy vào", "pull_out": "máy kéo ra", "handheld": "máy cầm tay rung"}
+
+
+def facts_of(profile: dict, labels: dict, words: str = "") -> str:
+    """What the machine measured and recognised in a beat, said in the words the model is to use. Only what is sure is said."""
+    lines = []
+    people = profile.get("people")
+    if people and people.get("confidence") in ("high", "medium"):
+        lines.append(f"số người nhận diện được: {people.get('count', 0)}")
+    size = profile.get("shot_size")
+    if size and size.get("by") == "người":
+        lines.append(f"cỡ cảnh đo được: {size['value']}")
+    camera = (labels.get("camera") or {}).get("value")
+    if camera in CAMERA_WORDS:
+        lines.append(CAMERA_WORDS[camera])
+    place = profile.get("place")
+    if place and place.get("confidence") == "high":
+        lines.append(place["value"])
+    text = profile.get("text")
+    if text and text.get("value"):
+        lines.append("chữ đọc được trên hình: " + "; ".join(text["value"][:4]))
+    sound = profile.get("sound")
+    if sound and sound.get("value"):
+        lines.append("âm thanh nghe được: " + ", ".join(sound["value"][:4]))
+    if words:
+        lines.append(f"lời nói trong đoạn: \"{words[:300]}\"")
+    if not lines:
+        return ""
+    return "Máy đã đo và nhận diện được (đúng, không được nói ngược lại): " + "; ".join(lines) + ".\n"
+
+
+def model_labels(out: dict, profile: dict) -> dict:
+    """The labels a model chose, each kept only when it is one of its list, with a confidence that says whether something the
+    machine measured agrees (design 10-13, section 6): agreed is high, nothing to check against is medium, contradicted is low."""
+    made = {}
+    for key, allowed in MODEL_LABELS.items():
+        value = vocab.canonical(str(out.get(key) or ""))
+        if value not in allowed:
+            continue
+        confidence = "medium"
+        if key == "co_canh" and profile.get("shot_size"):
+            from nexora.modules.library.profile import SIZE_RANK
+            gap = abs(SIZE_RANK[value] - SIZE_RANK[profile["shot_size"]["value"]])
+            confidence = "high" if gap == 0 else ("medium" if gap == 1 else "low")
+        elif key == "noi_chon" and profile.get("place"):
+            confidence = "high" if value == profile["place"]["value"] else "low"
+        elif key == "so_nguoi" and profile.get("people"):
+            confidence = "high" if value == profile["people"]["value"] else "low"
+        made[key] = {"value": value, "source": "model", "confidence": confidence}
+    return made
+
+
 CONTEXT_NOTE = (
     "\n\nNgười quay cho biết thêm về đoạn video này:\n{context}\n"
     "Dùng thông tin này để gọi đúng tên người, nơi chốn và sự việc khi chúng xuất hiện trong hình. Không tả điều không thấy trong hình."
@@ -45,6 +122,62 @@ SUMMARY_PROMPT = (
     "Dưới đây là mô tả từng đoạn của một video, theo thứ tự thời gian. Hãy tóm tắt cả video bằng tiếng Việt. "
     "Chỉ trả về JSON với các khoá: tieu_de (một tiêu đề ngắn), tom_tat (2 đến 3 câu), chu_de (danh sách chủ đề chính).\n\n{lines}"
 )
+
+
+def tidy(out: dict) -> dict:
+    """A model's answer brought to the controlled vocabulary: English words turned Vietnamese, things named one way."""
+    out = dict(out)
+    for key in ("mo_ta", "khac_truoc", "boi_canh"):
+        if isinstance(out.get(key), str):
+            out[key] = vocab.mend(out[key]).strip()
+    if isinstance(out.get("chu_the"), list):
+        out["chu_the"] = [vocab.mend(str(v)).strip() for v in out["chu_the"] if str(v).strip()]
+    actions = []
+    for a in out.get("hanh_dong") or []:
+        if isinstance(a, dict):
+            actions.append({k: vocab.mend(str(a.get(k) or "")).strip() for k in ("ai", "lam_gi", "voi")})
+        elif str(a).strip():
+            actions.append({"ai": "", "lam_gi": vocab.mend(str(a)).strip(), "voi": ""})
+    out["hanh_dong"] = [a for a in actions if a["lam_gi"]]
+    relations = []
+    for r in out.get("quan_he") or []:
+        if isinstance(r, (list, tuple)) and len(r) == 3 and vocab.canonical(str(r[1])) in vocab.RELATIONS:
+            relations.append([vocab.canonical(str(r[0])), vocab.canonical(str(r[1])), vocab.canonical(str(r[2]))])
+    out["quan_he"] = relations
+    return out
+
+
+def text_of(out: dict, profile: dict, labels: dict) -> str:
+    """The text a beat is found by: what the model saw, what is new in it, and what the machine measured, in plain words."""
+    parts = [str(out.get("mo_ta", "")).strip()]
+    new = str(out.get("khac_truoc") or "").strip()
+    if new and vocab.norm(new) not in ("tiếp diễn", "không", "không có gì khác"):
+        parts.append(f"Điểm mới: {new}.")
+    things = out.get("chu_the") or []
+    if isinstance(things, list) and things:
+        parts.append(f"Thấy: {', '.join(str(v) for v in things)}.")
+    actions = out.get("hanh_dong") or []
+    if actions:
+        said = [" ".join(x for x in (a.get("ai"), a.get("lam_gi"), a.get("voi")) if x) if isinstance(a, dict) else str(a) for a in actions]
+        parts.append(f"Hành động: {', '.join(said)}.")
+    if out.get("boi_canh"):
+        parts.append(f"Nơi: {out['boi_canh']}.")
+    measured = []
+    size = (profile.get("shot_size") or {}).get("value") or vocab.canonical(str(out.get("co_canh") or ""))
+    if size in vocab.SHOT_SIZES:
+        measured.append(f"cảnh {size}")
+    camera = (labels.get("camera") or {}).get("value")
+    if camera in CAMERA_WORDS:
+        measured.append(CAMERA_WORDS[camera])
+    sound = (profile.get("sound") or {}).get("value") or []
+    if sound:
+        measured.append("tiếng " + ", ".join(sound[:3]))
+    if measured:
+        parts.append(("Hình: " + "; ".join(measured)).rstrip(".") + ".")
+    text = (profile.get("text") or {}).get("value") or ([out["chu_tren_hinh"]] if out.get("chu_tren_hinh") else [])
+    if text:
+        parts.append(f"Chữ trên hình: {'; '.join(text[:3])}.")
+    return " ".join(p for p in parts if p)
 
 
 def clock(t: float) -> str:
@@ -64,8 +197,9 @@ def split_segments(usable: list[list[float]], seconds: float) -> list[tuple[floa
 
 class Understanding:
     def __init__(self, assets: AssetStore, index: MomentIndex, adapters: AdapterRegistry, media_dir: str | Path, *, segment_seconds: float = 12.0,
-                 structure_of=None):
+                 structure_of=None, profile_of=None):
         self._assets, self._index, self._adapters, self._media = assets, index, adapters, Path(media_dir)
+        self._profile_of = profile_of or (lambda asset_id: {})          # the measured and recognised fields of each beat, by (start, end)
         self._seconds = segment_seconds
         self._structure_of = structure_of or (lambda asset_id: None)      # the shots and beats of an asset, once it has been measured
 
@@ -155,6 +289,7 @@ class Understanding:
             frames = self._adapters.submit("ffmpeg", Request("frames", inputs={"path": str(source)}, params={"out_dir": str(drawn), "fps": BEAT_FRAME_FPS},
                                                             attempt_id=ctx.claim.attempt_id)).outputs["frames"]
             segments = []
+            fields = self._profile_of(ctx.subject_ref) or {}
             for beat in structure["beats"]:
                 picks = []
                 for t in beat["frames"] if frames else []:
@@ -164,8 +299,9 @@ class Understanding:
                         os.replace(made, place)
                     if str(place) not in picks:
                         picks.append(str(place))
-                segments.append({"t_start": to_seconds(beat["start"], 2), "t_end": to_seconds(beat["end"], 2), "frames": picks, "labels": beat["labels"],
-                                 "shot": beat["shot"], "start_tick": beat["start"], "end_tick": beat["end"]})
+                start, end = to_seconds(beat["start"], 2), to_seconds(beat["end"], 2)
+                segments.append({"t_start": start, "t_end": end, "frames": picks, "labels": beat["labels"], "shot": beat["shot"],
+                                 "start_tick": beat["start"], "end_tick": beat["end"], "profile": fields.get((start, end), {})})
         finally:
             shutil.rmtree(drawn, ignore_errors=True)
         ranges = {(s["t_start"], s["t_end"]) for s in segments}
@@ -181,18 +317,31 @@ class Understanding:
     def _describe(self, ctx):
         done = unreadable = 0
         whole, context = self._analyzer_for(ctx.subject_ref), self.context(ctx.subject_ref)
+        probe = self._assets.original(ctx.subject_ref).metadata.get("probe", {})
+        spoken = [w for m in self._index.moments(ctx.subject_ref, level="speech") for w in m.data.get("words", [])]
+        before = ""                                   # what the beat before this one showed, in the same shot
+        last_shot = None
         for i, seg in enumerate(ctx.inputs["segments"]["segments"]):
             if ctx.should_stop():
                 break
-            measured = {k: seg[k] for k in ("labels", "shot", "start_tick", "end_tick") if k in seg}
-            # A beat's description answers one question: these frames, with this note. The rule that divided the footage is not
-            # part of it, so a beat whose bounds and frames a new division leaves alone keeps what was said about it.
-            analyzer = whole if not measured else ":".join([PROMPT_VERSION, "beat", hashlib.sha1("|".join(Path(f).name for f in seg["frames"]).encode()).hexdigest()[:8],
-                                                             *whole.split(":")[2:]])
+            measured = {k: seg[k] for k in ("labels", "shot", "start_tick", "end_tick", "profile") if k in seg}
+            if seg.get("shot") != last_shot:
+                before, last_shot = "", seg.get("shot")
+            words = " ".join(w["text"] for w in spoken if w["end"] > seg["t_start"] and w["start"] < seg["t_end"])
+            facts = facts_of(seg.get("profile") or {}, seg.get("labels") or {}, words) if measured else ""
+            # A beat's description answers one question: these frames, with this note and these measurements. The rule that divided
+            # the footage is not part of it, so a beat whose bounds, frames and measurements a new division leaves alone keeps
+            # what was said about it.
+            if measured:
+                analyzer = ":".join([BEAT_PROMPT_VERSION, "beat", hashlib.sha1("|".join(Path(f).name for f in seg["frames"]).encode()).hexdigest()[:8],
+                                     hashlib.sha1(facts.encode()).hexdigest()[:8], vocab.VERSION, *whole.split(":")[2:]])
+            else:
+                analyzer = whole
             existing = self._index.get(ctx.subject_ref, "segment", seg["t_start"], seg["t_end"])
             if existing and (existing.source == "human" or existing.analyzer == analyzer):
                 if measured and any(existing.data.get(k) != v for k, v in measured.items()):
                     self._index.merge_data(existing.moment_id, **measured)   # what was measured may have changed; what was said has not
+                before = str((existing.data.get("detail") or {}).get("mo_ta") or existing.text)
                 continue                                                    # cached: no model call
             if not seg["frames"]:
                 continue
@@ -204,10 +353,18 @@ class Understanding:
                 if shown is None:
                     continue
                 gap = (seg["t_end"] - seg["t_start"]) / max(len(shown) - 1, 1) if measured else 1 / FRAME_FPS
-                prompt = DESCRIBE_PROMPT.format(n=len(shown), gap=round(gap, 1)) + CONTEXT_NOTE.format(context=context)
+                if measured:
+                    prompt = BEAT_PROMPT.format(n=len(shown), gap=round(gap, 1), facts=facts,
+                                                before=f"Đoạn ngay trước trong cùng cú máy: \"{before[:300]}\"\n" if before else "",
+                                                relations=", ".join(vocab.RELATIONS), places=", ".join(vocab.PLACES), times=", ".join(vocab.TIMES),
+                                                sizes=", ".join(vocab.SHOT_SIZES), angles=", ".join(vocab.ANGLES), views=", ".join(vocab.VIEWPOINTS),
+                                                kinds=", ".join(vocab.CONTENT_KINDS), lights=", ".join(vocab.LIGHT_DIRECTIONS), emotions=", ".join(vocab.EMOTIONS))
+                else:
+                    prompt = DESCRIBE_PROMPT.format(n=len(shown), gap=round(gap, 1))
+                prompt += CONTEXT_NOTE.format(context=context)
                 try:
                     out = self._adapters.submit("model", Request("describe", inputs={"images": shown},
-                                                                params={"prompt": prompt, "index": i, "max_tokens": 700},
+                                                                params={"prompt": prompt, "index": i, "max_tokens": 900 if measured else 700},
                                                                 attempt_id=ctx.claim.attempt_id)).outputs["json"]
                     break
                 except AdapterError as err:
@@ -216,18 +373,19 @@ class Understanding:
             if out is None:
                 unreadable += 1                      # one bad answer must not cost the whole video; the segment stays undescribed
                 continue
-            parts = [str(out.get("mo_ta", "")).strip()]
-            for key, label in (("chu_the", "Thấy"), ("hanh_dong", "Hành động")):
-                values = out.get(key) or []
-                if isinstance(values, list) and values:
-                    parts.append(f"{label}: {', '.join(str(v) for v in values)}.")
-            if out.get("boi_canh"):
-                parts.append(f"Nơi: {out['boi_canh']}.")
-            if out.get("chu_tren_hinh"):
-                parts.append(f"Chữ trên hình: {out['chu_tren_hinh']}.")
-            frame = seg["frames"][len(seg["frames"]) // 2]
-            self._index.upsert(ctx.subject_ref, "segment", seg["t_start"], seg["t_end"], " ".join(p for p in parts if p),
-                               data={"frame": frame, "frames": seg["frames"], "detail": out, **measured}, analyzer=analyzer)
+            data = {"frame": seg["frames"][len(seg["frames"]) // 2], "frames": seg["frames"], **measured}
+            if measured:
+                foreign = vocab.foreign_words(" ".join(str(out.get(k) or "") for k in ("mo_ta", "khac_truoc", "boi_canh")))
+                out = tidy(out)
+                data["model_labels"] = model_labels(out, seg.get("profile") or {})
+                data["flags"] = [{**f, "state": "open"} for f in cross_checks(seg.get("profile") or {}, out, seg.get("labels") or {}, has_audio=bool(probe.get("has_audio")))]
+                if foreign and not any(f["rule"] == "ngôn ngữ" for f in data["flags"]):
+                    data["flags"].append({"rule": "ngôn ngữ", "message": "câu trả lời có từ ngoài tiếng Việt: " + ", ".join(foreign[:5]), "state": "open"})
+                data["continues"] = vocab.norm(str(out.get("khac_truoc") or "")) in ("tiếp diễn", "không", "không có gì khác", "")
+            data["detail"] = out
+            self._index.upsert(ctx.subject_ref, "segment", seg["t_start"], seg["t_end"], text_of(out, seg.get("profile") or {}, seg.get("labels") or {}),
+                               data=data, analyzer=analyzer)
+            before = str(out.get("mo_ta") or "")
             done += 1
             ctx.heartbeat()
         return {"described": done, "unreadable": unreadable}

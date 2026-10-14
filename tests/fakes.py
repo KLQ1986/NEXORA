@@ -153,3 +153,33 @@ class FakeSpeech(Adapter):
             words.append({"text": token, "start": round(t, 2), "end": round(t + 0.4, 2), "p": 0.2 if token == "ờ" else 0.95})
             t += 0.5
         return Result(outputs={"words": words, "language": "vi"})
+
+
+class FakeVision(Adapter):
+    """Sees one person whose face fills a quarter of the frame, a line of subtitle at the bottom and a sky, in every picture."""
+
+    def __init__(self, *, face_height: float = 0.25, text: str = "Chợ Hội An buổi sáng"):
+        self.face_height, self.text, self.calls = face_height, text, 0
+
+    def describe(self) -> Capability:
+        return Capability(name="vision", operations=("look",), runs="local")
+
+    def submit(self, request: Request) -> Result:
+        self.calls += 1
+        pictures = []
+        for k, _ in enumerate(request.inputs["images"]):
+            face = {"box": [0.4, 0.2, self.face_height * 9 / 16, self.face_height], "confidence": 0.9, "mouth": 0.05 + 0.1 * (k % 2)} if self.face_height else None
+            pictures.append({"classes": [["outdoor", 0.9], ["sky", 0.8]], "faces": [face] if face else [], "humans": [{"box": [0.35, 0.15, 0.3, 0.8], "confidence": 0.9}] if face else [],
+                             "poses": [], "animals": [], "text": [{"text": self.text, "confidence": 0.95, "box": [0.3, 0.85, 0.4, 0.06]}] if self.text else [],
+                             "horizon": 0.5, "salient": [[0.3, 0.1, 0.4, 0.8]], "aesthetic": 0.3, "utility": False, "print": [0.1] * 8})
+        return Result(outputs={"pictures": pictures})
+
+
+class FakeSound(Adapter):
+    """Hears speech in every window."""
+
+    def describe(self) -> Capability:
+        return Capability(name="sound", operations=("listen",), runs="local")
+
+    def submit(self, request: Request) -> Result:
+        return Result(outputs={"windows": [{"t": k * 0.5, "d": 1.0, "top": [["speech", 0.9], ["music", 0.2]]} for k in range(40)], "window": 1.0, "hop": 0.5})

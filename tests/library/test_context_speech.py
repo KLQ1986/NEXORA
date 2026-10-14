@@ -96,7 +96,8 @@ def test_footage_with_sound_is_listened_to_and_what_was_said_is_searchable_while
     said = system.index.moments(talking, level="speech")
     assert [m.text for m in said] == ["chợ hội an buổi sáng rất đông.", "ờ cá tươi nằm trên sạp.", "cá tươi nằm trên sạp."]
     assert said[0].data["words"][0] == {"text": "chợ", "start": 0.5, "end": 0.9, "p": 0.95} and said[1].t_start == pytest.approx(6.0)
-    assert system.assets.original(talking).metadata["speech"] == {"words": 18, "sentences": 3, "seconds": pytest.approx(7.2), "doubtful": 1}
+    assert system.assets.original(talking).metadata["speech"] == {"words": 18, "sentences": 3, "seconds": pytest.approx(6.4), "doubtful": 1,      # words brought in to where their sound is
+                                                                   "language": "vi", "dropped": [], "voice_checked": False}
     hits = system.index.search("hội an buổi sáng", level=("segment", "speech"))
     assert hits[0].moment.level == "speech" and hits[0].moment.asset_id == talking
     assert system.index.search("hội an buổi sáng") == [] or all(h.moment.level == "segment" for h in system.index.search("hội an buổi sáng"))   # matching to pictures is unchanged
@@ -163,3 +164,35 @@ def test_the_real_speech_tool_hears_vietnamese_with_a_time_for_every_word(tmp_pa
     heard = " ".join(w["text"].lower().strip(".,") for w in words)
     assert "buổi sáng" in heard and "đông" in heard
     assert all(0 <= a["start"] <= a["end"] <= b["end"] for a, b in zip(words, words[1:]))
+
+
+def test_a_sentence_the_speech_model_invents_in_silence_is_taken_out_with_its_reason():
+    from nexora.modules.library.transcribe import drop_invented, sentences
+    words, t = [], 0.0
+    for text in ["em đi đâu anh đi theo đó.", *["hãy subscribe cho kênh la school để không bỏ lỡ những video hấp dẫn."] * 4, "cá tươi nằm trên sạp."]:
+        for token in text.split():
+            words.append({"text": token, "start": t, "end": t + 0.3, "p": 0.9}); t += 0.3
+        t += 1.0
+    made = sentences(words)
+    kept, dropped = drop_invented(made)
+    assert [s["text"] for s in kept] == ["em đi đâu anh đi theo đó.", "cá tươi nằm trên sạp."]
+    assert len(dropped) == 4 and all(d["reason"] for d in dropped)
+
+
+def test_a_sentence_said_twice_by_a_person_stays_and_one_heard_without_any_voice_goes_only_when_the_model_was_unsure():
+    from nexora.modules.library.transcribe import drop_invented
+    said = [{"t_start": 0.0, "t_end": 1.0, "text": "ngon quá.", "words": [{"p": 0.9}]}, {"t_start": 1.5, "t_end": 2.5, "text": "ngon quá.", "words": [{"p": 0.9}]},
+            {"t_start": 10.0, "t_end": 11.0, "text": "trăng bí bên này.", "words": [{"p": 0.3}]}, {"t_start": 12.0, "t_end": 13.0, "text": "chào anh.", "words": [{"p": 0.95}]}]
+    windows = [{"t": t / 2, "d": 1.0, "top": [["speech", 0.9]] if t < 6 else [["wind", 0.8]]} for t in range(0, 28)]
+    kept, dropped = drop_invented(said, windows)
+    assert [s["text"] for s in kept] == ["ngon quá.", "ngon quá.", "chào anh."]
+    assert [d["text"] for d in dropped] == ["trăng bí bên này."]
+
+
+def test_words_are_brought_in_to_where_their_sound_is():
+    from nexora.modules.library.transcribe import tighten
+    envelope = [5.0] * 100 + [3000.0] * 30 + [5.0] * 2000 + [3000.0] * 40 + [5.0] * 100      # 100 per second: voice at 1.0-1.3 s and 21.3-21.7 s
+    words = [{"text": "phim", "start": 0.9, "end": 21.0, "p": 0.9}, {"text": "đẹp", "start": 21.0, "end": 23.0, "p": 0.9}]
+    out = tighten(words, envelope, 100)
+    assert out[0]["start"] == pytest.approx(1.0) and out[0]["end"] == pytest.approx(1.3)
+    assert out[1]["start"] == pytest.approx(21.3) and out[1]["end"] == pytest.approx(21.7)

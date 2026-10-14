@@ -51,13 +51,14 @@ def usable_ranges(duration: float, black: list[list[float]]) -> list[list[float]
 
 class Library:
     def __init__(self, orch: Orchestrator, assets: AssetStore, adapters: AdapterRegistry, media_dir: str | Path,
-                 *, min_free_bytes: int = 2 * 1024**3, understanding=None, transcription=None, analysis=None):
+                 *, min_free_bytes: int = 2 * 1024**3, understanding=None, transcription=None, analysis=None, profiler=None):
         from nexora.modules.library.analysis import Analysis
         self._orch, self._assets, self._adapters = orch, assets, adapters
         self.analysis = analysis or Analysis(assets, adapters, media_dir)     # measures footage and divides it into shots and beats
         self._min_free = min_free_bytes
         self._understanding = understanding          # None when no model is available
         self._transcription = transcription          # None when no speech tool is available
+        self.profiler = profiler                     # what can be measured and recognised in footage without a language model
         self.on_understood = []                      # called with an asset id once that asset has been described and indexed
         self._media = Path(media_dir)
         self._media.mkdir(parents=True, exist_ok=True)
@@ -67,13 +68,17 @@ class Library:
         from nexora.modules.library.analysis import STRUCTURE
         registry.register(INGEST, {"checksum": self._checksum, "probe": self._probe, "usable": self._usable,
                                    "proxy": self._proxy, "thumbnail": self._thumbnail, **self.analysis.handlers()},
-                          on_success=lambda run_id, asset_id: (self.understand(asset_id), self.transcribe(asset_id)))
+                          on_success=lambda run_id, asset_id: (self.profile(asset_id), self.transcribe(asset_id)))
         registry.register(INGEST_IMAGE, {"checksum": self._checksum, "measure": self._measure},
                           on_success=(lambda run_id, asset_id: self.understand(asset_id)) if self._understanding else None)
         registry.register(INGEST_AUDIO, {"checksum": self._checksum, "listen": self._listen})
         registry.register(ENHANCE, {"enhance": self._enhance})
         registry.register(FIND_CUTS, {"cuts": self._find_cuts})
-        registry.register(STRUCTURE, self.analysis.handlers(), on_success=lambda run_id, asset_id: self.understand(asset_id, force=True))
+        registry.register(STRUCTURE, self.analysis.handlers(), on_success=lambda run_id, asset_id: self.profile(asset_id))
+        if self.profiler is not None:
+            from nexora.modules.library.profiler import PROFILE
+            # The profile comes before the description: what was measured and recognised is what the model is told about.
+            registry.register(PROFILE, self.profiler.handlers(), on_success=lambda run_id, asset_id: self.understand(asset_id, force=True))
         if self._transcription:
             from nexora.modules.library.transcribe import TRANSCRIBE
             registry.register(TRANSCRIBE, self._transcription.handlers(), on_success=lambda run_id, asset_id: self.redivide(asset_id))
@@ -99,6 +104,16 @@ class Library:
             self._orch.supersede(UNDERSTAND.pipeline_id, asset_id)       # an earlier run still waiting would only do the same work again
         return self._orch.submit_run(UNDERSTAND, subject_ref=asset_id, idempotency_key=None if force else f"understand:{asset_id}")
 
+    def profile(self, asset_id: str) -> str | None:
+        """Measure and recognise what is in a recording, beat by beat, then describe it. Without a profiler, describe at once."""
+        from nexora.modules.library.profiler import PROFILE
+        if self.profiler is None:
+            return self.understand(asset_id, force=True)
+        if "duplicate_of" in self._assets.original(asset_id).metadata:
+            return None
+        self._orch.supersede(PROFILE.pipeline_id, asset_id)          # an earlier run still waiting would only do the same work again
+        return self._orch.submit_run(PROFILE, subject_ref=asset_id)
+
     def transcribe(self, asset_id: str, *, force: bool = False) -> str | None:
         """Start listening to an ingested asset for speech. Footage without sound is left alone."""
         from nexora.modules.library.transcribe import TRANSCRIBE
@@ -114,7 +129,7 @@ class Library:
         before = beat_seconds(self.analysis.structure(asset_id) or {})
         made = self.analysis.restructure(asset_id)
         if made is not None and beat_seconds(made) != before:
-            self.understand(asset_id, force=True)
+            self.profile(asset_id)
         return made
 
     def mark_boundary(self, asset_id: str, *, kind: str, op: str, t: float) -> dict | None:
@@ -123,7 +138,7 @@ class Library:
         before = beat_seconds(self.analysis.structure(asset_id) or {})
         made = self.analysis.pin(asset_id, kind=kind, op=op, t=t)
         if made is not None and beat_seconds(made) != before:
-            self.understand(asset_id, force=True)
+            self.profile(asset_id)
         return made
 
     def analyse(self, asset_id: str) -> str:

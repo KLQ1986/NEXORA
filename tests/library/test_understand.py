@@ -28,7 +28,7 @@ def ingested(system, tmp_path):
 
 def test_understanding_starts_by_itself_after_ingest_and_describes_only_usable_footage(system, ingested):
     runs = [system.orch.run_info(r) for r in system.orch.runs_for_subject(ingested)]
-    assert {r["pipeline_id"] for r in runs} == {"library.ingest", "library.understand"}
+    assert {r["pipeline_id"] for r in runs} == {"library.ingest", "library.profile", "library.understand"}      # measured and recognised, then described
     assert all(system.orch.run_status(r["run_id"]) is RunStatus.SUCCEEDED for r in runs)
     segments = system.index.moments(ingested, level="segment")
     assert len(segments) == 3                                           # 6 usable seconds in 2-second segments; the black tail is skipped

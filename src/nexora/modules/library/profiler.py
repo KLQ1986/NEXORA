@@ -1,0 +1,267 @@
+"""The stages of `library.profile` (design 2026-10-14): look at every frame twice a second, listen to the sound, then join
+both with the shots, beats and words already known into the profile of each beat and of the file. No language model is used;
+the recognisers of the `vision` and `sound` adapters are used when present, and their fields are left out when not."""
+import json
+import shutil
+from dataclasses import asdict
+from pathlib import Path
+from typing import Callable
+
+import numpy as np
+
+from nexora.core.adapter import AdapterError, AdapterRegistry, ErrorCode, Request
+from nexora.core.assets import AssetStore
+from nexora.core.index import MomentIndex
+from nexora.core.pipeline import PipelineDefinition, StageDef
+from nexora.core.timebase import to_seconds
+from nexora.modules.library import profile as P
+
+PROFILE = PipelineDefinition("library.profile", P.VERSION, [
+    StageDef("probe"),
+    StageDef("look", depends_on=("probe",), timeout_seconds=6 * 3600, lane="background", requires=("ffmpeg",)),
+    StageDef("listen", depends_on=("probe",), timeout_seconds=6 * 3600, lane="background", requires=("ffmpeg",)),
+    StageDef("profile", depends_on=("look", "listen"), lane="background"),
+])
+BATCH = 120                       # pictures handed to the recogniser at once
+ANALYZER = f"profile:{P.VERSION}"
+
+
+class Profiler:
+    def __init__(self, assets: AssetStore, index: MomentIndex, adapters: AdapterRegistry, media_dir: str | Path, *,
+                 structure_of: Callable[[str], dict | None], signals_of: Callable = lambda asset_id: None,
+                 words: Callable[[str], list[dict]] = lambda asset_id: []):
+        self._assets, self._index, self._adapters, self._media = assets, index, adapters, Path(media_dir)
+        self._structure_of, self._signals_of, self._words = structure_of, signals_of, words
+
+    def handlers(self) -> dict:
+        return {"probe": self._probe, "look": self._look, "listen": self._listen, "profile": self._profile}
+
+    def _has(self, name: str) -> bool:
+        return any(c.name == name for c in self._adapters.describe())
+
+    def _path(self, asset_id: str, suffix: str) -> Path:
+        original = self._assets.original(asset_id)
+        return self._media / original.checksum[:2] / f"{original.checksum}{suffix}"
+
+    def _source(self, asset_id: str) -> Path | None:
+        versions = {v.role: v for v in self._assets.versions(asset_id)}
+        return next((p for p in (self._assets.path_of(versions[r]) for r in ("proxy", "original") if r in versions) if p.is_file()), None)
+
+    def profile(self, asset_id: str) -> dict | None:
+        """The profile last worked out for an asset: its beats, text, sound and the file as a whole."""
+        original = self._assets.original(asset_id)
+        if not original.checksum:
+            return None
+        try:
+            return json.loads(self._path(asset_id, "_profile.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return None
+
+    def beat_fields(self, asset_id: str) -> dict[tuple[float, float], dict]:
+        made = self.profile(asset_id) or {}
+        return {(b["start"], b["end"]): b["profile"] for b in made.get("beats", [])}
+
+    def prints(self, asset_id: str) -> np.ndarray | None:
+        """The feature print of every looked-at frame, one row a frame, for finding pictures that look alike."""
+        try:
+            with np.load(self._path(asset_id, "_prints.npz")) as data:
+                return data["prints"]
+        except (OSError, ValueError, KeyError):
+            return None
+
+    # ---------------------------------------------------------------------------------------------------------- stages
+    def _skip(self, asset_id: str) -> str | None:
+        meta = self._assets.original(asset_id).metadata
+        probe = meta.get("probe", {})
+        if "duplicate_of" in meta:
+            return "duplicate"
+        if probe.get("still") or probe.get("audio_only") or not probe.get("duration"):
+            return "not a recording"
+        return None
+
+    def _probe(self, ctx):
+        """Read the file's technical description again: footage taken in before every field was read gets the rest."""
+        if self._skip(ctx.subject_ref):
+            return {"skipped": self._skip(ctx.subject_ref)}
+        original = self._assets.original(ctx.subject_ref)
+        path = self._assets.path_of(original)
+        if not path.is_file():
+            return {"skipped": "the original is not available; the description read at ingest stays"}
+        info = self._adapters.submit("ffprobe", Request("probe", inputs={"path": str(path)}, attempt_id=ctx.claim.attempt_id)).outputs
+        kept = original.metadata.get("probe", {})
+        self._assets.update_metadata(original.version_id, probe={**kept, **info, "still": kept.get("still"), "audio_only": kept.get("audio_only")})
+        return {"fields": len(info)}
+
+    def _look(self, ctx):
+        if self._skip(ctx.subject_ref):
+            return {"skipped": self._skip(ctx.subject_ref)}
+        source = self._source(ctx.subject_ref)
+        if source is None:
+            raise AdapterError(ErrorCode.MISSING_INPUT, "neither the footage nor its proxy is available")
+        on_proxy = source.name.endswith("_proxy.mp4")
+        probe = self._assets.original(ctx.subject_ref).metadata.get("probe", {})
+        drawn = self._path(ctx.subject_ref, f"_look.{ctx.claim.attempt_id or 'draw'}")
+        try:
+            frames = self._adapters.submit("ffmpeg", Request("frames", inputs={"path": str(source)}, attempt_id=ctx.claim.attempt_id, params={
+                "out_dir": str(drawn), "fps": P.LOOK_FPS, "width": P.LOOK_WIDTH, "color_transfer": None if on_proxy else probe.get("color_transfer")})).outputs["frames"]
+            pictures: list[dict] = [{} for _ in frames]
+            looked = False
+            if self._has("vision"):
+                try:
+                    for start in range(0, len(frames), BATCH):
+                        if ctx.should_stop():
+                            break
+                        got = self._adapters.submit("vision", Request("look", inputs={"images": frames[start:start + BATCH]}, attempt_id=ctx.claim.attempt_id)).outputs["pictures"]
+                        pictures[start:start + len(got)] = got
+                        ctx.heartbeat()
+                    looked = True
+                except AdapterError as err:
+                    if err.code is not ErrorCode.UNAVAILABLE:
+                        raise
+            prints = [p.pop("print", None) for p in pictures]
+            from PIL import Image
+            measures, stack = [], []
+            for k, frame in enumerate(frames):
+                with Image.open(frame) as im:
+                    rgb = np.asarray(im.convert("RGB"))
+                measures.append(asdict(P.measure_frame(rgb, pictures[k].get("salient"))))
+                stack.append(np.asarray(Image.fromarray(rgb).convert("L").resize((160, 90)), np.float32) / 255)
+                for key in ("path",):
+                    pictures[k].pop(key, None)
+            sample = np.array(stack[:: max(1, len(stack) // 120)]) if stack else np.zeros((0, 90, 160))
+            marks = P.static_marks(sample)
+        finally:
+            shutil.rmtree(drawn, ignore_errors=True)
+        target = self._path(ctx.subject_ref, "_look.json")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        _write_json(target, {"version": P.VERSION, "step": 1 / P.LOOK_FPS, "looked": looked, "pictures": pictures, "measures": measures, "marks": marks})
+        if looked and any(p is not None for p in prints):
+            width = len(next(p for p in prints if p is not None))
+            matrix = np.array([p if p is not None and len(p) == width else [0.0] * width for p in prints], np.float16)
+            with open(self._path(ctx.subject_ref, "_prints.npz"), "wb") as out:
+                np.savez_compressed(out, prints=matrix, step=1 / P.LOOK_FPS)
+        return {"frames": len(frames), "recognised": looked}
+
+    def _listen(self, ctx):
+        if self._skip(ctx.subject_ref):
+            return {"skipped": self._skip(ctx.subject_ref)}
+        probe = self._assets.original(ctx.subject_ref).metadata.get("probe", {})
+        target = self._path(ctx.subject_ref, "_listen.json")
+        if not probe.get("has_audio"):
+            _write_json(target, {"version": P.VERSION, "silent_file": True})
+            return {"skipped": "no sound"}
+        source = self._source(ctx.subject_ref)
+        if source is None:
+            raise AdapterError(ErrorCode.MISSING_INPUT, "neither the footage nor its proxy is available")
+        out: dict = {"version": P.VERSION}
+        if self._has("sound"):
+            try:
+                heard = self._adapters.submit("sound", Request("listen", inputs={"path": str(source)}, params={"window": 1.0, "hop": 0.5},
+                                                              attempt_id=ctx.claim.attempt_id)).outputs
+                out["windows"], out["hop"] = heard["windows"], heard["hop"]
+            except AdapterError as err:
+                if err.code is not ErrorCode.UNAVAILABLE:
+                    raise
+        r128 = self._adapters.submit("ffmpeg", Request("r128", inputs={"path": str(source)}, attempt_id=ctx.claim.attempt_id)).outputs
+        out["momentary"], out["integrated"] = r128["momentary"], {k: r128[k] for k in ("integrated", "range", "true_peak")}
+        raw = self._path(ctx.subject_ref, f"_pcm.{ctx.claim.attempt_id or 'x'}.raw")
+        try:
+            got = self._adapters.submit("ffmpeg", Request("pcm", inputs={"path": str(source)}, params={"out": str(raw), "rate": 16000}, attempt_id=ctx.claim.attempt_id)).outputs
+            samples = np.memmap(raw, dtype=np.float32, mode="r") if raw.stat().st_size else np.zeros(0, np.float32)
+            out["levels"] = P.levels(np.asarray(samples), got["rate"])
+            del samples
+        finally:
+            raw.unlink(missing_ok=True)
+        _write_json(target, out)
+        return {"windows": len(out.get("windows", [])), "integrated": out["integrated"]["integrated"]}
+
+    def _profile(self, ctx):
+        if self._skip(ctx.subject_ref):
+            return {"skipped": self._skip(ctx.subject_ref)}
+        made = self.build(ctx.subject_ref)
+        if made is None:
+            return {"skipped": "nothing measured yet"}
+        return {"beats": len(made["beats"]), "text": len(made["text_spans"]), "sound": len(made["sound_events"])}
+
+    # ------------------------------------------------------------------------------------------------------- joining
+    def build(self, asset_id: str) -> dict | None:
+        """Join what was looked at, heard and measured into the profile, keep it, and put it where the rest of the system reads it."""
+        structure = self._structure_of(asset_id)
+        if not structure or not structure.get("beats"):
+            return None
+        original = self._assets.original(asset_id)
+        probe = dict(original.metadata.get("probe", {}))
+        look = _read_json(self._path(asset_id, "_look.json")) or {}
+        listen = _read_json(self._path(asset_id, "_listen.json")) or {}
+        step = float(look.get("step", 1 / P.LOOK_FPS))
+        pictures, measures = look.get("pictures", []), [P.FrameMeasure(**m) for m in look.get("measures", [])]
+        words = self._words(asset_id)
+        duration = float(probe.get("duration") or to_seconds(structure["beats"][-1]["end"], 2))
+        beats = [{"start": to_seconds(b["start"], 2), "end": to_seconds(b["end"], 2), "labels": b.get("labels", {}), "shot": b.get("shot")} for b in structure["beats"]]
+
+        def camera_at(t: float) -> str | None:
+            beat = next((b for b in beats if b["start"] <= t < b["end"]), None)
+            return ((beat or {}).get("labels", {}).get("camera") or {}).get("value")
+
+        spans = P.text_spans(pictures, step=step, duration=duration, camera_moving=lambda t: camera_at(t) not in (None, "static"), words=words)
+        for box in look.get("marks", []):
+            if not any(s["kind"] == "watermark" and P._iou(s["box"], box) > 0.2 for s in spans):
+                spans.append({"text": "", "start": 0.0, "end": round(duration, 2), "box": box, "kind": "watermark", "confidence": "medium",
+                              "source": "measured", "frames": 0, "size": box[3]})
+        events = P.sound_events(listen.get("windows", []), hop=float(listen.get("hop", 0.5)), duration=duration) if listen.get("windows") else []
+        log_profile = P.detect_log(probe, measures)
+        for beat in beats:
+            k0, k1 = int(np.ceil(beat["start"] / step - 1e-6)), int(np.floor((beat["end"] - 1e-6) / step))
+            inside = range(max(k0, 0), min(k1 + 1, max(len(pictures), len(measures))))
+            beat["profile"] = P.profile_beat(beat["start"], beat["end"], [pictures[k] for k in inside if k < len(pictures) and pictures[k]],
+                                             [measures[k] for k in inside if k < len(measures)], words=words, events=events,
+                                             momentary=listen.get("momentary", []), audio=listen.get("levels", {}),
+                                             camera=(beat["labels"].get("camera") or {}).get("value"), spans=spans, log_profile=log_profile)
+        probe["log_profile"] = log_profile
+        shots = [{"start": to_seconds(s["start"], 2), "end": to_seconds(s["end"], 2), "transition_in": s.get("transition_in")} for s in structure.get("shots", [])]
+        found = self._signals_of(asset_id)
+        whole = P.asset_profile(probe=probe, shots=shots, beats=beats, words=words, spans=spans, events=events, integrated=listen.get("integrated"),
+                                signals_diff=getattr(found, "diff", None), fps=getattr(found, "fps", None),
+                                language=original.metadata.get("speech", {}).get("language"))
+        made = {"version": P.VERSION, "beats": [{"start": b["start"], "end": b["end"], "profile": b["profile"]} for b in beats],
+                "text_spans": spans, "sound_events": events, "asset": whole, "recognised": bool(look.get("looked"))}
+        _write_json(self._path(asset_id, "_profile.json"), made)
+        self._assets.update_metadata(original.version_id, probe={**original.metadata.get("probe", {}), "log_profile": log_profile},
+                                     profile={k: whole[k] for k in ("orientation", "language", "log_profile", "pacing", "hook", "platforms", "quality", "loudness", "calls_to_action")})
+        self._publish(asset_id, made)
+        return made
+
+    def _publish(self, asset_id: str, made: dict) -> None:
+        """Beats that have been described get their profile beside their description; text seen and sounds heard become
+        moments of their own, so that a search finds them."""
+        fields = {(b["start"], b["end"]): b["profile"] for b in made["beats"]}
+        for moment in self._index.moments(asset_id, level="segment"):
+            got = fields.get((round(moment.t_start, 2), round(moment.t_end, 2)))
+            if got is not None and moment.data.get("profile") != got:
+                self._index.merge_data(moment.moment_id, profile=got)
+        self._index.remove(asset_id, "text")
+        for span in made["text_spans"]:
+            if span["text"]:
+                kind = span["kind"]
+                self._index.upsert(asset_id, "text", span["start"], span["end"], f"Chữ trên hình ({kind}): {span['text']}",
+                                   data={"span": span, "measured": True}, analyzer=ANALYZER)
+        self._index.remove(asset_id, "sound")
+        for event in made["sound_events"]:
+            if event["kind"] in ("lời nói", "im lặng"):
+                continue                                   # speech has its own words; silence is not something to search for
+            self._index.upsert(asset_id, "sound", event["start"], event["end"], f"Âm thanh: {event['kind']}",
+                               data={"event": event, "measured": True}, analyzer=ANALYZER)
+
+
+def _write_json(path: Path, value) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    partial = path.with_name(path.name + ".partial")
+    partial.write_text(json.dumps(value, ensure_ascii=False), encoding="utf-8")
+    partial.replace(path)
+
+
+def _read_json(path: Path):
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None

@@ -65,3 +65,20 @@ def test_concat_works_when_segments_are_given_as_relative_paths(plain_clip, tmp_
     out = FFmpegAdapter().submit(Request("concat", inputs={"paths": ["a.mp4", "b.mp4"]}, params={"out": "final.mp4"}))
     probe = FFprobeAdapter().submit(Request("probe", inputs={"path": "final.mp4"})).outputs
     assert probe["duration"] == pytest.approx(4.0, abs=0.3) and probe["has_audio"]
+
+
+def test_a_pass_the_hardware_refuses_runs_again_on_the_processor(tmp_path, monkeypatch):
+    from nexora.adapters.media import FFmpegAdapter
+    from nexora.core.adapter import AdapterError, ErrorCode
+    ffmpeg = FFmpegAdapter()
+    ffmpeg.hardware_decoding = True
+    tried = []
+
+    def run(args, timeout, what):
+        tried.append(args)
+        if "-hwaccel" in args:
+            raise AdapterError(ErrorCode.INVALID_REQUEST, "hardware refused")
+        return "done"
+    monkeypatch.setattr(ffmpeg, "_run", run)
+    assert ffmpeg._decode(["-y", "-i", "clip.mp4", "-f", "null", "-"], 10, "test") == "done"
+    assert tried[0][:4] == ["-y", "-hwaccel", "videotoolbox", "-i"] and "-hwaccel" not in tried[1]
