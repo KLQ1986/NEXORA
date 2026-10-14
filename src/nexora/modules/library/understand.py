@@ -24,7 +24,7 @@ UNDERSTAND = PipelineDefinition("library.understand", "1", [
 ])
 
 PROMPT_VERSION = "v1"
-BEAT_PROMPT_VERSION = "v2"       # beats of measured footage are described with what was measured and with the beat before
+BEAT_PROMPT_VERSION = "v3"       # beats of measured footage are described with what was measured about their picture
 FRAME_FPS = 0.5
 BEAT_FRAME_FPS = 2.0             # frames are drawn at this rate for footage that has been divided into beats; each beat keeps the few it chose
 DESCRIBE_PROMPT = (
@@ -35,24 +35,19 @@ DESCRIBE_PROMPT = (
     "hanh_dong (danh sách hành động), boi_canh (một cụm từ về nơi chốn), chu_tren_hinh (chữ đọc được trên hình, hoặc chuỗi rỗng), "
     "co_canh (toàn, trung hoặc cận)."
 )
-# Version 2 (design 2026-10-14, sections 6 and 7): the model is told what the machine measured and recognised, which it is
-# not to contradict, and what the beat before showed, so that it says what is new here; every label is chosen from a list.
+# Version 3 (design 2026-10-14, sections 6 and 7). Version 2 showed the model the description of the beat before and asked
+# for a long list of fields; measured on footage 0050, a 7B model copied the earlier description, put actions among the things
+# seen and the spoken words among the text on screen, and adjacent beats came out more alike than before (0.91 against 0.78).
+# So the model is asked for less: what it sees, concretely, and four labels from lists. What is new in a beat is worked out by
+# code from the things named in it and in the beat before; the measurements it is told are only the sure ones about the picture.
 BEAT_PROMPT = (
-    "Đây là {n} khung hình liên tiếp, cách nhau {gap:g} giây, của cùng một đoạn video. Hãy mô tả đúng những gì nhìn thấy, bằng tiếng Việt "
-    "(không dùng từ tiếng Anh), gọi tên cụ thể đồ vật, món ăn, con vật, địa điểm, hành động của tay và người. Không suy đoán điều không thấy.\n"
-    "{facts}{before}"
-    "Chỉ trả về JSON với các khoá:\n"
-    "mo_ta: 1 đến 2 câu ngắn, cụ thể: ai hoặc cái gì đang làm gì, ở đâu;\n"
-    "khac_truoc: điều làm đoạn này khác đoạn trước (chủ thể mới, góc nhìn mới, vật mới xuất hiện, hành động đổi), hoặc \"tiếp diễn\" nếu không có gì khác;\n"
-    "chu_the: danh sách vật thể và người thấy rõ, mỗi mục kèm một đặc điểm thấy được (màu, chất liệu, trang phục);\n"
-    "hanh_dong: danh sách, mỗi mục là {{\"ai\": ..., \"lam_gi\": ..., \"voi\": ...}}, rỗng nếu không ai làm gì;\n"
-    "quan_he: danh sách bộ ba [chủ thể, quan hệ, đối tượng], quan hệ chọn trong: {relations};\n"
-    "boi_canh: một cụm từ về nơi chốn;\n"
-    "noi_chon: một trong {places}; thoi_diem: một trong {times}; so_nguoi: một trong không, một, hai, nhóm, đám đông;\n"
-    "co_canh: một trong {sizes}; goc_may: một trong {angles}; goc_nhin: một trong {views};\n"
-    "loai_noi_dung: một trong {kinds}; huong_sang: một trong {lights}; cam_xuc: một trong {emotions} (\"không rõ\" nếu không có người);\n"
-    "chu_tren_hinh: chữ đọc được trên hình, hoặc chuỗi rỗng.\n"
-    "Nếu không chắc một nhãn, ghi \"không rõ\"."
+    "Đây là {n} khung hình liên tiếp, cách nhau {gap:g} giây, của cùng một đoạn video. Hãy mô tả đúng những gì nhìn thấy, bằng tiếng Việt, "
+    "không dùng từ tiếng Anh. Gọi tên cụ thể từng vật, kèm màu hoặc đặc điểm thấy được. Không viết câu chung chung về cảm giác "
+    "(yên tĩnh, thư giãn, đẹp). Không suy đoán điều không thấy.\n{facts}"
+    "Chỉ trả về JSON với các khoá: mo_ta (1 đến 2 câu cụ thể: ai hoặc cái gì, đang làm gì, ở đâu), "
+    "chu_the (danh sách 3 đến 8 vật thể hoặc người thấy rõ, mỗi mục là một cụm từ ngắn), hanh_dong (danh sách cụm từ ngắn, rỗng nếu không ai làm gì), "
+    "boi_canh (một cụm từ về nơi chốn), chu_tren_hinh (chữ in trên hình đọc được, hoặc chuỗi rỗng), "
+    "co_canh (một trong: {sizes}), goc_may (một trong: {angles}), so_nguoi (một trong: không, một, hai, nhóm, đám đông), noi_chon (một trong: {places})."
 )
 MODEL_LABELS = {"noi_chon": vocab.PLACES, "thoi_diem": vocab.TIMES, "so_nguoi": ("không", "một", "hai", "nhóm", "đám đông"), "co_canh": vocab.SHOT_SIZES,
                 "goc_may": vocab.ANGLES, "goc_nhin": vocab.VIEWPOINTS, "loai_noi_dung": vocab.CONTENT_KINDS, "huong_sang": vocab.LIGHT_DIRECTIONS,
@@ -61,31 +56,21 @@ CAMERA_WORDS = {"static": "máy đứng yên", "pan": "máy lia ngang", "tilt": 
 
 
 def facts_of(profile: dict, labels: dict, words: str = "") -> str:
-    """What the machine measured and recognised in a beat, said in the words the model is to use. Only what is sure is said."""
+    """What the machine measured and recognised in a beat's picture, said plainly, only where it is sure. The spoken words are
+    not said: shown them, a small model copied them into the text it read on screen."""
     lines = []
     people = profile.get("people")
-    if people and people.get("confidence") in ("high", "medium"):
-        lines.append(f"số người nhận diện được: {people.get('count', 0)}")
+    if people and people.get("confidence") == "high":
+        lines.append("không có người nào trong hình" if people.get("count", 0) == 0 else f"có {people['count']} người trong hình")
     size = profile.get("shot_size")
     if size and size.get("by") == "người":
-        lines.append(f"cỡ cảnh đo được: {size['value']}")
+        lines.append(f"cỡ cảnh: {size['value']}")
     camera = (labels.get("camera") or {}).get("value")
     if camera in CAMERA_WORDS:
         lines.append(CAMERA_WORDS[camera])
-    place = profile.get("place")
-    if place and place.get("confidence") == "high":
-        lines.append(place["value"])
     text = profile.get("text")
-    if text and text.get("value"):
-        lines.append("chữ đọc được trên hình: " + "; ".join(text["value"][:4]))
-    sound = profile.get("sound")
-    if sound and sound.get("value"):
-        lines.append("âm thanh nghe được: " + ", ".join(sound["value"][:4]))
-    if words:
-        lines.append(f"lời nói trong đoạn: \"{words[:300]}\"")
-    if not lines:
-        return ""
-    return "Máy đã đo và nhận diện được (đúng, không được nói ngược lại): " + "; ".join(lines) + ".\n"
+    lines.append("chữ in trên hình: " + "; ".join(text["value"][:4]) if text and text.get("value") else "không có chữ in trên hình")
+    return "Máy đã đo được (đúng, không được nói ngược lại): " + "; ".join(lines) + ".\n"
 
 
 def model_labels(out: dict, profile: dict) -> dict:
@@ -124,21 +109,42 @@ SUMMARY_PROMPT = (
 )
 
 
+UNKNOWN = frozenset({"", "không rõ", "không có", "không", "không có người", "không có hành động", "không có vật", "none", "null", "n/a"})
+
+
+# A clause about how a place feels says nothing a search can use, and makes every beat of a place read the same.
+FEELING = __import__("re").compile(r",?\s*(tạo nên|tạo ra|mang lại|mang đến|gợi lên)[^.]*(yên tĩnh|thư giãn|yên bình|thanh bình|dễ chịu|ấm cúng|sống động|tươi mát|mờ ảo)[^.]*", __import__("re").IGNORECASE)
+FEELING_THING = __import__("re").compile(r"không gian|bầu không khí|cảm giác")
+
+
 def tidy(out: dict) -> dict:
     """A model's answer brought to the controlled vocabulary: English words turned Vietnamese, things named one way."""
     out = dict(out)
     for key in ("mo_ta", "khac_truoc", "boi_canh"):
         if isinstance(out.get(key), str):
             out[key] = vocab.mend(out[key]).strip()
+    if isinstance(out.get("mo_ta"), str):
+        out["mo_ta"] = FEELING.sub("", out["mo_ta"]).strip()
     if isinstance(out.get("chu_the"), list):
-        out["chu_the"] = [vocab.mend(str(v)).strip() for v in out["chu_the"] if str(v).strip()]
+        things = []
+        for v in out["chu_the"]:
+            if isinstance(v, dict):                       # a small model sometimes answers a thing as a record: keep its words
+                v = " ".join(str(x) for x in v.values() if x and vocab.norm(str(x)) not in UNKNOWN)
+            v = vocab.mend(str(v)).strip()
+            low = vocab.norm(v)
+            if v and low not in UNKNOWN and not low.startswith("không ") and not FEELING_THING.search(low) and low not in (vocab.norm(t) for t in things):
+                things.append(v)
+        out["chu_the"] = things
+    for key in ("chu_tren_hinh", "boi_canh"):
+        if vocab.norm(str(out.get(key) or "")) in UNKNOWN:
+            out[key] = ""
     actions = []
     for a in out.get("hanh_dong") or []:
         if isinstance(a, dict):
-            actions.append({k: vocab.mend(str(a.get(k) or "")).strip() for k in ("ai", "lam_gi", "voi")})
-        elif str(a).strip():
+            actions.append({k: vocab.mend(str(a.get(k) or "")).strip() for k in ("ai", "lam_gi", "voi") if vocab.norm(str(a.get(k) or "")) not in UNKNOWN})
+        elif str(a).strip() and vocab.norm(str(a)) not in UNKNOWN:
             actions.append({"ai": "", "lam_gi": vocab.mend(str(a)).strip(), "voi": ""})
-    out["hanh_dong"] = [a for a in actions if a["lam_gi"]]
+    out["hanh_dong"] = [{"ai": a.get("ai", ""), "lam_gi": a.get("lam_gi", ""), "voi": a.get("voi", "")} for a in actions if a.get("lam_gi")]
     relations = []
     for r in out.get("quan_he") or []:
         if isinstance(r, (list, tuple)) and len(r) == 3 and vocab.canonical(str(r[1])) in vocab.RELATIONS:
@@ -319,14 +325,14 @@ class Understanding:
         whole, context = self._analyzer_for(ctx.subject_ref), self.context(ctx.subject_ref)
         probe = self._assets.original(ctx.subject_ref).metadata.get("probe", {})
         spoken = [w for m in self._index.moments(ctx.subject_ref, level="speech") for w in m.data.get("words", [])]
-        before = ""                                   # what the beat before this one showed, in the same shot
+        before: list[str] = []                        # the things named in the beat before this one, in the same shot
         last_shot = None
         for i, seg in enumerate(ctx.inputs["segments"]["segments"]):
             if ctx.should_stop():
                 break
             measured = {k: seg[k] for k in ("labels", "shot", "start_tick", "end_tick", "profile") if k in seg}
             if seg.get("shot") != last_shot:
-                before, last_shot = "", seg.get("shot")
+                before, last_shot = [], seg.get("shot")
             words = " ".join(w["text"] for w in spoken if w["end"] > seg["t_start"] and w["start"] < seg["t_end"])
             facts = facts_of(seg.get("profile") or {}, seg.get("labels") or {}, words) if measured else ""
             # A beat's description answers one question: these frames, with this note and these measurements. The rule that divided
@@ -341,7 +347,7 @@ class Understanding:
             if existing and (existing.source == "human" or existing.analyzer == analyzer):
                 if measured and any(existing.data.get(k) != v for k, v in measured.items()):
                     self._index.merge_data(existing.moment_id, **measured)   # what was measured may have changed; what was said has not
-                before = str((existing.data.get("detail") or {}).get("mo_ta") or existing.text)
+                before = vocab.canonical_list((existing.data.get("detail") or {}).get("chu_the") or [])
                 continue                                                    # cached: no model call
             if not seg["frames"]:
                 continue
@@ -354,11 +360,8 @@ class Understanding:
                     continue
                 gap = (seg["t_end"] - seg["t_start"]) / max(len(shown) - 1, 1) if measured else 1 / FRAME_FPS
                 if measured:
-                    prompt = BEAT_PROMPT.format(n=len(shown), gap=round(gap, 1), facts=facts,
-                                                before=f"Đoạn ngay trước trong cùng cú máy: \"{before[:300]}\"\n" if before else "",
-                                                relations=", ".join(vocab.RELATIONS), places=", ".join(vocab.PLACES), times=", ".join(vocab.TIMES),
-                                                sizes=", ".join(vocab.SHOT_SIZES), angles=", ".join(vocab.ANGLES), views=", ".join(vocab.VIEWPOINTS),
-                                                kinds=", ".join(vocab.CONTENT_KINDS), lights=", ".join(vocab.LIGHT_DIRECTIONS), emotions=", ".join(vocab.EMOTIONS))
+                    prompt = BEAT_PROMPT.format(n=len(shown), gap=round(gap, 1), facts=facts, sizes=", ".join(vocab.SHOT_SIZES),
+                                                angles=", ".join(vocab.ANGLES), places=", ".join(vocab.PLACES))
                 else:
                     prompt = DESCRIBE_PROMPT.format(n=len(shown), gap=round(gap, 1))
                 prompt += CONTEXT_NOTE.format(context=context)
@@ -381,11 +384,16 @@ class Understanding:
                 data["flags"] = [{**f, "state": "open"} for f in cross_checks(seg.get("profile") or {}, out, seg.get("labels") or {}, has_audio=bool(probe.get("has_audio")))]
                 if foreign and not any(f["rule"] == "ngôn ngữ" for f in data["flags"]):
                     data["flags"].append({"rule": "ngôn ngữ", "message": "câu trả lời có từ ngoài tiếng Việt: " + ", ".join(foreign[:5]), "state": "open"})
-                data["continues"] = vocab.norm(str(out.get("khac_truoc") or "")) in ("tiếp diễn", "không", "không có gì khác", "")
+                named = vocab.canonical_list(out.get("chu_the") or [])
+                tags = ((seg.get("profile") or {}).get("scene_tags") or {}).get("value") or []
+                out["khac_truoc"] = ", ".join(t for t in named if t not in before) if before else ""
+                data["new_things"] = [t for t in named if t not in before] if before else named
+                data["continues"] = bool(before) and not data["new_things"]
+                data["recognised_tags"] = tags
             data["detail"] = out
             self._index.upsert(ctx.subject_ref, "segment", seg["t_start"], seg["t_end"], text_of(out, seg.get("profile") or {}, seg.get("labels") or {}),
                                data=data, analyzer=analyzer)
-            before = str(out.get("mo_ta") or "")
+            before = vocab.canonical_list(out.get("chu_the") or []) or before
             done += 1
             ctx.heartbeat()
         return {"described": done, "unreadable": unreadable}

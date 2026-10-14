@@ -69,7 +69,13 @@ def drop_invented(made: list[dict], windows: list[dict] | None = None) -> tuple[
             dropped.append({**{k: s[k] for k in ("t_start", "t_end", "text")}, "reason": reason})
         else:
             kept.append(s)
-    return kept, dropped
+    # A word or two left over from an invented sentence that was cut in pieces ("Mì" of "Ghiền Mì Gõ") goes with it.
+    gone = {w for d in dropped for w in norm(d["text"]).split()}
+    leftovers = [s for s in kept if len(norm(s["text"]).split()) <= 2 and gone and set(norm(s["text"]).split()) <= gone]
+    for s in leftovers:
+        kept.remove(s)
+        dropped.append({**{k: s[k] for k in ("t_start", "t_end", "text")}, "reason": "mảnh còn lại của một câu bịa đã bỏ"})
+    return kept, sorted(dropped, key=lambda d: d["t_start"])
 
 
 def tighten(words: list[dict], envelope: list[float], rate: int) -> list[dict]:

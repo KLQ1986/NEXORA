@@ -1461,6 +1461,64 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             raise HTTPException(409, "Máy này chưa có mô hình nhìn để xem lại bản dựng")
         return system.viewer.watch(render_id)
 
+    # ---------------------------------------------------------------- how right each field is (design 2026-10-14, section 8)
+    @app.get("/api/v1/fields")
+    def fields_report():
+        from nexora.modules.quality.fields import FIELDS, MIN_LABELS
+        runs = system.fields.runs(5)
+        last = runs[0]["results"] if runs else {}
+        return {"fields": [{"field": f, "name": spec["name"], "source": spec["source"], "bar": spec["bar"], "values": list(spec["values"]),
+                            "status": system.fields.status(f), **{k: v for k, v in (last.get(f) or {}).items() if k not in ("name", "source", "bar", "status")}}
+                           for f, spec in FIELDS.items()],
+                "min_labels": MIN_LABELS, "labels": len(system.fields.labels()), "runs": [{"run_id": r["run_id"], "created_at": r["created_at"]} for r in runs],
+                "regressions": system.fields.regressions()}
+
+    @app.post("/api/v1/fields/measure")
+    def measure_fields():
+        from nexora.app import structure_config
+        system.fields.measure({"structure": structure_config(system), "model": system.orch.setting("model_routes", "{}")})
+        return fields_report()
+
+    @app.get("/api/v1/assets/{asset_id}/golden")
+    def golden_labels(asset_id: str):
+        return {"labels": system.fields.labels(asset_id)}
+
+    @app.post("/api/v1/assets/{asset_id}/golden", status_code=201)
+    def add_golden_labels(asset_id: str, body: dict):
+        """What the operator says is true of stretches of this footage: [{t_start, t_end, field, value}, ...]."""
+        if system.assets.asset(asset_id) is None:
+            raise HTTPException(404, "no such asset")
+        made = []
+        try:
+            for item in body.get("labels") or []:
+                made.append(system.fields.label(asset_id, float(item["t_start"]), float(item["t_end"]), str(item["field"]), str(item["value"]),
+                                                by=str(body.get("by") or "operator")))
+        except (KeyError, ValueError) as err:
+            raise HTTPException(422, str(err))
+        return {"made": made, "labels": system.fields.labels(asset_id)}
+
+    @app.delete("/api/v1/golden/{label_id}")
+    def remove_golden_label(label_id: str):
+        system.fields.unlabel(label_id)
+        return {"ok": True}
+
+    @app.post("/api/v1/assets/{asset_id}/profile", status_code=202)
+    def profile_again(asset_id: str):
+        """Measure and recognise the footage again (people, size of frame, light, colour, text, sound), then describe it."""
+        if system.assets.asset(asset_id) is None:
+            raise HTTPException(404, "no such asset")
+        run_id = system.library.profile(asset_id)
+        if run_id is None:
+            raise HTTPException(409, "Đây là bản trùng của một footage đã có")
+        return {"run_id": run_id}
+
+    @app.get("/api/v1/assets/{asset_id}/profile")
+    def asset_profile(asset_id: str):
+        made = system.library.profiler.profile(asset_id) if system.library.profiler else None
+        if made is None:
+            raise HTTPException(404, "Footage này chưa được đo và nhận diện")
+        return made
+
     @app.get("/api/v1/evaluation")
     def evaluation():
         names = {a["asset_id"]: Path(system.assets.path_of(system.assets.original(a["asset_id"]))).name for a in system.assets.assets()}

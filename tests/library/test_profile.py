@@ -156,7 +156,9 @@ def test_the_model_is_told_only_what_is_sure_and_the_text_found_by_says_what_was
     fields = {"people": {"value": "một", "count": 1, "confidence": "high"}, "shot_size": {"value": "cận", "by": "người"},
               "sound": {"value": ["chim hót"]}, "text": {"value": ["Phở Thìn"]}}
     told = facts_of(fields, {"camera": {"value": "pan"}}, "ngon quá")
-    assert "số người nhận diện được: 1" in told and "cỡ cảnh đo được: cận" in told and "máy lia ngang" in told and "Phở Thìn" in told and "ngon quá" in told
+    assert "có 1 người trong hình" in told and "cỡ cảnh: cận" in told and "máy lia ngang" in told and "Phở Thìn" in told
+    assert "ngon quá" not in told                      # spoken words are not told: a small model copied them into the text on screen
+    assert "không có người nào trong hình" in facts_of({"people": {"count": 0, "confidence": "high"}}, {})
     text = text_of(tidy({"mo_ta": "Một người ăn phở.", "khac_truoc": "tiếp diễn", "chu_the": ["bát phở"], "hanh_dong": [{"ai": "người", "lam_gi": "ăn", "voi": "phở"}]}),
                    fields, {"camera": {"value": "pan"}})
     assert text == "Một người ăn phở. Thấy: bát phở. Hành động: người ăn phở. Hình: cảnh cận; máy lia ngang; tiếng chim hót. Chữ trên hình: Phở Thìn."

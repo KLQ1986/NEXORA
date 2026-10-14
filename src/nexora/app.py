@@ -33,6 +33,7 @@ from nexora.modules.library.transcribe import Transcription
 from nexora.modules.library.understand import Understanding
 from nexora.modules.planning.scripts import Planning
 from nexora.modules.quality.evaluation import Evaluation
+from nexora.modules.quality.fields import Fields
 from nexora.modules.quality.qc import caption_findings, package_checks, picture_and_sound
 from nexora.modules.quality.review import review_cut
 from nexora.modules.quality.rights import rights_report
@@ -63,6 +64,7 @@ class System:
     commands: Commands = None
     viewer: Viewer = None
     evaluation: Evaluation = None
+    fields: "Fields" = None
     publishing: Publishing = None
     autonomy: Autonomy = None
 
@@ -105,6 +107,7 @@ def remove_asset(system: "System", asset_id: str, *, discard_file: bool = False,
     derived = [system.assets.path_of(v) for v in system.assets.versions(asset_id) if v.role != "original"]
     gaps = system.projects.forget_asset(asset_id, reason=f"Footage của câu này ({name}) đã bị xoá khỏi thư viện.")
     cases = system.evaluation.forget_asset(asset_id)
+    system.fields.forget_asset(asset_id)
     moments = system.index.remove_asset(asset_id)
     system.assets.remove(asset_id)
     shared = bool(original.checksum and system.assets.find_original_by_checksum(original.checksum))      # a second copy of the same file still uses what was made from it
@@ -496,6 +499,7 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
         found = {a["asset_id"]: analysis.faults(a["asset_id"]) for a in assets.assets() if a["kind"] == "video"}
         return {asset_id: faults for asset_id, faults in found.items() if faults}
     system.evaluation = Evaluation(db_path, index, threshold=match_threshold, measured=measured_boundaries, faults=coverage_faults_everywhere)
+    system.fields = Fields(db_path, index)
     for publisher in publishers or []:
         adapters.register(publisher)
     system.publishing = Publishing(db_path, projects, adapters, distribution.package, notify=lambda kind, reason: orch.notify(kind, "", reason=reason))

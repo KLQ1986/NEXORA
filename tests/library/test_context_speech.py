@@ -196,3 +196,13 @@ def test_words_are_brought_in_to_where_their_sound_is():
     out = tighten(words, envelope, 100)
     assert out[0]["start"] == pytest.approx(1.0) and out[0]["end"] == pytest.approx(1.3)
     assert out[1]["start"] == pytest.approx(21.3) and out[1]["end"] == pytest.approx(21.7)
+
+
+def test_a_word_left_over_from_an_invented_sentence_goes_with_it():
+    from nexora.modules.library.transcribe import drop_invented
+    said = [{"t_start": 0.0, "t_end": 2.0, "text": "Hãy subscribe cho kênh Ghiền", "words": [{"p": 0.5}]},
+            {"t_start": 2.0, "t_end": 2.3, "text": "Mì", "words": [{"p": 0.5}]},
+            {"t_start": 2.3, "t_end": 5.0, "text": "Gõ để không bỏ lỡ những video hấp dẫn", "words": [{"p": 0.5}]},
+            {"t_start": 9.0, "t_end": 9.5, "text": "Dạ", "words": [{"p": 0.9}]}]
+    kept, dropped = drop_invented(said, [{"t": t / 2, "d": 1.0, "top": [["wind", 0.9]]} for t in range(12)] + [{"t": 9.0, "d": 1.0, "top": [["speech", 0.9]]}])
+    assert [s["text"] for s in kept] == ["Dạ"] and [d["text"] for d in dropped] == ["Hãy subscribe cho kênh Ghiền", "Mì", "Gõ để không bỏ lỡ những video hấp dẫn"]
