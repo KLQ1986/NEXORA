@@ -16,7 +16,7 @@ from typing import Callable
 
 from nexora.core import db
 from nexora.core.ids import new_id
-from nexora.core.index import MomentIndex
+from nexora.core.intelligence import VideoIntelligence
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS golden_labels (label_id TEXT PRIMARY KEY, asset_id TEXT NOT NULL, t_start REAL NOT NULL, t_end REAL NOT NULL, field TEXT NOT NULL,
@@ -33,40 +33,45 @@ MEDIUM_MUST_BE = 0.75
 SIZES = ("cực toàn", "toàn", "trung", "cận", "đặc tả")
 
 
-def _profile(name):
-    return lambda data: ((data.get("profile") or {}).get(name) or {})
+def _read(field: str, sources: tuple[str, ...]):
+    """A field as one kind of source observed it over a beat, from the canonical model."""
+    def read(vi, asset_id: str, span: tuple[float, float]) -> dict:
+        found = [o for o in vi.observations(asset_id, field, span) if o.source in sources]
+        if not found:
+            return {}
+        best = max(found, key=lambda o: min(o.t_end, span[1]) - max(o.t_start, span[0]))
+        return {"value": best.value, "confidence": best.confidence}
+    return read
 
 
-def _model(name):
-    return lambda data: ((data.get("model_labels") or {}).get(name) or {})
-
-
-def _measured(name):
-    return lambda data: ((data.get("labels") or {}).get(name) or {})
-
-
-def _text_present(data):
-    found = (data.get("profile") or {}).get("text")
-    if not data.get("profile"):
+def _text_present(vi, asset_id: str, span: tuple[float, float]) -> dict:
+    """Whether text was read on screen in a beat; only said of beats that were looked at."""
+    if not vi.observations(asset_id, "light", span):
         return {}
-    return {"value": "có" if found and found.get("value") else "không", "confidence": (found or {}).get("confidence", "medium")}
+    found = [o for o in vi.observations(asset_id, "text", span) if o.value]
+    return {"value": "có" if found else "không", "confidence": found[0].confidence if found else "medium"}
 
 
-# Each field: where its value is read, the values it may take, the bar it must clear to be released, and its source.
+MEASURED = ("measured", "recognized")
+PEOPLE = ("không", "một", "hai", "nhóm", "đám đông")
+ANGLES = ("ngang tầm", "từ trên xuống", "từ dưới lên")
+# Each field: how its value is read from the canonical model, the values it may take, the bar it must clear to be released,
+# and its source. The key is the gate's name (`nexora.core.intelligence.gate_key`): a field, or `model.<field>` for a model's.
 FIELDS: dict[str, dict] = {
-    "shot_size": {"name": "Cỡ cảnh (đo)", "read": _profile("shot_size"), "values": SIZES, "bar": 0.90, "source": "measured"},
-    "people": {"name": "Số người (nhận diện)", "read": _profile("people"), "values": ("không", "một", "hai", "nhóm", "đám đông"), "bar": 0.90, "source": "recognized"},
-    "place": {"name": "Trong nhà hay ngoài trời (nhận diện)", "read": _profile("place"), "values": ("trong nhà", "ngoài trời"), "bar": 0.90, "source": "recognized"},
+    "shot_size": {"name": "Cỡ cảnh (đo)", "read": _read("shot_size", MEASURED), "values": SIZES, "bar": 0.90, "source": "measured"},
+    "people": {"name": "Số người (nhận diện)", "read": _read("people", MEASURED), "values": PEOPLE, "bar": 0.90, "source": "recognized"},
+    "place": {"name": "Trong nhà hay ngoài trời (nhận diện)", "read": _read("place", MEASURED), "values": ("trong nhà", "ngoài trời"), "bar": 0.90, "source": "recognized"},
     "text_present": {"name": "Có chữ trên hình (nhận diện)", "read": _text_present, "values": ("có", "không"), "bar": 0.90, "source": "recognized"},
-    "speaker": {"name": "Người nói ở trong khung (đo)", "read": _profile("speaker"), "values": ("trong khung", "ngoài khung"), "bar": 0.90, "source": "measured"},
-    "angle": {"name": "Góc máy (cảm biến)", "read": _profile("angle"), "values": ("ngang tầm", "từ trên xuống", "từ dưới lên"), "bar": 0.90, "source": "measured"},
-    "model.goc_may": {"name": "Góc máy (mô hình)", "read": _model("goc_may"), "values": ("ngang tầm", "từ trên xuống", "từ dưới lên", "trên cao", "nghiêng"), "bar": 0.85, "source": "model", "truth": "angle"},
-    "camera": {"name": "Chuyển động máy (đo)", "read": _measured("camera"), "values": ("static", "pan", "tilt", "push_in", "pull_out", "handheld"), "bar": 0.95, "source": "measured"},
+    "speaker": {"name": "Người nói ở trong khung (đo)", "read": _read("speaker", MEASURED), "values": ("trong khung", "ngoài khung"), "bar": 0.90, "source": "measured"},
+    "angle": {"name": "Góc máy (cảm biến)", "read": _read("angle", MEASURED), "values": ANGLES, "bar": 0.90, "source": "measured"},
+    "camera": {"name": "Chuyển động máy (đo)", "read": _read("camera", MEASURED), "values": ("static", "pan", "tilt", "push_in", "pull_out", "handheld"), "bar": 0.95, "source": "measured"},
     # What a model says is measured against the same answers as the measured field it shadows.
-    "model.co_canh": {"name": "Cỡ cảnh (mô hình)", "read": _model("co_canh"), "values": SIZES, "bar": 0.85, "source": "model", "truth": "shot_size"},
-    "model.so_nguoi": {"name": "Số người (mô hình)", "read": _model("so_nguoi"), "values": ("không", "một", "hai", "nhóm", "đám đông"), "bar": 0.85, "source": "model", "truth": "people"},
-    "model.noi_chon": {"name": "Trong nhà hay ngoài trời (mô hình)", "read": _model("noi_chon"), "values": ("trong nhà", "ngoài trời"), "bar": 0.85, "source": "model", "truth": "place"},
+    "model.shot_size": {"name": "Cỡ cảnh (mô hình)", "read": _read("shot_size", ("model",)), "values": SIZES, "bar": 0.85, "source": "model", "truth": "shot_size"},
+    "model.people": {"name": "Số người (mô hình)", "read": _read("people", ("model",)), "values": PEOPLE, "bar": 0.85, "source": "model", "truth": "people"},
+    "model.place": {"name": "Trong nhà hay ngoài trời (mô hình)", "read": _read("place", ("model",)), "values": ("trong nhà", "ngoài trời"), "bar": 0.85, "source": "model", "truth": "place"},
+    "model.angle": {"name": "Góc máy (mô hình)", "read": _read("angle", ("model",)), "values": ANGLES + ("trên cao", "nghiêng"), "bar": 0.85, "source": "model", "truth": "angle"},
 }
+RENAMED = {"model.co_canh": "model.shot_size", "model.so_nguoi": "model.people", "model.noi_chon": "model.place", "model.goc_may": "model.angle"}
 
 
 def compare(field: str, held, truth: str) -> bool:
@@ -74,11 +79,14 @@ def compare(field: str, held, truth: str) -> bool:
 
 
 class Fields:
-    def __init__(self, db_path: str | Path, index: MomentIndex):
-        self._db, self._index = db.LocalConnections(db_path), index
+    def __init__(self, db_path: str | Path, vi: VideoIntelligence):
+        self._db, self._vi = db.LocalConnections(db_path), vi
         with db.write(self._conn) as c:
             for statement in SCHEMA.strip().split(";\n"):
                 c.execute(statement)
+            for old, new in RENAMED.items():              # the model's fields go by their canonical names now
+                if c.execute("SELECT 1 FROM field_status WHERE field = ?", (new,)).fetchone() is None:
+                    c.execute("UPDATE field_status SET field = ? WHERE field = ?", (new, old))
 
     @property
     def _conn(self):
@@ -126,13 +134,13 @@ class Fields:
             return c.execute("DELETE FROM golden_labels WHERE asset_id = ?", (asset_id,)).rowcount
 
     # ------------------------------------------------------------------------------------------------------ measuring
-    def _held(self, label: dict) -> tuple[dict | None, dict]:
+    def _held(self, label: dict) -> tuple[object | None, dict]:
         """The beat a label is about (the one holding the middle of the labelled stretch) and the field's value there."""
         middle = (label["t_start"] + label["t_end"]) / 2
-        beat = next((m for m in self._index.moments(label["asset_id"], level="segment") if m.t_start <= middle < m.t_end or m.t_start == m.t_end == middle), None)
+        beat = next((b for b in self._vi.segments(label["asset_id"], "beat") if b.t_start <= middle < b.t_end), None)
         if beat is None:
             return None, {}
-        return beat, FIELDS[label["field"]]["read"](beat.data) or {}
+        return beat, FIELDS[label["field"]]["read"](self._vi, label["asset_id"], (beat.t_start, beat.t_end)) or {}
 
     def measure(self, config: dict | None = None) -> dict:
         """Compare every field with every label; set each field's status; keep the run with the configuration it was made under."""
@@ -164,7 +172,7 @@ class Fields:
                              calibration[c]["right"] + calibration[c]["wrong"] >= 5)
             coverage = round(answered / len(labels), 3) if labels else None
             near = None
-            if field in ("shot_size", "model.co_canh") and answered:
+            if field in ("shot_size", "model.shot_size") and answered:
                 near = round(sum(1 for l in labels for _, h in [self._held(l)] if h.get("value") in SIZES and abs(SIZES.index(h["value"]) - SIZES.index(l["value"])) <= 1)
                              / answered, 3)
             results[field] = {"name": spec["name"], "source": spec["source"], "bar": spec["bar"], "labels": len(labels), "answered": answered, "missing": missing, "coverage": coverage,

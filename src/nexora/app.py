@@ -301,13 +301,12 @@ def footage_insights(system: "System") -> dict:
             continue
         sizes, faces, words = [], 0, 0
         for s in shots:
-            made = system.intelligence.profiler.profile(s.get("asset_id") or "") if s.get("asset_id") else None
-            for b in (made or {}).get("beats", []):
-                if b["start"] < (s.get("t_out") or 0) and b["end"] > (s.get("t_in") or 0):
-                    p = b["profile"]
-                    sizes.append((p.get("shot_size") or {}).get("value"))
-                    faces += bool((p.get("people") or {}).get("faces"))
-                    words += bool(p.get("speaker"))
+            if not s.get("asset_id"):
+                continue
+            span = (s.get("t_in") or 0.0, s.get("t_out") or 0.0)
+            sizes += [o.value for o in system.vi.observations(s["asset_id"], "shot_size", span) if o.source != "model"]
+            faces += any((o.evidence.get("faces") or 0) > 0 for o in system.vi.observations(s["asset_id"], "people", span))
+            words += bool(system.vi.observations(s["asset_id"], "speaker", span))
         sizes = [x for x in sizes if x]
         traits = {"cỡ cảnh chính": max(set(sizes), key=sizes.count) if sizes else "không rõ", "có mặt người": faces > 0, "có người nói": words > 0,
                   "số cảnh mỗi phút": "nhiều" if len(shots) / max(length / 60, 1e-3) >= 12 else "ít"}
@@ -325,9 +324,9 @@ def render_rights(system: "System", render_id: str) -> dict:
         if asset:
             original = system.assets.original(asset["asset_id"])
             used = [s for s in render["qc"].get("shots") or [] if s.get("asset_id") == asset["asset_id"]]
-            made = system.intelligence.profiler.profile(asset["asset_id"]) if system.intelligence.profiler else None
-            with_people = sum(1 for b in (made or {}).get("beats", []) if (b["profile"].get("people") or {}).get("count", 0) > 0 and (b["profile"]["people"].get("faces") or 0) > 0
-                              and any(u.get("t_in") is None or (b["start"] < (u.get("t_out") or 1e9) and b["end"] > (u.get("t_in") or 0)) for u in used))
+            # Faces seen in the stretches the cut uses: people who can be recognised need to have agreed to appear.
+            with_people = sum(1 for u in used for o in system.vi.observations(asset["asset_id"], "people", (u.get("t_in") or 0.0, u.get("t_out") or 1e9))
+                              if o.source != "model" and (o.evidence.get("faces") or 0) > 0)
             by_id[asset["asset_id"]] = {"origin": asset["origin"], "name": system.assets.path_of(original).name, "rights": original.metadata.get("rights"),
                                         "people": with_people, "consent": asset.get("consent")}
     options = json.loads(project.get("options") or "{}")
@@ -496,7 +495,6 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     library.register(registry)
     # Video Intelligence: analyses every recording once and keeps what it learns; everything else reads it (design 2026-10-15).
     store = IntelligenceStore(db_path)
-    profiler.store = store
     intelligence = Intelligence(orch, assets, store, analysis, profiler=profiler, understanding=understanding, transcription=transcription)
     intelligence.register(registry)
     library.on_taken_in.append(intelligence.taken_in)
@@ -509,7 +507,7 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     sourcing = Sourcing(orch, projects, index, threshold=match_threshold, adapters=adapters, judge=judge and model is not None, rejected=assets.rejected,
                         may_accept=lambda project: system.autonomy.clips_may_be_accepted(project),
                         cuts=lambda asset_id: (assets.original(asset_id).metadata.get("scene_cuts") or [], assets.original(asset_id).metadata.get("probe", {}).get("duration")),
-                        released=lambda: system.fields.released())
+                        intel=vi)
     sourcing.register(registry)
     intelligence.on_understood.append(lambda asset_id: [sourcing.refine_from_asset(shot_id, asset_id) for shot_id in sourcing.pending_for(asset_id)])
     edit = Edit(orch, projects, assets, adapters, data_dir / "media", voice=voice is not None, voice_name=voice_name, reviewer=review_cut, model=model is not None,
@@ -552,7 +550,7 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
         found = {a["asset_id"]: analysis.faults(a["asset_id"]) for a in assets.assets() if a["kind"] == "video"}
         return {asset_id: faults for asset_id, faults in found.items() if faults}
     system.evaluation = Evaluation(db_path, index, threshold=match_threshold, measured=measured_boundaries, faults=coverage_faults_everywhere)
-    system.fields = Fields(db_path, index)
+    system.fields = Fields(db_path, vi)
     for publisher in publishers or []:
         adapters.register(publisher)
     system.publishing = Publishing(db_path, projects, adapters, distribution.package, notify=lambda kind, reason: orch.notify(kind, "", reason=reason))

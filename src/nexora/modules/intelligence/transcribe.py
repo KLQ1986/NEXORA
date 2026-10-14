@@ -202,6 +202,7 @@ def sentences(words: list[dict]) -> list[dict]:
 class Transcription:
     def __init__(self, assets: AssetStore, index: MomentIndex, adapters: AdapterRegistry):
         self._assets, self._index, self._adapters = assets, index, adapters
+        self.store = None                                       # the canonical model, once the domain has handed it over
 
     def handlers(self) -> dict:
         return {"listen": self._listen}
@@ -256,6 +257,10 @@ class Transcription:
                 embedded += len(batch)
         except AdapterError:
             pass                                    # without the embedding model, speech is still found by its words
+        if self.store is not None and self._assets.asset(ctx.subject_ref) is not None:
+            from nexora.modules.intelligence import publish
+            from nexora.modules.intelligence.analyzers import BY_NAME
+            publish.speech(self.store, ctx.subject_ref, self._index.moments(ctx.subject_ref, level="speech"), BY_NAME["speech"])
         spoken = round(sum(w["end"] - w["start"] for w in words), 1)
         self._assets.update_metadata(original.version_id, speech={"words": len(words), "sentences": len(made), "seconds": spoken,
                                                                  "doubtful": sum(w["p"] < MIN_SURE for w in words), "language": heard.get("language"),

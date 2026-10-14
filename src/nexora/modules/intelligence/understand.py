@@ -233,6 +233,7 @@ class Understanding:
                  structure_of=None, profile_of=None, signals_of=None):
         self._assets, self._index, self._adapters, self._media = assets, index, adapters, Path(media_dir)
         self._signals_of = signals_of or (lambda asset_id: None)
+        self.store = None                                       # the canonical model, once the domain has handed it over
         self._profile_of = profile_of or (lambda asset_id: {})          # the measured and recognised fields of each beat, by (start, end)
         self._seconds = segment_seconds
         self._structure_of = structure_of or (lambda asset_id: None)      # the shots and beats of an asset, once it has been measured
@@ -431,6 +432,10 @@ class Understanding:
             before = vocab.canonical_list(out.get("chu_the") or []) or before
             done += 1
             ctx.heartbeat()
+        if self.store is not None and self._assets.asset(ctx.subject_ref) is not None:
+            from nexora.modules.intelligence import publish
+            from nexora.modules.intelligence.analyzers import BY_NAME
+            publish.descriptions(self.store, ctx.subject_ref, self._index.moments(ctx.subject_ref, level="segment"), BY_NAME["describe"])
         return {"described": done, "unreadable": unreadable}
 
     def _events(self, asset_id: str, segments) -> int:
@@ -456,6 +461,10 @@ class Understanding:
                     e["before"], e["after"] = vocab.mend(str(said.get("truoc") or "")), vocab.mend(str(said.get("sau") or ""))
                 except AdapterError:
                     pass                                   # an event without its states is still an event
+        if self.store is not None and self._assets.asset(asset_id) is not None:
+            from nexora.modules.intelligence import publish
+            from nexora.modules.intelligence.analyzers import BY_NAME
+            publish.events(self.store, asset_id, made, BY_NAME["events"])
         self._index.remove(asset_id, "event")
         for e in made:
             cut = ", bị cụt đầu" if e["cut_start"] else ""
@@ -476,6 +485,9 @@ class Understanding:
         out = self._adapters.submit("model", Request("chat", params={"prompt": SUMMARY_PROMPT.format(lines=lines, genres=", ".join(vocab.GENRES), emotions=", ".join(vocab.EMOTIONS)),
                                                                     "json": True, "max_tokens": 900}, attempt_id=ctx.claim.attempt_id)).outputs["json"]
         out = grounded(out, [m.text for m in segments] + [m.text for m in speech], {clock(m.t_start) for m in segments} | {clock(m.t_start) for m in speech})
+        if self.store is not None and self._assets.asset(ctx.subject_ref) is not None:
+            from nexora.modules.intelligence import publish
+            publish.summary(self.store, ctx.subject_ref, out)
         duration = self._assets.original(ctx.subject_ref).metadata.get("probe", {}).get("duration", segments[-1].t_end)
         self._index.upsert(ctx.subject_ref, "video", 0.0, round(float(duration), 1), str(out.get("tom_tat", "")).strip(),
                            data={"detail": out}, analyzer=self.analyzer)

@@ -62,10 +62,10 @@ export function ProfileFacts({ beat }: { beat: BeatView }) {
       {!!p.text?.value && <p className="text-faint">{tr("Chữ trên hình:")} <span className="text-ink">{list(p.text.value)}</span></p>}
       {Object.keys(m).length > 0 && (
         <div className="flex flex-wrap gap-1.5">
-          <Fact name={tr("Cỡ cảnh")} label={m.co_canh} text={list(m.co_canh?.value)} />
-          <Fact name={tr("Góc máy")} label={m.goc_may} text={list(m.goc_may?.value)} />
-          <Fact name={tr("Số người")} label={m.so_nguoi} text={list(m.so_nguoi?.value)} />
-          <Fact name={tr("Nơi")} label={m.noi_chon} text={list(m.noi_chon?.value)} />
+          <Fact name={tr("Cỡ cảnh")} label={m.shot_size} text={list(m.shot_size?.value)} />
+          <Fact name={tr("Góc máy")} label={m.angle} text={list(m.angle?.value)} />
+          <Fact name={tr("Số người")} label={m.people} text={list(m.people?.value)} />
+          <Fact name={tr("Nơi")} label={m.place} text={list(m.place?.value)} />
         </div>)}
       {!!beat.new_things?.length && <p className="text-faint">{tr("Điểm mới so với nhịp trước:")} <span className="text-ink">{beat.new_things.join(", ")}</span></p>}
     </div>

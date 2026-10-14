@@ -56,15 +56,21 @@ def test_labels_are_given_and_read_through_the_api_and_an_unknown_value_is_refus
     assert api.post(f"/api/v1/assets/{asset}/profile").status_code == 202
 
 
-def test_a_line_asking_for_a_close_shot_lifts_a_close_beat_only_once_the_field_is_released():
+def test_a_line_asking_for_a_close_shot_lifts_a_close_beat_only_once_the_field_is_released(tmp_path):
     from types import SimpleNamespace
-    from nexora.modules.sourcing.match import asked, label_fit, spread
+    from nexora.core.intelligence import VideoIntelligence
+    from nexora.core.intelligence_store import IntelligenceStore
+    from nexora.modules.sourcing.match import asked, spread
     assert asked("Cận cảnh tay pha cà phê") == {"shot_size": "cận"}
     assert asked("Toàn cảnh bãi biển vắng người") == {"shot_size": "toàn", "people": "không"}
     assert asked("Cô ấy nói trước camera trong phòng") == {"place": "trong nhà", "speaker": "trong khung"}
-    close, wide = {"profile": {"shot_size": {"value": "cận"}}}, {"profile": {"shot_size": {"value": "toàn"}}}
-    assert label_fit({"shot_size": "cận"}, close, set()) == (0.0, [])                       # on trial: not relied on
-    assert label_fit({"shot_size": "cận"}, close, {"shot_size"})[0] > 0 > label_fit({"shot_size": "cận"}, wide, {"shot_size"})[0]
+    store = IntelligenceStore(tmp_path / "vi.db")
+    store.observe("close", 0, 4, "shot_size", "cận", source="measured", analyzer="look@3")
+    store.observe("wide", 0, 4, "shot_size", "toàn", source="measured", analyzer="look@3")
+    store.observe("wide", 0, 4, "shot_size", "cận", source="model", analyzer="describe@v3")
+    trial, released = VideoIntelligence(tmp_path / "vi.db"), VideoIntelligence(tmp_path / "vi.db", released=lambda: {"shot_size"})
+    assert trial.fit("close", (0, 4), {"shot_size": "cận"}) == (0.0, [])            # on trial: not relied on
+    assert released.fit("close", (0, 4), {"shot_size": "cận"})[0] > 0 > released.fit("wide", (0, 4), {"shot_size": "cận"})[0]
     hit = lambda asset, a, b: SimpleNamespace(moment=SimpleNamespace(asset_id=asset, t_start=a, t_end=b))
     kept = spread([hit("x", 0, 4), hit("x", 4, 8), hit("y", 0, 4), hit("x", 20, 24)], 3)
     assert [(h.moment.asset_id, h.moment.t_start) for h in kept] == [("x", 0), ("y", 0), ("x", 20)]
@@ -80,7 +86,7 @@ def test_a_field_that_gives_no_value_on_the_hard_cases_is_not_released(tmp_path)
         system.fields.label(asset, b.t_start + 0.001 * k, b.t_end, "speaker", "trong khung")       # nobody speaks: the field never answers
     result = system.fields.measure({})["fields"]["speaker"]
     assert result["coverage"] == 0.0 and result["status"] == "trial"
-    assert system.fields.measure({})["fields"]["model.co_canh"]["labels"] == 0
+    assert system.fields.measure({})["fields"]["model.shot_size"]["labels"] == 0
 
 
 def test_pictures_alike_and_the_scenes_of_a_shoot_are_served(tmp_path):
@@ -132,9 +138,9 @@ def test_faces_are_grouped_into_people_and_a_name_follows_its_person(tmp_path):
 
 
 def test_every_change_of_an_answer_is_kept(tmp_path):
-    from nexora.core.index import MomentIndex
+    from nexora.core.intelligence import VideoIntelligence
     from nexora.modules.quality.fields import Fields
-    fields = Fields(tmp_path / "f.db", MomentIndex(tmp_path / "f.db"))
+    fields = Fields(tmp_path / "f.db", VideoIntelligence(tmp_path / "f.db"))
     fields.label("a", 0, 2, "people", "một", by="claude")
     fields.label("a", 0, 2, "people", "một", by="claude")              # the same answer again: nothing changed
     label = fields.label("a", 0, 2, "people", "hai", by="operator")

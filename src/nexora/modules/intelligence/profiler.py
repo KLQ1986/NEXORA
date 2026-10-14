@@ -32,6 +32,7 @@ class Profiler:
                  words: Callable[[str], list[dict]] = lambda asset_id: []):
         self._assets, self._index, self._adapters, self._media = assets, index, adapters, Path(media_dir)
         self._structure_of, self._signals_of, self._words = structure_of, signals_of, words
+        self.store = None                                       # the canonical model, once the domain has handed it over
 
     def handlers(self) -> dict:
         return {"probe": self._probe, "look": self._look, "listen": self._listen, "profile": self._profile}
@@ -378,7 +379,15 @@ class Profiler:
         made = self.build(ctx.subject_ref)
         if made is None:
             return {"skipped": "nothing measured yet"}
-        scenes = self.publish_scenes(self.shoot_of(ctx.subject_ref))
+        shoot = self.shoot_of(ctx.subject_ref)
+        scenes = self.publish_scenes(shoot)
+        if self.store is not None:
+            from nexora.modules.intelligence import publish
+            from nexora.modules.intelligence.analyzers import BY_NAME
+            publish.scenes(self.store, scenes, shoot, BY_NAME["scenes"])
+            everyone = [a["asset_id"] for a in self._assets.assets() if a["kind"] == "video"]
+            publish.entities(self.store, "person", self.people(everyone))
+            publish.entities(self.store, "place", self.places(everyone))
         return {"beats": len(made["beats"]), "text": len(made["text_spans"]), "sound": len(made["sound_events"]), "scenes_in_shoot": len(scenes)}
 
     def shoot_of(self, asset_id: str) -> list[str]:
@@ -446,6 +455,13 @@ class Profiler:
         self._assets.update_metadata(original.version_id, probe={**original.metadata.get("probe", {}), "log_profile": log_profile},
                                      profile={k: whole[k] for k in ("orientation", "language", "log_profile", "pacing", "hook", "platforms", "quality", "loudness", "calls_to_action")})
         self._publish(asset_id, made)
+        if self.store is not None and self._assets.asset(asset_id) is not None:
+            from nexora.modules.intelligence import publish
+            from nexora.modules.intelligence.analyzers import BY_NAME
+            kept = {kind: self._path(asset_id, suffix) for kind, suffix in (("signals", "_signals.npz"), ("look", "_look.json"), ("listen", "_listen.json"),
+                    ("prints", "_prints.npz"), ("faces", "_faces.npz"), ("telemetry", "_telemetry.json"), ("profile", "_profile.json"), ("structure", "_structure.json"))}
+            used = [BY_NAME["look"], BY_NAME["listen"]] + ([BY_NAME["telemetry"]] if sensed else [])
+            publish.profile(self.store, asset_id, made, probe=probe, artifacts={k: str(v) for k, v in kept.items() if v.is_file()}, analyzers=used)
         return made
 
     def _publish(self, asset_id: str, made: dict) -> None:

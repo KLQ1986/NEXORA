@@ -4,6 +4,7 @@ Every shot ends with a selection or a reported gap; nothing is filled silently. 
 """
 from nexora.core.adapter import AdapterError, AdapterRegistry, Request
 from nexora.core.index import MomentIndex
+from nexora.core.intelligence import VideoIntelligence
 from nexora.core.orchestrator import Orchestrator
 from nexora.core.pipeline import PipelineDefinition, PipelineRegistry, StageDef
 from nexora.core.projects import ProjectStore
@@ -33,7 +34,6 @@ ASKS = [
     (r"nói (trước|vào|với) (máy|camera|ống kính)|nhìn vào (máy|camera)|talking head", "speaker", "trong khung"),
     (r"từ trên (cao )?nhìn xuống|nhìn xuống|góc cao|top[- ]?down", "angle", "từ trên xuống"), (r"nhìn lên|ngước lên|góc thấp|low angle", "angle", "từ dưới lên"),
 ]
-LABEL_BONUS, LABEL_PENALTY = 0.08, 0.15       # a released field that agrees with what a line asks for lifts a candidate; one that disagrees sinks it
 
 
 def asked(line: str) -> dict[str, str]:
@@ -44,37 +44,6 @@ def asked(line: str) -> dict[str, str]:
         if field not in out and re.search(pattern, line, re.IGNORECASE):
             out[field] = value
     return out
-
-
-# Where a measured field has no answer, the model's label for the same thing may stand in for it, if it has proved itself too:
-# measured on the operator's footage, the recogniser left bathrooms without an indoor-or-outdoor answer that the model gave right.
-STAND_IN = {"place": "model.noi_chon", "people": "model.so_nguoi", "shot_size": "model.co_canh", "angle": "model.goc_may"}
-
-
-def held(moment_data: dict, field: str, released: set[str] | None = None):
-    """The value of a field for a moment, from its measured profile, or from the model's label when that field is released."""
-    profile = moment_data.get("profile") or {}
-    value = (profile.get(field) or {}).get("value") if field in (released if released is not None else {field}) else None
-    if value is None and released is not None and STAND_IN.get(field) in released:
-        value = ((moment_data.get("model_labels") or {}).get(STAND_IN[field].split(".", 1)[1]) or {}).get("value")
-    return value
-
-
-def label_fit(wanted: dict[str, str], moment_data: dict, released: set[str]) -> tuple[float, list[str]]:
-    """How much the measured labels of a moment agree with what a line asks for, counting released fields only."""
-    change, why = 0.0, []
-    for field, value in wanted.items():
-        if field not in released and STAND_IN.get(field) not in released:
-            continue
-        have = held(moment_data, field, released)
-        if have is None:
-            continue
-        if have == value:
-            change += LABEL_BONUS
-            why.append(f"{field} {value} (đo được)")
-        else:
-            change -= LABEL_PENALTY
-    return change, why
 
 
 def spread(hits: list, keep: int) -> list:
@@ -131,14 +100,15 @@ def clear_of_cuts(t_in: float, t_out: float, cuts: list[float], *, floor: float 
 
 class Sourcing:
     def __init__(self, orch: Orchestrator, projects: ProjectStore, index: MomentIndex, *, threshold: float = 0.5, alternates: int = 3,
-                 adapters: AdapterRegistry | None = None, judge: bool = False, judge_pass: int = 5, rejected=None, may_accept=None, cuts=None, released=None):
+                 adapters: AdapterRegistry | None = None, judge: bool = False, judge_pass: int = 5, rejected=None, may_accept=None, cuts=None,
+                 intel: VideoIntelligence | None = None):
         self._orch, self._projects, self._index = orch, projects, index
         self._adapters, self._judge, self._judge_pass = adapters, judge and adapters is not None, judge_pass
         self._threshold, self._alternates = threshold, alternates
         self._rejected = rejected or (lambda: frozenset())       # assets the operator has set aside: never proposed
         self._cuts = cuts or (lambda asset_id: ([], None))      # asset id -> (where its shots change, how long it is)
         self._may_accept = may_accept or (lambda project: bool(project.get("auto_accept")))      # whether a confident match needs no review; the autonomy level decides
-        self._released = released or (lambda: set())            # the profile fields accurate enough to be relied on (design 2026-10-14, section 8.3)
+        self._intel = intel                                     # what is known about the footage, from the canonical model (design 2026-10-15)
 
     def register(self, registry: PipelineRegistry) -> None:
         registry.register(MATCH, {"match": self._match})
@@ -219,8 +189,9 @@ class Sourcing:
             judged = len(self._projects.feedback(shot.text))
             hits = self._index.search(wanted, limit=3 * (self._alternates + 1) + judged, min_score=self._threshold, exclude=frozenset(used), exclude_assets=self._rejected())
             # What the line asks to see, held against the measured labels that have proved accurate; then one hit per stretch.
-            asks, released = asked(wanted), self._released()
-            fits = {h.moment.moment_id: label_fit(asks, h.moment.data, released) for h in hits}
+            asks = asked(wanted)
+            fits = {h.moment.moment_id: (self._intel.fit(h.moment.asset_id, (h.moment.t_start, h.moment.t_end), asks) if self._intel and asks else (0.0, []))
+                    for h in hits}
             hits = sorted(hits, key=lambda h: h.score + fits[h.moment.moment_id][0], reverse=True)
             hits = spread(hits, self._alternates + 1 + judged)
             told = {h.moment.moment_id: self._said(shot.text, h.moment) for h in hits}

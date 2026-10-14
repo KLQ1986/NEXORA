@@ -30,6 +30,7 @@ class Analysis:
         self._assets, self._adapters, self._media = assets, adapters, Path(media_dir)
         self.rules = rules
         self._words = words or (lambda asset_id: [])          # the words spoken in an asset, as (start, end) in seconds
+        self.store = None                                       # the canonical model, once the domain has handed it over
 
     def handlers(self) -> dict:
         return {"signals": self._signals_stage, "structure": self._structure_stage}
@@ -115,6 +116,10 @@ class Analysis:
         cuts = sorted(to_seconds(s["start"], 2) for s in made["shots"] if s["transition_in"] in ("cut", "dissolve", "marked"))
         self._assets.update_metadata(original.version_id, scene_cuts=cuts,
                                      structure={"version": made["version"], "shots": len(made["shots"]), "beats": len(made["beats"]), "bars": made["bars"]["value"]})
+        if self.store is not None and self._assets.asset(asset_id) is not None:
+            from nexora.modules.intelligence import publish
+            from nexora.modules.intelligence.analyzers import BY_NAME
+            publish.structure(self.store, asset_id, made, BY_NAME["structure"])
         return made
 
     def as_measured(self, asset_id: str) -> dict | None:

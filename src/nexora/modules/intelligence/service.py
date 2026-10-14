@@ -8,27 +8,12 @@ when the words become known.
 """
 from nexora.core.adapter import AdapterError
 from nexora.core.assets import AssetStore
-from nexora.core.intelligence import Analyzer
 from nexora.core.intelligence_store import IntelligenceStore
 from nexora.core.orchestrator import Orchestrator
 from nexora.core.pipeline import PipelineRegistry
 from nexora.modules.intelligence.analysis import STRUCTURE, Analysis
+from nexora.modules.intelligence.analyzers import ANALYZERS
 from nexora.modules.intelligence.structure import beat_seconds
-
-# The analyzers of this domain, with what each needs (design 2026-10-15, section 3.1). A version change marks every recording
-# analysed with the older version, and every analyzer that needs it, as stale (`VideoIntelligence.stale`).
-ANALYZERS = (
-    Analyzer("structure", "2", ("file",), ("shot", "beat", "camera", "shake", "sharpness", "exposure", "speech", "speed", "still", "direction", "position")),
-    Analyzer("telemetry", "1", ("file",), ("angle", "tilt", "turning", "exposure_settings")),
-    Analyzer("look", "3", ("file", "structure"), ("people", "shot_size", "posture", "place", "scene_tags", "horizon", "aesthetic", "subject_place", "speaker",
-                                                  "light", "backlit", "colour", "noise", "composition", "depth", "text", "holding", "span")),
-    Analyzer("listen", "1", ("file",), ("sound", "music", "loudness", "clipping", "wind")),
-    Analyzer("speech", "2", ("file", "listen"), ("sentence", "speaker_id")),
-    Analyzer("describe", "v3", ("look", "structure", "speech"), ("description", "model.shot_size", "model.people", "model.place", "model.angle")),
-    Analyzer("events", "1", ("describe",), ("event",)),
-    Analyzer("scenes", "1", ("look",), ("scene",)),
-)
-
 
 class Intelligence:
     def __init__(self, orch: Orchestrator, assets: AssetStore, store: IntelligenceStore, analysis: Analysis, *, profiler=None, understanding=None, transcription=None):
@@ -38,6 +23,9 @@ class Intelligence:
         self.on_understood = []                     # called with an asset id once it has been described and indexed
         for analyzer in ANALYZERS:
             store.declare(analyzer)
+        for part in (analysis, profiler, understanding, transcription):
+            if part is not None:
+                part.store = store                   # every analyzer writes what it learns into the canonical model
 
     def register(self, registry: PipelineRegistry) -> None:
         registry.register(STRUCTURE, self.analysis.handlers(), on_success=lambda run_id, asset_id: self.profile(asset_id))
@@ -81,6 +69,53 @@ class Intelligence:
                 self._understanding.embed_pending(asset_id)
             except AdapterError:
                 pass                                 # found by its words until the embedding model is back
+
+    def publish_existing(self, asset_id: str) -> dict:
+        """Put what was already learnt about a recording into the canonical model, from the files and the index kept for it,
+        without analysing it again. For a library analysed before the canonical model existed."""
+        from nexora.modules.intelligence import publish
+        from nexora.modules.intelligence.analyzers import BY_NAME
+        done = {}
+        made = self.analysis.structure(asset_id)
+        if made:
+            publish.structure(self.store, asset_id, made, BY_NAME["structure"]); done["structure"] = len(made.get("beats", []))
+        if self.profiler is not None and self.profiler.profile(asset_id):
+            self.profiler.build(asset_id); done["profile"] = True
+        if self._understanding is not None:
+            index = self._understanding._index
+            beats = index.moments(asset_id, level="segment")
+            if beats:
+                publish.descriptions(self.store, asset_id, beats, BY_NAME["describe"]); done["descriptions"] = len(beats)
+            found = [m.data["event"] for m in index.moments(asset_id, level="event") if m.data.get("event")]
+            publish.events(self.store, asset_id, found, BY_NAME["events"]); done["events"] = len(found)
+            video = index.moments(asset_id, level="video")
+            if video and video[0].data.get("detail"):
+                publish.summary(self.store, asset_id, video[0].data["detail"])
+            sentences = index.moments(asset_id, level="speech")
+            publish.speech(self.store, asset_id, sentences, BY_NAME["speech"]); done["sentences"] = len(sentences)
+        return done
+
+    def settle_flag(self, moment_id: str, index: int, state: str, note: str | None = None) -> list[dict]:
+        """The operator closes a flag on a beat: "resolved" (put right, or the model was right after all) or "ignored"."""
+        import time
+        idx = self._understanding._index if self._understanding else None
+        moment = idx.by_id(moment_id) if idx else None
+        if moment is None or state not in ("open", "resolved", "ignored"):
+            raise ValueError("bad_flag")
+        flags = list(moment.data.get("flags") or [])
+        if not 0 <= index < len(flags):
+            raise LookupError(index)
+        flags[index] = {**flags[index], "state": state, "settled_at": time.time(), **({"note": note} if note else {})}
+        idx.merge_data(moment.moment_id, flags=flags)
+        self.store.observe(moment.asset_id, moment.t_start, moment.t_end, "flags", flags, source="measured", confidence="high", analyzer="operator")
+        return flags
+
+    def name_person(self, key: str, name: str) -> None:
+        """The operator names a person found in the library; the name follows them through every later grouping."""
+        from nexora.modules.intelligence import publish
+        self.profiler.name_person(key, name)
+        everyone = [a["asset_id"] for a in self._assets.assets() if a["kind"] == "video"]
+        publish.entities(self.store, "person", self.profiler.people(everyone))
 
     def forget(self, asset_id: str) -> int:
         return self.store.forget(asset_id)

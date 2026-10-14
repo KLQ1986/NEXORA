@@ -576,14 +576,12 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         # Pictures, speech and the operator's own notes are searched together; assets set aside are left out.
         # What the words ask to see ("cận cảnh", "không có người", "trong nhà") is held against the fields that have proved
         # accurate (design group 15): an agreeing stretch moves up, a disagreeing one down, and the reason is shown.
-        from nexora.modules.sourcing.match import asked, label_fit
-        hits = system.index.search(q, limit=limit * 3, min_score=0.3, level=("segment", "speech", "note", "frame", "text", "sound", "event", "scene"),
-                                   exclude_assets=system.assets.rejected())
+        from nexora.modules.sourcing.match import asked
         wanted, released = asked(q), system.fields.released()
-        fits = {h.moment.moment_id: label_fit(wanted, h.moment.data, released) for h in hits}
-        hits = sorted(hits, key=lambda h: h.score + fits[h.moment.moment_id][0], reverse=True)[:limit]
-        return {"asked": wanted, "used": sorted(f for f in wanted if f in released),
-                "hits": [{**moment_view(h.moment, h.score), "asset": asset_brief(h.moment.asset_id), "fits": fits[h.moment.moment_id][1]} for h in hits]}
+        found = system.vi.find(q, limit=limit, levels=("segment", "speech", "note", "frame", "text", "sound", "event", "scene"), wanted=wanted,
+                               exclude_assets=system.assets.rejected())
+        return {"asked": wanted, "used": sorted(f for f in wanted if f in released or f"model.{f}" in released),
+                "hits": [{**moment_view(m, score), "asset": asset_brief(m.asset_id), "fits": why} for score, m, why in found]}
 
     @app.get("/api/v1/assets/{asset_id}/moments")
     def asset_moments(asset_id: str):
@@ -606,15 +604,19 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         if made is None:
             return {**base, "shots": [], "beats": [], "transitions": [], "marks": [], "faults": [], "bars": None, "boundaries": {"shot": [], "beat": []}}
         said = {(m.t_start, m.t_end): m for m in system.index.moments(asset_id, level="segment")}
-        fields = system.intelligence.profiler.beat_fields(asset_id) if system.intelligence.profiler else {}
         golden = system.fields.labels(asset_id)
+        known = system.vi.observations(asset_id)                      # everything learnt about this recording, from the canonical model
         beats = []
         for beat in made["beats"]:
             t0, t1 = to_seconds(beat["start"], 2), to_seconds(beat["end"], 2)
             m = said.get((t0, t1))
+            here = [o for o in known if abs(o.t_start - t0) < 0.02 and abs(o.t_end - t1) < 0.02]
+            label = lambda o: {"value": o.value, "source": o.source, "confidence": o.confidence, **o.evidence}
             beats.append({"t_start": t0, "t_end": t1, "shot": beat["shot"], "pinned": beat["pinned"], "labels": beat["labels"], "frames": beat["frames"],
-                          "moment": moment_view(m) if m else None, "profile": fields.get((t0, t1)) or (m.data.get("profile") if m else None) or {},
-                          "model_labels": (m.data.get("model_labels") if m else None) or {}, "flags": (m.data.get("flags") if m else None) or [],
+                          "moment": moment_view(m) if m else None,
+                          "profile": {o.field: label(o) for o in here if o.source in ("measured", "recognized") and o.field not in ("flags",) and o.analyzer.startswith(("look", "listen", "telemetry"))},
+                          "model_labels": {o.field: label(o) for o in here if o.source == "model" and o.field in ("shot_size", "people", "place", "angle")},
+                          "flags": next((o.value for o in here if o.field == "flags"), []),
                           "new_things": (m.data.get("new_things") if m else None) or [],
                           "golden": [g for g in golden if t0 <= (g["t_start"] + g["t_end"]) / 2 < t1]})
         return {**base, "beats": beats, "bars": made["bars"], "faults": system.intelligence.analysis.faults(asset_id), "marks": system.intelligence.analysis.pinned(asset_id),
@@ -1526,12 +1528,15 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         names = {a["asset_id"]: (a.get("title") or Path(system.assets.path_of(system.assets.original(a["asset_id"]))).name) for a in system.assets.assets()}
         out = []
         for asset_id in names:
-            for m in system.index.moments(asset_id, level="segment"):
-                for k, flag in enumerate(m.data.get("flags") or []):
+            said = {(round(m.t_start, 2), round(m.t_end, 2)): m for m in system.index.moments(asset_id, level="segment")}
+            for o in system.vi.observations(asset_id, "flags"):
+                m = said.get((round(o.t_start, 2), round(o.t_end, 2)))
+                if m is None:
+                    continue
+                for k, flag in enumerate(o.value or []):
                     if flag.get("state", "open") == state:
-                        out.append({"moment_id": m.moment_id, "index": k, "asset_id": asset_id, "name": names[asset_id], "t_start": m.t_start, "t_end": m.t_end,
-                                    "rule": flag.get("rule"), "message": flag.get("message"), "state": flag.get("state", "open"), "frame": m.data.get("frame"),
-                                    "text": m.text, "model_labels": m.data.get("model_labels") or {}, "profile": m.data.get("profile") or {}})
+                        out.append({"moment_id": m.moment_id, "index": k, "asset_id": asset_id, "name": names[asset_id], "t_start": o.t_start, "t_end": o.t_end,
+                                    "rule": flag.get("rule"), "message": flag.get("message"), "state": flag.get("state", "open"), "frame": m.data.get("frame"), "text": m.text})
         counts: dict[str, int] = {}
         for f in out:
             counts[f["rule"]] = counts.get(f["rule"], 0) + 1
@@ -1540,16 +1545,12 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
     @app.post("/api/v1/flags")
     def settle_flag(body: dict):
         """Close a flag: "resolved" (the operator put it right, or the model was right after all) or "ignored"."""
-        moment = system.index.by_id(str(body.get("moment_id", "")))
-        state = str(body.get("state", ""))
-        if moment is None or state not in ("open", "resolved", "ignored"):
+        try:
+            flags = system.intelligence.settle_flag(str(body.get("moment_id", "")), int(body.get("index", -1)), str(body.get("state", "")), str(body["note"]) if body.get("note") else None)
+        except ValueError:
             raise HTTPException(422, "Cần một cảnh có thật và một trạng thái: open, resolved, ignored")
-        flags = list(moment.data.get("flags") or [])
-        k = int(body.get("index", -1))
-        if not 0 <= k < len(flags):
+        except LookupError:
             raise HTTPException(404, "no such flag")
-        flags[k] = {**flags[k], "state": state, "settled_at": time.time(), **({"note": str(body["note"])} if body.get("note") else {})}
-        system.index.merge_data(moment.moment_id, flags=flags)
         return {"flags": flags}
 
     @app.post("/api/v1/assets/{asset_id}/profile", status_code=202)
@@ -1566,63 +1567,61 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
     def alike(moment_id: str, limit: int = 8):
         """Stretches anywhere in the library whose pictures look like this one (Apple's feature print, design group 15)."""
         moment = system.index.by_id(moment_id)
-        if moment is None or system.intelligence.profiler is None:
+        if moment is None:
             raise HTTPException(404, "no such moment")
-        among = [a["asset_id"] for a in system.assets.assets() if a["kind"] == "video"]
         out = []
-        for score, asset_id, a, b in system.intelligence.profiler.alike(moment.asset_id, moment.t_start, moment.t_end, among=among, limit=limit):
+        for score, asset_id, a, b in system.vi.alike(moment.asset_id, moment.t_start, moment.t_end, limit=limit):
             m = system.index.get(asset_id, "segment", a, b)
             if m is not None:
                 out.append({**moment_view(m, score), "asset": asset_brief(asset_id)})
         return {"alike": out}
 
-    @app.post("/api/v1/assets/{asset_id}/template", status_code=201)
-    def template_from_asset(asset_id: str, body: dict):
-        """Make a format template from the style of this recording, typically a reference video (design group 13)."""
-        from nexora.app import templates
-        from nexora.modules.intelligence.profile import template_from_style
-        made = system.intelligence.profiler.profile(asset_id) if system.intelligence.profiler else None
-        name = str(body.get("name") or "").strip()
-        if made is None or not name:
-            raise HTTPException(409, "Cần một tên, và footage phải được đo và nhận diện trước")
-        template = template_from_style(made["asset"], name)
-        kept = [t for t in templates(system) if t["name"] != name] + [template]
-        system.orch.set_setting("templates", json.dumps(kept, ensure_ascii=False))
-        return template
+    @app.get("/api/v1/assets/{asset_id}/scenes")
+    def shoot_scenes(asset_id: str):
+        """The scenes this recording passes through, with the other recordings of its shoot each one spans (design group 03)."""
+        need_asset(asset_id)
+        scenes, seen = [], set()
+        for seg in system.vi.segments(asset_id, "scene"):
+            if seg.data["scene"] not in seen:
+                seen.add(seg.data["scene"])
+                scenes.append({"number": seg.data["scene"], "name": seg.data["name"], "why": seg.data["why"], "assets": seg.data["assets"],
+                               "beats": [{"asset_id": asset_id, "start": seg.t_start, "end": seg.t_end}]})
+        shoot = system.intelligence.profiler.shoot_of(asset_id) if system.intelligence.profiler else [asset_id]
+        return {"assets": sorted(set(shoot) | {a for s in scenes for a in s["assets"]}), "scenes": scenes}
 
     @app.get("/api/v1/insights/footage")
     def insights_footage():
         from nexora.app import footage_insights
         return footage_insights(system)
 
+    def entity_view(e: dict) -> dict:
+        return {"key": e["key"], "name": e["name"] or (e["data"].get("name") if e["kind"] == "place" else None), "faces": len(e["appearances"]), "beats": len(e["appearances"]),
+                "assets": sorted({a["asset_id"] for a in e["appearances"]}), "appearances": e["appearances"][:40], "confidence": e["data"].get("confidence", "medium")}
+
     @app.get("/api/v1/people")
     def people():
         """The people of the library, faces grouped by likeness, with the names the operator gave (design group 06)."""
-        return {"people": system.intelligence.profiler.people([a["asset_id"] for a in system.assets.assets() if a["kind"] == "video"])}
+        return {"people": sorted((entity_view(e) for e in system.vi.entities("person")), key=lambda p: -p["faces"])}
 
     @app.get("/api/v1/places")
     def places():
         """Places seen in the library, grouped across shots and recordings by how alike their pictures look (design group 06)."""
-        return {"places": system.intelligence.profiler.places([a["asset_id"] for a in system.assets.assets() if a["kind"] == "video"])}
+        return {"places": sorted((entity_view(e) for e in system.vi.entities("place")), key=lambda p: (-len(p["assets"]), -p["beats"]))}
 
     @app.post("/api/v1/people/name")
     def name_person(body: dict):
-        system.intelligence.profiler.name_person(str(body.get("key", "")), str(body.get("name", "")))
+        system.intelligence.name_person(str(body.get("key", "")), str(body.get("name", "")))
         return people()
-
-    @app.get("/api/v1/assets/{asset_id}/scenes")
-    def shoot_scenes(asset_id: str):
-        """The scenes of the shoot this recording belongs to, across its files (design group 03)."""
-        need_asset(asset_id)
-        shoot = system.intelligence.profiler.shoot_of(asset_id)
-        return {"assets": shoot, "scenes": system.intelligence.profiler.scenes(shoot)}
 
     @app.get("/api/v1/assets/{asset_id}/profile")
     def asset_profile(asset_id: str):
-        made = system.intelligence.profiler.profile(asset_id) if system.intelligence.profiler else None
-        if made is None:
+        known = system.vi.recording(asset_id)
+        whole = ((known or {}).get("summary") or {}).get("profile")
+        if not whole:
             raise HTTPException(404, "Footage này chưa được đo và nhận diện")
-        return made
+        spans = [s.data for s in system.vi.segments(asset_id, "span") if s.data.get("type") == "text"]
+        return {"asset": whole, "text_spans": spans, "recognised": bool(system.vi.observations(asset_id, "people")),
+                "beats": [{"start": b.t_start, "end": b.t_end} for b in system.vi.segments(asset_id, "beat")], "analysed": system.vi.analysed(asset_id)}
 
     @app.get("/api/v1/evaluation")
     def evaluation():
