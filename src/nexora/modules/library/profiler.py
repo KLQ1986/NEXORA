@@ -165,6 +165,29 @@ class Profiler:
                         "appearances": members[:50], "source": "measured", "confidence": "low" if len(members) < 3 else "medium"})
         return sorted(out, key=lambda x: -x["faces"])
 
+    def places(self, asset_ids: list[str], *, same: float = 0.85) -> list[dict]:
+        """Places of the library: beats whose pictures look alike (feature prints), from any recording, grouped (design group 06).
+        Each place lists where it appears and the words the recogniser and the operator's notes give it."""
+        rows, prints = [], []
+        for asset_id in asset_ids:
+            made = self.profile(asset_id) or {}
+            tags = {(b["start"], b["end"]): ((b["profile"].get("scene_tags") or {}).get("value") or []) for b in made.get("beats", [])}
+            for (a, b), v in self.beat_prints(asset_id).items():
+                rows.append({"asset_id": asset_id, "start": a, "end": b, "tags": tags.get((a, b), [])})
+                prints.append(v)
+        groups = P.group_faces(np.array(prints), same=same) if prints else []
+        out = []
+        for g in groups:
+            members = [rows[i] for i in g]
+            counts: dict[str, int] = {}
+            for m in members:
+                for t in m["tags"][:6]:
+                    counts[t] = counts.get(t, 0) + 1
+            words = [t for t, _ in sorted(counts.items(), key=lambda kv: -kv[1]) if t not in ("ngoài trời", "trong nhà", "bầu trời", "trời xanh")][:4]
+            out.append({"name": ", ".join(words) or "nơi chưa rõ", "beats": len(members), "assets": sorted({m["asset_id"] for m in members}),
+                        "appearances": members[:40], "source": "recognized", "confidence": "medium" if len(members) >= 3 else "low"})
+        return sorted(out, key=lambda x: (-len(x["assets"]), -x["beats"]))
+
     def _names(self) -> dict:
         try:
             return json.loads((self._media / "people.json").read_text(encoding="utf-8"))

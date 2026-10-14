@@ -140,3 +140,12 @@ def test_every_change_of_an_answer_is_kept(tmp_path):
     label = fields.label("a", 0, 2, "people", "hai", by="operator")
     fields.unlabel(label)
     assert [(h["old"], h["new"], h["by"]) for h in fields.history("a")] == [("hai", None, "operator"), ("một", "hai", "operator"), (None, "một", "claude")]
+
+
+def test_places_are_grouped_across_recordings(tmp_path):
+    system = build(tmp_path / "data", model=FakeModel(), segment_seconds=2.0, recognisers=[FakeVision(), FakeSound()])
+    a, _ = system.library.ingest(make_video(tmp_path / "a.mp4", picture=4))
+    b, _ = system.library.ingest(make_video(tmp_path / "b.mp4", picture=4, size="322x180"))
+    drain(system)
+    found = TestClient(create_app(system)).get("/api/v1/places").json()["places"]
+    assert found and set(found[0]["assets"]) == {a, b}          # the fake recogniser gives every frame the same print

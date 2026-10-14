@@ -1600,6 +1600,11 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         """The people of the library, faces grouped by likeness, with the names the operator gave (design group 06)."""
         return {"people": system.library.profiler.people([a["asset_id"] for a in system.assets.assets() if a["kind"] == "video"])}
 
+    @app.get("/api/v1/places")
+    def places():
+        """Places seen in the library, grouped across shots and recordings by how alike their pictures look (design group 06)."""
+        return {"places": system.library.profiler.places([a["asset_id"] for a in system.assets.assets() if a["kind"] == "video"])}
+
     @app.post("/api/v1/people/name")
     def name_person(body: dict):
         system.library.profiler.name_person(str(body.get("key", "")), str(body.get("name", "")))
