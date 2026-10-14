@@ -2,6 +2,8 @@
 
 Bản thiết kế, 2026-10-13. Trạng thái: đợt 1 đã xong, xem `docs/PLAN.md`.
 
+Bổ sung ngày 2026-10-14: `2026-10-14-footage-profile-design.md` mở rộng bản này ra đủ 16 nhóm thông tin người vận hành yêu cầu, thêm các nguồn đo trong máy (Apple Vision, SoundAnalysis, giải mã phần cứng), bộ mẫu và cổng phát hành theo từng trường, và **thay thứ tự xây ở mục 18**. Chỗ hai bản khác nhau thì bản bổ sung thắng.
+
 ## 1. Mục tiêu
 
 NEXORA nhận diện, phân loại và mô tả footage **đúng nội dung, đúng phân cảnh, đủ hành động**, cho bốn loại nguyên liệu có trong kho: đời sống và tài liệu không lời, người nói trước máy, video đã dựng sẵn, cảnh quay đặc biệt (drone, timelapse, quay chậm, nhiều máy, quay màn hình).
@@ -17,8 +19,10 @@ Nguyên tắc chi phối mọi quyết định bên dưới:
 
 - Trích đoạn theo câu hỏi tự do ("lấy đoạn chèo thuyền"): lượt sau, dựng trên nền này.
 - Phần dựng và hoàn thiện (timeline có phiên bản, chỉnh màu, chuyển cảnh, FilmCraft làm engine hoàn thiện): lượt sau nữa.
-- Chọn và tinh chỉnh mô hình, embedding hình ảnh, nhận diện khuôn mặt bằng mô hình.
-- Hiểu âm thanh nền (tiếng nước, tiếng máy) và đồ thị quan hệ giữa các phân cảnh.
+- Tinh chỉnh (huấn luyện lại) mô hình.
+- Đồ thị quan hệ giữa các phân cảnh.
+
+Ba mục từng nằm ở đây nay thuộc bản bổ sung 2026-10-14: chọn mô hình bằng số đo (mục 4.6 của bản đó), vector hình ảnh (nhóm 15), và hiểu âm thanh nền (nhóm 09). Gom người theo hình dáng cũng thuộc bản đó (nhóm 06), chỉ trong kho của người vận hành.
 
 ## 2. Thuật ngữ và các bậc
 
@@ -350,6 +354,8 @@ FilmCraft không có: chia nhịp trong cú máy, phân cảnh, mô tả nội d
 Hai ý đáng lấy cho lượt dựng phim, ghi lại để không quên: đồng bộ nhiều máy bằng tương quan chéo âm thanh có trọng số pha (`crates/audio-dsp/src/sync.rs`), và mã băm nội dung cho từng đoạn render để chỉ dựng lại phần đã đổi (`crates/render/src/preview.rs`).
 
 ## 18. Thứ tự xây
+
+> Đã thay bằng mục 10 của `2026-10-14-footage-profile-design.md` (chín đợt, xếp theo mức giúp chọn đúng nguyên liệu). Bảng dưới đây giữ lại làm lịch sử.
 
 Thiết kế này quá lớn cho một kế hoạch triển khai. Nó được xây thành sáu đợt, mỗi đợt có kế hoạch riêng và chạy được độc lập:
 

@@ -397,6 +397,17 @@ Sai khác so với thiết kế: hướng chuyển động chỉ có trái sang 
 - Nhập video 4K dài còn chậm: clip 8 phút mất khoảng 25 phút, phần lớn là giải mã file gốc để tìm đoạn đen và tạo proxy.
 - Trong footage có nội dung lặp lại, nhiều nhịp gần giống nhau cùng đứng đầu kết quả tìm kiếm. Gộp các nhịp liền nhau cùng hành động là việc của đợt 3.
 
+### Hồ sơ footage: đủ 16 nhóm thông tin, 2026-10-14 (thiết kế)
+
+Người vận hành đưa ra 16 nhóm thông tin cần nhận diện trên một footage. Đối chiếu với code và dữ liệu thật: khá đủ 3 nhóm (định danh kỹ thuật, chất lượng, nguồn gốc), một phần 6, sơ sài 5, chưa có 2 (kể chuyện, phong cách). Thiết kế bổ sung: `docs/superpowers/specs/2026-10-14-footage-profile-design.md`. Nó thay thứ tự xây của thiết kế hiểu footage bằng chín đợt; đợt kế tiếp là **đợt 2, nền đo lường**.
+
+Đã thử trên máy này trước khi đưa vào thiết kế:
+- Apple Vision đọc đúng từng dấu một câu tiếng Việt chèn trên khung DJI; phân loại hình đúng (ngoài trời, bầu trời, cây, lối đi); không báo mặt người giả.
+- SoundAnalysis (303 loại âm) thấy lời nói ở 31/57 cửa sổ, khớp với whisper; báo nhầm "báo khói" 9 cửa sổ, nên cần ngưỡng và hai cửa sổ liền nhau.
+- Giải mã 30 giây 4K HEVC 10 bit: 31,4 giây bằng CPU, 5,8 giây bằng VideoToolbox.
+- Clip Osmo Action 6 có luồng metadata máy theo từng khung (4.309 bản ghi), chưa giải.
+- Mô hình hiện tại ghi cỡ cảnh "cận" cho một khung toàn cảnh lối đi: lý do cỡ cảnh cần nguồn đo thứ hai.
+
 ### Còn lại sau lượt này
 
 Cần thứ ngoài máy này: tài khoản và khoá API của nền tảng (tự đăng, tự lấy số liệu), khoá của nhà cung cấp video AI, khoá Anthropic để chạy thật adapter Claude, dịch vụ tìm kiếm trên toàn bộ web (hiện chỉ tìm trên Wikipedia).
