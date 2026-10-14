@@ -295,3 +295,44 @@ def test_a_beat_the_model_could_not_answer_for_is_shown_again_with_fewer_frames(
     asset = taken_in(system, film(tmp_path / "long2.mp4", [("smptebars", 10)]))
     assert all(m.text for m in system.index.moments(asset, level="segment")) and 1 in model.shown       # the middle frame alone, as the last resort
 
+
+
+def test_an_asset_taken_out_of_the_library_leaves_nothing_behind_but_its_own_file(tmp_path):
+    from fastapi.testclient import TestClient
+    from nexora.api.app import create_app
+    system = build(tmp_path / "data", model=FakeModel(), segment_seconds=15.0)
+    client = TestClient(create_app(system))
+    going = taken_in(system, film(tmp_path / "going.mp4", TWO_SHOTS))
+    staying = taken_in(system, film(tmp_path / "staying.mp4", [("testsrc", 4)]))
+    project = system.projects.create_project("Thử xoá")
+    script = system.projects.save_script(project, ["Câu có hình sắp bị xoá.", "Câu có hình ở lại."])
+    first, second = system.projects.script(script)["shots"]
+    moment = system.index.moments(going, level="segment")[0]
+    other = system.index.moments(staying, level="segment")[0]
+    system.projects.set_selection(first.shot_id, status="accepted", asset_id=going, moment_id=moment.moment_id, t_in=0.0, t_out=3.0,
+                                  alternates=[{"asset_id": going, "moment_id": moment.moment_id, "t_in": 4.0, "t_out": 7.0, "score": 0.6, "reason": "x"}])
+    system.projects.set_selection(second.shot_id, status="accepted", asset_id=staying, moment_id=other.moment_id, t_in=0.0, t_out=3.0,
+                                  alternates=[{"asset_id": going, "moment_id": moment.moment_id, "t_in": 4.0, "t_out": 7.0, "score": 0.6, "reason": "x"}])
+    system.projects.add_feedback("câu có hình sắp bị xoá.", moment.moment_id, "accepted", asset_id=going, span=(0.0, 4.0))
+    system.evaluation.add_case("Câu có hình sắp bị xoá.", going, 0.0, 3.0)
+    client.post(f"/api/v1/assets/{going}/structure/reference", json={"on": True})
+    original = system.assets.original(going)
+    made = list((tmp_path / "data" / "media" / original.checksum[:2]).glob(f"{original.checksum}_*"))
+    assert len(made) >= 4                                               # proxy, thumbnail, measures, structure, frames
+
+    assert client.delete("/api/v1/assets/nope").status_code == 404
+    out = client.delete(f"/api/v1/assets/{going}").json()
+    assert out["gaps"] == 1 and out["cases"] == 1 and out["trashed"] is None and out["name"] == "going.mp4"
+    assert system.assets.asset(going) is None and system.index.moments(going) == [] and not any(p.exists() for p in made)
+    assert (tmp_path / "going.mp4").is_file()                           # the file itself was not asked for, so it stays
+    gone, kept = system.projects.selection(first.shot_id), system.projects.selection(second.shot_id)
+    assert gone.status == "gap" and gone.asset_id is None and "going.mp4" in gone.reason and gone.alternates == []
+    assert kept.status == "accepted" and kept.asset_id == staying and kept.alternates == []
+    assert system.evaluation.cases() == [] and system.evaluation.references() == {} and system.projects.feedback("câu có hình sắp bị xoá.") == {}
+    assert [a["asset_id"] for a in client.get("/api/v1/library").json()["assets"]] == [staying]
+    assert client.get("/api/v1/home").status_code == 200 and client.get("/api/v1/runs").status_code == 200 and client.get(f"/api/v1/projects/{project}").status_code == 200
+    assert system.index.search("Đoạn", limit=5) and all(h.moment.asset_id == staying for h in system.index.search("Đoạn", limit=5))
+
+    out = __import__("nexora.app", fromlist=["remove_asset"]).remove_asset(system, staying, discard_file=True, trash=tmp_path / "bin")
+    assert out["trashed"] == str(tmp_path / "bin" / "staying.mp4") and (tmp_path / "bin" / "staying.mp4").is_file() and not (tmp_path / "staying.mp4").exists()
+    assert client.get("/api/v1/library").json()["assets"] == []

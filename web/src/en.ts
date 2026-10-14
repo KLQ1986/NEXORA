@@ -1695,6 +1695,10 @@ const en: Record<string, string> = {
   "Không kém đi": "No worse",
   "{0} video mẫu đang giữ": "{0} sample videos kept",
   "{0} ranh giới cú máy · {1} ranh giới nhịp": "{0} shot boundaries · {1} beat boundaries",
+  "Xoá khỏi thư viện: mô tả và bản xem bị xoá, các câu kịch bản đang dùng nó trở về thiếu hình. File gốc vẫn nằm nguyên chỗ cũ.": "Remove from the library: its descriptions and preview are deleted, and script lines using it go back to having no picture. The original file stays where it is.",
+  "Xoá nguyên liệu này khỏi thư viện?": "Remove this from the library?",
+  "Xoá khỏi thư viện": "Remove from the library",
+  "{0} đang được dùng trong {1} dự án. Các câu dùng nó sẽ trở về thiếu hình.": "{0} is used in {1} projects. The lines using it will go back to having no picture.",
 };
 
 export default en;

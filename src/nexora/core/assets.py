@@ -158,6 +158,20 @@ class AssetStore:
                 names = sorted({str(n).strip() for n in collections if str(n).strip()})
                 c.execute("UPDATE assets SET collections = ? WHERE asset_id = ?", (json.dumps(names, ensure_ascii=False), asset_id))
 
+    def remove(self, asset_id: str) -> list[AssetVersion]:
+        """Take an asset out of the library: its record, the records of its versions, and any other asset's note that it is
+        another angle of the same event. No file is touched; the versions it had are returned so that the caller can decide."""
+        versions = self.versions(asset_id)
+        with db.write(self._conn) as c:
+            for row in c.execute("SELECT version_id, metadata FROM asset_versions WHERE role = 'original' AND asset_id != ?", (asset_id,)).fetchall():
+                meta = json.loads(row["metadata"])
+                if asset_id in (meta.get("angles") or {}):
+                    meta["angles"] = {k: v for k, v in meta["angles"].items() if k != asset_id}
+                    c.execute("UPDATE asset_versions SET metadata = ? WHERE version_id = ?", (json.dumps(meta, ensure_ascii=False), row["version_id"]))
+            c.execute("DELETE FROM asset_versions WHERE asset_id = ?", (asset_id,))
+            c.execute("DELETE FROM assets WHERE asset_id = ?", (asset_id,))
+        return versions
+
     def asset(self, asset_id: str) -> dict | None:
         row = self._conn.execute("SELECT * FROM assets WHERE asset_id = ?", (asset_id,)).fetchone()
         return dict(row) if row else None

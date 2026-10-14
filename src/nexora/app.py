@@ -85,6 +85,46 @@ def fill_gap_from_stock(system: "System", shot_id: str, query: str) -> dict:
     return {"found": True, "asset_id": asset_id, "run_id": run_id, "rights": rights}
 
 
+def remove_asset(system: "System", asset_id: str, *, discard_file: bool = False, trash: str | Path | None = None) -> dict:
+    """Take an asset out of the library for good. Work still running on it is stopped; the lines that showed it are without a
+    picture again; what was said about it, measured in it and kept as an answer for it is forgotten; and everything made
+    from it (proxy, thumbnail, frames, measures) is deleted, since all of that can be made again. The file itself stays
+    where it is unless `discard_file`, in which case it is moved to the Trash, not erased."""
+    import shutil
+    from nexora.core.states import RunStatus
+    if system.assets.asset(asset_id) is None:
+        raise LookupError(asset_id)
+    for run_id in system.orch.runs_for_subject(asset_id):
+        if system.orch.run_status(run_id) in (RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.WAITING_REVIEW, RunStatus.BLOCKED):
+            system.orch.cancel_run(run_id)
+    original = system.assets.original(asset_id)
+    source, name = system.assets.path_of(original), system.assets.path_of(original).name
+    media = (system.data_dir / "media").resolve()
+    derived = [system.assets.path_of(v) for v in system.assets.versions(asset_id) if v.role != "original"]
+    gaps = system.projects.forget_asset(asset_id, reason=f"Footage của câu này ({name}) đã bị xoá khỏi thư viện.")
+    cases = system.evaluation.forget_asset(asset_id)
+    moments = system.index.remove_asset(asset_id)
+    system.assets.remove(asset_id)
+    shared = bool(original.checksum and system.assets.find_original_by_checksum(original.checksum))      # a second copy of the same file still uses what was made from it
+    if original.checksum and not shared:
+        folder = media / original.checksum[:2]
+        derived += [p for p in folder.glob(f"{original.checksum}_*")] if folder.is_dir() else []
+    for path in derived:
+        if media in path.resolve().parents:
+            shutil.rmtree(path, ignore_errors=True) if path.is_dir() else path.unlink(missing_ok=True)
+    trashed = None
+    if discard_file and source.is_file():
+        bin_ = Path(trash).expanduser() if trash else Path.home() / ".Trash"
+        bin_.mkdir(parents=True, exist_ok=True)
+        target = bin_ / source.name
+        n = 1
+        while target.exists():
+            target, n = bin_ / f"{source.stem} ({n}){source.suffix}", n + 1
+        shutil.move(str(source), str(target))
+        trashed = str(target)
+    return {"name": name, "gaps": gaps, "cases": cases, "moments": moments, "trashed": trashed}
+
+
 def render_rights(system: "System", render_id: str) -> dict:
     """The rights report of a render. Lives here because it reads what three modules own: the cut, the assets and the project."""
     render = system.projects.render(render_id)

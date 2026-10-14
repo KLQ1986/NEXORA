@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { call, megabytes, post, timecode, usePoll, type Asset, type Hit, type Moment, type Project, type RoughPlan } from "./api";
 
 const LEVEL: Record<string, string> = { segment: tr("CẢNH"), speech: tr("LỜI NÓI"), note: tr("GHI CHÚ"), frame: tr("KHUNG HÌNH") };
-import { Button, Icon, Page, RangeStrip, SkeletonCards, StageRail, StatusText, Tabs, TimeChip } from "./parts";
+import { ask, Button, Icon, Page, RangeStrip, SkeletonCards, StageRail, StatusText, Tabs, TimeChip } from "./parts";
 import { StructureStrip } from "./Structure";
 
 function AddFootage({ onDone }: { onDone: () => void }) {
@@ -214,6 +214,10 @@ function Player({ asset, start, others, close, similar }: { asset: Asset; start?
                     </div>
                   </div>
                 )}
+                <div className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-raised/50 p-3">
+                  <p className="min-w-0 flex-1 text-[12.5px] text-mute">{tr("Xoá khỏi thư viện: mô tả và bản xem bị xoá, các câu kịch bản đang dùng nó trở về thiếu hình. File gốc vẫn nằm nguyên chỗ cũ.")}</p>
+                  <Button size="sm" onClick={async () => { if (!(await ask(tr("Xoá nguyên liệu này khỏi thư viện?"), { body: asset.used_in.length ? tv`${asset.name} đang được dùng trong ${asset.used_in.length} dự án. Các câu dùng nó sẽ trở về thiếu hình.` : asset.name, confirm: tr("Xoá khỏi thư viện"), danger: true }))) return; await call(`/api/v1/assets/${asset.asset_id}`, { method: "DELETE" }); close(); }}>{tr("Xoá khỏi thư viện")}</Button>
+                </div>
                 <label className="flex items-start gap-2.5 rounded-lg border border-line bg-raised/50 p-3"><input type="checkbox" className="mt-0.5" checked={asset.rejected} onChange={(e) => post(`/api/v1/assets/${asset.asset_id}`, { rejected: e.target.checked }, "PATCH")} />
                   <span>{tr("Không dùng nguyên liệu này")}<span className="block text-[12px] text-faint">{tr("Nó vẫn nằm trong thư viện nhưng không được đề xuất cho kịch bản nào và không hiện khi tìm kiếm.")}</span></span></label>
               </div>

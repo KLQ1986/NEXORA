@@ -259,6 +259,34 @@ class ProjectStore:
                       "ON CONFLICT(line, moment_id) DO UPDATE SET verdict = excluded.verdict, at = excluded.at, t_in = COALESCE(excluded.t_in, t_in), t_out = COALESCE(excluded.t_out, t_out)",
                       (line.strip().lower(), moment_id, asset_id, verdict, time.time(), t_in, t_out))
 
+    def forget_asset(self, asset_id: str, *, reason: str) -> int:
+        """An asset has left the library. Every line that showed it is without a picture again and says why; it is no longer
+        offered as an alternate or cut to in the middle of a line; and what was said about its clips is dropped. Returns how
+        many lines lost their picture."""
+        gaps = 0
+        with db.write(self._conn) as c:
+            for row in c.execute("SELECT shot_id, asset_id, alternates, extras FROM selections").fetchall():
+                alternates, extras = json.loads(row["alternates"] or "[]"), json.loads(row["extras"] or "{}")
+                kept = [a for a in alternates if a.get("asset_id") != asset_id]
+                cleaned = dict(extras)
+                if "inserts" in cleaned:
+                    cleaned["inserts"] = [i for i in cleaned["inserts"] if i.get("asset_id") != asset_id]
+                for key in ("pending_asset", "sfx"):
+                    if cleaned.get(key) == asset_id:
+                        cleaned[key] = None
+                if isinstance(cleaned.get("focus"), dict) and cleaned["focus"].get("asset_id") == asset_id:
+                    cleaned["focus"] = None
+                if row["asset_id"] == asset_id:
+                    gaps += 1
+                    c.execute("UPDATE selections SET status = 'gap', asset_id = NULL, moment_id = NULL, t_in = NULL, t_out = NULL, score = NULL, reason = ?, "
+                              "alternates = ?, extras = ?, decided_by = 'system' WHERE shot_id = ?",
+                              (reason, json.dumps(kept, ensure_ascii=False), json.dumps(cleaned, ensure_ascii=False), row["shot_id"]))
+                elif kept != alternates or cleaned != extras:
+                    c.execute("UPDATE selections SET alternates = ?, extras = ? WHERE shot_id = ?",
+                              (json.dumps(kept, ensure_ascii=False), json.dumps(cleaned, ensure_ascii=False), row["shot_id"]))
+            c.execute("DELETE FROM match_feedback WHERE asset_id = ?", (asset_id,))
+        return gaps
+
     def feedback_spans(self, line: str) -> list[dict]:
         """For one line: each stretch of footage the operator has judged for it, latest first."""
         rows = self._conn.execute("SELECT asset_id, t_in, t_out, verdict FROM match_feedback WHERE line = ? AND asset_id IS NOT NULL AND t_in IS NOT NULL ORDER BY at DESC",

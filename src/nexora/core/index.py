@@ -119,6 +119,16 @@ class MomentIndex:
                 c.execute("DELETE FROM moment_vectors WHERE moment_id = ?", (moment_id,))
                 c.execute("DELETE FROM moments WHERE moment_id = ?", (moment_id,))
 
+    def remove_asset(self, asset_id: str) -> int:
+        """Forget everything said about an asset, at every level."""
+        with db.write(self._conn) as c:
+            ids = [r[0] for r in c.execute("SELECT moment_id FROM moments WHERE asset_id = ?", (asset_id,))]
+            for moment_id in ids:
+                c.execute("DELETE FROM moments_fts WHERE moment_id = ?", (moment_id,))
+                c.execute("DELETE FROM moment_vectors WHERE moment_id = ?", (moment_id,))
+            c.execute("DELETE FROM moments WHERE asset_id = ?", (asset_id,))
+        return len(ids)
+
     def relevel(self, moment_id: str, level: str, **data) -> None:
         """Keep a moment under another level, its text and who wrote it untouched; `data` is added to what it holds."""
         with db.write(self._conn) as c:

@@ -596,6 +596,15 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             raise HTTPException(404, "no such asset")
         return asset
 
+    @app.delete("/api/v1/assets/{asset_id}")
+    def delete_asset(asset_id: str, discard_file: bool = False):
+        """Take an asset out of the library. With `discard_file`, its file is also moved to the Trash."""
+        from nexora.app import remove_asset
+        try:
+            return remove_asset(system, asset_id, discard_file=discard_file)
+        except LookupError:
+            raise HTTPException(404, "no such asset") from None
+
     @app.get("/api/v1/assets/{asset_id}/structure")
     def asset_structure(asset_id: str):
         return structure_view(asset_id)

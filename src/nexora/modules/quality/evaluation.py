@@ -104,6 +104,15 @@ class Evaluation:
             c.execute("DELETE FROM eval_boundaries WHERE asset_id = ?", (asset_id,))
             c.execute("DELETE FROM eval_references WHERE asset_id = ?", (asset_id,))
 
+    def forget_asset(self, asset_id: str) -> int:
+        """An asset has left the library: the answers it held, for the search and for the division, go with it."""
+        with db.write(self._conn) as c:
+            cases = c.execute("SELECT COUNT(*) FROM eval_cases WHERE asset_id = ?", (asset_id,)).fetchone()[0]
+            c.execute("DELETE FROM eval_cases WHERE asset_id = ?", (asset_id,))
+            c.execute("DELETE FROM eval_boundaries WHERE asset_id = ?", (asset_id,))
+            c.execute("DELETE FROM eval_references WHERE asset_id = ?", (asset_id,))
+        return cases
+
     def references(self) -> dict[str, dict[str, list[float]]]:
         out = {r["asset_id"]: {kind: [] for kind in KINDS} for r in self._conn.execute("SELECT asset_id FROM eval_references ORDER BY created_at, asset_id")}
         for r in self._conn.execute("SELECT asset_id, kind, t FROM eval_boundaries ORDER BY t"):
