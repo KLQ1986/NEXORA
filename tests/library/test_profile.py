@@ -1,5 +1,7 @@
 """The footage profile (design 2026-10-14): fields measured and recognised beat by beat, text on screen, kinds of sound and the
 profile of a whole file, with what a model says checked against them."""
+import math
+
 import numpy as np
 import pytest
 
@@ -300,3 +302,27 @@ def test_a_phone_held_up_by_the_operator_is_sized_by_the_phone_not_by_the_operat
     beat = lambda pictures: P.profile_beat(0.0, 1.5, pictures, [], words=[], events=[], momentary=[], audio={}, camera=None, spans=[], log_profile=False)
     assert beat([pov(0.6)] * 3)["shot_size"]["value"] == "cận" and beat([pov(0.6)] * 3)["shot_size"]["by"] == "tay cầm vật"
     assert "shot_size" not in beat([pov(0.3)] * 3)                  # small hands: close or very close cannot be told, so nothing is said
+
+
+def test_the_cameras_own_record_gives_its_angle_tilt_and_turning():
+    import struct
+    from nexora.modules.library import telemetry
+    def varint(n):
+        out = b""
+        while True:
+            b = n & 0x7F; n >>= 7
+            out += bytes([b | (0x80 if n else 0)])
+            if not n: return out
+    def msg(f, body): return varint((f << 3) | 2) + varint(len(body)) + body
+    def flt(f, v): return varint((f << 3) | 5) + struct.pack("<f", v)
+    def packet(gy, gz, gw, q):
+        frame = msg(9, b"".join(flt(k, v) for k, v in zip((1, 2, 3, 4), q))) + msg(10, flt(2, gy) + flt(3, gz) + flt(4, gw)) + msg(3, flt(1, 400.0))
+        return msg(3, msg(2, frame))
+    down = [packet(-0.87, 0.0, -0.49, [1.0, 0.0, 0.0, 0.0])] * 30
+    turning = [packet(0.0, 0.0, -1.0, [math.cos(math.radians(i) / 2), 0.0, 0.0, math.sin(math.radians(i) / 2)]) for i in range(0, 60, 2)]
+    records = telemetry.frames(down + turning)
+    assert len(records) == 60 and records[0]["pitch"] == pytest.approx(-60.5, abs=0.5) and records[0]["iso"] == 400.0
+    first = telemetry.beat_fields(records, 30.0, 0.0, 1.0)
+    second = telemetry.beat_fields(records, 30.0, 1.0, 2.0)
+    assert first["angle"]["value"] == "từ trên xuống" and second["angle"]["value"] == "ngang tầm"
+    assert second["turning"]["value"] == pytest.approx(60.0, abs=3) and first["turning"]["value"] == 0.0

@@ -172,7 +172,7 @@ class FFmpegAdapter(Adapter):
         return [HDR_TO_SDR]
 
     def describe(self) -> Capability:
-        return Capability(name="ffmpeg", operations=("blackdetect", "freezedetect", "proxy", "thumbnail", "frames", "segment", "concat", "loudness", "envelope", "enhance", "silencedetect", "scenecuts", "analysis", "unusable", "r128", "pcm"), runs="local", supports_cancel=True)
+        return Capability(name="ffmpeg", operations=("blackdetect", "freezedetect", "proxy", "thumbnail", "frames", "segment", "concat", "loudness", "envelope", "enhance", "silencedetect", "scenecuts", "analysis", "unusable", "r128", "pcm", "telemetry"), runs="local", supports_cancel=True)
 
     def submit(self, request: Request) -> Result:
         timeout = request.deadline_seconds or 3600
@@ -461,6 +461,22 @@ class FFmpegAdapter(Adapter):
         rate = int(params.get("rate", 16000))
         self._run(["-y", "-i", str(src), "-vn", "-ac", "1", "-ar", str(rate), "-f", "f32le", str(out)], timeout, "pcm")
         return Result(outputs={"rate": rate, "samples": out.stat().st_size // 4}, files=(str(out),))
+
+    def _telemetry(self, src: Path, params: dict, timeout: float) -> Result:
+        """The packets of a camera's own data stream (DJI's "CAM meta"), one per frame, as raw bytes; none when the file has no such stream."""
+        probe = run_process(["ffprobe", "-v", "error", "-show_entries", "stream=index,codec_type:stream_tags=handler_name", "-of", "json", str(src)], timeout=60)
+        streams = json.loads(probe.stdout or "{}").get("streams", [])
+        wanted = next((s["index"] for s in streams if s.get("codec_type") == "data" and "meta" in str((s.get("tags") or {}).get("handler_name", "")).lower()), None)
+        if wanted is None:
+            return Result(outputs={"packets": []})
+        sizes = run_process(["ffprobe", "-v", "error", "-select_streams", str(wanted), "-show_entries", "packet=size", "-of", "csv=p=0", str(src)], timeout=timeout).stdout.split()
+        out = Path(params["out"])
+        self._run(["-y", "-i", str(src), "-map", f"0:{wanted}", "-c", "copy", "-f", "data", str(out)], timeout, "telemetry")
+        raw, pos, packets = out.read_bytes(), 0, []
+        out.unlink(missing_ok=True)
+        for n in (int(x) for x in sizes if x.strip().isdigit()):
+            packets.append(raw[pos:pos + n]); pos += n
+        return Result(outputs={"packets": [p.hex() for p in packets]})
 
     def _thumbnail(self, src: Path, params: dict, timeout: float) -> Result:
         out = Path(params["out"])

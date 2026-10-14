@@ -31,6 +31,7 @@ ASKS = [
     (r"\bhai (người|bạn)|cặp đôi", "people", "hai"), (r"đám đông|đông (người|nghịt)|tấp nập", "people", "đám đông"), (r"nhóm (người|bạn)", "people", "nhóm"),
     (r"trong nhà|trong phòng|nội thất|trong bếp", "place", "trong nhà"), (r"ngoài trời|ngoài đường|ngoài phố|ngoài biển", "place", "ngoài trời"),
     (r"nói (trước|vào|với) (máy|camera|ống kính)|nhìn vào (máy|camera)|talking head", "speaker", "trong khung"),
+    (r"từ trên (cao )?nhìn xuống|nhìn xuống|góc cao|top[- ]?down", "angle", "từ trên xuống"), (r"nhìn lên|ngước lên|góc thấp|low angle", "angle", "từ dưới lên"),
 ]
 LABEL_BONUS, LABEL_PENALTY = 0.08, 0.15       # a released field that agrees with what a line asks for lifts a candidate; one that disagrees sinks it
 
@@ -47,7 +48,7 @@ def asked(line: str) -> dict[str, str]:
 
 # Where a measured field has no answer, the model's label for the same thing may stand in for it, if it has proved itself too:
 # measured on the operator's footage, the recogniser left bathrooms without an indoor-or-outdoor answer that the model gave right.
-STAND_IN = {"place": "model.noi_chon", "people": "model.so_nguoi", "shot_size": "model.co_canh"}
+STAND_IN = {"place": "model.noi_chon", "people": "model.so_nguoi", "shot_size": "model.co_canh", "angle": "model.goc_may"}
 
 
 def held(moment_data: dict, field: str, released: set[str] | None = None):

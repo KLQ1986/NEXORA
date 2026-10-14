@@ -207,6 +207,20 @@ class Profiler:
             return {"skipped": "the original is not available; the description read at ingest stays"}
         info = self._adapters.submit("ffprobe", Request("probe", inputs={"path": str(path)}, attempt_id=ctx.claim.attempt_id)).outputs
         info["content_credentials"] = P.has_content_credentials(path)
+        # The camera's own record of its angle and turning, frame by frame, where it kept one (DJI).
+        from nexora.modules.library import telemetry
+        try:
+            packets = self._adapters.submit("ffmpeg", Request("telemetry", inputs={"path": str(path)}, attempt_id=ctx.claim.attempt_id,
+                                                             params={"out": str(self._path(ctx.subject_ref, f"_meta.{ctx.claim.attempt_id or 'x'}.bin"))})).outputs["packets"]
+        except AdapterError:
+            packets = []
+        records = telemetry.frames([bytes.fromhex(p) for p in packets])
+        target = self._path(ctx.subject_ref, "_telemetry.json")
+        if records:
+            _write_json(target, {"fps": info.get("frame_rate") or 30.0, "frames": records})
+            info["telemetry"] = {"frames": len(records), "kind": "dji"}
+        else:
+            target.unlink(missing_ok=True)
         kept = original.metadata.get("probe", {})
         self._assets.update_metadata(original.version_id, probe={**kept, **info, "still": kept.get("still"), "audio_only": kept.get("audio_only")})
         return {"fields": len(info)}
@@ -214,7 +228,10 @@ class Profiler:
     def _look(self, ctx):
         if self._skip(ctx.subject_ref):
             return {"skipped": self._skip(ctx.subject_ref)}
-        source = self._source(ctx.subject_ref)
+        # Frames are drawn from the original where it is at hand: the proxy is compressed hard enough that the text on a phone held
+        # in the frame cannot be read from it (measured on 0073: "Anh Cần" read from the original, nothing from the proxy).
+        original = self._assets.path_of(self._assets.original(ctx.subject_ref))
+        source = original if original.is_file() else self._source(ctx.subject_ref)
         if source is None:
             raise AdapterError(ErrorCode.MISSING_INPUT, "neither the footage nor its proxy is available")
         on_proxy = source.name.endswith("_proxy.mp4")
@@ -354,6 +371,14 @@ class Profiler:
                                              [measures[k] for k in inside if k < len(measures)], words=words, events=events,
                                              momentary=listen.get("momentary", []), audio=listen.get("levels", {}),
                                              camera=(beat["labels"].get("camera") or {}).get("value"), spans=spans, log_profile=log_profile)
+        sensed = _read_json(self._path(asset_id, "_telemetry.json"))
+        if sensed:
+            from nexora.modules.library import telemetry
+            for beat in beats:
+                got = telemetry.beat_fields(sensed["frames"], float(sensed["fps"]), beat["start"], beat["end"])
+                beat["profile"].update(got)
+                if got.get("tilt"):                      # the camera's sensor knows its roll better than a horizon found in the picture
+                    beat["profile"]["horizon"] = {**got["tilt"], "value": got["tilt"]["value"]}
         probe["log_profile"] = log_profile
         shots = [{"start": to_seconds(s["start"], 2), "end": to_seconds(s["end"], 2), "transition_in": s.get("transition_in")} for s in structure.get("shots", [])]
         found = self._signals_of(asset_id)

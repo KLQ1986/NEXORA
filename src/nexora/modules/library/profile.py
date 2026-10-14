@@ -754,6 +754,13 @@ def cross_checks(fields: dict, detail: dict, labels: dict, *, has_audio: bool) -
     foreign = vocab.foreign_words(" ".join(str(v) for v in (detail.get("mo_ta"), detail.get("boi_canh"), *(detail.get("chu_the") or []))))
     if foreign:
         flags.append({"rule": "ngôn ngữ", "message": "câu trả lời có từ ngoài tiếng Việt: " + ", ".join(foreign[:5])})
+    turning = (fields.get("turning") or {}).get("value")
+    if camera == "static" and turning is not None and turning > 15:
+        flags.append({"rule": "chuyển động máy", "message": f"hình cho thấy máy đứng yên, cảm biến ghi máy xoay {turning} độ/giây"})
+    angle = fields.get("angle")
+    model_angle = vocab.canonical(detail.get("goc_may") or "")
+    if angle and model_angle in vocab.ANGLES and model_angle in ("từ trên xuống", "từ dưới lên", "ngang tầm") and model_angle != angle["value"]:
+        flags.append({"rule": "góc máy", "message": f"mô hình nói {model_angle}, cảm biến máy đo {angle['value']} ({angle.get('pitch')}°)"})
     if (labels.get("sharpness") or {}).get("value") == "poor" or (labels.get("shake") or {}).get("value") == "poor":
         flags.append({"rule": "chất lượng thấp", "message": "nhịp mất nét hoặc rung nặng: mô tả có thể không đáng tin"})
     return flags

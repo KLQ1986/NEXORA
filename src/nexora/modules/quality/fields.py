@@ -59,6 +59,8 @@ FIELDS: dict[str, dict] = {
     "place": {"name": "Trong nhà hay ngoài trời (nhận diện)", "read": _profile("place"), "values": ("trong nhà", "ngoài trời"), "bar": 0.90, "source": "recognized"},
     "text_present": {"name": "Có chữ trên hình (nhận diện)", "read": _text_present, "values": ("có", "không"), "bar": 0.90, "source": "recognized"},
     "speaker": {"name": "Người nói ở trong khung (đo)", "read": _profile("speaker"), "values": ("trong khung", "ngoài khung"), "bar": 0.90, "source": "measured"},
+    "angle": {"name": "Góc máy (cảm biến)", "read": _profile("angle"), "values": ("ngang tầm", "từ trên xuống", "từ dưới lên"), "bar": 0.90, "source": "measured"},
+    "model.goc_may": {"name": "Góc máy (mô hình)", "read": _model("goc_may"), "values": ("ngang tầm", "từ trên xuống", "từ dưới lên", "trên cao", "nghiêng"), "bar": 0.85, "source": "model", "truth": "angle"},
     "camera": {"name": "Chuyển động máy (đo)", "read": _measured("camera"), "values": ("static", "pan", "tilt", "push_in", "pull_out", "handheld"), "bar": 0.95, "source": "measured"},
     # What a model says is measured against the same answers as the measured field it shadows.
     "model.co_canh": {"name": "Cỡ cảnh (mô hình)", "read": _model("co_canh"), "values": SIZES, "bar": 0.85, "source": "model", "truth": "shot_size"},
