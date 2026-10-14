@@ -2,7 +2,7 @@ import { t as tr, tv } from "./i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export type Stage = { stage_id: string; stage_key: string; status: string; blocked_reason: string | null; attempts: number };
-export type Run = { held?: boolean; stalled?: boolean; run_id: string; pipeline: string; subject_ref: string | null; created_at: number; status: string; cost: number; stages: Stage[] };
+export type Run = { held?: boolean; stalled?: boolean; cleared?: boolean; run_id: string; pipeline: string; subject_ref: string | null; created_at: number; status: string; cost: number; stages: Stage[] };
 export type Word = { text: string; start: number; end: number; p: number };
 export type Asset = {
   scene_cuts?: number[]; enhance: Run | null; enhanced: { upscale: number; smooth_fps: number | null } | null; rejected: boolean; session: string; used_in: { project_id: string; title: string }[]; speech: { words: number; sentences: number; seconds: number; doubtful: number } | null; transcribe: Run | null;

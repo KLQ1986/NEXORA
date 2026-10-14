@@ -10,7 +10,7 @@ type Detail = Run & { attempts: { stage_key: string; number: number; outcome: st
                       events: { at: number; kind: string; stage_key: string | null; actor: string }[] };
 const clock = (t: number) => new Date(t * 1000).toLocaleTimeString(locale);
 const OUTCOMES: Record<string, string> = { succeeded: tr("Xong"), failed: tr("Lỗi"), unknown: tr("Chưa rõ kết quả"), cancelled: tr("Đã huỷ") };
-const toneOf = (r: Run) => (r.status === "succeeded" ? "proof" : r.status === "failed" ? "tally" : r.status === "blocked" || r.status === "waiting_review" ? "cue" : r.status === "running" ? "ai" : "mute") as "proof" | "tally" | "cue" | "ai" | "mute";
+const toneOf = (r: Run) => (r.status === "succeeded" ? "proof" : r.status === "failed" ? (r.cleared ? "mute" : "tally") : r.status === "blocked" || r.status === "waiting_review" ? "cue" : r.status === "running" ? "ai" : "mute") as "proof" | "tally" | "cue" | "ai" | "mute";
 
 /** What happened inside one run: every attempt with how long it took, and why the failed ones failed. */
 function RunDetail({ id, pipeline, reload }: { id: string; pipeline: string; reload: () => void }) {
@@ -85,7 +85,7 @@ export default function Runs() {
                   <Icon name="down" size={14} className={`ml-auto shrink-0 text-faint transition-transform md:hidden ${open === r.run_id ? "rotate-180" : ""}`} />
                 </button>
                 <StageRail stages={r.stages} name={(k) => stageName(k, r.pipeline)} />
-                <p className="flex items-center gap-2 md:justify-end">{r.stalled ? <Tag tone="cue">{tr("Có vẻ bị treo")}</Tag> : r.held ? <Tag>{tr("Chờ tới giờ phân tích")}</Tag> : <Tag tone={t}>{STATUS_NAMES[r.status] ?? r.status}</Tag>}
+                <p className="flex items-center gap-2 md:justify-end">{r.stalled ? <Tag tone="cue">{tr("Có vẻ bị treo")}</Tag> : r.held ? <Tag>{tr("Chờ tới giờ phân tích")}</Tag> : <Tag tone={t}>{r.cleared ? tr("Lỗi đã xử lý") : STATUS_NAMES[r.status] ?? r.status}</Tag>}
                   <button type="button" onClick={() => setOpen(open === r.run_id ? null : r.run_id)} className="hidden h-7 w-7 place-items-center rounded-md text-faint hover:bg-raised hover:text-ink md:grid" aria-label={tr("Chi tiết")}><Icon name="down" size={14} className={`transition-transform ${open === r.run_id ? "rotate-180" : ""}`} /></button></p>
               </div>
               {stuck.length > 0 && (
@@ -96,6 +96,7 @@ export default function Runs() {
                       <span className={s.status === "failed" ? "text-tally" : "text-cue"}>{tv`Bước ${stageName(s.stage_key, r.pipeline)}`} {s.status === "failed" ? tr("thất bại") : tr("đang dừng")}{s.blocked_reason ? `: ${REASONS[s.blocked_reason] ?? s.blocked_reason}` : ""}</span>
                       {s.status === "blocked" && <Button size="sm" onClick={() => resume(s.stage_id)}><Icon name="play" size={12} />{tr("Chạy tiếp")}</Button>}
                       {s.status === "failed" && <Button size="sm" onClick={async () => { await post(`/api/v1/stages/${s.stage_id}/retry`).catch(() => {}); reload(); }}><Icon name="refresh" size={13} />{tr("Thử lại bước này")}</Button>}
+                      {s.status === "failed" && !r.cleared && <Button size="sm" kind="quiet" title={tr("Đã biết lỗi này; không tính nó là việc hỏng nữa")} onClick={async () => { await post("/api/v1/runs/dismiss", { run_ids: [r.run_id] }).catch(() => {}); reload(); }}>{tr("Bỏ qua lỗi")}</Button>}
                     </div>
                   ))}
                 </div>

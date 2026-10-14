@@ -141,6 +141,25 @@ class Orchestrator:
                                  "WHERE run_id = ?", (run_id,)).fetchone()
         return dict(row) if row else None
 
+    def dismiss(self, run_ids: list[str]) -> int:
+        """The operator has seen these failures and sets them aside: they no longer count as something wrong."""
+        with db.write(self._conn) as c:
+            return sum(c.execute("UPDATE runs SET dismissed_at = ? WHERE run_id = ? AND dismissed_at IS NULL", (time.time(), r)).rowcount for r in run_ids)
+
+    def cleared(self, run_id: str) -> bool:
+        """Whether a failed run no longer stands for something wrong: the operator set it aside, or the same work on the same
+        subject has succeeded since."""
+        row = self._conn.execute("SELECT pipeline_id, subject_ref, created_at, dismissed_at FROM runs WHERE run_id = ?", (run_id,)).fetchone()
+        if row is None:
+            return False
+        if row["dismissed_at"] is not None:
+            return True
+        if row["subject_ref"] is None:
+            return False
+        later = self._conn.execute("SELECT run_id FROM runs WHERE pipeline_id = ? AND subject_ref = ? AND created_at > ? AND run_id != ?",
+                                   (row["pipeline_id"], row["subject_ref"], row["created_at"], run_id)).fetchall()
+        return any(self.run_status(r[0]) == RunStatus.SUCCEEDED for r in later)
+
     def runs(self) -> list[str]:
         return [r[0] for r in self._conn.execute("SELECT run_id FROM runs ORDER BY created_at DESC, run_id DESC")]
 

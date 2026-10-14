@@ -118,3 +118,28 @@ def test_worker_recovers_lost_attempts_when_it_starts(tmp_path):
 def test_a_stage_without_a_handler_is_a_configuration_error(tmp_path):
     with pytest.raises(ValueError):
         PipelineRegistry().register(PIPE, {"probe": lambda ctx: {}})
+
+
+def test_a_failure_stops_counting_once_put_right_or_set_aside(tmp_path):
+    broken = {"now": True}
+    def probe(ctx):
+        if broken["now"]:
+            raise AdapterError(ErrorCode.MISSING_INPUT, "no such file")
+        return {}
+    orch, worker = make(tmp_path, {"probe": probe, "describe": lambda ctx: {}})
+    first = orch.submit_run(PIPE, subject_ref="ast_1", now=T0)
+    other = orch.submit_run(PIPE, subject_ref="ast_2", now=T0 + 1)
+    worker.run_once(now=T0 + 2)
+    worker.run_once(now=T0 + 3)
+    assert orch.run_status(first) is RunStatus.FAILED and orch.run_status(other) is RunStatus.FAILED
+    assert not orch.cleared(first) and not orch.cleared(other)
+
+    broken["now"] = False                                         # the same work on the same footage succeeds later
+    again = orch.submit_run(PIPE, subject_ref="ast_1", now=T0 + 10)
+    while worker.run_once(now=T0 + 20):
+        pass
+    assert orch.run_status(again) is RunStatus.SUCCEEDED
+    assert orch.cleared(first) and not orch.cleared(other)        # the other footage has not been put right
+
+    assert orch.dismiss([other]) == 1 and orch.cleared(other)     # the operator sets it aside
+    assert orch.dismiss([other]) == 0

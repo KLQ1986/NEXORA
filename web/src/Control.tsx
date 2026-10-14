@@ -32,6 +32,8 @@ const TXT: Record<Tone, string> = { ai: "text-ai", cue: "text-cue", tally: "text
 const BG: Record<Tone, string> = { ai: "bg-ai", cue: "bg-cue", tally: "bg-tally", proof: "bg-proof", accent: "bg-accent", mute: "bg-faint" };
 const live = (s: string) => s === "running" || s === "queued";
 const waits = (s: string) => s === "blocked" || s === "waiting_review";
+/** A failure that still stands: not set aside by the operator, and not put right by a later run of the same work. */
+const failing = (r: Run) => r.status === "failed" && !r.cleared;
 const toneOf = (s: string): Tone => (s === "running" ? "ai" : waits(s) ? "cue" : s === "failed" ? "tally" : s === "succeeded" ? "proof" : s === "queued" ? "accent" : "mute");
 const clock = (t: number) => new Date(t * 1000).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 const ago = (t: number) => { const s = Date.now() / 1000 - t; return s < 60 ? tv`${Math.max(1, Math.round(s))} giây trước` : s < 3600 ? tv`${Math.round(s / 60)} phút trước` : s < 86400 ? tv`${Math.round(s / 3600)} giờ trước` : new Date(t * 1000).toLocaleDateString(locale); };
@@ -154,7 +156,7 @@ export default function Control() {
   const queued = all.filter((r) => r.status === "queued").length;
 
   const now = Date.now() / 1000;
-  const fails = all.filter((r) => r.status === "failed" && r.created_at > now - 2 * 86400).sort((a, b) => b.created_at - a.created_at);
+  const fails = all.filter((r) => failing(r) && r.created_at > now - 2 * 86400).sort((a, b) => b.created_at - a.created_at);
   const toReview = (projects ?? []).filter((p) => p.render?.status === "waiting_review");
   const held = all.filter((r) => waits(r.status) && r.pipeline !== "edit.render").sort((a, b) => b.created_at - a.created_at);
   const asking = (agent?.tasks ?? []).filter((t) => t.status === "waiting_operator");
@@ -345,8 +347,8 @@ type Card = { key: string; label: string; role: string; to: string; state: Tone;
 function Factory({ all, projects, radar, camps, pub, agent, home, open, onPanel }: { all: Run[]; projects: Project[]; radar: Radar | null; camps: Campaign[]; pub: Publishing | null; agent: AgentTask[]; home: HomeLite | null; open: (id: string) => void; onPanel: (d: string) => void }) {
   const of = (prefixes: string[]) => all.filter((r) => prefixes.some((p) => r.pipeline.startsWith(p)));
   const lines = (rs: Run[]): [number, string, string][] => [...rs].sort((a, b) => b.created_at - a.created_at).slice(0, 3).map((r) => [r.created_at, PIPE[r.pipeline] ?? r.pipeline, statusName(r.status)]);
-  const stateOf = (rs: Run[]): Tone => (rs.some((r) => r.status === "running") ? "ai" : rs.some((r) => waits(r.status)) ? "cue" : rs.some((r) => r.status === "failed" && r.created_at > Date.now() / 1000 - 86400) ? "tally" : "mute");
-  const stats = (rs: Run[]) => ({ runs: rs, done: rs.filter((r) => r.status === "succeeded").length, doing: rs.filter((r) => live(r.status) || waits(r.status)).length, fail: rs.filter((r) => r.status === "failed").length,
+  const stateOf = (rs: Run[]): Tone => (rs.some((r) => r.status === "running") ? "ai" : rs.some((r) => waits(r.status)) ? "cue" : rs.some((r) => failing(r) && r.created_at > Date.now() / 1000 - 86400) ? "tally" : "mute");
+  const stats = (rs: Run[]) => ({ runs: rs, done: rs.filter((r) => r.status === "succeeded").length, doing: rs.filter((r) => live(r.status) || waits(r.status)).length, fail: rs.filter(failing).length,
     p95: pct(rs.map((r) => took(details.get(r.run_id))).filter((x): x is number => x != null && x > 0), 0.95), spark: perHour(rs.map((r) => r.created_at)) });
   const none = { runs: [] as Run[], done: 0, doing: 0, fail: 0, p95: null, spark: perHour([]) };
   const lib = of(["library."]), src = of(["sourcing."]), cut = of(["edit."]);
@@ -411,7 +413,7 @@ function DeptCard({ c, side, onOpen }: { c: Card; side: "left" | "right"; onOpen
   // Where the department's current work sits on its line: waiting to come in, at work, or gone out.
   const mark = c.doing ? (c.state === "cue" ? 0.82 : 0.5) : c.done ? 0.95 : 0.06;
   const now = c.runs.find((r) => r.status === "running" || waits(r.status));
-  const bad = c.runs.filter((r) => r.status === "failed").sort((a, b) => b.created_at - a.created_at)[0];
+  const bad = c.runs.filter(failing).sort((a, b) => b.created_at - a.created_at)[0];
   const last = c.lines[0];
   // One sentence for what this department is doing, waiting on, broke on, or last did.
   const line = now ? (waits(now.status) ? tv`Chờ bạn: ${PIPE[now.pipeline] ?? now.pipeline}` : (() => { const st = now.stages.find((x) => x.status === "running"); return tv`Đang ${st ? sn(st.stage_key, now.pipeline).toLowerCase() : PIPE[now.pipeline] ?? now.pipeline} · ${rid(now.run_id)}`; })())
@@ -533,7 +535,7 @@ function TaskBoard({ all: runs, open }: { all: Run[]; open: (id: string) => void
             <span className="mono text-right text-[12.5px]">{n(isDone)}</span>
             <span className="flex min-w-0 gap-1 overflow-hidden">{recent.map((r) => (
               <button key={r.run_id} type="button" onClick={() => open(r.run_id)} title={`${PIPE[r.pipeline] ?? r.pipeline}: ${statusName(r.status)}`}
-                      className="lab-tag shrink-0 whitespace-nowrap !normal-case hover:!text-ink" style={{ borderColor: r.status === "failed" ? "var(--color-tally)" : isDone(r) ? DEPT[c.key] : waits(r.status) ? "var(--color-cue)" : "var(--color-ai)", color: r.status === "failed" ? "var(--color-tally)" : undefined }}>{rid(r.run_id)}</button>))}</span>
+                      className="lab-tag shrink-0 whitespace-nowrap !normal-case hover:!text-ink" style={{ borderColor: failing(r) ? "var(--color-tally)" : isDone(r) ? DEPT[c.key] : waits(r.status) ? "var(--color-cue)" : "var(--color-ai)", color: failing(r) ? "var(--color-tally)" : undefined }}>{rid(r.run_id)}</button>))}</span>
           </li>); })}
       </ul>
     </section>
@@ -548,13 +550,13 @@ function RadViz({ all }: { all: Run[] }) {
   const anchor = (i: number) => { const a = (i / cards.length) * Math.PI * 2 - Math.PI / 2; return [100 + 78 * Math.cos(a), 100 + 78 * Math.sin(a)]; };
   return (
     <section className="lab-card flex min-h-0 flex-col p-3" aria-label={tr("Phân bổ việc")}>
-      <div className="lab-cap mb-1 flex justify-between"><span>{tr("Phân bổ việc")} · RADVIZ</span><span>{tv`n ${pts.length} · lỗi ${pts.filter((p) => p.r.status === "failed").length}`}</span></div>
+      <div className="lab-cap mb-1 flex justify-between"><span>{tr("Phân bổ việc")} · RADVIZ</span><span>{tv`n ${pts.length} · lỗi ${pts.filter((p) => failing(p.r)).length}`}</span></div>
       <div className="flex items-center gap-3">
         <svg viewBox="0 0 200 200" className="h-44 w-44 shrink-0" role="img" aria-label={tr("Phân bổ việc")}>
           <circle cx="100" cy="100" r="78" fill="none" stroke="var(--color-edge)" />
           {cards.map((c, i) => { const [x, y] = anchor(i); return <g key={c.key}><line x1="100" y1="100" x2={x} y2={y} stroke="var(--color-line)" /><rect x={x - 3} y={y - 3} width="6" height="6" fill={DEPT[c.key]} /></g>; })}
           {pts.map(({ i, r, k }) => { const [ax, ay] = anchor(i), f = 0.35 + ((k * 37) % 50) / 100, j = ((k * 53) % 21) - 10; const x = 100 + (ax - 100) * f + j * 0.6, y = 100 + (ay - 100) * f - j * 0.4;
-            return r.status === "failed" ? <circle key={r.run_id} cx={x} cy={y} r="3.4" fill="none" stroke="var(--color-tally)" /> : <circle key={r.run_id} cx={x} cy={y} r="2.2" fill={DEPT[cards[i].key]} opacity=".9" />; })}
+            return failing(r) ? <circle key={r.run_id} cx={x} cy={y} r="3.4" fill="none" stroke="var(--color-tally)" /> : <circle key={r.run_id} cx={x} cy={y} r="2.2" fill={DEPT[cards[i].key]} opacity=".9" />; })}
         </svg>
         <ul className="lab-cap grid gap-1 !normal-case !tracking-normal">
           <li>{tr("chấm = một việc")}</li><li>{tr("hút về = bộ phận")}</li><li>{tr("màu = bộ phận")}</li><li className="text-tally">○ {tr("việc lỗi")}</li><li className="mt-1">{tr("15 việc gần nhất mỗi bộ phận")}</li>
@@ -658,7 +660,7 @@ function Pipelines({ all, caps, agent, open }: { all: Run[]; caps: Caps | null; 
             const rs = all.filter((r) => r.pipeline === d.pipeline).sort((a, b) => b.created_at - a.created_at);
             const act = rs.filter((r) => live(r.status) || waits(r.status));
             const recent = rs.filter((r) => r.created_at > week);
-            const fails = recent.filter((r) => r.status === "failed").length;
+            const fails = recent.filter(failing).length;
             const times = rs.map((r) => took(details.get(r.run_id))).filter((x): x is number => x != null && x > 0);
             const stageState = (key: string): Tone => { const st = act.flatMap((r) => r.stages.filter((s) => s.stage_key === key).map((s) => s.status));
               return st.includes("running") ? "ai" : st.some(waits) ? "cue" : st.includes("failed") ? "tally" : st.includes("queued") ? "accent" : "mute"; };
@@ -879,17 +881,21 @@ type Act = (key: string, fn: () => Promise<unknown>, done: string) => Promise<vo
 function RunRows({ runs, ctx, act, busy, none }: { runs: Run[]; ctx: Ctx; act: Act; busy: string | null; none: string }) {
   const list = [...runs].sort((a, b) => b.created_at - a.created_at).slice(0, 8);
   if (!list.length) return <Empty>{none}</Empty>;
+  const open = runs.filter(failing);
+  const dismiss = (ids: string[]) => act(ids.length > 1 ? "dismiss-all" : ids[0], () => post("/api/v1/runs/dismiss", { run_ids: ids }), ids.length > 1 ? tv`Đã bỏ qua ${ids.length} lỗi.` : tr("Đã bỏ qua lỗi này."));
   const cancel = async (r: Run) => { if (await ask(tr("Huỷ việc này?"), { body: tr("Các bước chưa chạy sẽ không chạy nữa. Kết quả các bước đã xong vẫn được giữ."), confirm: tr("Huỷ việc") })) act(r.run_id, () => post(`/api/v1/runs/${r.run_id}/cancel`), tr("Đã huỷ việc.")); };
   return (
     <ul className="grid gap-1.5">
-      {list.map((r) => { const bad = r.stages.find((s) => s.status === "failed"); const t = toneOf(r.status); return (
+      {open.length > 1 && <li className="flex justify-end"><Button size="sm" kind="quiet" busy={busy === "dismiss-all"} onClick={() => dismiss(open.map((r) => r.run_id))}>{tv`Bỏ qua cả ${open.length} lỗi`}</Button></li>}
+      {list.map((r) => { const bad = failing(r) ? r.stages.find((s) => s.status === "failed") : undefined; const t = r.cleared ? "mute" : toneOf(r.status); return (
         <Row key={r.run_id} className="flex items-center gap-2.5">
           <button type="button" onClick={() => ctx.openRun(r.run_id)} className="flex min-w-0 flex-1 items-center gap-2.5 text-left hover:underline">
             <Lamp tone={t} pulse={r.status === "running"} />
             <span className="min-w-0 flex-1"><span className="block truncate text-[13px] text-ink">{PIPE[r.pipeline] ?? r.pipeline}</span><span className="mono block text-[11.5px] text-faint">{rid(r.run_id)} · {ago(r.created_at)}</span></span>
-            <span className={`text-[12px] ${TXT[t]}`}>{statusName(r.status)}</span>
+            <span className={`text-[12px] ${TXT[t]}`}>{r.cleared ? tr("Lỗi đã xử lý") : statusName(r.status)}</span>
           </button>
           {bad && <Button size="sm" busy={busy === r.run_id} onClick={() => act(r.run_id, () => post(`/api/v1/stages/${bad.stage_id}/retry`), tr("Đã cho chạy lại."))}><Icon name="refresh" size={12} />{tr("Chạy lại")}</Button>}
+          {bad && <Button size="sm" kind="quiet" busy={busy === r.run_id} title={tr("Đã biết lỗi này; không tính nó là việc hỏng nữa")} onClick={() => dismiss([r.run_id])}>{tr("Bỏ qua")}</Button>}
           {live(r.status) && <Button size="sm" kind="quiet" busy={busy === r.run_id} onClick={() => cancel(r)}>{tr("Huỷ")}</Button>}
         </Row>); })}
     </ul>

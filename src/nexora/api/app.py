@@ -34,7 +34,8 @@ def run_view(system, run_id: str) -> dict:
         "pipeline": info["pipeline_id"],
         "subject_ref": info["subject_ref"],
         "created_at": info["created_at"],
-        "status": system.orch.run_status(run_id).value,
+        "status": (status := system.orch.run_status(run_id).value),
+        "cleared": status == "failed" and system.orch.cleared(run_id),      # a failure set aside, or put right by a later run
         "cost": system.orch.run_cost(run_id),
         "stages": [{"stage_id": s.stage_id, "stage_key": s.stage_key, "status": s.status.value, "blocked_reason": s.blocked_reason,
                     "attempts": len(system.orch.attempts(s.stage_id)), "outputs": s.outputs}
@@ -218,6 +219,16 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
                                  "error_code": row["error_code"], "error_message": row["error_message"]})
         events = [{"at": e.occurred_at, "kind": e.kind, "stage_key": keys.get(e.stage_id), "actor": e.actor, "payload": e.payload} for e in system.orch.events(run_id)]
         return {**run_view(system, run_id), "attempts": sorted(attempts, key=lambda a: a["started_at"]), "events": events}
+
+    @app.post("/api/v1/runs/dismiss")
+    def dismiss_runs(body: dict):
+        """Set failures aside once the operator has seen them: {"run_ids": [...]}, or {"pipeline": "library."} for every
+        failure of that kind of work."""
+        ids = list(body.get("run_ids") or [])
+        prefix = str(body.get("pipeline") or "")
+        if prefix:
+            ids += [r for r in system.orch.runs() if system.orch.pipeline_of(r).startswith(prefix) and system.orch.run_status(r).value == "failed"]
+        return {"dismissed": system.orch.dismiss(ids)}
 
     @app.post("/api/v1/runs/{run_id}/cancel")
     def cancel_run(run_id: str):
@@ -429,7 +440,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             name = project["title"] if project else asset_names.get(subject, subject)
             link = f"/du-an/{project['project_id']}" if project else "/tien-trinh"
             item = {"run_id": run_id, "pipeline": view["pipeline"], "name": name, "link": link, "status": view["status"], "held": view["held"]}
-            if view["status"] in ("waiting_review", "blocked", "failed"):
+            if view["status"] in ("waiting_review", "blocked", "failed") and not view["cleared"]:
                 stage = next((s for s in view["stages"] if s["status"] == view["status"]), None)
                 if view["status"] == "failed" and project and system.projects.current_script(project["project_id"])["script_id"] != subject:
                     continue                                  # a failure of a script version that has since been replaced

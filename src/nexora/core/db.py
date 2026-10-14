@@ -273,6 +273,7 @@ MIGRATIONS = [
     ("assets", "title", "TEXT"),                  # the operator's name for it, in place of the file name
     ("assets", "session", "TEXT"),                # the operator's name for the shoot, in place of the folder name
     ("projects", "trashed_at", "REAL"),
+    ("runs", "dismissed_at", "REAL"),             # the operator has seen this failure and set it aside
 ]
 
 
