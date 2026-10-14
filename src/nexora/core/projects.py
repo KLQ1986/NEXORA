@@ -63,8 +63,21 @@ class ProjectStore:
             for key, value in allowed.items():
                 c.execute(f"UPDATE projects SET {key} = ? WHERE project_id = ?", (value, project_id))
 
-    def projects(self) -> list[dict]:
-        return [dict(r) for r in self._conn.execute("SELECT * FROM projects ORDER BY created_at DESC, project_id DESC")]
+    def projects(self, *, include_trashed: bool = False) -> list[dict]:
+        """The projects, newest first. What is in the Trash is left out unless asked for."""
+        where = "" if include_trashed else " WHERE trashed_at IS NULL"
+        return [dict(r) for r in self._conn.execute(f"SELECT * FROM projects{where} ORDER BY created_at DESC, project_id DESC")]
+
+    def trash(self, project_id: str, *, at: float | None = None) -> None:
+        with db.write(self._conn) as c:
+            c.execute("UPDATE projects SET trashed_at = ? WHERE project_id = ?", (at or time.time(), project_id))
+
+    def restore(self, project_id: str) -> None:
+        with db.write(self._conn) as c:
+            c.execute("UPDATE projects SET trashed_at = NULL WHERE project_id = ?", (project_id,))
+
+    def trashed(self) -> list[dict]:
+        return [dict(r) for r in self._conn.execute("SELECT * FROM projects WHERE trashed_at IS NOT NULL ORDER BY trashed_at DESC")]
 
     def project(self, project_id: str) -> dict | None:
         row = self._conn.execute("SELECT * FROM projects WHERE project_id = ?", (project_id,)).fetchone()
@@ -184,7 +197,8 @@ class ProjectStore:
         """Which projects use each asset in the current version of their script."""
         rows = self._conn.execute(
             "SELECT DISTINCT sel.asset_id, sc.project_id FROM selections sel JOIN shots sh USING (shot_id) JOIN scripts sc USING (script_id) "
-            "WHERE sel.asset_id IS NOT NULL AND sel.status != 'gap' AND sc.version = (SELECT MAX(version) FROM scripts WHERE project_id = sc.project_id)")
+            "WHERE sel.asset_id IS NOT NULL AND sel.status != 'gap' AND sc.version = (SELECT MAX(version) FROM scripts WHERE project_id = sc.project_id) "
+            "AND sc.project_id IN (SELECT project_id FROM projects WHERE trashed_at IS NULL)")
         out: dict[str, list[str]] = {}
         for asset_id, project_id in rows:
             out.setdefault(asset_id, []).append(project_id)
@@ -276,7 +290,10 @@ class ProjectStore:
                         cleaned[key] = None
                 if isinstance(cleaned.get("focus"), dict) and cleaned["focus"].get("asset_id") == asset_id:
                     cleaned["focus"] = None
-                if row["asset_id"] == asset_id:
+                held = (cleaned.get("trashed_pick") or {}).get("asset_id") == asset_id
+                if held:
+                    cleaned.pop("trashed_pick")           # it was waiting in the Trash and is not coming back
+                if row["asset_id"] == asset_id or held:
                     gaps += 1
                     c.execute("UPDATE selections SET status = 'gap', asset_id = NULL, moment_id = NULL, t_in = NULL, t_out = NULL, score = NULL, reason = ?, "
                               "alternates = ?, extras = ?, decided_by = 'system' WHERE shot_id = ?",
@@ -308,6 +325,39 @@ class ProjectStore:
             c.execute("DELETE FROM projects WHERE project_id = ?", (project_id,))
         return {"scripts": scripts, "shots": shots, "renders": renders}
 
+    def set_aside_asset(self, asset_id: str, *, reason: str) -> int:
+        """An asset has gone to the Trash. Every line showing it is without a picture again and says why; what it showed is
+        kept with the line, so that bringing the asset back can give the line its picture again. Returns how many lines."""
+        moved = 0
+        with db.write(self._conn) as c:
+            for row in c.execute("SELECT * FROM selections WHERE asset_id = ? AND status != 'gap'", (asset_id,)).fetchall():
+                extras = json.loads(row["extras"] or "{}")
+                extras["trashed_pick"] = {k: row[k] for k in ("status", "asset_id", "moment_id", "t_in", "t_out", "score", "reason", "decided_by")}
+                c.execute("UPDATE selections SET status = 'gap', asset_id = NULL, moment_id = NULL, t_in = NULL, t_out = NULL, score = NULL, reason = ?, "
+                          "extras = ?, decided_by = 'system' WHERE shot_id = ?", (reason, json.dumps(extras, ensure_ascii=False), row["shot_id"]))
+                moved += 1
+        return moved
+
+    def bring_back_asset(self, asset_id: str) -> int:
+        """An asset has come back from the Trash. Each line it was taken from gets it back, unless the line has been given
+        another picture since. Returns how many lines got it back."""
+        back = 0
+        with db.write(self._conn) as c:
+            for row in c.execute("SELECT shot_id, status, extras FROM selections WHERE extras LIKE ?", (f"%{asset_id}%",)).fetchall():
+                extras = json.loads(row["extras"] or "{}")
+                pick = extras.get("trashed_pick")
+                if not pick or pick.get("asset_id") != asset_id:
+                    continue
+                extras.pop("trashed_pick")
+                if row["status"] == "gap":
+                    c.execute("UPDATE selections SET status = ?, asset_id = ?, moment_id = ?, t_in = ?, t_out = ?, score = ?, reason = ?, decided_by = ?, extras = ? "
+                              "WHERE shot_id = ?", (pick["status"], pick["asset_id"], pick["moment_id"], pick["t_in"], pick["t_out"], pick["score"], pick["reason"],
+                                                    pick["decided_by"], json.dumps(extras, ensure_ascii=False), row["shot_id"]))
+                    back += 1
+                else:
+                    c.execute("UPDATE selections SET extras = ? WHERE shot_id = ?", (json.dumps(extras, ensure_ascii=False), row["shot_id"]))
+        return back
+
     def feedback_spans(self, line: str) -> list[dict]:
         """For one line: each stretch of footage the operator has judged for it, latest first."""
         rows = self._conn.execute("SELECT asset_id, t_in, t_out, verdict FROM match_feedback WHERE line = ? AND asset_id IS NOT NULL AND t_in IS NOT NULL ORDER BY at DESC",
@@ -320,6 +370,14 @@ class ProjectStore:
 
     def feedback_counts(self) -> dict[str, int]:
         return {r[0]: r[1] for r in self._conn.execute("SELECT verdict, COUNT(*) FROM match_feedback GROUP BY verdict")}
+
+    def remove_render(self, render_id: str) -> dict | None:
+        """Forget one cut. Returns its record, so that the caller decides what to do with its file."""
+        render = self.render(render_id)
+        if render is not None:
+            with db.write(self._conn) as c:
+                c.execute("DELETE FROM renders WHERE render_id = ?", (render_id,))
+        return render
 
     def update_render_qc(self, render_id: str, **values) -> None:
         """Add to what is known about a render after it was made: a later look, a later measurement."""

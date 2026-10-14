@@ -377,6 +377,15 @@ function Finishing({ id, render, format, run }: { id: string; render: RenderItem
   );
 }
 
+/** Put a project in NEXORA's Trash, with a way back at once. Nothing is lost until the Trash is emptied. */
+async function trashProject(p: { project_id: string; title: string }, then?: () => void): Promise<boolean> {
+  if (!(await ask(tr("Chuyển dự án này vào thùng rác?"), { body: tv`${p.title}. Có thể khôi phục trong Thùng rác trong 30 ngày. Footage trong thư viện không bị ảnh hưởng.`, confirm: tr("Chuyển vào thùng rác"), danger: true }))) return false;
+  try { await call(`/api/v1/projects/${p.project_id}`, { method: "DELETE" }); } catch (e) { toast((e as Error).message, { tone: "tally" }); return false; }
+  toast(tv`Đã chuyển “${p.title}” vào thùng rác.`, { undo: () => { post("/api/v1/trash/restore", { projects: [p.project_id] }).then(() => then?.()).catch(() => {}); } });
+  then?.();
+  return true;
+}
+
 const CRITERIA: Record<string, string> = { hop_khan_gia: tr("Hợp người xem"), co_hinh: tr("Có hình trong kho"), moi_la: tr("Mới lạ"), de_lam: tr("Dễ làm") };
 const TASK_STATES: Record<string, string> = { working: tr("Đang làm"), waiting_operator: tr("Chờ bạn"), done: "Xong", failed: tr("Dừng vì lỗi") };
 
@@ -670,6 +679,9 @@ function Detail({ id, back }: { id: string; back: () => void }) {
           side={<ProjectSide current={id} steps={<StepSide view={view} step={step} reviewing={!!reviewing} renderReview={!!renderReview} packaged={!!latest?.package} onChange={setView} />} />}
           tabs={<div className="lg:hidden"><StepTabs view={view} step={step} reviewing={!!reviewing} renderReview={!!renderReview} packaged={!!latest?.package} onChange={setView} /></div>}
           actions={<><Button onClick={() => setSettings(true)} title={tr("Mẫu, khung hình, nhạc, lời dẫn, kênh, ngày đăng")}><Icon name="sliders" size={15} />{tr("Thiết lập")}</Button>{next && <Button kind="primary" busy={busy} disabled={next.label === tr("Lưu kịch bản") && !(text ?? "").trim()} onClick={next.go}>{!busy && <Icon name={next.icon} />}{next.label}</Button>}</>}>
+      {p.trashed_at && <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-cue/40 bg-cue/10 px-4 py-3 text-cue"><Icon name="trash" />
+        <span className="min-w-0 flex-1">{tr("Dự án này đang ở Thùng rác. Nó không hiện trong danh sách và trợ lý không làm tiếp cho tới khi bạn khôi phục.")}</span>
+        <Button size="sm" disabled={busy} onClick={() => run(() => post("/api/v1/trash/restore", { projects: [id] }))}><Icon name="undo" size={14} />{tr("Khôi phục")}</Button></div>}
       {note && <p className="mb-5 flex items-center gap-2 rounded-xl border border-tally/40 bg-tally/10 px-4 py-3 text-tally"><Icon name="alert" />{note}</p>}
       <AgentLog projectId={id} />
       {view === "board" && <Board project={p} />}
@@ -882,10 +894,11 @@ function Detail({ id, back }: { id: string; back: () => void }) {
                       <details className="panel group px-4 py-3">
                         <summary className="flex cursor-pointer list-none items-center justify-between text-[13px] text-mute hover:text-ink">{tv`Các bản dựng trước (${p.renders.length - 1})`}<Icon name="down" size={14} className="transition-transform group-open:rotate-180" /></summary>
                         <ul className="rows mt-2">
-                          {p.renders.slice(1, 6).map((r) => (
-                            <li key={r.render_id} className="py-2 text-[13px]"><a className="mono link" href={r.url} target="_blank" rel="noreferrer">{new Date(r.created_at * 1000).toLocaleString(locale)}</a>
+                          {p.renders.slice(1).map((r) => (
+                            <li key={r.render_id} className="flex items-start gap-3 py-2 text-[13px]"><span className="min-w-0 flex-1"><a className="mono link" href={r.url} target="_blank" rel="noreferrer">{new Date(r.created_at * 1000).toLocaleString(locale)}</a>
                               <span className="text-mute">{tv`, dài ${timecode(r.qc.duration)}${r.review ? (r.review.approved ? tr(", đã duyệt") : tr(", không duyệt")) : ""}`}</span>
-                              {r.review?.comment && <p className="text-mute">{tv`Ghi chú: ${r.review.comment}`}</p>}</li>
+                              {r.review?.comment && <p className="text-mute">{tv`Ghi chú: ${r.review.comment}`}</p>}</span>
+                              <button type="button" className="link shrink-0" disabled={busy} onClick={async () => { if (await ask(tr("Xoá bản dựng này?"), { body: tr("File được chuyển vào Thùng rác của máy. Bản đã đăng thì không xoá được."), confirm: tr("Xoá bản dựng"), danger: true })) run(() => call(`/api/v1/renders/${r.render_id}`, { method: "DELETE" })); }}>{tr("Xoá")}</button></li>
                           ))}
                         </ul>
                       </details>
@@ -908,6 +921,12 @@ function Detail({ id, back }: { id: string; back: () => void }) {
       {settings && (
         <Drawer title={tr("Thiết lập dự án")} close={() => setSettings(false)}>
             <div className="grid gap-5">
+              <form onSubmit={(e) => { e.preventDefault(); const v = String(new FormData(e.currentTarget).get("name") ?? "").trim(); if (v && v !== p.title) patch({ title: v }); }}>
+                <label htmlFor="project-name" className={field}>{tr("Tên dự án")}</label>
+                <div className="mt-1.5 flex gap-2"><input id="project-name" name="name" defaultValue={p.title} key={p.title} className="h-9 min-w-0 flex-1 px-3"
+                  onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== p.title) patch({ title: v }); else e.target.value = p.title; }} />
+                  <Button size="sm" type="submit" disabled={busy}>{tr("Lưu")}</Button></div>
+              </form>
               <div>
                 <label htmlFor="template" className={field}>{tr("Mẫu định dạng")}</label>
                 <select id="template" value={p.template ?? ""} disabled={busy} onChange={(e) => e.target.value && run(() => post(`/api/v1/projects/${id}/template`, { name: e.target.value }))} className="w-full pl-2.5">
@@ -957,9 +976,15 @@ function Detail({ id, back }: { id: string; back: () => void }) {
                 <input id="due" type="date" defaultValue={p.due_date ?? ""} key={p.due_date ?? "none"} onChange={(e) => patch({ due_date: e.target.value })} className="mono mt-1.5 h-9 w-full px-3" /></div>
               <label className="flex items-start gap-2.5 rounded-lg border border-line bg-raised/50 p-3"><input type="checkbox" className="mt-0.5" checked={p.auto_accept} disabled={busy} onChange={(e) => patch({ auto_accept: e.target.checked ? 1 : 0 })} />
                 <span className="text-[13px]">{tr("Tự duyệt clip")}<span className="block text-[12px] text-faint">{tr("Chỉ khi mọi câu đều có clip và mô hình chấm chắc chắn.")}</span></span></label>
-              <div className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-raised/50 p-3">
-                <p className="min-w-0 flex-1 text-[12.5px] text-mute">{tr("Xoá dự án: kịch bản, các lựa chọn clip và các bản dựng bị xoá. File bản dựng được chuyển vào Thùng rác. Footage trong thư viện vẫn giữ nguyên.")}</p>
-                <Button size="sm" disabled={busy} onClick={async () => { if (!(await ask(tr("Xoá dự án này?"), { body: p.title, confirm: tr("Xoá dự án"), danger: true }))) return; try { await call(`/api/v1/projects/${id}`, { method: "DELETE" }); setSettings(false); back(); } catch (e) { setNote((e as Error).message); } }}>{tr("Xoá dự án")}</Button>
+              <div className="grid gap-2 rounded-lg border border-line bg-raised/50 p-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <p className="min-w-0 flex-1 text-[12.5px] text-mute">{tr("Nhân bản: một dự án mới cùng kịch bản, cùng các clip đã chọn và cùng khung hình.")}</p>
+                  <Button size="sm" disabled={busy} onClick={() => run(async () => { const r = await post<Project>(`/api/v1/projects/${id}/duplicate`); setSettings(false); toast(tv`Đã tạo “${r.title}”.`); window.history.pushState(null, "", `/du-an/${r.project_id}`); window.dispatchEvent(new PopStateEvent("popstate")); })}><Icon name="copy" size={14} />{tr("Nhân bản")}</Button>
+                </div>
+                <div className="flex flex-wrap items-center gap-3 border-t border-line pt-2">
+                  <p className="min-w-0 flex-1 text-[12.5px] text-mute">{tr("Chuyển vào thùng rác: dự án biến khỏi mọi danh sách nhưng khôi phục được trong 30 ngày. Footage trong thư viện không bị ảnh hưởng.")}</p>
+                  <Button size="sm" disabled={busy} onClick={async () => { if (await trashProject(p)) { setSettings(false); back(); } }}><Icon name="trash" size={14} />{tr("Chuyển vào thùng rác")}</Button>
+                </div>
               </div>
             </div>
         </Drawer>
@@ -1081,11 +1106,7 @@ export default function Projects({ sub, go }: { sub: string | null; go: (to: str
   const [seek, setSeek] = useState(false);
   useEffect(() => { if (!sub && new URLSearchParams(window.location.search).has("moi")) setMode("new"); }, [sub, window.location.search]);
   if (sub) return <Detail key={sub} id={sub} back={() => go("/du-an")} />;
-  const remove = async (p: Project) => {
-    if (!(await ask(tr("Xoá dự án này?"), { body: tv`${p.title}. Kịch bản, các lựa chọn clip và các bản dựng bị xoá; file bản dựng vào Thùng rác. Footage trong thư viện vẫn giữ nguyên.`, confirm: tr("Xoá dự án"), danger: true }))) return;
-    try { await call(`/api/v1/projects/${p.project_id}`, { method: "DELETE" }); toast(tv`Đã xoá dự án “${p.title}”.`); } catch (e) { toast((e as Error).message); }
-    reload();
-  };
+  const remove = async (p: Project) => { await trashProject(p); reload(); };
   const bin = (p: Project, cls: string) => <button type="button" onClick={() => remove(p)} aria-label={tv`Xoá dự án ${p.title}`} title={tr("Xoá dự án")}
     className={`grid h-8 w-8 place-items-center rounded-md border border-line bg-surface/80 text-mute backdrop-blur transition hover:border-tally/50 hover:text-tally ${cls}`}><Icon name="trash" size={15} /></button>;
   const create = async () => { const p = await post<Project>("/api/v1/projects", { title: title.trim(), format }); setTitle(""); reload(); go(`/du-an/${p.project_id}`); };

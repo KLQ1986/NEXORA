@@ -109,6 +109,7 @@ const ICONS: Record<string, string> = {
   info: "M10 9v5m0-7.6v.1M17.5 10a7.5 7.5 0 1 1-15 0 7.5 7.5 0 0 1 15 0Z",
   alert: "M10 7.5v3.5m0 2.6v.1M8.7 3.6 2.9 14a1.5 1.5 0 0 0 1.3 2.2h11.6a1.5 1.5 0 0 0 1.3-2.2L11.3 3.6a1.5 1.5 0 0 0-2.6 0Z",
   x: "m5.5 5.5 9 9m0-9-9 9",
+  undo: "M7.5 5 4 8.5 7.5 12M4 8.5h7.5a4 4 0 0 1 0 8H9",
   trash: "M4 6h12M8 6V4.5h4V6M5.5 6l.7 9.5h7.6l.7-9.5M8.5 9v4m3-4v4",
   folder: "M3 6a1 1 0 0 1 1-1h3.6l1.6 1.8H16a1 1 0 0 1 1 1V15a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6Z",
   star: "m10 3.3 2 4.3 4.6.5-3.4 3.2.9 4.6L10 13.6l-4.1 2.3.9-4.6-3.4-3.2 4.6-.5 2-4.3Z",
@@ -147,7 +148,7 @@ export function Icon({ name, size = 16, className = "" }: { name: keyof typeof I
 /** The operations section's side menu: the four screens that look after the machine. The open one may hang its own places beneath. */
 export function OpsSide({ children }: { children?: React.ReactNode }) {
   const path = window.location.pathname;
-  const items: [string, string, string][] = [["/phong-may", tr("Phòng máy"), "gauge"], ["/tien-trinh", tr("Tiến trình"), "pulse"], ["/chi-phi", tr("Chi phí"), "coins"], ["/thong-bao", tr("Thông báo"), "bell"], ["/he-thong", tr("Hệ thống"), "sliders"]];
+  const items: [string, string, string][] = [["/phong-may", tr("Phòng máy"), "gauge"], ["/tien-trinh", tr("Tiến trình"), "pulse"], ["/chi-phi", tr("Chi phí"), "coins"], ["/thong-bao", tr("Thông báo"), "bell"], ["/thung-rac", tr("Thùng rác"), "trash"], ["/he-thong", tr("Hệ thống"), "sliders"]];
   return (
     <SideGroup label={tr("Vận hành")}>
       {items.map(([to, label, icon]) => { const on = path.startsWith(to); return <SideLink key={to} label={label} icon={icon} on={on && !children} onClick={() => goTo(to)}>{on ? children : null}</SideLink>; })}

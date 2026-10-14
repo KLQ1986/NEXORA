@@ -6,7 +6,7 @@ export type Run = { held?: boolean; stalled?: boolean; run_id: string; pipeline:
 export type Word = { text: string; start: number; end: number; p: number };
 export type Asset = {
   scene_cuts?: number[]; enhance: Run | null; enhanced: { upscale: number; smooth_fps: number | null } | null; rejected: boolean; session: string; used_in: { project_id: string; title: string }[]; speech: { words: number; sentences: number; seconds: number; doubtful: number } | null; transcribe: Run | null;
-  asset_id: string; name: string; path: string; online: boolean; size: number; duplicate_of: string | null;
+  asset_id: string; name: string; file_name: string; title: string | null; session_set: string | null; trashed_at: number | null; path: string; online: boolean; size: number; duplicate_of: string | null;
   duration: number | null; width: number | null; height: number | null; frame_rate: number | null; has_audio: boolean | null;
   usable_ranges: number[][]; black_ranges: number[][]; frozen_ranges: number[][];
   thumbnail_url: string | null; proxy_url: string | null; ingest: Run | null; understand: Run | null; still: boolean; kind: string; mean_db: number | null; rating: number; collections: string[]; note: string | null; angles: { asset_id: string; offset: number }[];
@@ -132,7 +132,7 @@ export type RenderItem = { render_id: string; created_at: number; url: string; p
         shots?: { text: string; duration: number; gap: boolean; asset_id?: string | null; t_in?: number | null; own_voice?: boolean; focus_x?: number | null; inserts?: { keyword: string; at: number }[] }[] } };
 export type BoardEvent = { at: number; kind: string; pipeline: string; stage_key: string | null; actor: string; payload: Record<string, unknown> };
 export type Notice = { notification_id: number; kind: string; run_id: string; stage_key: string | null; reason: string | null; created_at: number; read_at: number | null; pipeline: string | null; subject_name: string | null; link: string | null };
-export type Project = { channel: string | null; project_id: string; title: string; created_at: number; format: string; music_path: string | null;
+export type Project = { channel: string | null; project_id: string; title: string; trashed_at: number | null; created_at: number; format: string; music_path: string | null;
   due_date: string | null; script: { script_id: string; version: number; match_approved: boolean; critique: Critique[] | null } | null; shots: Shot[]; match: Run | null; render: Run | null; renders: RenderItem[];
   preview: Run | null; previews: { render_id: string; url: string; duration: number; gaps: number; created_at: number }[]; remote: string[]; options: { clean_audio?: boolean; match_colour?: boolean; music_cleared?: boolean; footage_may_leave?: boolean }; generate: Run | null; generators: { image: boolean; video: boolean; image_providers: Provider[]; video_providers: Provider[] }; bible: BibleEntry[]; auto_accept: boolean; style: string | null; narration_dir: string | null; own_takes: number[]; budget_cap: number | null; spent: number; template: string | null; voice: string | null; research: Source[] };
 export type Template = { name: string; format: string; voice: string; music_gain: number; auto_accept: boolean; caption_scale: number; caption_position: string; pronounce: Record<string, string>; typeface?: string; caption_colour?: number[] | null; logo_path?: string };
@@ -164,3 +164,9 @@ export function projectState(p: Project): { label: string; tone: "mute" | "cue" 
   if (p.script.match_approved) return { label: tr("Sẵn sàng dựng"), tone: "mute", step: 3 };
   return { label: p.match ? tr("Cần tìm lại clip") : tr("Có kịch bản"), tone: "mute", step: 1 };
 }
+
+export type TrashView = {
+  days: number;
+  assets: { asset_id: string; name: string; kind: string; trashed_at: number; days_left: number }[];
+  projects: { project_id: string; title: string; trashed_at: number; days_left: number; published: boolean }[];
+};

@@ -144,10 +144,15 @@ class AssetStore:
     def original(self, asset_id: str) -> AssetVersion:
         return next(v for v in self.versions(asset_id) if v.role == "original")
 
-    def annotate(self, asset_id: str, *, rating: int | None = None, collections: list[str] | None = None, note: str | None = None, rejected: bool | None = None) -> None:
-        """The operator's own marks on an asset: how good it is (0 to 5), which collections it belongs to, and whether it is set aside
-        so that no script is ever matched to it."""
+    def annotate(self, asset_id: str, *, rating: int | None = None, collections: list[str] | None = None, note: str | None = None, rejected: bool | None = None,
+                 title: str | None = None, session: str | None = None) -> None:
+        """The operator's own marks on an asset: how good it is (0 to 5), which collections it belongs to, whether it is set aside
+        so that no script is ever matched to it, and the name and shoot it goes by (empty gives back the ones read from the file)."""
         with db.write(self._conn) as c:
+            if title is not None:
+                c.execute("UPDATE assets SET title = ? WHERE asset_id = ?", (title.strip() or None, asset_id))
+            if session is not None:
+                c.execute("UPDATE assets SET session = ? WHERE asset_id = ?", (session.strip() or None, asset_id))
             if note is not None:
                 c.execute("UPDATE assets SET note = ? WHERE asset_id = ?", (note.strip() or None, asset_id))
             if rejected is not None:
@@ -177,10 +182,24 @@ class AssetStore:
         return dict(row) if row else None
 
     def rejected(self) -> frozenset[str]:
-        return frozenset(r[0] for r in self._conn.execute("SELECT asset_id FROM assets WHERE rejected = 1"))
+        """Assets never to be proposed or found: those set aside by the operator and those in the Trash."""
+        return frozenset(r[0] for r in self._conn.execute("SELECT asset_id FROM assets WHERE rejected = 1 OR trashed_at IS NOT NULL"))
 
-    def assets(self) -> list[dict]:
-        return [dict(r) for r in self._conn.execute("SELECT * FROM assets ORDER BY created_at DESC, asset_id DESC")]
+    def assets(self, *, include_trashed: bool = False) -> list[dict]:
+        """The library, newest first. What is in the Trash is left out unless asked for, so that nothing works on it."""
+        where = "" if include_trashed else " WHERE trashed_at IS NULL"
+        return [dict(r) for r in self._conn.execute(f"SELECT * FROM assets{where} ORDER BY created_at DESC, asset_id DESC")]
+
+    def trash(self, asset_id: str, *, at: float | None = None) -> None:
+        with db.write(self._conn) as c:
+            c.execute("UPDATE assets SET trashed_at = ? WHERE asset_id = ?", (at or time.time(), asset_id))
+
+    def restore(self, asset_id: str) -> None:
+        with db.write(self._conn) as c:
+            c.execute("UPDATE assets SET trashed_at = NULL WHERE asset_id = ?", (asset_id,))
+
+    def trashed(self) -> list[dict]:
+        return [dict(r) for r in self._conn.execute("SELECT * FROM assets WHERE trashed_at IS NOT NULL ORDER BY trashed_at DESC")]
 
     def path_of(self, version: AssetVersion) -> Path:
         return Path(self._mount(version.volume_id)) / version.relative_path

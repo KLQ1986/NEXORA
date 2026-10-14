@@ -2,6 +2,7 @@
 import json
 import os
 import shutil
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -132,18 +133,10 @@ def remove_project(system: "System", project_id: str, *, trash: str | Path | Non
     """Delete a project. Work still running for it is stopped, its scripts, lines, choices and cuts are forgotten, and the
     cut files are moved to the Trash, not erased. A project with a video already published is refused: the record of what
     went out, and the figures gathered for it, must not vanish with it. The footage it used stays in the library."""
-    from nexora.core.states import RunStatus
     if system.projects.project(project_id) is None:
         raise LookupError(project_id)
-    if system.publishing.publications(project_id=project_id):
-        raise ValueError("Dự án này đã có video được đăng. Không xoá được để giữ lại hồ sơ đăng và số liệu của nó.")
-    scripts = system.projects.script_ids(project_id)
-    renders = [r["render_id"] for r in system.projects.renders(project_id) + system.projects.renders(project_id, previews=True)]
-    shots = [s.shot_id for sid in scripts for s in (system.projects.script(sid) or {}).get("shots", [])]
-    for subject in [project_id, *scripts, *shots, *renders]:
-        for run_id in system.orch.runs_for_subject(subject):
-            if system.orch.run_status(run_id) in (RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.WAITING_REVIEW, RunStatus.BLOCKED):
-                system.orch.cancel_run(run_id)
+    _refuse_if_published(system, project_id)
+    _stop_project_work(system, project_id)
     title = system.projects.project(project_id)["title"]
     tasks = system.producer.forget_project(project_id)
     removed = system.projects.remove(project_id)
@@ -154,6 +147,131 @@ def remove_project(system: "System", project_id: str, *, trash: str | Path | Non
         if path.is_file() and media in path.resolve().parents:            # only cuts NEXORA made itself; an imported finished file stays where the operator keeps it
             trashed.append(_to_trash(path, trash))
     return {"title": title, "scripts": len(removed["scripts"]), "lines": len(removed["shots"]), "renders": len(removed["renders"]), "tasks": tasks, "trashed": trashed}
+
+
+def remove_render(system: "System", render_id: str, *, trash: str | Path | None = None) -> dict:
+    """Delete one cut. Its file goes to the computer's Trash when NEXORA made it; its publishing package is deleted, since it
+    can be made again. A cut that has been published is refused."""
+    render = system.projects.render(render_id)
+    if render is None:
+        raise LookupError(render_id)
+    if any(p["render_id"] == render_id for p in system.publishing.publications(project_id=render["project_id"])):
+        raise ValueError("Bản dựng này đã được đăng. Không xoá được để giữ lại hồ sơ đăng của nó.")
+    _stop(system, render_id)
+    system.projects.remove_render(render_id)
+    path, data = Path(render["path"]), system.data_dir.resolve()
+    trashed = _to_trash(path, trash) if path.is_file() and (data / "media") in path.resolve().parents else None
+    exports = data / "exports" / render_id
+    if exports.is_dir():
+        shutil.rmtree(exports, ignore_errors=True)
+    return {"render_id": render_id, "trashed": trashed}
+
+
+# ---------------------------------------------------------------------------------------------- NEXORA's own Trash
+TRASH_DAYS = 30                  # what is in the Trash this long is deleted for good when the server starts
+
+
+def _stop(system: "System", subject: str) -> None:
+    from nexora.core.states import RunStatus
+    for run_id in system.orch.runs_for_subject(subject):
+        if system.orch.run_status(run_id) in (RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.WAITING_REVIEW, RunStatus.BLOCKED):
+            system.orch.cancel_run(run_id)
+
+
+def _stop_project_work(system: "System", project_id: str) -> None:
+    scripts = system.projects.script_ids(project_id)
+    renders = [r["render_id"] for r in system.projects.renders(project_id) + system.projects.renders(project_id, previews=True)]
+    shots = [s.shot_id for sid in scripts for s in (system.projects.script(sid) or {}).get("shots", [])]
+    for subject in [project_id, *scripts, *shots, *renders]:
+        _stop(system, subject)
+
+
+def _refuse_if_published(system: "System", project_id: str) -> None:
+    if system.publishing.publications(project_id=project_id):
+        raise ValueError("Dự án này đã có video được đăng. Không xoá được để giữ lại hồ sơ đăng và số liệu của nó.")
+
+
+def asset_name(system: "System", asset: dict) -> str:
+    """What an asset is called on screen: the operator's name for it, else its file name."""
+    return asset.get("title") or system.assets.path_of(system.assets.original(asset["asset_id"])).name
+
+
+def trash_items(system: "System", *, assets: list[str] = (), projects: list[str] = ()) -> dict:
+    """Put assets and projects in NEXORA's Trash. Nothing is lost: an asset leaves the library, the search and the matching,
+    and the lines that showed it are without a picture until it comes back; a project leaves every list. Work running on
+    either is stopped. A project with a published video is refused, as it would be when deleted for good."""
+    for project_id in projects:
+        if system.projects.project(project_id) is None:
+            raise LookupError(project_id)
+        _refuse_if_published(system, project_id)
+    for asset_id in assets:
+        if system.assets.asset(asset_id) is None:
+            raise LookupError(asset_id)
+    lines = 0
+    for asset_id in assets:
+        asset = system.assets.asset(asset_id)
+        if asset["trashed_at"]:
+            continue
+        _stop(system, asset_id)
+        lines += system.projects.set_aside_asset(asset_id, reason=f"Footage của câu này ({asset_name(system, asset)}) đang ở Thùng rác.")
+        system.assets.trash(asset_id)
+    for project_id in projects:
+        if system.projects.project(project_id)["trashed_at"]:
+            continue
+        _stop_project_work(system, project_id)
+        system.projects.trash(project_id)
+    return {"assets": len(assets), "projects": len(projects), "lines": lines}
+
+
+def restore_items(system: "System", *, assets: list[str] = (), projects: list[str] = ()) -> dict:
+    """Take assets and projects back out of the Trash, as they were. Lines that lost an asset get it back unless they were
+    given another picture in the meantime."""
+    lines = 0
+    for asset_id in assets:
+        if system.assets.asset(asset_id) is None:
+            raise LookupError(asset_id)
+        system.assets.restore(asset_id)
+        lines += system.projects.bring_back_asset(asset_id)
+    for project_id in projects:
+        if system.projects.project(project_id) is None:
+            raise LookupError(project_id)
+        system.projects.restore(project_id)
+    return {"assets": len(assets), "projects": len(projects), "lines": lines}
+
+
+def trash_view(system: "System", *, now: float | None = None) -> dict:
+    """What is in the Trash, newest first, with the day each will be deleted for good."""
+    now = now or time.time()
+    left = lambda at: max(0, -int(-(at + TRASH_DAYS * 86400 - now) // 86400))      # whole days, rounded up
+    assets = [{"asset_id": a["asset_id"], "name": asset_name(system, a), "kind": a["kind"], "trashed_at": a["trashed_at"], "days_left": left(a["trashed_at"])}
+              for a in system.assets.trashed()]
+    projects = [{"project_id": p["project_id"], "title": p["title"], "trashed_at": p["trashed_at"], "days_left": left(p["trashed_at"]),
+                 "published": bool(system.publishing.publications(project_id=p["project_id"]))} for p in system.projects.trashed()]
+    return {"assets": assets, "projects": projects, "days": TRASH_DAYS}
+
+
+def purge_trash(system: "System", *, assets: list[str] | None = None, projects: list[str] | None = None, older_than_days: float | None = None,
+                discard_files: bool = False, trash: str | Path | None = None, now: float | None = None) -> dict:
+    """Delete for good what is in the Trash: the items named, or else everything that has been there `older_than_days` (all
+    of it when 0). An asset's own file stays where it is unless `discard_files`; cuts NEXORA made go to the computer's Trash.
+    An item that cannot go (a project with a published video) stays in the Trash and is reported."""
+    now = now or time.time()
+    old = lambda at: older_than_days is None or at <= now - older_than_days * 86400
+    in_trash_assets = {a["asset_id"]: a for a in system.assets.trashed()}
+    in_trash_projects = {p["project_id"]: p for p in system.projects.trashed()}
+    pick_assets = [a for a in (assets if assets is not None else in_trash_assets) if a in in_trash_assets and (assets is not None or old(in_trash_assets[a]["trashed_at"]))]
+    pick_projects = [p for p in (projects if projects is not None else in_trash_projects) if p in in_trash_projects and (projects is not None or old(in_trash_projects[p]["trashed_at"]))]
+    done, kept = {"assets": 0, "projects": 0}, []
+    for project_id in pick_projects:
+        try:
+            remove_project(system, project_id, trash=trash)
+            done["projects"] += 1
+        except ValueError as e:
+            kept.append({"project_id": project_id, "title": in_trash_projects[project_id]["title"], "reason": str(e)})
+    for asset_id in pick_assets:
+        remove_asset(system, asset_id, discard_file=discard_files, trash=trash)
+        done["assets"] += 1
+    return {**done, "kept": kept}
 
 
 def render_rights(system: "System", render_id: str) -> dict:
@@ -232,7 +350,7 @@ def scan_watch_folders(system: "System", *, now: float | None = None, settle_sec
     """Ingest media that appeared in a watched folder. A file is taken only once it has stopped changing, so a copy in progress is never read."""
     import time
     now = time.time() if now is None else now
-    known = {str(system.assets.path_of(system.assets.original(a["asset_id"]))) for a in system.assets.assets()}
+    known = {str(system.assets.path_of(system.assets.original(a["asset_id"]))) for a in system.assets.assets(include_trashed=True)}      # a file in the Trash is still known
     taken = []
     for folder in json.loads(system.orch.setting("watch_folders", "[]")):
         root = Path(folder)

@@ -267,7 +267,7 @@ class Publishing:
         videos, reached = [], 0.0
         for project_id in out["projects"]:
             project = self._projects.project(project_id)
-            if project is None:
+            if project is None or project.get("trashed_at"):
                 continue
             pubs = [p for p in self.publications(project_id=project_id) if p["status"] == "published"]
             value = sum(max((s["figures"].get(out["metric"], 0) for s in p["snapshots"]), default=0) for p in pubs)

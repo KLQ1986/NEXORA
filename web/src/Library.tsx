@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { call, megabytes, post, timecode, usePoll, type Asset, type Hit, type Moment, type Project, type RoughPlan } from "./api";
 
 const LEVEL: Record<string, string> = { segment: tr("CẢNH"), speech: tr("LỜI NÓI"), note: tr("GHI CHÚ"), frame: tr("KHUNG HÌNH") };
-import { ask, Button, Icon, Page, RangeStrip, SkeletonCards, StageRail, StatusText, Tabs, TimeChip } from "./parts";
+import { ask, Button, Icon, Page, RangeStrip, SkeletonCards, StageRail, StatusText, Tabs, TimeChip, toast } from "./parts";
 import { StructureStrip } from "./Structure";
 
 function AddFootage({ onDone }: { onDone: () => void }) {
@@ -199,7 +199,12 @@ function Player({ asset, start, others, close, similar }: { asset: Asset; start?
           {tab === "info" && (
             <div className="grid gap-5">
               <div className="grid gap-2 text-[13px]">
-                <p className="flex flex-wrap items-center gap-x-2 gap-y-1"><Icon name="folder" size={14} className="text-faint" /><span className="text-mute">{tr("Buổi quay")}</span><span>{asset.session || tr("không rõ")}</span></p>
+                <form className="grid gap-2 rounded-lg border border-line bg-raised/50 p-3" key={`${asset.asset_id}-${asset.title}-${asset.session_set}`}
+                      onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); post(`/api/v1/assets/${asset.asset_id}`, { title: String(f.get("title") ?? ""), session: String(f.get("session") ?? "") }, "PATCH").then(() => toast(tr("Đã lưu tên và buổi quay."))).catch(() => {}); }}>
+                  <label className="grid gap-1"><span className="text-mute">{tr("Tên hiển thị")}</span><input name="title" defaultValue={asset.title ?? ""} placeholder={asset.file_name} className="h-8 px-2.5" /></label>
+                  <label className="grid gap-1"><span className="text-mute">{tr("Buổi quay")}</span><input name="session" defaultValue={asset.session_set ?? ""} placeholder={asset.session || tr("không rõ")} className="h-8 px-2.5" /></label>
+                  <div className="flex flex-wrap items-center gap-3"><Button size="sm" type="submit">{tr("Lưu")}</Button><span className="text-[12px] text-faint">{tv`Để trống thì dùng tên file (${asset.file_name}) và thư mục chứa nó.`}</span></div>
+                </form>
                 <p className="flex flex-wrap items-center gap-x-2 gap-y-1"><Icon name="clapper" size={14} className="text-faint" /><span className="text-mute">{tr("Đã dùng trong")}</span>
                   {asset.used_in.length ? asset.used_in.map((u) => <a key={u.project_id} href={`/du-an/${u.project_id}`} className="underline decoration-edge underline-offset-2">{u.title}</a>) : <span className="text-faint">{tr("chưa dự án nào")}</span>}</p>
                 {asset.kind === "video" && !asset.still && (
@@ -215,8 +220,12 @@ function Player({ asset, start, others, close, similar }: { asset: Asset; start?
                   </div>
                 )}
                 <div className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-raised/50 p-3">
-                  <p className="min-w-0 flex-1 text-[12.5px] text-mute">{tr("Xoá khỏi thư viện: mô tả và bản xem bị xoá, các câu kịch bản đang dùng nó trở về thiếu hình. File gốc vẫn nằm nguyên chỗ cũ.")}</p>
-                  <Button size="sm" onClick={async () => { if (!(await ask(tr("Xoá nguyên liệu này khỏi thư viện?"), { body: asset.used_in.length ? tv`${asset.name} đang được dùng trong ${asset.used_in.length} dự án. Các câu dùng nó sẽ trở về thiếu hình.` : asset.name, confirm: tr("Xoá khỏi thư viện"), danger: true }))) return; await call(`/api/v1/assets/${asset.asset_id}`, { method: "DELETE" }); close(); }}>{tr("Xoá khỏi thư viện")}</Button>
+                  <p className="min-w-0 flex-1 text-[12.5px] text-mute">{tr("Chuyển vào thùng rác: nguyên liệu biến khỏi thư viện và tìm kiếm, các câu đang dùng nó tạm thiếu hình. Khôi phục được trong 30 ngày; file gốc không bị đụng tới.")}</p>
+                  <Button size="sm" onClick={async () => {
+                    if (!(await ask(tr("Chuyển nguyên liệu này vào thùng rác?"), { body: asset.used_in.length ? tv`${asset.name} đang được dùng trong ${asset.used_in.length} dự án. Các câu dùng nó sẽ thiếu hình cho tới khi bạn khôi phục.` : asset.name, confirm: tr("Chuyển vào thùng rác"), danger: true }))) return;
+                    await call(`/api/v1/assets/${asset.asset_id}`, { method: "DELETE" }); close();
+                    toast(tv`Đã chuyển “${asset.name}” vào thùng rác.`, { undo: () => { post("/api/v1/trash/restore", { assets: [asset.asset_id] }).catch(() => {}); } });
+                  }}><Icon name="trash" size={14} />{tr("Chuyển vào thùng rác")}</Button>
                 </div>
                 <label className="flex items-start gap-2.5 rounded-lg border border-line bg-raised/50 p-3"><input type="checkbox" className="mt-0.5" checked={asset.rejected} onChange={(e) => post(`/api/v1/assets/${asset.asset_id}`, { rejected: e.target.checked }, "PATCH")} />
                   <span>{tr("Không dùng nguyên liệu này")}<span className="block text-[12px] text-faint">{tr("Nó vẫn nằm trong thư viện nhưng không được đề xuất cho kịch bản nào và không hiện khi tìm kiếm.")}</span></span></label>
@@ -305,7 +314,18 @@ export default function Library() {
     .sort((a, b) => (sort === "long" ? (b.duration ?? 0) - (a.duration ?? 0) : sort === "rating" ? b.rating - a.rating : a.name.localeCompare(b.name)));
   const seconds = assets.reduce((sum, a) => sum + (a.kind === "video" ? a.duration ?? 0 : 0), 0);
   const described = assets.filter((a) => a.understand?.status === "succeeded").length;
-  const pick = (a: Asset, t?: number) => { setPicked(a.asset_id); setStart(t); };
+  const [chosen, setChosen] = useState<Set<string> | null>(null);       // null: not choosing; otherwise the assets ticked
+  const choose = (id: string) => setChosen((c) => { const n = new Set(c ?? []); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const pick = (a: Asset, t?: number) => { if (chosen) { choose(a.asset_id); return; } setPicked(a.asset_id); setStart(t); };
+  const trashChosen = async () => {
+    const ids = [...(chosen ?? [])]; if (!ids.length) return;
+    const using = assets.filter((a) => ids.includes(a.asset_id) && a.used_in.length).length;
+    if (!(await ask(tv`Chuyển ${ids.length} nguyên liệu vào thùng rác?`, { body: (using ? tv`${using} trong số đó đang được dùng trong dự án; các câu dùng chúng sẽ thiếu hình cho tới khi bạn khôi phục. ` : "") + tr("Có thể khôi phục trong Thùng rác trong 30 ngày. File gốc không bị đụng tới."), confirm: tr("Chuyển vào thùng rác"), danger: true }))) return;
+    await post("/api/v1/trash", { assets: ids });
+    if (picked && ids.includes(picked)) setPicked(null);
+    setChosen(null); reload();
+    toast(tv`Đã chuyển ${ids.length} nguyên liệu vào thùng rác.`, { undo: () => { post("/api/v1/trash/restore", { assets: ids }).then(reload).catch(() => {}); } });
+  };
   const facet = (on: boolean) => `flex h-8 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] transition-colors ${on ? "bg-accent/10 font-medium text-accent" : "text-mute hover:bg-raised/50 hover:text-ink"}`;
   return (
     <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
@@ -387,6 +407,7 @@ export default function Library() {
               <div className="mb-4 flex flex-wrap items-center gap-3">
                 <span className="mono text-[12px] text-faint">{shown.length} / {assets.length}</span>
                 <span className="ml-auto" />
+                <Button size="sm" kind={chosen ? "primary" : "plain"} aria-pressed={!!chosen} onClick={() => setChosen(chosen ? null : new Set())}><Icon name={chosen ? "x" : "check"} size={14} />{chosen ? tr("Thôi chọn") : tr("Chọn nhiều")}</Button>
                 <label className="flex items-center gap-2 text-[12.5px] text-mute">{tr("Sắp xếp")}<select value={sort} onChange={(e) => setSort(e.target.value as Sort)} className="h-8 pl-2.5 text-[12.5px]"><option value="name">{tr("Tên")}</option><option value="long">{tr("Dài nhất")}</option><option value="rating">{tr("Đánh giá")}</option></select></label>
                 <div className="seg" role="radiogroup" aria-label={tr("Cách xem")}>
                   <button type="button" role="radio" aria-checked={view === "grid"} onClick={() => setView("grid")} aria-label={tr("Lưới")}><Icon name="grid" size={15} /></button>
@@ -401,7 +422,7 @@ export default function Library() {
                     const seen = a.understand?.status === "succeeded";
                     return (
                       <li key={a.asset_id}>
-                        <button type="button" onClick={() => pick(a)} aria-pressed={picked === a.asset_id}
+                        <button type="button" onClick={() => pick(a)} aria-pressed={chosen ? chosen.has(a.asset_id) : picked === a.asset_id}
                                 className={`panel group block w-full overflow-hidden text-left transition-[border-color,box-shadow] ${picked === a.asset_id ? "!border-accent shadow-[0_0_0_1px_var(--color-accent),0_8px_30px_-12px_var(--color-accent)]" : "hover:border-edge"}`}>
                           <span className="relative block bg-black">
                             {a.thumbnail_url ? <img src={a.thumbnail_url} alt="" loading="lazy" className="aspect-video w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" />
@@ -411,6 +432,8 @@ export default function Library() {
                             {seen && <span className="chip absolute right-2 top-2 !text-ai" title={tr("Đã được AI mô tả")}><Icon name="sparkles" size={11} />AI</span>}
                             {a.rejected && <span className="absolute inset-0 grid place-items-center bg-canvas/70 text-[12px] font-medium text-mute">{tr("Đã gạt ra")}</span>}
                             {!a.online && <span className="absolute inset-x-0 top-0 bg-cue/95 px-2 py-0.5 text-[11px] font-medium text-canvas">{tr("Không tìm thấy file gốc")}</span>}
+                            {chosen && <span className={`absolute inset-0 grid place-items-start p-2 ${chosen.has(a.asset_id) ? "bg-accent/20 ring-2 ring-inset ring-accent" : "bg-canvas/30"}`}>
+                              <span className={`grid h-6 w-6 place-items-center rounded-md border ${chosen.has(a.asset_id) ? "border-accent bg-accent text-canvas" : "border-edge bg-surface/80"}`}>{chosen.has(a.asset_id) && <Icon name="check" size={14} />}</span></span>}
                           </span>
                           <span className="block px-3 pb-3 pt-2.5">
                             <span className="block truncate text-[13.5px] font-medium">{a.name}</span>
@@ -435,10 +458,11 @@ export default function Library() {
               ) : (
                 <div className="panel overflow-x-auto">
                   <table className="w-full min-w-[640px] text-left text-[13px]">
-                    <thead className="eyebrow"><tr className="[&>th]:px-3 [&>th]:py-2.5"><th>{tr("Tên")}</th><th>{tr("Độ dài")}</th><th>{tr("Khung hình")}</th><th>{tr("Dung lượng")}</th><th>{tr("Đánh giá")}</th><th>{tr("Trạng thái")}</th></tr></thead>
+                    <thead className="eyebrow"><tr className="[&>th]:px-3 [&>th]:py-2.5">{chosen && <th className="w-8"><span className="sr-only">{tr("Chọn")}</span></th>}<th>{tr("Tên")}</th><th>{tr("Độ dài")}</th><th>{tr("Khung hình")}</th><th>{tr("Dung lượng")}</th><th>{tr("Đánh giá")}</th><th>{tr("Trạng thái")}</th></tr></thead>
                     <tbody className="divide-y divide-line border-t border-line">
                       {shown.map((a) => (
-                        <tr key={a.asset_id} onClick={() => pick(a)} className={`cursor-pointer [&>td]:px-3 [&>td]:py-2 ${picked === a.asset_id ? "bg-accent/[0.07]" : "hover:bg-white/[0.02]"}`}>
+                        <tr key={a.asset_id} onClick={() => pick(a)} className={`cursor-pointer [&>td]:px-3 [&>td]:py-2 ${(chosen ? chosen.has(a.asset_id) : picked === a.asset_id) ? "bg-accent/[0.07]" : "hover:bg-white/[0.02]"}`}>
+                          {chosen && <td><input type="checkbox" checked={chosen.has(a.asset_id)} onChange={() => choose(a.asset_id)} onClick={(e) => e.stopPropagation()} aria-label={tv`Chọn ${a.name}`} /></td>}
                           <td><span className="flex items-center gap-3">{a.thumbnail_url ? <img src={a.thumbnail_url} alt="" className="h-9 w-16 rounded object-cover" /> : <span className="grid h-9 w-16 place-items-center rounded bg-raised text-faint"><Icon name={a.kind === "audio" ? "music" : "film"} size={15} /></span>}<span className="truncate font-medium">{a.name}</span></span></td>
                           <td className="mono text-mute">{a.still ? tr("ảnh") : timecode(a.duration)}</td>
                           <td className="mono text-mute">{a.width ? `${a.width}×${a.height}` : "—"}</td>
@@ -452,6 +476,15 @@ export default function Library() {
                 </div>
               )}
             </div>
+          </div>
+        )}
+        {chosen && (
+          <div className="sticky bottom-4 z-20 mt-6 flex flex-wrap items-center gap-3 rounded-xl border border-edge bg-surface/95 px-4 py-3 shadow-xl backdrop-blur">
+            <span className="text-[13px]">{chosen.size ? tv`Đã chọn ${chosen.size}` : tr("Bấm vào nguyên liệu để chọn")}</span>
+            <button type="button" className="link text-[12.5px]" onClick={() => setChosen(new Set(shown.map((a) => a.asset_id)))}>{tv`Chọn cả ${shown.length} đang hiện`}</button>
+            {chosen.size > 0 && <button type="button" className="link text-[12.5px]" onClick={() => setChosen(new Set())}>{tr("Bỏ chọn")}</button>}
+            <span className="ml-auto" />
+            <Button size="sm" disabled={!chosen.size} onClick={trashChosen}><Icon name="trash" size={14} />{tv`Chuyển vào thùng rác (${chosen.size})`}</Button>
           </div>
         )}
       </Page>

@@ -14,6 +14,7 @@ import Projects from "./Projects";
 import Review from "./Review";
 import Runs from "./Runs";
 import System from "./System";
+import Trash from "./Trash";
 import { ask, Dialogs, Icon, LangSwitch, setNavigator, Spinner, Toaster, toast, toggleSide } from "./parts";
 
 const PAGES = [
@@ -26,6 +27,7 @@ const PAGES = [
   { path: "/tien-trinh", label: tr("Tiến trình"), icon: "pulse", view: Runs, group: 1 },
   { path: "/chi-phi", label: tr("Chi phí"), icon: "coins", view: Costs, group: 1 },
   { path: "/thong-bao", label: tr("Thông báo"), icon: "bell", view: Notices, group: 1 },
+  { path: "/thung-rac", label: tr("Thùng rác"), icon: "trash", view: Trash, group: 1 },
   { path: "/he-thong", label: tr("Hệ thống"), icon: "sliders", view: System, group: 1 },
 ];
 const ENGINES: [string, string][] = [["library.understand", tr("Thị giác")], ["sourcing.match", tr("Chọn clip")], ["edit.render", tr("Dựng")], ["sourcing.generate", tr("Sinh hình")]];
@@ -161,7 +163,7 @@ function Bell({ go, unread }: { go: (to: string) => void; unread: number }) {
 /* The sections of the studio, left to right in the top bar. Operations gathers the screens that look after the machine. */
 const SECTIONS = [
   { key: "home", label: tr("Tổng quan"), icon: "home", to: "/", paths: ["/"] },
-  { key: "ops", label: tr("Vận hành"), icon: "pulse", to: "/phong-may", paths: ["/phong-may", "/tien-trinh", "/chi-phi", "/thong-bao", "/he-thong"] },
+  { key: "ops", label: tr("Vận hành"), icon: "pulse", to: "/phong-may", paths: ["/phong-may", "/tien-trinh", "/chi-phi", "/thong-bao", "/thung-rac", "/he-thong"] },
   { key: "projects", label: tr("Dự án"), icon: "clapper", to: "/du-an", paths: ["/du-an"] },
   { key: "review", label: tr("Phòng chiếu"), icon: "screen", to: "/phong-chieu", paths: ["/phong-chieu"] },
   { key: "library", label: tr("Thư viện"), icon: "film", to: "/thu-vien", paths: ["/thu-vien"] },

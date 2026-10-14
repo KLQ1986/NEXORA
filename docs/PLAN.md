@@ -386,6 +386,8 @@ Việc nhập clip dài 8 phút lộ ra một lỗi, đã sửa: hai lượt mô
 
 **Người vận hành nghiệm thu đợt 1 ngày 2026-10-14.**
 
+**Xoá và sửa, 2026-10-14** (thiết kế: `docs/superpowers/specs/2026-10-14-delete-and-edit-design.md`). Kho thật đã bỏ 6 video thử cũ, 6 dự án thử và 7 clip HD tải về; trong kho còn 10 clip DJI, một ảnh và một file nhạc thử. Xoá nay là chuyển vào Thùng rác của NEXORA: dự án và footage biến khỏi mọi danh sách, tìm kiếm, khớp kịch bản và việc nền, nhưng khôi phục được trong 30 ngày. Footage được khôi phục thì trả lại hình cho các câu đã mất nó, trừ câu đã được chọn clip khác trong lúc đó. Xoá vĩnh viễn chỉ xảy ra trong trang Thùng rác hoặc tự động sau 30 ngày, và không bao giờ xoá file gốc nếu người vận hành không chọn. Kèm theo: chọn nhiều footage để xoá cùng lúc, đổi tên hiển thị và buổi quay của footage, đổi tên và nhân bản dự án, xoá từng bản dựng. Dự án hay bản dựng đã đăng thì không xoá được.
+
 Cùng lượt đo đó lộ ra một lỗi thật, đã sửa: mô hình 7B trả lời hỏng khi được xem tới 8 khung một lúc (18 nhịp không có mô tả). Nay nó được hỏi lại với ba khung.
 
 Sai khác so với thiết kế: hướng chuyển động chỉ có trái sang phải, phải sang trái, không rõ (không đo được vào gần, ra xa); độ dài nhịp tối thiểu mặc định là 3 giây thay vì 2; chữ ký khung giữ 10 lần mỗi giây.

@@ -152,6 +152,8 @@ def main() -> None:
         system.library.measure_unmeasured_music()        # tracks taken in by an older version are listened to once more
         system.library.find_missing_cuts()               # and footage taken in by an older version is looked through for scene cuts
         system.library.find_unmeasured()                 # and measured, so that it is divided into shots and beats like the rest
+        from nexora.app import TRASH_DAYS, purge_trash
+        purge_trash(system, older_than_days=TRASH_DAYS)  # what has been in the Trash a month is deleted for good
         uvicorn.run(create_app(system, web_dir=web, config=config), host="127.0.0.1", port=port, log_level="warning", timeout_graceful_shutdown=2)
 
 

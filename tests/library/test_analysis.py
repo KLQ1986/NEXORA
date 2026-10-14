@@ -321,12 +321,12 @@ def test_an_asset_taken_out_of_the_library_leaves_nothing_behind_but_its_own_fil
     assert len(made) >= 4                                               # proxy, thumbnail, measures, structure, frames
 
     assert client.delete("/api/v1/assets/nope").status_code == 404
-    out = client.delete(f"/api/v1/assets/{going}").json()
-    assert out["gaps"] == 1 and out["cases"] == 1 and out["trashed"] is None and out["name"] == "going.mp4"
+    assert client.delete(f"/api/v1/assets/{going}").json()["lines"] == 1          # first into NEXORA's Trash
+    assert client.post("/api/v1/trash/purge", json={"assets": [going]}).json() == {"assets": 1, "projects": 0, "kept": []}      # then for good
     assert system.assets.asset(going) is None and system.index.moments(going) == [] and not any(p.exists() for p in made)
     assert (tmp_path / "going.mp4").is_file()                           # the file itself was not asked for, so it stays
     gone, kept = system.projects.selection(first.shot_id), system.projects.selection(second.shot_id)
-    assert gone.status == "gap" and gone.asset_id is None and "going.mp4" in gone.reason and gone.alternates == []
+    assert gone.status == "gap" and gone.asset_id is None and "going.mp4" in gone.reason and gone.alternates == [] and "trashed_pick" not in gone.extras
     assert kept.status == "accepted" and kept.asset_id == staying and kept.alternates == []
     assert system.evaluation.cases() == [] and system.evaluation.references() == {} and system.projects.feedback("câu có hình sắp bị xoá.") == {}
     assert [a["asset_id"] for a in client.get("/api/v1/library").json()["assets"]] == [staying]
@@ -336,3 +336,40 @@ def test_an_asset_taken_out_of_the_library_leaves_nothing_behind_but_its_own_fil
     out = __import__("nexora.app", fromlist=["remove_asset"]).remove_asset(system, staying, discard_file=True, trash=tmp_path / "bin")
     assert out["trashed"] == str(tmp_path / "bin" / "staying.mp4") and (tmp_path / "bin" / "staying.mp4").is_file() and not (tmp_path / "staying.mp4").exists()
     assert client.get("/api/v1/library").json()["assets"] == []
+
+
+def test_an_asset_in_the_trash_is_out_of_sight_and_comes_back_to_the_lines_it_left(tmp_path):
+    from fastapi.testclient import TestClient
+    from nexora.api.app import create_app
+    system = build(tmp_path / "data", model=FakeModel(), segment_seconds=15.0)
+    client = TestClient(create_app(system))
+    going = taken_in(system, film(tmp_path / "going.mp4", TWO_SHOTS))
+    other = taken_in(system, film(tmp_path / "other.mp4", [("testsrc", 4)]))
+    project = system.projects.create_project("Thử thùng rác")
+    first, second = system.projects.script(system.projects.save_script(project, ["Câu một.", "Câu hai."]))["shots"]
+    moment = system.index.moments(going, level="segment")[0]
+    for shot in (first, second):
+        system.projects.set_selection(shot.shot_id, status="accepted", asset_id=going, moment_id=moment.moment_id, t_in=1.0, t_out=3.0, decided_by="operator")
+
+    client.patch(f"/api/v1/assets/{going}", json={"title": "Cảnh chợ", "session": "Hội An, sáng"})
+    shown = next(a for a in client.get("/api/v1/library").json()["assets"] if a["asset_id"] == going)
+    assert shown["name"] == "Cảnh chợ" and shown["file_name"] == "going.mp4" and shown["session"] == "Hội An, sáng"
+
+    assert client.post("/api/v1/trash", json={"assets": [going]}).json()["lines"] == 2
+    assert [a["asset_id"] for a in client.get("/api/v1/library").json()["assets"]] == [other]
+    assert all(h["asset"]["asset_id"] != going for h in client.get("/api/v1/library/search", params={"q": "Đoạn"}).json()["hits"])
+    assert system.assets.asset(going)["trashed_at"] and system.index.moments(going)          # nothing lost while it waits
+    one = system.projects.selection(first.shot_id)
+    assert one.status == "gap" and "Cảnh chợ" in one.reason and "Thùng rác" in one.reason
+    assert [a["name"] for a in client.get("/api/v1/trash").json()["assets"]] == ["Cảnh chợ"]
+
+    elsewhere = system.index.moments(other, level="segment")[0]                       # meanwhile the second line got another clip
+    system.projects.set_selection(second.shot_id, status="accepted", asset_id=other, moment_id=elsewhere.moment_id, t_in=0.0, t_out=2.0, decided_by="operator")
+    assert client.post("/api/v1/trash/restore", json={"assets": [going]}).json()["lines"] == 1
+    back, kept = system.projects.selection(first.shot_id), system.projects.selection(second.shot_id)
+    assert back.status == "accepted" and back.asset_id == going and back.t_in == 1.0 and back.decided_by == "operator" and "trashed_pick" not in back.extras
+    assert kept.asset_id == other and "trashed_pick" not in kept.extras
+    assert {a["asset_id"] for a in client.get("/api/v1/library").json()["assets"]} == {going, other}
+
+    shown = client.patch(f"/api/v1/assets/{going}", json={"title": "", "session": ""}).json()          # empty gives back what the file says
+    assert shown["name"] == "going.mp4" and shown["session_set"] is None

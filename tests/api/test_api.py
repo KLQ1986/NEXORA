@@ -414,3 +414,55 @@ def test_a_project_can_be_deleted_with_its_cuts_unless_a_video_of_it_went_out(tm
     refused = client.delete(f"/api/v1/projects/{staying}")
     assert refused.status_code == 409 and "đã có video được đăng" in refused.json()["detail"]
     assert system.projects.project(staying) is not None
+
+
+def test_the_trash_keeps_projects_until_they_are_restored_or_purged(tmp_path):
+    from nexora.app import purge_trash
+    system = build(tmp_path / "data")
+    client = TestClient(create_app(system))
+    going = system.projects.create_project("Vào thùng rác")
+    staying = system.projects.create_project("Ở lại")
+    script = system.projects.save_script(going, ["Câu một."])
+    cut = tmp_path / "data" / "media" / "renders" / "cut.mp4"
+    cut.parent.mkdir(parents=True, exist_ok=True)
+    cut.write_bytes(b"cut")
+    system.projects.add_render(going, script, str(cut), {"duration": 3.0})
+
+    assert client.delete(f"/api/v1/projects/{going}").json() == {"assets": 0, "projects": 1, "lines": 0}
+    assert [p["project_id"] for p in client.get("/api/v1/projects").json()] == [staying]
+    assert cut.is_file() and client.get(f"/api/v1/projects/{going}").json()["trashed_at"]       # still there, and can be opened
+    view = client.get("/api/v1/trash").json()
+    assert [p["title"] for p in view["projects"]] == ["Vào thùng rác"] and view["projects"][0]["days_left"] == 30
+
+    client.post("/api/v1/trash/restore", json={"projects": [going]})
+    assert {p["project_id"] for p in client.get("/api/v1/projects").json()} == {going, staying} and client.get("/api/v1/trash").json()["projects"] == []
+
+    system.projects.trash(going, at=1.0)                                  # put away long ago
+    system.projects.trash(staying)                                        # put away just now
+    out = purge_trash(system, older_than_days=30, trash=tmp_path / "bin")
+    assert out == {"assets": 0, "projects": 1, "kept": []} and system.projects.project(going) is None and (tmp_path / "bin" / "cut.mp4").is_file()
+    assert [p["project_id"] for p in client.get("/api/v1/trash").json()["projects"]] == [staying]
+    assert client.post("/api/v1/trash/purge", json={}).json()["projects"] == 1 and system.projects.project(staying) is None
+
+
+def test_projects_are_renamed_and_duplicated_and_a_single_cut_can_be_deleted(tmp_path):
+    system = build(tmp_path / "data")
+    client = TestClient(create_app(system))
+    project = system.projects.create_project("Tên cũ", format="portrait")
+    script = system.projects.save_script(project, ["Câu một.", "Câu hai."])
+    client.patch(f"/api/v1/projects/{project}", json={"title": "Tên mới"})
+    assert client.get(f"/api/v1/projects/{project}").json()["title"] == "Tên mới"
+    copy = client.post(f"/api/v1/projects/{project}/duplicate").json()
+    assert copy["title"] == "Tên mới (bản sao)" and copy["format"] == "portrait" and len(copy["shots"]) == 2
+
+    made = tmp_path / "data" / "media" / "renders" / "a.mp4"
+    made.parent.mkdir(parents=True, exist_ok=True)
+    made.write_bytes(b"a")
+    first = system.projects.add_render(project, script, str(made), {"duration": 3.0})
+    second = system.projects.add_render(project, script, str(tmp_path / "b.mp4"), {"duration": 3.0})
+    assert client.delete("/api/v1/renders/nope").status_code == 404
+    out = client.delete(f"/api/v1/renders/{first}").json()
+    assert out["trashed"] and not made.exists() and [r["render_id"] for r in system.projects.renders(project)] == [second]
+    with sqlite3.connect(tmp_path / "data" / "nexora.db") as c:
+        c.execute("INSERT INTO publications (publication_id, render_id, project_id, target, idempotency_key, status, created_at) VALUES ('pub_1', ?, ?, 'youtube', 'k1', 'published', 0)", (second, project))
+    assert client.delete(f"/api/v1/renders/{second}").status_code == 409

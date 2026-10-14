@@ -269,6 +269,10 @@ MIGRATIONS = [
     ("projects", "channel", "TEXT"),
     ("projects", "bible", "TEXT"),
     ("generations", "quality", "TEXT"),
+    ("assets", "trashed_at", "REAL"),             # in NEXORA's Trash since then; NULL when not
+    ("assets", "title", "TEXT"),                  # the operator's name for it, in place of the file name
+    ("assets", "session", "TEXT"),                # the operator's name for the shoot, in place of the folder name
+    ("projects", "trashed_at", "REAL"),
 ]
 
 

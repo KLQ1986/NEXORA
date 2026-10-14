@@ -93,7 +93,8 @@ class Producer:
     def tick(self) -> int:
         """Give every unfinished task one chance to move. Returns how many moved."""
         moved = 0
-        for row in self._conn.execute("SELECT task_id FROM agent_tasks WHERE status IN ('working', 'waiting_operator')").fetchall():
+        for row in self._conn.execute("SELECT task_id FROM agent_tasks WHERE status IN ('working', 'waiting_operator') "
+                                      "AND project_id NOT IN (SELECT project_id FROM projects WHERE trashed_at IS NOT NULL)").fetchall():      # a project in the Trash waits
             try:
                 if self.advance(row[0]):
                     moved += 1

@@ -54,7 +54,7 @@ def asset_view(system, asset: dict, used: dict | None = None) -> dict:
     path = system.assets.path_of(original)
     runs = system.orch.runs_for_subject(asset["asset_id"])
     return {
-        "asset_id": asset["asset_id"], "name": path.name, "path": str(path), "origin": asset["origin"],
+        "asset_id": asset["asset_id"], "name": asset.get("title") or path.name, "file_name": path.name, "title": asset.get("title"), "path": str(path), "origin": asset["origin"],
         "privacy_class": asset["privacy_class"], "created_at": asset["created_at"], "online": path.is_file(),
         "size": original.size, "checksum": original.checksum, "duplicate_of": meta.get("duplicate_of"),
         "duration": probe.get("duration"), "width": probe.get("width"), "height": probe.get("height"),
@@ -62,7 +62,8 @@ def asset_view(system, asset: dict, used: dict | None = None) -> dict:
         "usable_ranges": meta.get("usable_ranges", []), "black_ranges": meta.get("black_ranges", []),
         "frozen_ranges": meta.get("frozen_ranges", []), "scene_cuts": meta.get("scene_cuts", []),
         "angles": [{"asset_id": other, "offset": shift} for other, shift in meta.get("angles", {}).items()],
-        "rejected": bool(asset.get("rejected")), "speech": meta.get("speech"), "session": f"{path.parent.name}, {str(probe.get('created') or '')[:10]}".rstrip(", "),
+        "rejected": bool(asset.get("rejected")), "speech": meta.get("speech"), "session": asset.get("session") or f"{path.parent.name}, {str(probe.get('created') or '')[:10]}".rstrip(", "),
+        "session_set": asset.get("session"), "trashed_at": asset.get("trashed_at"),
         "used_in": [{"project_id": pid, "title": (system.projects.project(pid) or {}).get("title", "")} for pid in (used if used is not None else system.projects.used_assets()).get(asset["asset_id"], [])],
         "transcribe": next((run_view(system, r) for r in runs if system.orch.pipeline_of(r) == "library.transcribe"), None),
         "enhance": next((run_view(system, r) for r in runs if system.orch.pipeline_of(r) == "library.enhance"), None),
@@ -167,7 +168,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         if system.assets.asset(asset_id) is None:
             raise HTTPException(404, "no such asset")
         system.library.annotate(asset_id, rating=body.get("rating"), collections=body.get("collections"), note=body.get("note"),
-                                rejected=body.get("rejected") if "rejected" in body else None)
+                                rejected=body.get("rejected") if "rejected" in body else None, title=body.get("title"), session=body.get("session"))
         return asset_view(system, system.assets.asset(asset_id))
 
     @app.get("/api/v1/events/stream")
@@ -226,8 +227,9 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         return run_view(system, run_id)
 
     def renders_in_use() -> set[str]:
-        return {r["path"] for p in system.projects.projects() for r in system.projects.renders(p["project_id"])} | \
-               {r["path"] for p in system.projects.projects() for r in system.projects.renders(p["project_id"], previews=True)[:1]}      # only the newest preview is worth keeping
+        every = system.projects.projects(include_trashed=True)            # a project in the Trash may still come back with its cuts
+        return {r["path"] for p in every for r in system.projects.renders(p["project_id"])} | \
+               {r["path"] for p in every for r in system.projects.renders(p["project_id"], previews=True)[:1]}      # only the newest preview is worth keeping
 
     @app.get("/api/v1/storage")
     def storage_usage():
@@ -597,13 +599,43 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         return asset
 
     @app.delete("/api/v1/assets/{asset_id}")
-    def delete_asset(asset_id: str, discard_file: bool = False):
-        """Take an asset out of the library. With `discard_file`, its file is also moved to the Trash."""
-        from nexora.app import remove_asset
+    def delete_asset(asset_id: str):
+        """Put an asset in NEXORA's Trash. It is deleted for good from there."""
+        need_asset(asset_id)
+        return to_trash({"assets": [asset_id]})
+
+    @app.get("/api/v1/trash")
+    def trash():
+        from nexora.app import trash_view
+        return trash_view(system)
+
+    @app.post("/api/v1/trash")
+    def to_trash(body: dict):
+        """Put assets and projects in the Trash: {"assets": [...], "projects": [...]}."""
+        from nexora.app import trash_items
         try:
-            return remove_asset(system, asset_id, discard_file=discard_file)
-        except LookupError:
-            raise HTTPException(404, "no such asset") from None
+            return trash_items(system, assets=list(body.get("assets") or []), projects=list(body.get("projects") or []))
+        except LookupError as e:
+            raise HTTPException(404, f"not found: {e}") from None
+        except ValueError as e:
+            raise HTTPException(409, str(e)) from None
+
+    @app.post("/api/v1/trash/restore")
+    def from_trash(body: dict):
+        from nexora.app import restore_items
+        try:
+            return restore_items(system, assets=list(body.get("assets") or []), projects=list(body.get("projects") or []))
+        except LookupError as e:
+            raise HTTPException(404, f"not found: {e}") from None
+
+    @app.post("/api/v1/trash/purge")
+    def purge(body: dict):
+        """Delete for good: the items named, or everything in the Trash when none are. `discard_files` also moves the
+        footage's own files to the computer's Trash."""
+        from nexora.app import purge_trash
+        named = "assets" in body or "projects" in body
+        return purge_trash(system, assets=list(body.get("assets") or []) if named else None, projects=list(body.get("projects") or []) if named else None,
+                           older_than_days=None if named else 0, discard_files=bool(body.get("discard_files")))
 
     @app.get("/api/v1/assets/{asset_id}/structure")
     def asset_structure(asset_id: str):
@@ -1201,12 +1233,24 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
 
     @app.delete("/api/v1/projects/{project_id}")
     def delete_project(project_id: str):
-        """Delete a project and its cuts (the cut files go to the Trash). Refused once a video of it has been published."""
-        from nexora.app import remove_project
+        """Put a project in NEXORA's Trash. Refused once a video of it has been published."""
+        need_project(project_id)
+        return to_trash({"projects": [project_id]})
+
+    @app.post("/api/v1/projects/{project_id}/duplicate", status_code=201)
+    def duplicate_project(project_id: str):
+        """A copy of the project in the same shape, with the same script and the same clips chosen."""
+        source = need_project(project_id)
+        return project_view(need_project(system.projects.clone(project_id, title=f"{source['title']} (bản sao)", format=source["format"])))
+
+    @app.delete("/api/v1/renders/{render_id}")
+    def delete_render(render_id: str):
+        """Delete one cut. Its file, when NEXORA made it, goes to the computer's Trash. A cut that has been published stays."""
+        from nexora.app import remove_render
         try:
-            return remove_project(system, project_id)
+            return remove_render(system, render_id)
         except LookupError:
-            raise HTTPException(404, "no such project") from None
+            raise HTTPException(404, "no such render") from None
         except ValueError as e:
             raise HTTPException(409, str(e)) from None
 
