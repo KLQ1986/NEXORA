@@ -3,67 +3,79 @@
 @import "@fontsource/be-vietnam-pro/500.css";
 @import "@fontsource/be-vietnam-pro/600.css";
 @import "@fontsource/be-vietnam-pro/700.css";
+@import "@fontsource/geist/400.css";
+@import "@fontsource/geist/500.css";
+@import "@fontsource/geist/600.css";
+@import "@fontsource/geist-mono/400.css";
+@import "@fontsource/geist-mono/500.css";
+@import "@fontsource/geist-mono/600.css";
 
-/* NEXORA Studio: a dark post-production suite.
-   Near-black chrome so the picture is what you judge. One brand colour (violet) for the primary action and the
-   current place; cyan marks what the AI saw or proposed; amber keeps its one meaning: this waits for you.
-   Colour is flat: no gradients, no glows. Depth comes from one light source above, as shadows tinted with the canvas. */
+/* NEXORA Studio: the control room.
+   A deep navy canvas with panels of tinted glass, a bright blue signal for where you are and what to press, and colour that means
+   something: amber waits for you, red has stopped, blue has passed, orange is the machine at work. Readings (clocks, counts,
+   timecodes) are set in Geist Mono so they line up and read as instruments. Picture areas stay dark and neutral. */
+/* Screens shorter than a laptop at full height: the overview drops its pictures and keeps its numbers so it still fits. */
+@custom-variant short (@media (max-height: 860px));
+
 @theme {
-  --color-canvas: #0a0b0e;
-  --color-surface: #111318;
-  --color-raised: #181b22;
-  --color-overlay: #1f232c;
-  --color-line: #232731;
-  --color-edge: #353b49;
-  --color-field: #0c0d11;
-  --color-ink: #eef0f5;
-  --color-mute: #98a0b0;
-  --color-faint: #636a7b;
-  --color-accent: #8a7cf5;
-  --color-accent-deep: #6f5fe6;
-  --color-ai: #3fd1c9;
-  --color-cue: #f0b24a;
-  --color-tally: #ef6470;
-  --color-proof: #44c98c;
-  --font-sans: "Be Vietnam Pro", system-ui, sans-serif;
-  --font-mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
+  --color-canvas: #060a12;
+  --color-surface: #0b1220;
+  --color-raised: #111b2d;
+  --color-overlay: #16223a;
+  --color-line: #18243a;
+  --color-edge: #26354f;
+  --color-field: #070c16;
+  --color-ink: #e6edf7;
+  --color-mute: #8e9bb2;
+  --color-faint: #6a7790;
+  --color-accent: #30afff;
+  --color-accent-deep: #1a8fe0;
+  --color-ai: #ff8c52;
+  --color-cue: #fbbf24;
+  --color-tally: #f87171;
+  --color-proof: #30afff;
+  --font-sans: "Geist", system-ui, -apple-system, sans-serif;
+  --font-display: "Geist", system-ui, -apple-system, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, Menlo, monospace;
   /* One scale of corners: containers 12, nested panels 10, controls 8, chips 6. State tags alone are pills, so a state reads as a state. */
-  --radius-card: 12px;
+  --radius-card: 14px;
   --radius-panel: 10px;
   --radius-control: 8px;
   --radius-chip: 6px;
-  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.025) inset, 0 10px 30px -18px rgba(3, 4, 8, 0.9);
-  --shadow-float: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 24px 60px -24px rgba(3, 4, 8, 0.95), 0 0 0 1px rgba(255, 255, 255, 0.03);
+  --shadow-card: none;
+  --shadow-float: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 24px 60px -24px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.03);
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 html { color-scheme: dark; height: 100%; -webkit-text-size-adjust: 100%; }
-/* Vietnamese is set in Tahoma, which ships with macOS and Windows and keeps the stacked diacritics (ấ, ồ, ữ) clear at small
-   sizes. Tahoma is cut tight, so the text gets one size more and a little tracking; headings lose the negative tracking of
-   Be Vietnam Pro. English keeps Be Vietnam Pro. (Open Sans was tried in between; its package stays installed.) */
-html[lang="vi"] { --font-sans: Tahoma, "Be Vietnam Pro", system-ui, sans-serif; }
-html[lang="vi"] body { font-size: 15px; letter-spacing: 0.012em; }
-html[lang="vi"] h1, html[lang="vi"] h2, html[lang="vi"] h3 { letter-spacing: 0.005em; }
+/* Geist carries the Vietnamese set, so both languages share one face; Vietnamese gets half a size more for the stacked marks (ấ, ồ, ữ). */
+html[lang="vi"] body { font-size: 14.5px; }
+html[lang="vi"] h1, html[lang="vi"] h2, html[lang="vi"] h3 { letter-spacing: -0.01em; }
 @media (pointer: fine) { html { overscroll-behavior: none; } }
 body, #root { height: 100%; }
 body {
-  background: var(--color-canvas); color: var(--color-ink); font-family: var(--font-sans); font-size: 14px; line-height: 1.55;
+  background: radial-gradient(1200px 600px at 20% -10%, rgba(48, 175, 255, 0.07), transparent 60%), radial-gradient(900px 500px at 100% 0%, rgba(255, 140, 82, 0.04), transparent 60%), var(--color-canvas);
+  background-attachment: fixed; color: var(--color-ink); font-family: var(--font-sans); font-size: 14px; line-height: 1.55;
   -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; -webkit-tap-highlight-color: transparent;
 }
-h1, h2, h3 { letter-spacing: -0.015em; text-wrap: balance; }
-p { text-wrap: pretty; }
+h1, h2, h3 { letter-spacing: -0.02em; text-wrap-style: balance; }
+p { text-wrap-style: pretty; }
 button, a, [role="button"], input, select, textarea, summary { touch-action: manipulation; }
 .tc { font-variant-numeric: tabular-nums; letter-spacing: 0.01em; }
-.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: 0; }
-.eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.09em; text-transform: uppercase; color: var(--color-faint); }
+/* Readings: figures in Geist Mono so they line up and read as instruments. */
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.eyebrow { font-size: 12.5px; font-weight: 500; color: var(--color-faint); }
+/* Titles and the figures on a project header: the same face, heavier and tighter. */
+.display { font-family: var(--font-display); font-weight: 600; letter-spacing: -0.025em; font-variant-numeric: tabular-nums; }
+html[lang="vi"] .display { letter-spacing: -0.015em; }
 :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: var(--radius-chip); }
 ::selection { background: color-mix(in srgb, var(--color-accent) 40%, transparent); }
-.hatch { background-image: repeating-linear-gradient(135deg, #3a3f4c 0 2px, transparent 2px 7px); }
+.hatch { background-image: repeating-linear-gradient(135deg, #1c2940 0 2px, transparent 2px 7px); }
 .hatch-cue { background-image: repeating-linear-gradient(135deg, color-mix(in srgb, var(--color-cue) 30%, transparent) 0 2px, transparent 2px 8px); }
-.dots { background-image: radial-gradient(#7d8494 1px, transparent 1.2px); background-size: 5px 5px; }
+.dots { background-image: radial-gradient(#3a4a66 1px, transparent 1.2px); background-size: 5px 5px; }
 
 /* The one way in for keyboard users: hidden until it has focus. */
-.skip { position: fixed; top: 8px; left: 8px; z-index: 100; padding: 8px 14px; border-radius: var(--radius-control); background: var(--color-accent); color: #fff; font-weight: 500;
+.skip { position: fixed; top: 8px; left: 8px; z-index: 100; padding: 8px 14px; border-radius: var(--radius-control); background: var(--color-accent); color: var(--color-canvas); font-weight: 500;
   transform: translateY(-200%); transition: transform 160ms var(--ease-out); }
 .skip:focus { transform: none; }
 
@@ -73,7 +85,7 @@ button, a, [role="button"], input, select, textarea, summary { touch-action: man
     transition: border-color 140ms, background-color 140ms, box-shadow 140ms;
   }
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]), select { min-height: 36px; }
-  input:hover, select:hover, textarea:hover { border-color: #454c5c; }
+  input:hover, select:hover, textarea:hover { border-color: #34466a; }
   input:focus, select:focus, textarea:focus { outline: none; border-color: color-mix(in srgb, var(--color-accent) 70%, transparent); background: var(--color-canvas);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 18%, transparent); }
   input::placeholder, textarea::placeholder { color: var(--color-faint); }
@@ -81,7 +93,7 @@ button, a, [role="button"], input, select, textarea, summary { touch-action: man
   input[type="range"] { accent-color: var(--color-accent); }
   input[type="color"] { border-radius: var(--radius-control); border: 1px solid var(--color-edge); background: var(--color-field); }
   select { padding-right: 28px; appearance: none; background-color: var(--color-field); color: var(--color-ink);
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 20 20' fill='none' stroke='%23949bab' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 8 4 4 4-4'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 20 20' fill='none' stroke='%238e9bb2' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 8 4 4 4-4'/%3E%3C/svg%3E");
     background-repeat: no-repeat; background-position: right 9px center; }
   select option { background: var(--color-surface); color: var(--color-ink); }
   button { cursor: pointer; }
@@ -96,7 +108,14 @@ button, a, [role="button"], input, select, textarea, summary { touch-action: man
 }
 
 @layer components {
-  .panel { background: var(--color-surface); border: 1px solid var(--color-line); border-radius: var(--radius-card); box-shadow: var(--shadow-card); }
+  .panel { background: linear-gradient(180deg, rgba(17, 27, 45, 0.78), rgba(10, 17, 30, 0.78)); border: 1px solid var(--color-line); border-radius: var(--radius-card); box-shadow: inset 0 1px 0 rgba(148, 197, 255, 0.04), 0 18px 40px -28px rgba(0, 0, 0, 0.9); }
+  /* A reading inside a panel: a darker well with a faint cyan edge that lights on hover. */
+  .tile { background: rgba(6, 12, 22, 0.55); border: 1px solid #1c2a44; border-radius: var(--radius-panel); transition: border-color 160ms, background-color 160ms, box-shadow 160ms; }
+  /* A chosen reading (a filter that is on) stays lit. */
+  .tile[aria-checked="true"], .tile[aria-current="page"] { border-color: color-mix(in srgb, var(--color-accent) 55%, transparent); background: rgba(48, 175, 255, 0.06); box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 15%, transparent), 0 0 28px -10px color-mix(in srgb, var(--color-accent) 55%, transparent); }
+  /* Cards that open something light their edge when the pointer is on them. */
+  a.panel:hover, button.panel:not(:disabled):hover, li > a.panel:hover { border-color: color-mix(in srgb, var(--color-accent) 40%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 10%, transparent), 0 0 32px -12px color-mix(in srgb, var(--color-accent) 45%, transparent); }
+  a.tile:hover, button.tile:hover { border-color: color-mix(in srgb, var(--color-accent) 45%, transparent); background: rgba(48, 175, 255, 0.04); box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 12%, transparent), 0 0 24px -8px color-mix(in srgb, var(--color-accent) 40%, transparent); }
   .panel-raised { background: var(--color-raised); border: 1px solid var(--color-line); border-radius: var(--radius-panel); }
   .rows > * + * { border-top: 1px solid var(--color-line); }
   .filmstrip { display: flex; gap: 2px; overflow: hidden; background: #000; }
@@ -107,10 +126,10 @@ button, a, [role="button"], input, select, textarea, summary { touch-action: man
   .cue-card { background: color-mix(in srgb, var(--color-cue) 6%, var(--color-surface)); border: 1px solid color-mix(in srgb, var(--color-cue) 35%, var(--color-line)); border-radius: var(--radius-card); }
   .chip { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: var(--radius-chip); font-size: 11.5px; font-weight: 500;
     background: color-mix(in srgb, #000 60%, transparent); color: var(--color-ink); backdrop-filter: blur(6px); white-space: nowrap; }
-  .seg { display: inline-flex; padding: 3px; gap: 2px; border-radius: var(--radius-panel); background: var(--color-canvas); border: 1px solid var(--color-line); }
-  .seg > button { height: 28px; padding: 0 11px; border-radius: 7px; font-size: 13px; color: var(--color-mute); transition: background-color 120ms, color 120ms; white-space: nowrap; }
+  .seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: var(--radius-panel); background: var(--color-canvas); border: 1px solid var(--color-line); }
+  .seg > button { height: 28px; padding: 0 11px; border-radius: 6px; font-size: 13px; color: var(--color-mute); transition: background-color 120ms, color 120ms; white-space: nowrap; }
   .seg > button:hover { color: var(--color-ink); }
-  .seg > button[aria-checked="true"], .seg > button[aria-selected="true"] { background: var(--color-overlay); color: var(--color-ink); font-weight: 500; box-shadow: 0 1px 0 rgba(255,255,255,0.04) inset, 0 1px 2px rgba(0,0,0,0.4); }
+  .seg > button[aria-checked="true"], .seg > button[aria-selected="true"] { background: color-mix(in srgb, var(--color-accent) 14%, transparent); color: var(--color-accent); font-weight: 500; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 28%, transparent); }
   .link { color: var(--color-mute); text-decoration: underline; text-decoration-color: var(--color-edge); text-underline-offset: 3px; transition: color 120ms, text-decoration-color 120ms; }
   .link:hover { color: var(--color-ink); text-decoration-color: var(--color-mute); }
   .link:disabled { color: var(--color-faint); text-decoration: none; }
@@ -118,8 +137,8 @@ button, a, [role="button"], input, select, textarea, summary { touch-action: man
   /* Buttons press: they move one pixel on the way down and settle back. */
   .btn { transition: background-color 140ms, border-color 140ms, color 140ms, box-shadow 140ms, transform 80ms; }
   .btn:active:not(:disabled) { transform: translateY(1px); }
-  .brand-button { background: var(--color-accent); color: #fff; box-shadow: 0 1px 0 rgba(255,255,255,0.14) inset, 0 8px 20px -10px color-mix(in srgb, var(--color-accent) 70%, transparent); }
-  .brand-button:hover:not(:disabled) { background: color-mix(in srgb, var(--color-accent) 88%, #fff); }
+  .brand-button { background: var(--color-accent); color: #03111f; font-weight: 600; box-shadow: 0 0 0 1px rgba(48, 175, 255, 0.4), 0 8px 24px -10px rgba(48, 175, 255, 0.7); }
+  .brand-button:hover:not(:disabled) { background: #6cc6ff; }
   .brand-button:disabled { background: var(--color-raised); color: var(--color-faint); box-shadow: none; }
   /* A place where content will be: the shape of it, breathing slowly. */
   .skeleton { position: relative; overflow: hidden; border-radius: var(--radius-chip); background: var(--color-raised); }
@@ -127,7 +146,7 @@ button, a, [role="button"], input, select, textarea, summary { touch-action: man
     background: linear-gradient(90deg, transparent, rgba(255,255,255,0.045), transparent); }
   .toast { background: var(--color-overlay); border: 1px solid var(--color-edge); border-radius: var(--radius-panel); box-shadow: var(--shadow-float); animation: rise 200ms var(--ease-out) both; }
   .dialog { background: var(--color-surface); border: 1px solid var(--color-edge); border-radius: var(--radius-card); box-shadow: var(--shadow-float); animation: pop 180ms var(--ease-out) both; }
-  .scrim { background: rgba(4, 5, 8, 0.66); backdrop-filter: blur(4px); animation: fade 160ms ease-out both; overscroll-behavior: contain; }
+  .scrim { background: rgba(2, 5, 12, 0.72); backdrop-filter: blur(4px); animation: fade 160ms ease-out both; overscroll-behavior: contain; }
 }
 
 /* The sidebar sits on a surface a shade above the canvas; nothing in the chrome glows. */
@@ -144,16 +163,95 @@ button, a, [role="button"], input, select, textarea, summary { touch-action: man
 @keyframes pop { from { opacity: 0; transform: translateY(6px) scale(0.985); } to { opacity: 1; transform: none; } }
 @keyframes sweep { to { transform: translateX(100%); } }
 @keyframes shimmer { from { background-position: -200% 0; } to { background-position: 200% 0; } }
-.working { background: linear-gradient(90deg, var(--color-accent) 0%, color-mix(in srgb, var(--color-accent) 55%, #fff) 50%, var(--color-accent) 100%); background-size: 200% 100%; animation: shimmer 1.8s linear infinite; }
+.working { background: linear-gradient(90deg, var(--color-ai) 0%, color-mix(in srgb, var(--color-ai) 50%, #fff) 50%, var(--color-ai) 100%); background-size: 200% 100%; animation: shimmer 1.8s linear infinite; }
 @keyframes ping { 0% { transform: scale(1); opacity: .7; } 80%, 100% { transform: scale(2.4); opacity: 0; } }
 .ping::after { content: ""; position: absolute; inset: 0; border-radius: 9999px; background: inherit; animation: ping 1.6s cubic-bezier(0,0,.2,1) infinite; }
 /* The three bars beside the scene that is playing. */
 @keyframes eq { 0%, 100% { height: 3px; } 50% { height: 11px; } }
 .eq { height: 6px; animation: eq 0.9s ease-in-out infinite; }
+/* The settings drawer comes in from the edge it lives on. */
+@keyframes slidein { from { opacity: 0; transform: translateX(28px); } to { opacity: 1; transform: none; } }
+.drawer { animation: slidein 220ms var(--ease-out) both; }
+/* Screen changes: the old content fades out as the new one rises in; the sidebar is its own layer and does not move. */
+::view-transition-old(root) { animation: 120ms ease-out both fade-out; }
+::view-transition-new(root) { animation: 200ms var(--ease-out) both rise-in; }
+::view-transition-old(sidebar), ::view-transition-new(sidebar) { animation: none; }
+@keyframes fade-out { to { opacity: 0; } }
+@keyframes rise-in { from { opacity: 0; transform: translateY(6px); } }
+/* The control room: work moving along the loop, jobs orbiting the library, a dashed link to a busy department. */
+@keyframes flow { from { left: -24px; } to { left: 100%; } }
+.flow { animation: flow 2.4s linear infinite; }
+@keyframes orbit { to { transform: rotate(360deg); } }
+.orbit { animation: orbit 60s linear infinite; }
+@keyframes dash { to { stroke-dashoffset: -14; } }
+.dash { animation: dash 1s linear infinite; }
+/* The control room is an instrument, not a page: black ground, hairline rules, mono type, a mint signal colour, and each
+   department in its own colour. Everything here is scoped to .lab so the rest of the studio keeps its own look. */
+.lab {
+  --color-canvas: #030405; --color-surface: #07090a; --color-raised: #0d1110; --color-overlay: #121816; --color-line: #1a2420; --color-edge: #2b3832;
+  --color-ink: #dce8e1; --color-mute: #93a79e; --color-faint: #7f948a; --color-accent: #8fe3c0; --color-ai: #ff8c52; --color-cue: #f2c14e; --color-tally: #ff5f5f; --color-proof: #7bd389;
+  background: #030405; color: var(--color-ink); font-family: var(--font-sans); font-size: 14px;
+}
+.lab .panel, .lab .lab-card { background: transparent; border: 1px solid var(--color-line); border-radius: 2px; box-shadow: none; }
+.lab .tile { background: rgba(255,255,255,0.012); border: 1px solid var(--color-line); border-radius: 2px; box-shadow: none; }
+.lab button.lab-card { transition: border-color 160ms, background-color 160ms; }
+.lab button.lab-card:hover, .lab a.tile:hover, .lab button.tile:hover { border-color: color-mix(in srgb, var(--color-accent) 45%, transparent); background: rgba(143,227,192,0.03); box-shadow: none; }
+.lab .panel h2 { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--color-mute); }
+.lab .lab-rule { border-bottom: 1px solid var(--color-line); }
+.lab .lab-cap { font-size: 12px; font-weight: 500; letter-spacing: .07em; text-transform: uppercase; color: var(--color-faint); }
+.lab .lab-tag { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; border: 1px solid var(--color-edge); font-size: 11px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: var(--color-mute); }
+.lab .lab-btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px; border: 1px solid var(--color-edge); font-size: 12px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; }
+.lab .lab-seg { display: inline-flex; border: 1px solid var(--color-edge); }
+.lab .lab-seg > button { height: 28px; padding: 0 11px; font-size: 12px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: var(--color-faint); }
+.lab .lab-seg > button + button { border-left: 1px solid var(--color-edge); }
+.lab .lab-seg > button[aria-checked="true"] { background: rgba(143,227,192,0.1); color: var(--color-accent); }
+.lab .seg { border-radius: 2px; } .lab .seg > button { border-radius: 1px; }
+.lab input, .lab select { border-radius: 2px; }
+.lab-svgcap { font: 500 11px var(--font-sans); letter-spacing: .06em; text-transform: uppercase; fill: var(--color-faint); }
+.lab-svgnum { font: 600 11.5px var(--font-mono); }
+.lab-svgtag { font: 500 11.5px var(--font-sans); letter-spacing: .03em; }
+.lab-svgbig { font: 600 19px var(--font-mono); fill: var(--color-ink); }
+/* Amber: the same instrument in the colour of an old phosphor terminal. */
+.lab.lab-amber { --color-accent: #ffb347; --color-line: #2a2015; --color-edge: #3d2f1c; --color-ink: #f2e6d4; --color-mute: #b8a68c; --color-faint: #9c8b72; --color-proof: #c8e06b; }
+.lab.lab-amber button.lab-card:hover { background: rgba(255,179,71,0.04); }
+.lab.lab-amber .lab-seg > button[aria-checked="true"] { background: rgba(255,179,71,0.12); }
+/* Studio: the control room in the studio's own clothes — navy glass panels, rounded, sentence-case labels. */
+.studio { font-size: 14px; --color-faint: #8592aa; }
+.studio .lab-card { background: linear-gradient(180deg, rgba(17, 27, 45, 0.78), rgba(10, 17, 30, 0.78)); border: 1px solid var(--color-line); border-radius: 14px; box-shadow: inset 0 1px 0 rgba(148, 197, 255, 0.04); }
+.studio button.lab-card { transition: border-color 160ms, box-shadow 160ms; }
+.studio button.lab-card:hover { border-color: color-mix(in srgb, var(--color-accent) 40%, transparent); box-shadow: 0 0 32px -12px color-mix(in srgb, var(--color-accent) 45%, transparent); }
+.studio .lab-rule { border-bottom: 1px solid var(--color-line); }
+.studio .lab-cap { font-size: 12px; color: var(--color-faint); }
+.studio .lab-tag { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border: 1px solid var(--color-edge); border-radius: 999px; font-size: 11px; color: var(--color-mute); }
+.studio .lab-btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px; border: 1px solid var(--color-edge); border-radius: 8px; font-size: 12.5px; font-weight: 500; }
+.studio .lab-seg { display: inline-flex; padding: 2px; gap: 2px; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-canvas); }
+.studio .lab-seg > button { height: 26px; padding: 0 10px; border-radius: 8px; font-size: 12.5px; color: var(--color-mute); }
+.studio .lab-seg > button[aria-checked="true"] { background: color-mix(in srgb, var(--color-accent) 14%, transparent); color: var(--color-accent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 28%, transparent); }
+.studio .uppercase { text-transform: none; }
+.lab .lab-seg > button, .studio .lab-seg > button { white-space: nowrap; }
+.lab .dept-icon { border-radius: 3px; }
+.studio .dept-icon { border-radius: 10px; }
+/* a department with nothing to do steps back; one at work stands forward */
+.lab-card.dept-idle .dept-icon { filter: saturate(.35); opacity: .75; }
+.lab-card.dept-idle:hover .dept-icon { filter: none; opacity: 1; }
+.need:hover { filter: brightness(1.2); }
+.lab .need { border-radius: 2px; } .studio .need { border-radius: 8px; }
+.dial-tag:hover text { text-decoration: underline; } .dial-tag:focus-visible { outline: none; } .dial-tag:focus-visible circle { r: 6; }
+/* the quick window pops up where it stands; scale and opacity only, so the drag offset is untouched */
+@keyframes quickpop { from { opacity: 0; scale: .97; } to { opacity: 1; scale: 1; } }
+.quick-win { animation: quickpop 160ms var(--ease-out) both; }
+.lab .quick-win { border-radius: 4px; } .studio .quick-win { border-radius: 16px; }
+@media (prefers-reduced-motion: reduce) { .quick-win { animation: none; } }
+@keyframes lab-pulse { from { r: 13; opacity: .9; } to { r: 22; opacity: 0; } }
+.lab-pulse { animation: lab-pulse 1.6s ease-out infinite; }
+@keyframes lab-breathe { 0%, 100% { opacity: .85; } 50% { opacity: 1; } }
+.lab-breathe { animation: lab-breathe 5s ease-in-out infinite; }
+@keyframes lab-scan { 0% { transform: translateY(-120px); opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } 100% { transform: translateY(120px); opacity: 0; } }
+.lab-scan { animation: lab-scan 6s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .spin { animation: spin 0.8s linear infinite; }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
   .skeleton::after { display: none; }
-  .working { background: var(--color-accent); }
+  .working { background: var(--color-ai); }
 }

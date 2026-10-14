@@ -11,12 +11,15 @@ from nexora.core.assets import AssetStore, sha256_file
 from nexora.core.orchestrator import Orchestrator
 from nexora.core.pipeline import PipelineDefinition, PipelineRegistry, StageDef
 
-INGEST = PipelineDefinition("library.ingest", "1", [
+INGEST = PipelineDefinition("library.ingest", "2", [
     StageDef("checksum"),
     StageDef("probe", depends_on=("checksum",)),
     StageDef("usable", depends_on=("probe",)),
     StageDef("proxy", depends_on=("usable",)),
     StageDef("thumbnail", depends_on=("usable",)),
+    # Measured and divided into shots and beats before anyone looks at it, so that what is described is one thing at a time.
+    StageDef("signals", depends_on=("proxy",), timeout_seconds=6 * 3600, requires=("ffmpeg",)),
+    StageDef("structure", depends_on=("signals",)),
 ])
 
 MIN_USABLE_SECONDS = 0.1
@@ -48,8 +51,10 @@ def usable_ranges(duration: float, black: list[list[float]]) -> list[list[float]
 
 class Library:
     def __init__(self, orch: Orchestrator, assets: AssetStore, adapters: AdapterRegistry, media_dir: str | Path,
-                 *, min_free_bytes: int = 2 * 1024**3, understanding=None, transcription=None):
+                 *, min_free_bytes: int = 2 * 1024**3, understanding=None, transcription=None, analysis=None):
+        from nexora.modules.library.analysis import Analysis
         self._orch, self._assets, self._adapters = orch, assets, adapters
+        self.analysis = analysis or Analysis(assets, adapters, media_dir)     # measures footage and divides it into shots and beats
         self._min_free = min_free_bytes
         self._understanding = understanding          # None when no model is available
         self._transcription = transcription          # None when no speech tool is available
@@ -59,17 +64,19 @@ class Library:
         assets.add_volume("managed", self._media, kind="internal")
 
     def register(self, registry: PipelineRegistry) -> None:
+        from nexora.modules.library.analysis import STRUCTURE
         registry.register(INGEST, {"checksum": self._checksum, "probe": self._probe, "usable": self._usable,
-                                   "proxy": self._proxy, "thumbnail": self._thumbnail},
+                                   "proxy": self._proxy, "thumbnail": self._thumbnail, **self.analysis.handlers()},
                           on_success=lambda run_id, asset_id: (self.understand(asset_id), self.transcribe(asset_id)))
         registry.register(INGEST_IMAGE, {"checksum": self._checksum, "measure": self._measure},
                           on_success=(lambda run_id, asset_id: self.understand(asset_id)) if self._understanding else None)
         registry.register(INGEST_AUDIO, {"checksum": self._checksum, "listen": self._listen})
         registry.register(ENHANCE, {"enhance": self._enhance})
         registry.register(FIND_CUTS, {"cuts": self._find_cuts})
+        registry.register(STRUCTURE, self.analysis.handlers(), on_success=lambda run_id, asset_id: self.understand(asset_id, force=True))
         if self._transcription:
             from nexora.modules.library.transcribe import TRANSCRIBE
-            registry.register(TRANSCRIBE, self._transcription.handlers())
+            registry.register(TRANSCRIBE, self._transcription.handlers(), on_success=lambda run_id, asset_id: self.redivide(asset_id))
         if self._understanding:
             from nexora.modules.library.understand import UNDERSTAND
             registry.register(UNDERSTAND, self._understanding.handlers(),
@@ -97,6 +104,45 @@ class Library:
             return None
         return self._orch.submit_run(TRANSCRIBE, subject_ref=asset_id, idempotency_key=None if force else f"transcribe:{asset_id}")
 
+    def redivide(self, asset_id: str) -> dict | None:
+        """Work out the shots and beats of an asset again from what was measured in it: after its words became known, after the
+        operator placed a mark, after a rule changed. When the beats come out different, the new ones are described; a beat
+        the new division leaves alone keeps its description, so nothing is asked of a model twice."""
+        from nexora.modules.library.structure import beat_seconds
+        before = beat_seconds(self.analysis.structure(asset_id) or {})
+        made = self.analysis.restructure(asset_id)
+        if made is not None and beat_seconds(made) != before:
+            self.understand(asset_id, force=True)
+        return made
+
+    def mark_boundary(self, asset_id: str, *, kind: str, op: str, t: float) -> dict | None:
+        """The operator places, removes or lets go of a boundary; it is kept through every later division."""
+        from nexora.modules.library.structure import beat_seconds
+        before = beat_seconds(self.analysis.structure(asset_id) or {})
+        made = self.analysis.pin(asset_id, kind=kind, op=op, t=t)
+        if made is not None and beat_seconds(made) != before:
+            self.understand(asset_id, force=True)
+        return made
+
+    def analyse(self, asset_id: str) -> str:
+        """Measure an asset (again if need be) and divide it. For footage taken in before footage was measured."""
+        from nexora.modules.library.analysis import STRUCTURE
+        return self._orch.submit_run(STRUCTURE, subject_ref=asset_id)
+
+    def find_unmeasured(self) -> list[str]:
+        """Start measuring every video that was taken in before footage was divided into shots and beats. Runs with the background work."""
+        from nexora.modules.library.analysis import STRUCTURE
+        runs = []
+        for asset in self._assets.assets():
+            if asset["kind"] != "video":
+                continue
+            original = self._assets.original(asset["asset_id"])
+            meta = original.metadata
+            if "duplicate_of" in meta or "structure" in meta or not meta.get("probe", {}).get("duration") or not original.checksum:
+                continue
+            runs.append(self._orch.submit_run(STRUCTURE, subject_ref=asset["asset_id"], idempotency_key=f"structure:{asset['asset_id']}"))
+        return runs
+
     def ingest(self, path: str | Path, *, origin: str = "self_shot", rights: dict | None = None) -> tuple[str, str]:
         """Register a file and start its ingest run. Ingesting the same file again returns the same asset and run.
         `rights` records where licensed material came from and under which terms."""
@@ -120,7 +166,7 @@ class Library:
         self._assets.annotate(asset_id, note=note, **marks)
         if note is not None and self._understanding is not None:
             index = self._understanding._index
-            index.remove(asset_id, "note")
+            index.remove(asset_id, "note", only=lambda m: not m.data.get("kept"))     # a correction kept from an earlier division is not the note
             if note.strip():
                 duration = self._assets.original(asset_id).metadata.get("probe", {}).get("duration") or 0.0
                 index.upsert(asset_id, "note", 0.0, round(float(duration), 1), note.strip())
@@ -302,16 +348,14 @@ class Library:
         if self._is_duplicate(ctx):
             return {"skipped": "duplicate"}
         original, path = self._source(ctx)
-        black = self._adapters.submit("ffmpeg", Request("blackdetect", inputs={"path": str(path)}, attempt_id=ctx.claim.attempt_id)).outputs["black_ranges"]
-        duration = ctx.inputs["probe"]["duration"]
-        frozen = self._adapters.submit("ffmpeg", Request("freezedetect", inputs={"path": str(path)}, attempt_id=ctx.claim.attempt_id)).outputs["frozen_ranges"]
+        found = self._adapters.submit("ffmpeg", Request("unusable", inputs={"path": str(path)}, attempt_id=ctx.claim.attempt_id)).outputs
+        black, frozen, duration = found["black_ranges"], found["frozen_ranges"], ctx.inputs["probe"]["duration"]
         frozen = [[a, duration if b is None else b] for a, b in frozen]
         ranges = usable_ranges(duration, black)          # a frozen picture is recorded, not excluded: a still shot can be wanted
-        # Where one shot of the recording ends and the next begins, so that a clip chosen from it never runs across a cut.
-        cuts = self._adapters.submit("ffmpeg", Request("scenecuts", inputs={"path": str(path)}, params={"color_transfer": ctx.inputs["probe"].get("color_transfer")},
-                                                      attempt_id=ctx.claim.attempt_id)).outputs["cuts"]
-        self._assets.update_metadata(original.version_id, black_ranges=black, frozen_ranges=frozen, usable_ranges=ranges, scene_cuts=cuts)
-        return {"black_ranges": black, "frozen_ranges": frozen, "usable_ranges": ranges, "scene_cuts": cuts}
+        # Where one shot ends and the next begins is worked out later in this run, with the rest of the footage's structure,
+        # from frames decoded once for every measure; looking for cuts here would decode the whole file one more time.
+        self._assets.update_metadata(original.version_id, black_ranges=black, frozen_ranges=frozen, usable_ranges=ranges)
+        return {"black_ranges": black, "frozen_ranges": frozen, "usable_ranges": ranges}
 
     def _proxy(self, ctx):
         if self._is_duplicate(ctx):

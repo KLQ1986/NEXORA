@@ -88,8 +88,24 @@ class Sourcing:
                 "score": hit.score, "reason": hit.moment.text}
 
     def _whole_shot(self, asset_id: str, t_in: float, t_out: float) -> tuple[float, float]:
+        """A moment may be shorter than its line needs, and the clip then runs on into the moments after it. It may do so only
+        inside the same shot and inside the footage: past the end of the footage it is moved back, across a cut it is moved aside."""
         cuts, length = self._cuts(asset_id)
+        if length and t_out > length and t_out - t_in <= length:
+            t_in, t_out = round(length - (t_out - t_in), 2), round(float(length), 2)
         return clear_of_cuts(t_in, t_out, cuts, ceiling=length) if cuts else (t_in, t_out)
+
+    def _said(self, line: str, moment) -> str | None:
+        """What the operator said before about this stretch of footage for these words: about this very moment, or, when the
+        footage has been divided anew since, about a stretch that mostly overlaps it."""
+        told = self._projects.feedback(line)
+        if moment.moment_id in told:
+            return told[moment.moment_id]
+        for row in self._projects.feedback_spans(line):
+            shared = min(row["t_out"], moment.t_end) - max(row["t_in"], moment.t_start)
+            if row["asset_id"] == moment.asset_id and shared > 0 and shared >= 0.5 * min(row["t_out"] - row["t_in"], moment.t_end - moment.t_start):
+                return row["verdict"]
+        return None
 
     def _look(self, line: str, hit) -> tuple[int, str]:
         """The model looks at real frames of a candidate and says how well they show the line (0-10).
@@ -131,9 +147,10 @@ class Sourcing:
             wanted = f"{shot.text} {shot.brief}" if shot.brief else shot.text            # what is said, plus what the operator asked to see
             # What the operator said before about clips for these very words: a clip they turned down is not offered again,
             # and one they chose goes first.
-            told = self._projects.feedback(shot.text)
-            turned_down = frozenset(m for m, v in told.items() if v == "rejected")
-            hits = self._index.search(wanted, limit=self._alternates + 1 + len(told), min_score=self._threshold, exclude=frozenset(used) | turned_down, exclude_assets=self._rejected())
+            judged = len(self._projects.feedback(shot.text))
+            hits = self._index.search(wanted, limit=self._alternates + 1 + judged, min_score=self._threshold, exclude=frozenset(used), exclude_assets=self._rejected())
+            told = {h.moment.moment_id: self._said(shot.text, h.moment) for h in hits}
+            hits = [h for h in hits if told[h.moment.moment_id] != "rejected"]
             hits = sorted(hits, key=lambda h: told.get(h.moment.moment_id) != "accepted")[:self._alternates + 1]
             verdicts: dict[str, tuple[int, str]] = {}
             if self._judge and hits:
@@ -179,12 +196,19 @@ class Sourcing:
         chosen = sel.alternates[alternate]
         line = self._projects.shot(shot_id).text
         if sel.moment_id:                                   # the operator preferred another clip for these words: remember both halves of that
-            self._projects.add_feedback(line, sel.moment_id, "rejected", asset_id=sel.asset_id)
+            self._projects.add_feedback(line, sel.moment_id, "rejected", asset_id=sel.asset_id, span=self._span(sel.moment_id, sel.t_in, sel.t_out))
         if chosen.get("moment_id"):
-            self._projects.add_feedback(line, chosen["moment_id"], "accepted", asset_id=chosen.get("asset_id"))
+            self._projects.add_feedback(line, chosen["moment_id"], "accepted", asset_id=chosen.get("asset_id"), span=self._span(chosen["moment_id"], chosen.get("t_in"), chosen.get("t_out")))
         old = [{"moment_id": sel.moment_id, "asset_id": sel.asset_id, "t_in": sel.t_in, "t_out": sel.t_out, "score": sel.score, "reason": sel.reason}] if sel.moment_id else []
         rest = [a for i, a in enumerate(sel.alternates) if i != alternate] + old
         self._projects.set_selection(shot_id, status="accepted" if sel.status == "accepted" else "proposed", alternates=rest, decided_by="operator", **_fields(chosen))
+
+    def _span(self, moment_id: str, t_in: float | None, t_out: float | None) -> tuple[float, float] | None:
+        """The stretch of footage a verdict is about: the moment it names, or failing that the clip that was shown."""
+        moment = self._index.by_id(moment_id)
+        if moment is not None:
+            return moment.t_start, moment.t_end
+        return (t_in, t_out) if t_in is not None and t_out is not None else None
 
     def use_asset(self, shot_id: str, asset_id: str, *, reason: str, seconds: float | None = None, pending: bool = False) -> None:
         """Fill a shot with a whole asset from another strategy (stock or generation); it still goes through review."""
@@ -317,9 +341,9 @@ class Sourcing:
         sel = self._projects.selection(shot_id)
         if sel and sel.moment_id:                           # "no clip fits": the one shown, and the alternates beside it, were all turned down for these words
             line = self._projects.shot(shot_id).text
-            for moment_id, asset_id in [(sel.moment_id, sel.asset_id)] + [(a.get("moment_id"), a.get("asset_id")) for a in sel.alternates]:
+            for moment_id, asset_id, t_in, t_out in [(sel.moment_id, sel.asset_id, sel.t_in, sel.t_out)] + [(a.get("moment_id"), a.get("asset_id"), a.get("t_in"), a.get("t_out")) for a in sel.alternates]:
                 if moment_id:
-                    self._projects.add_feedback(line, moment_id, "rejected", asset_id=asset_id)
+                    self._projects.add_feedback(line, moment_id, "rejected", asset_id=asset_id, span=self._span(moment_id, t_in, t_out))
         keep = ([{"moment_id": sel.moment_id, "asset_id": sel.asset_id, "t_in": sel.t_in, "t_out": sel.t_out, "score": sel.score, "reason": sel.reason}] if sel and sel.moment_id else []) + (sel.alternates if sel else [])
         self._projects.set_selection(shot_id, status="gap", reason="Người vận hành đánh dấu là chưa có hình phù hợp.", alternates=keep, decided_by="operator")
 
@@ -333,7 +357,7 @@ class Sourcing:
         script_id = self._orch.run_info(run_id)["subject_ref"]
         for sel in self._projects.selections(script_id):
             if sel.moment_id and sel.status in ("proposed", "accepted"):
-                self._projects.add_feedback(self._projects.shot(sel.shot_id).text, sel.moment_id, "accepted", asset_id=sel.asset_id)
+                self._projects.add_feedback(self._projects.shot(sel.shot_id).text, sel.moment_id, "accepted", asset_id=sel.asset_id, span=self._span(sel.moment_id, sel.t_in, sel.t_out))
             if sel.status == "proposed":
                 self._projects.set_selection(sel.shot_id, status="accepted", asset_id=sel.asset_id, moment_id=sel.moment_id, t_in=sel.t_in, t_out=sel.t_out,
                                              score=sel.score, reason=sel.reason, alternates=sel.alternates, decided_by=sel.decided_by)

@@ -249,12 +249,21 @@ class ProjectStore:
         with db.write(self._conn) as c:
             c.execute("UPDATE renders SET review = ? WHERE render_id = ?", (json.dumps({"approved": approved, "comment": comment, "at": time.time()}, ensure_ascii=False), render_id))
 
-    def add_feedback(self, line: str, moment_id: str, verdict: str, *, asset_id: str | None = None) -> None:
+    def add_feedback(self, line: str, moment_id: str, verdict: str, *, asset_id: str | None = None, span: tuple[float, float] | None = None) -> None:
         """What the operator made of a moment proposed for a line: "rejected" when they turned it down, "accepted" when they
-        kept it. The latest word on a pair stands."""
+        kept it. The latest word on a pair stands. `span` is the stretch of footage the verdict was about, so that it still
+        counts after the footage has been divided anew."""
+        t_in, t_out = span or (None, None)
         with db.write(self._conn) as c:
-            c.execute("INSERT INTO match_feedback (line, moment_id, asset_id, verdict, at) VALUES (?,?,?,?,?) "
-                      "ON CONFLICT(line, moment_id) DO UPDATE SET verdict = excluded.verdict, at = excluded.at", (line.strip().lower(), moment_id, asset_id, verdict, time.time()))
+            c.execute("INSERT INTO match_feedback (line, moment_id, asset_id, verdict, at, t_in, t_out) VALUES (?,?,?,?,?,?,?) "
+                      "ON CONFLICT(line, moment_id) DO UPDATE SET verdict = excluded.verdict, at = excluded.at, t_in = COALESCE(excluded.t_in, t_in), t_out = COALESCE(excluded.t_out, t_out)",
+                      (line.strip().lower(), moment_id, asset_id, verdict, time.time(), t_in, t_out))
+
+    def feedback_spans(self, line: str) -> list[dict]:
+        """For one line: each stretch of footage the operator has judged for it, latest first."""
+        rows = self._conn.execute("SELECT asset_id, t_in, t_out, verdict FROM match_feedback WHERE line = ? AND asset_id IS NOT NULL AND t_in IS NOT NULL ORDER BY at DESC",
+                                  (line.strip().lower(),))
+        return [dict(r) for r in rows]
 
     def feedback(self, line: str) -> dict[str, str]:
         """For one line: the verdict on each moment the operator has judged for it."""

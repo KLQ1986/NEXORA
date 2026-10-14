@@ -344,6 +344,55 @@ Sự cố trong lượt này: cài `ffmpeg-full` làm Homebrew nâng thư viện
 - Không dịch: chuỗi do máy chủ sinh (thông báo, lý do dừng, nhận xét kiểm tra, lỗi API) vẫn tiếng Việt; muốn dịch phải thêm khoá thông điệp phía server. Tên dự án, kịch bản, mô tả footage là dữ liệu của người dùng, giữ nguyên
 - Đã kiểm tra bằng trình duyệt ở 1280 px: Tổng quan, trang dự án, Hệ thống ở cả hai ngôn ngữ; 206 test API vẫn đạt
 
+### Hiểu footage, đợt 1: đo và chia thành cú máy, nhịp, 2026-10-13 và 14 (245 test đạt)
+
+Thiết kế: `docs/superpowers/specs/2026-10-13-footage-understanding-design.md`. Đợt này không cần mô hình nào.
+
+- [x] Đơn vị thời gian nguyên (`core/timebase.py`), 254.016.000.000 tick mỗi giây
+- [x] Đo hình trong một lượt giải mã, bộ nhớ không tăng theo độ dài (`library/signals.py`): độ khác giữa các khung, chuyển động máy, chuyển động chủ thể, độ rung, phơi sáng, tâm chú ý, viền đen; độ nét qua `blurdetect` của FFmpeg
+- [x] Chia cú máy: cắt cứng, điểm cắt yếu, chuyển mờ và fade; loại nhấp nháy, máy lia nhanh, khung lặp, chớp sáng (`library/structure.py`)
+- [x] Chia nhịp trong cú máy theo nội dung trôi, máy đổi trạng thái, chủ thể bắt đầu hoặc ngừng chuyển động; không cắt trong một từ; phủ kín phần dùng được
+- [x] Nhãn đo được trên mỗi nhịp, mỗi nhãn có nguồn và độ tin cậy: chuyển động máy, độ rung, độ nét, phơi sáng, lời nói, quay chậm, hình đứng yên, hướng chuyển động, vị trí chủ thể
+- [x] Chia ngay khi nhập (`library.ingest` phiên bản 2) và dây chuyền riêng `library.structure` cho footage nhập từ trước; không có mô hình vẫn có cú máy và nhịp
+- [x] Mô tả theo nhịp: nhịp giữ nguyên ranh giới và khung thì giữ nguyên mô tả; mô tả người vận hành đã sửa được giữ lại dưới dạng ghi chú khi đoạn của nó bị chia lại
+- [x] Ranh giới người vận hành đặt, dời, bỏ được ghim qua mọi lần chia lại
+- [x] Phản hồi ghép cảnh lưu theo khoảng thời gian, còn hiệu lực sau khi chia lại; clip không chạy quá cuối footage
+- [x] Bộ đo cách chia: video mẫu do người vận hành rà, tỷ lệ bắt được và tỷ lệ đúng cho cú máy và nhịp, kiểm tra phủ kín cả kho
+- [x] Giao diện: dải cú máy và nhịp trong Thư viện, các nút đặt, dời, bỏ ranh giới, đánh dấu video mẫu; bảng kết quả đo ở trang Hệ thống
+- [x] Nhập nhanh hơn: đoạn đen và đoạn đứng hình tìm trong một lượt giải mã, bỏ lượt dò điểm cắt kiểu cũ
+- [x] Mô hình trả lời hỏng khi được xem nhiều khung thì được hỏi lại với ba khung
+
+Đã chạy thật, không dùng mô hình, trên 7 clip Full HD và 4K tải về (có nguồn và giấy phép ở `spike/footage/hd/SOURCES.json`) và 10 clip DJI 4K tự quay: không video nào hở hoặc chồng nhịp.
+
+- Clip tải về: rà bằng mắt 21 ranh giới cú máy, 18 đúng (trong đó 2 là nhiều khả năng đúng), 1 sai, 2 không chắc. Ranh giới sai (máy gắn mũ lao qua ghềnh) đã hết sau lần chỉnh ngưỡng cuối. Chưa rà những điểm cắt bị bỏ sót.
+- 10 clip tự quay (12 phút, không có điểm cắt nào): lúc đầu có 2 ranh giới cú máy sai, bàn tay che điện thoại bị coi là chuyển mờ và một cú xoay máy khi đi bộ bị coi là điểm cắt yếu. Sau khi chỉnh trên từng clip (điểm cắt yếu phải nhảy ít nhất 0,16; chuyển mờ phải làm màu đổi ít nhất 0,3), cả 10 clip đều là một cú máy, và các điểm cắt, chuyển mờ đã rà trên clip tải về vẫn còn nguyên.
+
+**Điều kiện xong, và việc đổi nó.** Thiết kế ban đầu đòi bộ 17 mẫu ghép cảnh có sẵn không giảm quá 5 điểm phần trăm. Đo trên một bản sao của kho (6 video), sau khi chia lại và mô tả lại bằng `qwen2.5vl:7b`:
+
+| | Trước | Sau |
+|---|---|---|
+| Số đoạn được mô tả | 91 | 195 |
+| Đúng đoạn mẫu ngay lần đầu | 12/17 | 6/17 |
+| Đúng đoạn mẫu trong ba kết quả đầu | 17/17 | 7/17 |
+| Đúng video ngay lần đầu | 16/17 | 17/17 |
+
+Điều kiện cũ trượt. Xem khung hình của hai mẫu trong video tụt nặng nhất (một người bán làm đi làm lại cùng một món trong 5 phút rưỡi) cho thấy đoạn hệ thống mới chọn cho thấy cùng việc với đoạn mẫu, hoặc đúng hơn: các mẫu ấy do hệ thống cũ tự đề xuất, nên chúng đo "trùng mốc thời gian cũ" chứ không đo "đúng nội dung". Ngày 2026-10-14 người vận hành quyết định đổi điều kiện xong thành: ra đúng video không kém trước, không hở hoặc chồng nhịp, và không đặt ranh giới cú máy nào trên footage tự quay vốn không có điểm cắt. Cả ba đều đạt. Mẫu ghép cảnh để đo về sau do người vận hành tự chọn tay; 17 mẫu cũ vẫn nằm trong kho nhưng không còn dùng để nghiệm thu.
+
+**Kho thật đã chuyển sang cách chia mới, 2026-10-14.** Cơ sở dữ liệu được sao lưu trước (`data/backups/nexora-20261014-011205.db`), máy chủ khởi động lại với mã mới, 6 video được đo, chia và mô tả lại; mọi bước thành công. Trên kho thật sau khi chuyển: 197 nhịp có mô tả (trước là 91 đoạn), đúng video ngay lần đầu 16/17 (bằng trước), trong ba kết quả đầu 17/17, không video nào hở hoặc chồng nhịp, 32 lựa chọn clip của các dự án còn nguyên. Lúc đó ba nhịp của `c_banh_trung.webm` chưa có mô tả vì mô hình trả lời hỏng cả khi được hỏi lại. Theo thước đo cũ đã bỏ, đúng đoạn mẫu ngay lần đầu là 2/17.
+
+Ba nhịp ấy sau đó đã có mô tả: khi mô hình trả lời hỏng cả với ba khung, nó được hỏi lần cuối với riêng khung giữa. 10 clip DJI tự quay được nhập vào kho thật cùng ngày. Trên clip `0050` (144 giây, máy lùi dọc một lối đi), nhãn đo khớp với hình: các nhịp mang nhãn "kéo ra" đúng là lúc máy lùi ra xa, hai nhịp "máy tĩnh" là lúc dừng.
+
+**Người vận hành nghiệm thu đợt 1 ngày 2026-10-14.**
+
+Cùng lượt đo đó lộ ra một lỗi thật, đã sửa: mô hình 7B trả lời hỏng khi được xem tới 8 khung một lúc (18 nhịp không có mô tả). Nay nó được hỏi lại với ba khung.
+
+Sai khác so với thiết kế: hướng chuyển động chỉ có trái sang phải, phải sang trái, không rõ (không đo được vào gần, ra xa); độ dài nhịp tối thiểu mặc định là 3 giây thay vì 2; chữ ký khung giữ 10 lần mỗi giây.
+
+Để dành cho các đợt sau và giai đoạn tối ưu:
+- Hiệu chỉnh ngưỡng bằng bộ đo cách chia, từng video một, khi người vận hành đã đánh dấu video mẫu. Các ngưỡng hiện mới được chỉnh sơ trên 23 video.
+- Nhập video 4K dài còn chậm: clip 8 phút mất khoảng 25 phút, phần lớn là giải mã file gốc để tìm đoạn đen và tạo proxy.
+- Trong footage có nội dung lặp lại, nhiều nhịp gần giống nhau cùng đứng đầu kết quả tìm kiếm. Gộp các nhịp liền nhau cùng hành động là việc của đợt 3.
+
 ### Còn lại sau lượt này
 
 Cần thứ ngoài máy này: tài khoản và khoá API của nền tảng (tự đăng, tự lấy số liệu), khoá của nhà cung cấp video AI, khoá Anthropic để chạy thật adapter Claude, dịch vụ tìm kiếm trên toàn bộ web (hiện chỉ tìm trên Wikipedia).

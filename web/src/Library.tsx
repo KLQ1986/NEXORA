@@ -4,6 +4,7 @@ import { call, megabytes, post, timecode, usePoll, type Asset, type Hit, type Mo
 
 const LEVEL: Record<string, string> = { segment: tr("CẢNH"), speech: tr("LỜI NÓI"), note: tr("GHI CHÚ"), frame: tr("KHUNG HÌNH") };
 import { Button, Icon, Page, RangeStrip, SkeletonCards, StageRail, StatusText, Tabs, TimeChip } from "./parts";
+import { StructureStrip } from "./Structure";
 
 function AddFootage({ onDone }: { onDone: () => void }) {
   const [path, setPath] = useState("");
@@ -185,6 +186,7 @@ function Player({ asset, start, others, close, similar }: { asset: Asset; start?
             : <div className="grid aspect-video w-full place-items-center text-[13px] text-mute">{tr("Bản xem chưa sẵn sàng")}</div>}
         </div>
         {!asset.still && asset.kind === "video" && <div className="px-4 pt-3"><RangeStrip asset={asset} tall playhead={t} onSeek={seek} /></div>}
+        {!asset.still && asset.kind === "video" && !asset.duplicate_of && <div className="px-4 pt-3"><StructureStrip asset={asset} t={t} seek={seek} /></div>}
         <div className="grid gap-2 px-4 pt-3">
           {unusable > 0 && <p className="flex items-center gap-2 text-[12.5px] text-mute"><span className="hatch inline-block h-3 w-5 rounded-sm" />{tr("Có")} <span className="mono text-ink">{timecode(unusable)}</span> {tr("khung đen — hệ thống sẽ không chọn clip từ phần này.")}</p>}
           {asset.duplicate_of && <p className="text-[12.5px] text-mute">{tr("File này trùng nội dung với một video đã có trong thư viện nên không được xử lý lại.")}</p>}
@@ -300,54 +302,12 @@ export default function Library() {
   const seconds = assets.reduce((sum, a) => sum + (a.kind === "video" ? a.duration ?? 0 : 0), 0);
   const described = assets.filter((a) => a.understand?.status === "succeeded").length;
   const pick = (a: Asset, t?: number) => { setPicked(a.asset_id); setStart(t); };
-  const facet = (on: boolean) => `flex h-8 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] transition-colors ${on ? "bg-raised font-medium text-ink" : "text-mute hover:bg-raised/50 hover:text-ink"}`;
+  const facet = (on: boolean) => `flex h-8 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] transition-colors ${on ? "bg-accent/10 font-medium text-accent" : "text-mute hover:bg-raised/50 hover:text-ink"}`;
   return (
     <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
       <Page eyebrow={tr("Sản xuất")} title={tr("Thư viện")} wide
-            note={assets.length ? <span className="flex flex-wrap gap-x-3"><span>{tv`${assets.length} nguyên liệu`}</span><span className="mono">{timecode(seconds)} video</span><span className="text-ai">{tv`${described} đã được AI mô tả`}</span></span> : tr("Footage, ảnh và nhạc của bạn. File gốc không bị sao chép hay sửa.")}
-            actions={<Button kind={adding ? "plain" : "primary"} onClick={() => setAdding(!adding)}><Icon name={adding ? "x" : "plus"} />{adding ? tr("Đóng") : tr("Thêm footage")}</Button>}>
-        {(adding || (data && assets.length === 0)) && <div className="panel glow rise mb-5 p-5"><p className="mb-1 font-semibold">{tr("Thêm video, ảnh, nhạc hoặc cả thư mục")}</p><p className="mb-3 text-[13px] text-mute">{tr("Hệ thống chỉ ghi lại vị trí file, rồi tự xem và mô tả từng đoạn để bạn tìm bằng lời.")}</p><AddFootage onDone={reload} /></div>}
-
-        <form className="ai-card mb-5 p-3" onSubmit={(e) => { e.preventDefault(); search(); }}>
-          <div className="mb-2 flex items-center gap-2 px-1 text-[12.5px]"><Icon name="sparkles" size={14} className="text-ai" /><span className="font-medium">{tr("Tìm cảnh bằng lời")}</span>
-            <span className="ml-auto flex items-center gap-1.5 text-mute"><span className="h-1.5 w-1.5 rounded-full bg-proof" />{tv`${described} video đã hiểu`}</span></div>
-          <div className="relative">
-            <label htmlFor="q" className="sr-only">{tr("Tìm trong footage")}</label>
-            <Icon name="search" size={18} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-faint" />
-            <input id="q" value={q} onChange={(e) => { setQ(e.target.value); if (!e.target.value) setHits(null); }} placeholder={tr("Mô tả cảnh bạn cần, ví dụ: bàn tay rót cà phê ra tách")}
-                   className="h-12 w-full pl-11 pr-32 text-[15px]" />
-            <span className="absolute right-2 top-1/2 -translate-y-1/2"><Button kind="primary" size="sm" type="submit" disabled={!q.trim() || searching}>{searching ? tr("Đang tìm…") : tr("Tìm cảnh")}</Button></span>
-          </div>
-        </form>
-
-        {hits && (
-          <div className="mb-8">
-            <div className="mb-3 flex items-baseline justify-between gap-4"><h2 className="text-[15px] font-semibold">{hits.length ? <>{tv`${hits.length} cảnh khớp với`} <span className="text-ai">“{q}”</span></> : tv`Không có cảnh nào khớp với “${q}”`}</h2>
-              <button type="button" className="link text-[12.5px]" onClick={() => { setHits(null); setQ(""); }}>{tr("Bỏ tìm kiếm")}</button></div>
-            {!hits.length && <p className="text-mute">{tr("Thử từ khác, hoặc kiểm tra xem video đã được hệ thống xem xong chưa ở mục Tiến trình.")}</p>}
-            <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-              {hits.map((h, i) => (
-                <li key={h.moment_id}>
-                  <button type="button" className="panel group block w-full overflow-hidden text-left transition-colors hover:border-ai/50" onClick={() => { setPicked(h.asset_id); setStart(h.t_start); }}>
-                    <span className="relative block bg-black">{h.frame_url ?? h.asset.thumbnail_url ? <img src={(h.frame_url ?? h.asset.thumbnail_url)!} alt="" loading="lazy" className="aspect-video w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" /> : <span className="block aspect-video" />}
-                      {h.level && h.level !== "segment" && <span className="chip absolute left-2 top-2">{LEVEL[h.level] ?? h.level}</span>}
-                      <TimeChip className="absolute bottom-2 left-2">{h.asset.still ? tr("ẢNH") : `${timecode(h.t_start)} – ${timecode(h.t_end)}`}</TimeChip>
-                      <span className="mono absolute right-2 top-2 grid h-6 w-6 place-items-center rounded-md bg-ai/90 text-[11px] font-semibold text-canvas">{i + 1}</span></span>
-                    <span className="block px-3 py-2.5"><span className="block truncate text-[12px] text-faint">{h.asset.name}</span>
-                      <span className="mt-0.5 line-clamp-2 text-[13px]">{h.text}</span></span>
-                  </button>
-                  {q.trim() && (h.level ?? "segment") === "segment" && <button type="button" className="link mt-1 px-1 text-[12px]" title={tr("Giữ cặp này làm đáp án đúng do chính bạn chọn, để đo hệ thống tìm kiếm")}
-                    onClick={async (e) => { const b = e.currentTarget; await post("/api/v1/evaluation/cases", { line: q.trim(), moment_id: h.moment_id }).catch(() => {}); b.textContent = tr("Đã lưu làm mẫu chuẩn"); b.disabled = true; }}>{tv`Đây là cảnh đúng cho “${q.trim().slice(0, 24)}”`}</button>}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        {error && <p className="mb-4 text-tally">{tv`Không tải được thư viện: ${error}`}</p>}
-
-        {assets.length > 0 && (
-          <div className={`grid items-start gap-6 ${current ? "2xl:grid-cols-[200px_minmax(0,1fr)]" : "lg:grid-cols-[200px_minmax(0,1fr)]"}`}>
-            <nav className={`gap-5 lg:sticky lg:top-0 ${current ? "hidden 2xl:grid" : "grid"}`} aria-label={tr("Lọc thư viện")}>
+            side={assets.length > 0 ? (
+            <nav className="grid gap-5" aria-label={tr("Lọc thư viện")}>
               <div>
                 <p className="eyebrow mb-1.5 px-2.5">{tr("Loại")}</p>
                 {KINDS.map(([k, name, icon]) => <button key={k} type="button" onClick={() => setKind(k)} aria-pressed={kind === k} className={facet(kind === k)}><Icon name={icon} size={15} /><span className="flex-1">{name}</span><span className="mono text-[11px] text-faint">{k ? assets.filter((a) => a.kind === k).length : assets.length}</span></button>)}
@@ -377,6 +337,48 @@ export default function Library() {
                 <button type="button" onClick={() => setLeast(least ? 0 : 4)} aria-pressed={least > 0} className={facet(least > 0)}><Icon name="star" size={15} className={least ? "text-cue" : ""} /><span className="flex-1">{tr("Từ 4 sao")}</span></button>
               </div>
             </nav>
+            ) : undefined}
+            note={assets.length ? <span className="flex flex-wrap gap-x-3"><span>{tv`${assets.length} nguyên liệu`}</span><span className="mono">{timecode(seconds)} video</span><span className="text-ai">{tv`${described} đã được AI mô tả`}</span></span> : tr("Footage, ảnh và nhạc của bạn. File gốc không bị sao chép hay sửa.")}
+            actions={<Button kind={adding ? "plain" : "primary"} onClick={() => setAdding(!adding)}><Icon name={adding ? "x" : "plus"} />{adding ? tr("Đóng") : tr("Thêm footage")}</Button>}>
+        {(adding || (data && assets.length === 0)) && <div className="panel glow rise mb-5 p-5"><p className="mb-1 font-semibold">{tr("Thêm video, ảnh, nhạc hoặc cả thư mục")}</p><p className="mb-3 text-[13px] text-mute">{tr("Hệ thống chỉ ghi lại vị trí file, rồi tự xem và mô tả từng đoạn để bạn tìm bằng lời.")}</p><AddFootage onDone={reload} /></div>}
+
+        <form className="mb-5" onSubmit={(e) => { e.preventDefault(); search(); }}>
+          <div className="relative">
+            <label htmlFor="q" className="sr-only">{tr("Tìm trong footage")}</label>
+            <Icon name="sparkles" size={17} className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-ai" />
+            <input id="q" value={q} onChange={(e) => { setQ(e.target.value); if (!e.target.value) setHits(null); }} placeholder={tr("Mô tả cảnh bạn cần, ví dụ: bàn tay rót cà phê ra tách")}
+                   className="h-12 w-full pl-11 pr-32 text-[15px] md:pr-60" />
+            <span className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-3"><span className="hidden items-center gap-1.5 text-[12px] text-faint md:flex" title={tr("Tìm cảnh bằng lời")}><span className="h-1.5 w-1.5 rounded-full bg-proof" />{tv`${described} video đã hiểu`}</span><Button kind="primary" size="sm" type="submit" disabled={!q.trim() || searching}>{searching ? tr("Đang tìm…") : tr("Tìm cảnh")}</Button></span>
+          </div>
+        </form>
+
+        {hits && (
+          <div className="mb-8">
+            <div className="mb-3 flex items-baseline justify-between gap-4"><h2 className="text-[15px] font-semibold">{hits.length ? <>{tv`${hits.length} cảnh khớp với`} <span className="text-ai">“{q}”</span></> : tv`Không có cảnh nào khớp với “${q}”`}</h2>
+              <button type="button" className="link text-[12.5px]" onClick={() => { setHits(null); setQ(""); }}>{tr("Bỏ tìm kiếm")}</button></div>
+            {!hits.length && <p className="text-mute">{tr("Thử từ khác, hoặc kiểm tra xem video đã được hệ thống xem xong chưa ở mục Tiến trình.")}</p>}
+            <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+              {hits.map((h, i) => (
+                <li key={h.moment_id}>
+                  <button type="button" className="panel group block w-full overflow-hidden text-left transition-colors hover:border-ai/50" onClick={() => { setPicked(h.asset_id); setStart(h.t_start); }}>
+                    <span className="relative block bg-black">{h.frame_url ?? h.asset.thumbnail_url ? <img src={(h.frame_url ?? h.asset.thumbnail_url)!} alt="" loading="lazy" className="aspect-video w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" /> : <span className="block aspect-video" />}
+                      {h.level && h.level !== "segment" && <span className="chip absolute left-2 top-2">{LEVEL[h.level] ?? h.level}</span>}
+                      <TimeChip className="absolute bottom-2 left-2">{h.asset.still ? tr("ẢNH") : `${timecode(h.t_start)} – ${timecode(h.t_end)}`}</TimeChip>
+                      <span className="mono absolute right-2 top-2 grid h-6 w-6 place-items-center rounded-md bg-ai/90 text-[11px] font-semibold text-canvas">{i + 1}</span></span>
+                    <span className="block px-3 py-2.5"><span className="block truncate text-[12px] text-faint">{h.asset.name}</span>
+                      <span className="mt-0.5 line-clamp-2 text-[13px]">{h.text}</span></span>
+                  </button>
+                  {q.trim() && (h.level ?? "segment") === "segment" && <button type="button" className="link mt-1 px-1 text-[12px]" title={tr("Giữ cặp này làm đáp án đúng do chính bạn chọn, để đo hệ thống tìm kiếm")}
+                    onClick={async (e) => { const b = e.currentTarget; await post("/api/v1/evaluation/cases", { line: q.trim(), moment_id: h.moment_id }).catch(() => {}); b.textContent = tr("Đã lưu làm mẫu chuẩn"); b.disabled = true; }}>{tv`Đây là cảnh đúng cho “${q.trim().slice(0, 24)}”`}</button>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {error && <p className="mb-4 text-tally">{tv`Không tải được thư viện: ${error}`}</p>}
+
+        {assets.length > 0 && (
+          <div>
             <div className="min-w-0">
               <div className="mb-4 flex flex-wrap items-center gap-3">
                 <span className="mono text-[12px] text-faint">{shown.length} / {assets.length}</span>

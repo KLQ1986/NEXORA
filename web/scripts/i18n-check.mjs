@@ -4,7 +4,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const SRC = new URL("../src/", import.meta.url).pathname;
-const files = readdirSync(SRC).filter((f) => /\.tsx?$/.test(f) && !["en.ts", "i18n.ts", "Review.tsx"].includes(f));
+const files = readdirSync(SRC).filter((f) => /\.tsx?$/.test(f) && !["en.ts", "i18n.ts"].includes(f));
 
 const used = new Map();
 function template(s, from) {

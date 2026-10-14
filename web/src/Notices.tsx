@@ -1,11 +1,14 @@
 import { t as tr, tv, locale } from "./i18n";
 import { useEffect, useState } from "react";
 import { post, REASONS, STAGE_NAMES, usePoll, type Notice } from "./api";
-import { Empty, Icon, Page, Seg, Tag } from "./parts";
+import { Empty, Icon, OpsSide, Page, Seg, Tag } from "./parts";
 
-const KIND: Record<string, string> = { model_fallback: tr("Mô hình cloud không dùng được"), autonomy_lowered: tr("Mức tự chủ bị hạ"), metrics_due: tr("Tới mốc ghi số liệu"), disk_low: tr("Ổ đĩa sắp đầy"), volume_offline: tr("Mất nơi chứa footage"), gaps: tr("Thiếu hình"), waiting_review: tr("Chờ bạn duyệt"), blocked: tr("Đang dừng"), failed: tr("Thất bại"), succeeded: tr("Đã xong") };
-const ICON: Record<string, string> = { model_fallback: "globe", autonomy_lowered: "bolt", metrics_due: "pulse", disk_low: "disk", volume_offline: "folder", gaps: "image", waiting_review: "eye", blocked: "alert", failed: "x", succeeded: "check" };
-const PIPE: Record<string, string> = { "library.ingest": tr("Nhập footage"), "library.ingest_image": tr("Nhập ảnh"), "library.ingest_audio": tr("Nhập nhạc"), "sourcing.generate": tr("Sinh hình bằng AI"), "library.understand": tr("Xem và mô tả video"), "sourcing.match": tr("Chọn clip cho kịch bản"), "edit.render": tr("Dựng video") };
+export const KIND: Record<string, string> = { model_fallback: tr("Mô hình cloud không dùng được"), autonomy_lowered: tr("Mức tự chủ bị hạ"), metrics_due: tr("Tới mốc ghi số liệu"), disk_low: tr("Ổ đĩa sắp đầy"), volume_offline: tr("Mất nơi chứa footage"), gaps: tr("Thiếu hình"), waiting_review: tr("Chờ bạn duyệt"), blocked: tr("Đang dừng"), failed: tr("Thất bại"), succeeded: tr("Đã xong") };
+export const ICON: Record<string, string> = { model_fallback: "globe", autonomy_lowered: "bolt", metrics_due: "pulse", disk_low: "disk", volume_offline: "folder", gaps: "image", waiting_review: "eye", blocked: "alert", failed: "x", succeeded: "check" };
+export const PIPE: Record<string, string> = { "library.ingest": tr("Nhập footage"), "library.ingest_image": tr("Nhập ảnh"), "library.ingest_audio": tr("Nhập nhạc"), "sourcing.generate": tr("Sinh hình bằng AI"), "library.understand": tr("Xem và mô tả video"), "sourcing.match": tr("Chọn clip cho kịch bản"), "edit.render": tr("Dựng video") };
+
+/** How much a notice asks of the operator: amber waits for you, red has stopped, the rest is a record. */
+export const noticeTone = (k: string) => (k === "waiting_review" || k === "blocked" || k === "gaps" || k === "model_fallback" || k === "autonomy_lowered" || k === "metrics_due" || k === "disk_low" || k === "volume_offline" ? "cue" : k === "failed" ? "tally" : k === "succeeded" ? "proof" : "mute") as "cue" | "tally" | "proof" | "mute";
 
 const dayOf = (t: number) => { const d = new Date(t * 1000), now = new Date(); const y = new Date(now.getTime() - 86400000);
   return d.toDateString() === now.toDateString() ? tr("Hôm nay") : d.toDateString() === y.toDateString() ? tr("Hôm qua") : d.toLocaleDateString(locale, { weekday: "long", day: "numeric", month: "numeric" }); };
@@ -17,10 +20,10 @@ export default function Notices() {
   const items = (data?.items ?? []).filter((n) => !only || n.kind !== "succeeded");
   const days: [string, Notice[]][] = [];
   for (const n of items) { const d = dayOf(n.created_at); if (days.length && days[days.length - 1][0] === d) days[days.length - 1][1].push(n); else days.push([d, [n]]); }
-  const tone = (k: string) => (k === "waiting_review" || k === "blocked" || k === "gaps" || k === "model_fallback" || k === "autonomy_lowered" || k === "metrics_due" || k === "disk_low" || k === "volume_offline" ? "cue" : k === "failed" ? "tally" : k === "succeeded" ? "proof" : "mute") as "cue" | "tally" | "proof" | "mute";
+  const tone = noticeTone;
   const tile = { cue: "bg-cue/12 text-cue", tally: "bg-tally/12 text-tally", proof: "bg-proof/12 text-proof", mute: "bg-raised text-mute" };
   return (
-    <Page eyebrow={tr("Vận hành")} title={tr("Thông báo")} note={tr("Bản ghi đầy đủ của mọi việc đã xong, cần bạn duyệt, hoặc bị dừng.")}
+    <Page side={<OpsSide />} eyebrow={tr("Vận hành")} title={tr("Thông báo")} note={tr("Bản ghi đầy đủ của mọi việc đã xong, cần bạn duyệt, hoặc bị dừng.")}
           actions={<Seg label={tr("Lọc thông báo")} value={only} onChange={setOnly} items={[[false, tr("Tất cả")], [true, tr("Cần chú ý")]] as const} />}>
       {data && items.length === 0 && <div className="max-w-xl"><Empty icon="bell" title={only ? tr("Không có việc nào cần chú ý") : tr("Chưa có thông báo")}>{only ? tr("Mọi thứ đang ổn.") : tr("Hệ thống sẽ báo ở đây khi một việc xong, cần bạn duyệt, hoặc bị dừng.")}</Empty></div>}
       <div className="grid max-w-4xl gap-7">

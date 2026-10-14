@@ -1,7 +1,7 @@
 import { t as tr, tv } from "./i18n";
 import { useState } from "react";
 import { post, usePoll } from "./api";
-import { Button, Icon, Meter, Page, Section, Seg, Stat } from "./parts";
+import { Button, Icon, Meter, OpsSide, Page, Section, Seg, Stat } from "./parts";
 
 type Tool = { adapter: string; operation: string; runs: string; calls: number; seconds: number; failures: number; cost: number };
 type Usage = { budget_day: number | null; budget_month: number | null; spent_today: number; spent_month: number; spent_total: number;
@@ -32,7 +32,7 @@ export default function Costs() {
   const [month, setMonth] = useState<string | null>(null);
   const [all, setAll] = useState(false);
   const [note, setNote] = useState<string | null>(null);
-  if (!u) return <Page title={tr("Chi phí")}><p className="text-mute">{tr("Đang mở…")}</p></Page>;
+  if (!u) return <Page side={<OpsSide />} title={tr("Chi phí")}><p className="text-mute">{tr("Đang mở…")}</p></Page>;
   const save = async () => { setNote(null); try { await post("/api/v1/control/settings", { budget_day: day ?? u.budget_day ?? "", budget_month: month ?? u.budget_month ?? "" }); setDay(null); setMonth(null); } catch (e) { setNote((e as Error).message); } reload(); };
   const tools = all ? u.tools_all : u.tools_today;
   const total = tools.reduce((sum, t) => sum + t.seconds, 0) || 1;
@@ -40,7 +40,7 @@ export default function Costs() {
   const fails = tools.reduce((sum, t) => sum + t.failures, 0);
   const peak = Math.max(...u.by_day.map((d) => d.cost), 0.01);
   return (
-    <Page eyebrow={tr("Vận hành")} title={tr("Chi phí")} note={tr("Tiền so với ngân sách, và thời gian máy đã dùng cho từng việc.")}>
+    <Page side={<OpsSide />} eyebrow={tr("Vận hành")} title={tr("Chi phí")} note={tr("Tiền so với ngân sách, và thời gian máy đã dùng cho từng việc.")}>
       <div className="grid gap-8">
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <Stat label={tr("Hôm nay")} icon="coins" value={<>{u.spent_today.toFixed(2)}<span className="ml-1 text-[13px] font-medium text-mute">USD</span></>} sub={u.budget_day != null ? tv`Ngân sách ${u.budget_day.toFixed(2)} USD` : tr("Chưa đặt ngân sách")} />

@@ -234,6 +234,8 @@ CREATE TABLE IF NOT EXISTS settings (
 
 # Columns added after a table first shipped. CREATE TABLE IF NOT EXISTS does not add them to an existing database.
 MIGRATIONS = [
+    ("match_feedback", "t_in", "REAL"),
+    ("match_feedback", "t_out", "REAL"),
     ("projects", "format", "TEXT NOT NULL DEFAULT 'landscape'"),
     ("projects", "music_path", "TEXT"),
     ("projects", "auto_accept", "INTEGER NOT NULL DEFAULT 0"),
@@ -282,6 +284,10 @@ def connect(path: str | Path) -> sqlite3.Connection:
                 conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
             except sqlite3.OperationalError:
                 pass                                     # another connection added it first
+    # What the operator said about a clip is remembered by the stretch of footage it was said about, so that it still counts
+    # when the footage is divided anew and the moment it named is gone. Older rows take the stretch of the moment they name.
+    conn.execute("UPDATE match_feedback SET t_in = (SELECT t_start FROM moments m WHERE m.moment_id = match_feedback.moment_id), "
+                 "t_out = (SELECT t_end FROM moments m WHERE m.moment_id = match_feedback.moment_id) WHERE t_in IS NULL")
     return conn
 
 

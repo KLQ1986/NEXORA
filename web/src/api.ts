@@ -93,6 +93,11 @@ export const REASONS: Record<string, string> = {
 };
 
 export type Moment = { level?: string; words?: Word[]; moment_id: string; asset_id: string; t_start: number; t_end: number; text: string; source: string; score: number | null; frame_url: string | null; title?: string | null };
+export type Label = { value: unknown; source: string; confidence: string; fault?: string; measure?: number };
+export type BeatView = { t_start: number; t_end: number; shot: number; pinned: boolean; labels: Record<string, Label>; frames: number[]; moment: Moment | null };
+export type StructureView = { asset_id: string; measured: boolean; reference: boolean; run: Run | null; duration: number | null; faults: string[]; bars: Label | null;
+  shots: { t_start: number; t_end: number; transition_in: string; pinned: boolean }[]; beats: BeatView[]; transitions: number[][];
+  marks: { kind: string; op: string; t: number }[]; boundaries: { shot: number[]; beat: number[] } };
 export type AssetBrief = { asset_id: string; name: string; proxy_url: string | null; duration: number | null; still: boolean; thumbnail_url: string | null };
 export type Hit = Moment & { asset: AssetBrief };
 export type Candidate = { moment_id: string; t_in: number; t_out: number; score: number; reason: string; frame_url: string; asset: AssetBrief };
@@ -143,7 +148,7 @@ export type AgentTask = { task_id: string; project_id: string; goal: string; sta
 /** Every change the operator makes refreshes the open screens at once. */
 export const post = <T,>(url: string, body?: unknown, method = "POST") =>
   call<T>(url, { method, body: body === undefined ? undefined : JSON.stringify(body) }).then((r) => { window.dispatchEvent(new Event(CHANGED)); return r; });
-Object.assign(STAGE_NAMES, { segments: tr("Chia đoạn"), summarise: tr("Tóm tắt"), match: tr("Chọn clip"), narration: tr("Đọc lời dẫn"), assemble: tr("Ghép và kiểm tra") });
+Object.assign(STAGE_NAMES, { signals: tr("Đo hình"), structure: tr("Chia cú máy và nhịp"), segments: tr("Chia đoạn"), summarise: tr("Tóm tắt"), match: tr("Chọn clip"), narration: tr("Đọc lời dẫn"), assemble: tr("Ghép và kiểm tra") });
 
 /** Where a project stands, in the operator's words. `step` counts the five stages from script to approved cut. */
 export function projectState(p: Project): { label: string; tone: "mute" | "cue" | "proof" | "tally"; step: number } {

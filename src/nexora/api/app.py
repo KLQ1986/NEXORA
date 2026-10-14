@@ -567,6 +567,83 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
                 "frames": [moment_view(m) for m in moments if m.level == "frame"],
                 "speech": [moment_view(m) | {"words": m.data.get("words", [])} for m in moments if m.level == "speech"]}
 
+    # ------------------------------------------------------------------ shots and beats
+    def structure_view(asset_id: str) -> dict:
+        from nexora.core.timebase import to_seconds
+        from nexora.modules.library.structure import boundaries
+        asset = need_asset(asset_id)
+        made = system.library.analysis.structure(asset_id)
+        runs = system.orch.runs_for_subject(asset_id)
+        run = next((run_view(system, r) for r in runs if system.orch.pipeline_of(r) == "library.structure"), None)
+        base = {"asset_id": asset_id, "measured": made is not None, "run": run, "reference": asset_id in system.evaluation.references(),
+                "duration": system.assets.original(asset_id).metadata.get("probe", {}).get("duration"), "kind": asset.get("kind")}
+        if made is None:
+            return {**base, "shots": [], "beats": [], "transitions": [], "marks": [], "faults": [], "bars": None, "boundaries": {"shot": [], "beat": []}}
+        said = {(m.t_start, m.t_end): m for m in system.index.moments(asset_id, level="segment")}
+        beats = []
+        for beat in made["beats"]:
+            t0, t1 = to_seconds(beat["start"], 2), to_seconds(beat["end"], 2)
+            m = said.get((t0, t1))
+            beats.append({"t_start": t0, "t_end": t1, "shot": beat["shot"], "pinned": beat["pinned"], "labels": beat["labels"], "frames": beat["frames"],
+                          "moment": moment_view(m) if m else None})
+        return {**base, "beats": beats, "bars": made["bars"], "faults": system.library.analysis.faults(asset_id), "marks": system.library.analysis.pinned(asset_id),
+                "shots": [{"t_start": to_seconds(s["start"], 2), "t_end": to_seconds(s["end"], 2), "transition_in": s["transition_in"], "pinned": s["pinned"]} for s in made["shots"]],
+                "transitions": [[to_seconds(a, 2), to_seconds(b, 2)] for a, b in made["transitions"]], "boundaries": boundaries(made)}
+
+    def need_asset(asset_id: str) -> dict:
+        asset = system.assets.asset(asset_id)
+        if asset is None:
+            raise HTTPException(404, "no such asset")
+        return asset
+
+    @app.get("/api/v1/assets/{asset_id}/structure")
+    def asset_structure(asset_id: str):
+        return structure_view(asset_id)
+
+    @app.post("/api/v1/assets/{asset_id}/structure/marks")
+    def mark_structure(asset_id: str, body: dict):
+        """Place a boundary, take one away, move one, or let a mark go. Every later division of this footage keeps what was marked."""
+        need_asset(asset_id)
+        kind, op = str(body.get("kind", "beat")), str(body.get("op", ""))
+        try:
+            t = float(body["t"])
+            duration = float(system.assets.original(asset_id).metadata.get("probe", {}).get("duration") or 0.0)
+            if not 0.0 < t < duration:
+                raise ValueError
+            if op == "move":
+                to = float(body["to"])
+                if not 0.0 < to < duration:
+                    raise ValueError
+                system.library.analysis.pin(asset_id, kind=kind, op="remove", t=t)
+                made = system.library.mark_boundary(asset_id, kind=kind, op="add", t=to)
+            else:
+                made = system.library.mark_boundary(asset_id, kind=kind, op=op, t=t)
+        except (KeyError, TypeError, ValueError):
+            raise HTTPException(422, "a mark needs a kind (shot or beat), an op (add, remove, move or clear) and a time inside the footage") from None
+        if made is None:
+            raise HTTPException(409, "this footage has not been measured yet")
+        if asset_id in system.evaluation.references():                   # an answer that was put right is still the answer
+            system.evaluation.set_reference(asset_id, structure_view(asset_id)["boundaries"])
+        return structure_view(asset_id)
+
+    @app.post("/api/v1/assets/{asset_id}/structure/reference")
+    def reference_structure(asset_id: str, body: dict):
+        """Keep the boundaries of this footage, as the operator has left them, as the answer the dividing rules are measured against."""
+        need_asset(asset_id)
+        view = structure_view(asset_id)
+        if not view["measured"]:
+            raise HTTPException(409, "this footage has not been measured yet")
+        if body.get("on", True):
+            system.evaluation.set_reference(asset_id, view["boundaries"])
+        else:
+            system.evaluation.clear_reference(asset_id)
+        return structure_view(asset_id)
+
+    @app.post("/api/v1/assets/{asset_id}/structure/analyse", status_code=202)
+    def analyse_structure(asset_id: str):
+        need_asset(asset_id)
+        return {"run_id": system.library.analyse(asset_id)}
+
     @app.patch("/api/v1/moments/{moment_id}")
     def correct_moment(moment_id: str, body: dict):
         if system.index.by_id(moment_id) is None or not str(body.get("text", "")).strip():
@@ -1311,7 +1388,16 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
 
     @app.get("/api/v1/evaluation")
     def evaluation():
-        return {"cases": system.evaluation.cases(), "runs": system.evaluation.runs()}
+        names = {a["asset_id"]: Path(system.assets.path_of(system.assets.original(a["asset_id"]))).name for a in system.assets.assets()}
+        marked = [{"asset_id": asset_id, "name": names.get(asset_id, asset_id), "shots": len(marks["shot"]), "beats": len(marks["beat"])}
+                  for asset_id, marks in system.evaluation.references().items()]
+        return {"cases": system.evaluation.cases(), "runs": system.evaluation.runs(), "structure": {"references": marked, "runs": system.evaluation.structure_runs()}}
+
+    @app.post("/api/v1/evaluation/structure/run")
+    def run_structure_evaluation():
+        from nexora.app import structure_config
+        system.evaluation.run_structure(structure_config(system))
+        return evaluation()
 
     @app.post("/api/v1/evaluation/cases", status_code=201)
     def add_case(body: dict):

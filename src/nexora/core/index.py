@@ -109,13 +109,34 @@ class MomentIndex:
     def count(self) -> int:
         return self._conn.execute("SELECT COUNT(*) FROM moments WHERE level = 'segment'").fetchone()[0]
 
-    def remove(self, asset_id: str, level: str) -> None:
+    def remove(self, asset_id: str, level: str, *, only: Callable[[Moment], bool] | None = None) -> None:
+        """Remove the moments of one level of an asset; with `only`, just those it picks out."""
         with db.write(self._conn) as c:
-            ids = [r[0] for r in c.execute("SELECT moment_id FROM moments WHERE asset_id = ? AND level = ?", (asset_id, level))]
+            rows = [_moment(r) for r in c.execute("SELECT * FROM moments WHERE asset_id = ? AND level = ?", (asset_id, level))]
+            ids = [m.moment_id for m in rows if only is None or only(m)]
             for moment_id in ids:
                 c.execute("DELETE FROM moments_fts WHERE moment_id = ?", (moment_id,))
                 c.execute("DELETE FROM moment_vectors WHERE moment_id = ?", (moment_id,))
                 c.execute("DELETE FROM moments WHERE moment_id = ?", (moment_id,))
+
+    def relevel(self, moment_id: str, level: str, **data) -> None:
+        """Keep a moment under another level, its text and who wrote it untouched; `data` is added to what it holds."""
+        with db.write(self._conn) as c:
+            row = c.execute("SELECT * FROM moments WHERE moment_id = ?", (moment_id,)).fetchone()
+            if row is None:
+                return
+            t_end = row["t_end"]
+            while c.execute("SELECT 1 FROM moments WHERE asset_id = ? AND level = ? AND t_start = ? AND t_end = ?", (row["asset_id"], level, row["t_start"], t_end)).fetchone():
+                t_end = round(t_end + 0.01, 2)               # two moments of one level cannot hold the very same range
+            c.execute("UPDATE moments SET level = ?, t_end = ?, data = ? WHERE moment_id = ?",
+                      (level, t_end, json.dumps({**json.loads(row["data"]), **data}, ensure_ascii=False), moment_id))
+
+    def merge_data(self, moment_id: str, **data) -> None:
+        """Add to what a moment holds beside its text, without touching the text or its place in the search."""
+        with db.write(self._conn) as c:
+            row = c.execute("SELECT data FROM moments WHERE moment_id = ?", (moment_id,)).fetchone()
+            if row is not None:
+                c.execute("UPDATE moments SET data = ? WHERE moment_id = ?", (json.dumps({**json.loads(row["data"]), **data}, ensure_ascii=False), moment_id))
 
     def moments(self, asset_id: str, *, level: str | None = None) -> list[Moment]:
         rows = self._conn.execute("SELECT * FROM moments WHERE asset_id = ? AND (? IS NULL OR level = ?) ORDER BY t_start, level",

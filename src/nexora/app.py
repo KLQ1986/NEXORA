@@ -21,6 +21,8 @@ from nexora.core.projects import ProjectStore
 from nexora.core.states import RunStatus
 from nexora.core.worker import Worker
 from nexora.modules.library.ingest import Library
+from nexora.modules.library.analysis import Analysis
+from nexora.modules.library.structure import Rules, boundaries
 from nexora.modules.distribution.package import Distribution
 from nexora.modules.distribution.publish import Publishing
 from nexora.modules.edit.render import Edit
@@ -106,10 +108,17 @@ def evaluation_config(system: "System") -> dict:
             "moments": system.index.count()}
 
 
+def structure_config(system: "System") -> dict:
+    """What describes how footage is divided, for a benchmark run: the version of the rules and every level they decide against."""
+    from dataclasses import asdict
+    from nexora.modules.library import signals, structure
+    return {"signals": signals.VERSION, "structure": structure.VERSION, **asdict(system.library.analysis.rules)}
+
+
 PIPELINE_NAMES = {"library.ingest": "Nhập footage", "library.ingest_image": "Nhập ảnh", "library.ingest_audio": "Nhập nhạc", "library.understand": "Hiểu nội dung footage", "library.transcribe": "Nghe lời nói trong footage",
-                  "sourcing.match": "Chọn clip", "sourcing.generate": "Sinh hình bằng AI", "edit.render": "Dựng video", "edit.preview": "Dựng bản xem thử", "library.enhance": "Nâng chất lượng clip", "sourcing.train": "Huấn luyện mô hình nhân vật", "library.cuts": "Tìm chỗ chuyển cảnh"}
+                  "sourcing.match": "Chọn clip", "sourcing.generate": "Sinh hình bằng AI", "edit.render": "Dựng video", "edit.preview": "Dựng bản xem thử", "library.enhance": "Nâng chất lượng clip", "sourcing.train": "Huấn luyện mô hình nhân vật", "library.cuts": "Tìm chỗ chuyển cảnh", "library.structure": "Đo và chia footage thành cú máy, nhịp"}
 ANNOUNCE = {"model_fallback": "không dùng được mô hình cloud đã chọn, mô hình trên máy làm thay", "autonomy_lowered": "mức tự chủ vừa bị hạ", "metrics_due": "đã tới mốc ghi số liệu", "disk_low": "ổ đĩa sắp đầy", "volume_offline": "không tìm thấy nơi chứa footage", "gaps": "còn câu chưa có hình", "waiting_review": "đang chờ bạn duyệt", "blocked": "đang dừng và cần bạn xử lý", "failed": "thất bại", "succeeded": "đã xong"}
-QUIET = frozenset({"library.ingest", "library.ingest_image", "library.ingest_audio", "library.understand", "library.transcribe", "edit.preview", "library.cuts", "library.enhance"})   # finishing these needs nobody's attention
+QUIET = frozenset({"library.ingest", "library.ingest_image", "library.ingest_audio", "library.understand", "library.transcribe", "edit.preview", "library.cuts", "library.enhance", "library.structure"})   # finishing these needs nobody's attention
 
 
 def announce(system: "System", after: int) -> int:
@@ -229,17 +238,21 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
             orch.notify("model_fallback", "", reason=f"{chosen.partition('.')[2] or chosen}: {err.message or err.code.value}")
     adapters.on_fallback = routed_model_failed
     index = MomentIndex(db_path)
-    understanding = None
-    if model is not None:
-        adapters.register(model)
-        index.embed = lambda texts: adapters.submit("model", Request("embed", inputs={"texts": texts})).outputs["vectors"]
-        understanding = Understanding(assets, index, adapters, data_dir / "media", segment_seconds=segment_seconds)
-    registry = PipelineRegistry()
     transcription = None
     if speech is not None:
         adapters.register(speech)
         transcription = Transcription(assets, index, adapters)
-    library = Library(orch, assets, adapters, data_dir / "media", min_free_bytes=min_free_bytes, understanding=understanding, transcription=transcription)
+    # Footage is measured and divided into shots and beats with no model at all; the longest beat is the old length of a segment.
+    analysis = Analysis(assets, adapters, data_dir / "media", rules=Rules(max_beat_seconds=segment_seconds),
+                        words=(lambda asset_id: [(w["start"], w["end"]) for w in transcription.words(asset_id)]) if transcription else None)
+    understanding = None
+    if model is not None:
+        adapters.register(model)
+        index.embed = lambda texts: adapters.submit("model", Request("embed", inputs={"texts": texts})).outputs["vectors"]
+        understanding = Understanding(assets, index, adapters, data_dir / "media", segment_seconds=segment_seconds, structure_of=analysis.structure)
+    registry = PipelineRegistry()
+    library = Library(orch, assets, adapters, data_dir / "media", min_free_bytes=min_free_bytes, understanding=understanding, transcription=transcription,
+                      analysis=analysis)
     library.register(registry)
     projects = ProjectStore(db_path)
     planning = Planning(projects, assets, index, adapters)
@@ -279,7 +292,14 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     system.roughcut = RoughCut(projects, assets, index)
     system.commands = Commands(adapters, projects, sourcing, edit)
     system.viewer = Viewer(projects, adapters, data_dir / "media") if model is not None else None
-    system.evaluation = Evaluation(db_path, index, threshold=match_threshold)
+    def measured_boundaries(asset_id: str):
+        made = analysis.as_measured(asset_id) if assets.asset(asset_id) else None
+        return boundaries(made) if made else None
+
+    def coverage_faults_everywhere() -> dict:
+        found = {a["asset_id"]: analysis.faults(a["asset_id"]) for a in assets.assets() if a["kind"] == "video"}
+        return {asset_id: faults for asset_id, faults in found.items() if faults}
+    system.evaluation = Evaluation(db_path, index, threshold=match_threshold, measured=measured_boundaries, faults=coverage_faults_everywhere)
     for publisher in publishers or []:
         adapters.register(publisher)
     system.publishing = Publishing(db_path, projects, adapters, distribution.package, notify=lambda kind, reason: orch.notify(kind, "", reason=reason))

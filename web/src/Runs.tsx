@@ -1,7 +1,7 @@
 import { t as tr, tv, locale } from "./i18n";
 import { useState } from "react";
 import { call, post, REASONS, stageName, STATUS_NAMES, usePoll, type Asset, type Project, type Run } from "./api";
-import { Button, Empty, Icon, Page, StageRail, Tag } from "./parts";
+import { Button, Empty, Icon, OpsSide, Page, StageRail, Tag, Readout } from "./parts";
 
 const PIPELINES: Record<string, string> = { "library.ingest": tr("Nhập footage"), "library.ingest_image": tr("Nhập ảnh"), "library.ingest_audio": tr("Nhập nhạc"), "sourcing.generate": tr("Sinh hình bằng AI"), "library.understand": tr("Xem và mô tả video"), "sourcing.match": tr("Chọn clip cho kịch bản"), "edit.render": tr("Dựng video") };
 const ICONS: Record<string, string> = { "library.ingest": "film", "library.ingest_image": "image", "library.ingest_audio": "music", "sourcing.generate": "spark", "library.understand": "eye", "sourcing.match": "sparkles", "edit.render": "scissors" };
@@ -57,20 +57,14 @@ export default function Runs() {
   const kind = (r: Run): Filter => (["queued", "running"].includes(r.status) ? "live" : ["blocked", "failed", "waiting_review"].includes(r.status) || r.stalled ? "attention" : "done");
   const count = (f: Filter) => (f === "all" ? all.length : all.filter((r) => kind(r) === f).length);
   const shown = all.filter((r) => filter === "all" || kind(r) === filter);
-  const tiles: [Filter, string, string, string][] = [["all", tr("Tất cả"), "layers", "text-ink"], ["live", tr("Đang chạy"), "pulse", "text-ai"], ["attention", tr("Cần bạn"), "alert", "text-cue"], ["done", tr("Đã xong"), "check", "text-proof"]];
+  const tiles: [Filter, string, string, "ink" | "ai" | "cue" | "proof"][] = [["all", tr("Tất cả"), "layers", "ink"], ["live", tr("Đang chạy"), "pulse", "ai"], ["attention", tr("Cần bạn"), "alert", "cue"], ["done", tr("Đã xong"), "check", "proof"]];
   return (
-    <Page eyebrow={tr("Vận hành")} title={tr("Tiến trình")} note={tr("Mọi lần chạy và từng bước của nó. Bấm vào một dòng để xem từng lần thử, thời gian và lỗi.")}>
+    <Page side={<OpsSide />} eyebrow={tr("Vận hành")} title={tr("Tiến trình")} note={tr("Mọi lần chạy và từng bước của nó. Bấm vào một dòng để xem từng lần thử, thời gian và lỗi.")}>
       {error && <p className="mb-4 text-tally">{tv`Không tải được danh sách: ${error}`}</p>}
       {runs && runs.length === 0 && <Empty icon="pulse" title={tr("Chưa có việc nào chạy")}>{tr("Mỗi khi bạn thêm footage hoặc bắt đầu một video, các bước xử lý sẽ hiện ở đây.")}</Empty>}
       {all.length > 0 && (
         <div className="mb-5 grid grid-cols-2 gap-3 md:grid-cols-4" role="radiogroup" aria-label={tr("Lọc tiến trình")}>
-          {tiles.map(([f, name, icon, color]) => (
-            <button key={f} type="button" role="radio" aria-checked={filter === f} onClick={() => setFilter(f)}
-                    className={`panel flex items-center gap-3 p-3.5 text-left transition-colors ${filter === f ? "!border-accent/60 bg-accent/[0.05]" : "hover:border-edge"}`}>
-              <span className={`grid h-9 w-9 place-items-center rounded-lg bg-raised ${color}`}><Icon name={icon} size={17} /></span>
-              <span><span className="mono block text-xl font-semibold leading-none">{count(f)}</span><span className="text-[12.5px] text-mute">{name}</span></span>
-            </button>
-          ))}
+          {tiles.map(([f, name, icon, color]) => <Readout key={f} label={name} value={count(f)} icon={icon} tone={color} on={filter === f} onClick={() => setFilter(f)} />)}
         </div>
       )}
       <ul className="grid gap-2">
@@ -85,8 +79,8 @@ export default function Runs() {
                 <button type="button" aria-expanded={open === r.run_id} onClick={() => setOpen(open === r.run_id ? null : r.run_id)} className="flex min-w-0 items-center gap-3 text-left">
                   <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${t === "ai" ? "bg-ai/12 text-ai" : t === "cue" ? "bg-cue/12 text-cue" : t === "tally" ? "bg-tally/12 text-tally" : "bg-raised text-mute"}`}><Icon name={ICONS[r.pipeline] ?? "pulse"} size={17} /></span>
                   <span className="min-w-0">
-                    <span className="block truncate font-medium">{PIPELINES[r.pipeline] ?? r.pipeline}<span className="font-normal text-mute"> · {names.get(r.subject_ref ?? "") ?? (r.subject_ref?.startsWith("scr_") ? tr("phiên bản kịch bản cũ") : r.subject_ref)}</span></span>
-                    <span className="block truncate text-[12.5px] text-mute">{now ? <span className="text-ai">{tv`Đang ở bước ${stageName(now.stage_key, r.pipeline)}`}</span> : tv`${done}/${r.stages.length} bước`} · <span className="mono">{new Date(r.created_at * 1000).toLocaleString(locale, { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" })}</span></span>
+                    <span className="block truncate font-medium">{PIPELINES[r.pipeline] ?? r.pipeline}<span className="ml-2 font-normal text-mute">{names.get(r.subject_ref ?? "") ?? (r.subject_ref?.startsWith("scr_") ? tr("phiên bản kịch bản cũ") : r.subject_ref)}</span></span>
+                    <span className="block truncate text-[12.5px] text-mute">{now ? <span className="text-ai">{tv`Đang ở bước ${stageName(now.stage_key, r.pipeline)}`}</span> : tv`${done}/${r.stages.length} bước`}<span className="mono ml-3">{new Date(r.created_at * 1000).toLocaleString(locale, { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" })}</span></span>
                   </span>
                   <Icon name="down" size={14} className={`ml-auto shrink-0 text-faint transition-transform md:hidden ${open === r.run_id ? "rotate-180" : ""}`} />
                 </button>

@@ -1,5 +1,6 @@
 import { t as tr, tv, lang, setLang, type Lang } from "./i18n";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { STAGE_NAMES, STATUS_NAMES, timecode, type Asset, type Shot, type Stage } from "./api";
 
 /** The time bar of a clip: what can be used, what is black, what is frozen. */
@@ -66,7 +67,7 @@ export function StatusText({ status }: { status: string }) {
 type Kind = "plain" | "primary" | "danger" | "quiet" | "ai";
 export function Button({ children, onClick, kind = "plain", disabled, busy, size = "md", title, type = "button" }: { children: React.ReactNode; onClick?: () => void; kind?: Kind; disabled?: boolean; busy?: boolean; size?: "sm" | "md"; title?: string; type?: "button" | "submit" }) {
   const look = kind === "primary" ? "brand-button"
-    : kind === "danger" ? "border border-tally/50 bg-tally/10 text-tally hover:bg-tally hover:text-white disabled:opacity-40"
+    : kind === "danger" ? "border border-tally/50 bg-tally/10 text-tally hover:bg-tally hover:text-ink disabled:opacity-40"
     : kind === "quiet" ? "text-mute hover:bg-raised hover:text-ink disabled:opacity-40"
     : kind === "ai" ? "border border-ai/35 bg-ai/10 text-ai hover:bg-ai/20 disabled:opacity-40"
     : "border border-edge bg-raised text-ink hover:border-[#454c5c] hover:bg-overlay disabled:border-line disabled:text-faint disabled:hover:bg-raised";
@@ -74,6 +75,16 @@ export function Button({ children, onClick, kind = "plain", disabled, busy, size
 }
 
 const ICONS: Record<string, string> = {
+  screen: "M3.5 4.5h13a.5.5 0 0 1 .5.5v8.5a.5.5 0 0 1-.5.5h-13a.5.5 0 0 1-.5-.5V5a.5.5 0 0 1 .5-.5ZM7 17h6M10 14v3M8.5 7.3v4.4L12 9.5 8.5 7.3Z",
+  pause: "M7 4.5v11M13 4.5v11",
+  skipback: "M5 4.5v11M15 4.5 8 10l7 5.5v-11Z",
+  skipfwd: "M15 4.5v11M5 4.5 12 10l-7 5.5v-11Z",
+  loop: "M4 9.5V8.5a3 3 0 0 1 3-3h8.5m0 0-2-2m2 2-2 2M16 10.5v1a3 3 0 0 1-3 3H4.5m0 0 2 2m-2-2 2-2",
+  volume: "M3.5 8h2.8l4.2-3.5v11L6.3 12H3.5a.5.5 0 0 1-.5-.5v-3a.5.5 0 0 1 .5-.5Zm9.5-.8a3.6 3.6 0 0 1 0 5.6m2-7.6a6.4 6.4 0 0 1 0 9.6",
+  mute: "M3.5 8h2.8l4.2-3.5v11L6.3 12H3.5a.5.5 0 0 1-.5-.5v-3a.5.5 0 0 1 .5-.5Zm10 .2 3.4 3.6m0-3.6-3.4 3.6",
+  expand: "M3.5 7.5v-4h4m5 0h4v4m0 5v4h-4m-5 0h-4v-4",
+  copy: "M7 7h9v9.5H7zM4 13V3.5h9",
+  comment: "M4 4.5h12a.5.5 0 0 1 .5.5v8a.5.5 0 0 1-.5.5H9.5L6 16.5v-3H4a.5.5 0 0 1-.5-.5V5a.5.5 0 0 1 .5-.5Z",
   calendar: "M4 5.5h12a.8.8 0 0 1 .8.8v9.4a.8.8 0 0 1-.8.8H4a.8.8 0 0 1-.8-.8V6.3a.8.8 0 0 1 .8-.8Zm-.8 3.6h13.6M6.8 3.5v3.2m6.4-3.2v3.2",
   radar: "M10 10 15 5.2M10 3.2a6.8 6.8 0 1 0 6.8 6.8M10 6.4A3.6 3.6 0 1 0 13.6 10",
   home: "M3.5 9 10 3.8 16.5 9v6.7a.8.8 0 0 1-.8.8H12.3v-4.3H7.7v4.3H4.3a.8.8 0 0 1-.8-.8V9Z",
@@ -95,6 +106,7 @@ const ICONS: Record<string, string> = {
   list: "M7 5.5h9.5M7 10h9.5M7 14.5h9.5M3.5 5.5h.01M3.5 10h.01M3.5 14.5h.01",
   play: "M6.5 4.5v11l9-5.5-9-5.5Z",
   check: "m4.5 10.5 3.5 3.5 7.5-8",
+  info: "M10 9v5m0-7.6v.1M17.5 10a7.5 7.5 0 1 1-15 0 7.5 7.5 0 0 1 15 0Z",
   alert: "M10 7.5v3.5m0 2.6v.1M8.7 3.6 2.9 14a1.5 1.5 0 0 0 1.3 2.2h11.6a1.5 1.5 0 0 0 1.3-2.2L11.3 3.6a1.5 1.5 0 0 0-2.6 0Z",
   x: "m5.5 5.5 9 9m0-9-9 9",
   folder: "M3 6a1 1 0 0 1 1-1h3.6l1.6 1.8H16a1 1 0 0 1 1 1V15a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6Z",
@@ -131,25 +143,113 @@ export function Icon({ name, size = 16, className = "" }: { name: keyof typeof I
   return <svg width={size} height={size} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={`shrink-0 ${className}`}><path d={ICONS[name] ?? ""} /></svg>;
 }
 
-/** Every screen: a header with its name, what it is for and its main actions; the content scrolls beneath it. */
-export function Page({ title, eyebrow, note, actions, back, tabs, children, wide = false, flush = false }: { title: React.ReactNode; eyebrow?: React.ReactNode; note?: React.ReactNode; actions?: React.ReactNode;
-  back?: { label: string; onClick: () => void }; tabs?: React.ReactNode; children: React.ReactNode; wide?: boolean; flush?: boolean }) {
+/** The operations section's side menu: the four screens that look after the machine. The open one may hang its own places beneath. */
+export function OpsSide({ children }: { children?: React.ReactNode }) {
+  const path = window.location.pathname;
+  const items: [string, string, string][] = [["/phong-may", tr("Phòng máy"), "gauge"], ["/tien-trinh", tr("Tiến trình"), "pulse"], ["/chi-phi", tr("Chi phí"), "coins"], ["/thong-bao", tr("Thông báo"), "bell"], ["/he-thong", tr("Hệ thống"), "sliders"]];
   return (
-    <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <header id="page-top" className={`shrink-0 px-4 pt-5 md:px-8 ${tabs ? "" : "pb-5"}`}>
-        <div className={`flex flex-wrap items-end gap-x-6 gap-y-3 ${wide ? "max-w-[1800px]" : "max-w-[1440px]"}`}>
-          <div className="min-w-0 grow basis-72">
-            {back && <button type="button" onClick={back.onClick} className="-ml-1 mb-1.5 flex items-center gap-1 text-[12.5px] text-mute transition-colors hover:text-ink"><Icon name="back" size={14} />{back.label}</button>}
-            {eyebrow && !back && <p className="eyebrow mb-1">{eyebrow}</p>}
-            <h1 className="truncate text-[22px] font-semibold leading-tight md:text-2xl">{title}</h1>
-            {note && <div className="mt-1 truncate text-[13px] text-mute">{note}</div>}
-          </div>
-          {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
-        </div>
-        {tabs && <div className={`mt-4 border-b border-line ${wide ? "max-w-[1800px]" : "max-w-[1440px]"}`}>{tabs}</div>}
-      </header>
-      <div className={`min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden ${flush ? "" : "px-4 pb-10 pt-5 md:px-8"}`}><div className={`rise min-w-0 ${flush ? "h-full" : wide ? "max-w-[1800px]" : "max-w-[1440px]"}`}>{children}</div></div>
-    </section>
+    <SideGroup label={tr("Vận hành")}>
+      {items.map(([to, label, icon]) => { const on = path.startsWith(to); return <SideLink key={to} label={label} icon={icon} on={on && !children} onClick={() => goTo(to)}>{on ? children : null}</SideLink>; })}
+    </SideGroup>
+  );
+}
+
+const scrolled = new Map<string, number>();
+
+/* Where the screens move to. The shell hands its own router in, so a side menu built in a page can navigate like the top bar does. */
+let navigate: (to: string) => void = (to) => { window.location.assign(to); };
+export function setNavigator(f: (to: string) => void) { navigate = f; }
+export const goTo = (to: string) => navigate(to);
+
+/* The side menu can be folded away with "[" or its button; the choice is remembered on this machine. */
+let sideHidden = (() => { try { return localStorage.getItem("nx.side") === "1"; } catch { return false; } })();
+const sideListeners = new Set<() => void>();
+export function toggleSide() { sideHidden = !sideHidden; try { localStorage.setItem("nx.side", sideHidden ? "1" : "0"); } catch { /* private window */ } sideListeners.forEach((l) => l()); }
+function useSideHidden() {
+  const [, bump] = useState(0);
+  useEffect(() => { const l = () => bump((n) => n + 1); sideListeners.add(l); return () => { sideListeners.delete(l); }; }, []);
+  return sideHidden;
+}
+
+/** A heading inside the side menu, with an optional count or action at its end. */
+export function SideGroup({ label, end, children }: { label?: React.ReactNode; end?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <div className="mb-5 last:mb-0">
+      {label && <p className="flex items-center justify-between gap-2 px-2.5 pb-1.5 text-[12px] text-faint">{label}{end}</p>}
+      <div className="grid gap-0.5">{children}</div>
+    </div>
+  );
+}
+
+/** One place in the side menu. The current one is lit; a count sits at the end; places within it hang beneath on a thread. */
+export function SideLink({ label, icon, lead, on, onClick, count, tone, small, title, children }: { label: React.ReactNode; icon?: string; lead?: React.ReactNode; on?: boolean; onClick: () => void;
+  count?: number; tone?: "cue" | "ai" | "tally" | "proof"; small?: boolean; title?: string; children?: React.ReactNode }) {
+  const badge = tone === "cue" ? "bg-cue/15 text-cue" : tone === "ai" ? "bg-ai/15 text-ai" : tone === "tally" ? "bg-tally/15 text-tally" : tone === "proof" ? "bg-proof/15 text-proof" : "bg-white/[0.06] text-mute";
+  return (
+    <>
+      <button type="button" onClick={onClick} aria-current={on ? "page" : undefined} title={title}
+              className={`flex w-full min-w-0 items-center gap-2.5 rounded-lg px-2.5 text-left transition-colors ${small ? "h-8 text-[13px]" : "h-9 text-[13.5px]"} ${on ? "bg-accent/10 font-medium text-accent shadow-[inset_0_0_0_1px_rgba(48,175,255,0.18)]" : "text-mute hover:bg-raised/60 hover:text-ink"}`}>
+        {lead ?? (icon && <Icon name={icon} size={small ? 15 : 16} />)}<span className="min-w-0 flex-1 truncate">{label}</span>
+        {count != null && count > 0 && <span className={`mono shrink-0 rounded-md px-1.5 text-[11px] font-medium leading-[18px] ${badge}`}>{count}</span>}
+      </button>
+      {children && <div className="mb-1 ml-[18px] grid gap-0.5 border-l border-line pl-2">{children}</div>}
+    </>
+  );
+}
+
+/** Every screen: the menu of its section down the side (when it has one), a slim bar with its facts and actions, and the content
+ *  scrolling beneath. The section itself is named in the top bar, so the screen does not repeat its own name unless it is a
+ *  single item (a project, a render) reached from a list. */
+export function Page({ title, note, actions, back, tabs, side, children, wide = false, full = false, flush = false }: { title: React.ReactNode; eyebrow?: React.ReactNode; note?: React.ReactNode; actions?: React.ReactNode;
+  back?: { label: string; onClick: () => void }; tabs?: React.ReactNode; side?: React.ReactNode; children: React.ReactNode; wide?: boolean; full?: boolean; flush?: boolean }) {
+  // How wide the content may run: a reading measure, a wide one for work surfaces, or the whole window for the overview.
+  const measure = full ? "max-w-none" : wide ? "max-w-[1600px]" : "max-w-[1240px]";
+  // Coming back to a screen finds it where it was left.
+  const scroller = useRef<HTMLDivElement>(null);
+  const place = window.location.pathname + window.location.search;
+  useEffect(() => {
+    const el = scroller.current, y = scrolled.get(place);
+    if (!el || !y) return;
+    // Content often arrives a moment later, so wait until the screen is tall enough to land where it was.
+    let n = 0, timer = 0;
+    const land = () => { if (el.scrollHeight - el.clientHeight >= y || n++ > 30) el.scrollTop = y; else timer = window.setTimeout(land, 50); };
+    land();
+    return () => window.clearTimeout(timer);
+  }, [place]);
+  const hidden = useSideHidden();
+  const [drawer, setDrawer] = useState(false);
+  useEffect(() => { setDrawer(false); }, [place]);
+  useEffect(() => { if (!drawer) return; const key = (e: KeyboardEvent) => { if (e.key === "Escape") setDrawer(false); }; window.addEventListener("keydown", key); return () => window.removeEventListener("keydown", key); }, [drawer]);
+  // A sentence about what the screen is for waits behind an (i); short facts stay in view.
+  const explain = typeof note === "string" && note.length > 40;
+  const facts = note && !explain ? note : null;
+  // A bar with nothing but the (i) is not worth its height: then the screen starts straight with its content.
+  const bar = !!(back || facts || actions);
+  return (
+    <div className="flex min-h-0 min-w-0 flex-1">
+      {side && !hidden && <aside aria-label={tr("Menu của mục này")} className="hidden w-[248px] shrink-0 overflow-y-auto overflow-x-hidden border-r border-line bg-surface/40 px-3 py-4 lg:block">{side}</aside>}
+      {side && drawer && createPortal(
+        <div className="fixed inset-0 z-50 lg:hidden" onClick={() => setDrawer(false)}><div className="scrim absolute inset-0" />
+          <aside aria-label={tr("Menu của mục này")} className="drawer relative h-full w-[288px] max-w-[85vw] overflow-y-auto border-r border-line bg-surface px-3 py-4" onClick={(e) => e.stopPropagation()}>{side}</aside></div>, document.body)}
+      <section className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <h1 className="sr-only">{title}</h1>
+        {(bar || side) && (
+          <header className={`h-12 shrink-0 items-center gap-3 border-b border-line px-4 md:px-8 ${bar ? (side || back ? "flex" : "hidden md:flex") : "flex lg:hidden"}`}>
+            {side && <button type="button" onClick={() => setDrawer(true)} className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-line px-2.5 text-[12.5px] text-mute hover:bg-raised hover:text-ink lg:hidden" aria-label={tr("Mở menu của mục này")}><Icon name="sliders" size={14} />{tr("Menu mục")}</button>}
+            {side && <button type="button" onClick={toggleSide} className="hidden h-8 w-8 shrink-0 place-items-center rounded-md text-faint hover:bg-raised hover:text-ink lg:grid" title={hidden ? tr("Hiện menu bên (phím [)") : tr("Ẩn menu bên (phím [)")} aria-label={hidden ? tr("Hiện menu bên (phím [)") : tr("Ẩn menu bên (phím [)")}><Icon name="collapse" size={16} className={hidden ? "rotate-180" : ""} /></button>}
+            {back && <button type="button" onClick={back.onClick} title={back.label} className="flex shrink-0 items-center gap-1 rounded-md text-[13px] text-mute transition-colors hover:text-ink"><Icon name="back" size={16} /><span className="hidden sm:inline">{back.label}</span></button>}
+            {back && <><span className="hidden text-edge sm:inline">/</span><span className="display min-w-0 truncate text-[16px] leading-tight sm:max-w-[45%] sm:shrink-0">{title}</span></>}
+            {explain && <Hint text={note as string}><span className="sr-only">{title}</span></Hint>}
+            {facts && <div className="hidden min-w-0 items-center overflow-hidden whitespace-nowrap text-[13px] text-faint md:flex [&>*]:flex-nowrap">{facts}</div>}
+            {actions && <div className="ml-auto hidden shrink-0 items-center gap-2 md:flex">{actions}</div>}
+          </header>
+        )}
+        {tabs && <div className="shrink-0 border-b border-line px-4 md:px-8"><div className={`mx-auto ${measure}`}>{tabs}</div></div>}
+        <div ref={scroller} onScroll={(e) => { scrolled.set(place, e.currentTarget.scrollTop); }} className={`min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden ${flush ? "" : "px-4 pb-12 pt-5 md:px-8 md:pt-6"}`}><div className={`min-w-0 ${flush ? "h-full" : `mx-auto ${measure}`}`}>
+          {!flush && (facts || actions) && <div className="mb-5 flex flex-wrap items-center gap-x-4 gap-y-3 md:hidden">{facts && <div className="min-w-0 text-[13px] text-mute">{facts}</div>}{actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}</div>}
+          {children}</div></div>
+      </section>
+    </div>
   );
 }
 
@@ -169,14 +269,35 @@ export function Tabs<T extends string>({ items, value, onChange }: { items: { ke
 
 /** A titled block of a screen. */
 export function Section({ title, icon, note, actions, children }: { title: string; icon?: string; note?: React.ReactNode; actions?: React.ReactNode; children: React.ReactNode }) {
+  // A sentence explaining what the section is for is read once, so it waits behind the title; short facts (counts, versions) stay in view.
+  const explain = typeof note === "string" && note.length > 40;
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-end justify-between gap-x-6 gap-y-1.5">
-        <div className="min-w-0"><h2 className="flex items-center gap-2 text-[15px] font-semibold">{icon && <Icon name={icon} size={16} className="text-mute" />}{title}</h2>{note && <div className="mt-0.5 max-w-2xl text-[13px] text-mute">{note}</div>}</div>
+        <div className="min-w-0">
+          {explain ? (
+            <Hint text={note as string}><h2 className="flex cursor-default items-center gap-2 text-[15px] font-semibold">{icon && <Icon name={icon} size={16} className="text-mute" />}{title}</h2></Hint>
+          ) : (
+            <><h2 className="flex items-center gap-2 text-[15px] font-semibold">{icon && <Icon name={icon} size={16} className="text-accent" />}{title}</h2>{note && <div className="mt-0.5 max-w-2xl text-[13px] text-mute">{note}</div>}</>
+          )}
+        </div>
         {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
       </div>
       {children}
     </div>
+  );
+}
+
+/** Guidance that appears when the pointer rests on its label (or on tap / keyboard focus), instead of sitting on the page. */
+export function Hint({ text, children }: { text: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <span className="relative inline-flex items-center gap-1.5" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
+      {children}
+      <button type="button" aria-label={tr("Giải thích")} aria-expanded={open} onClick={() => setOpen((o) => !o)} onFocus={() => setOpen(true)} onBlur={() => setOpen(false)}
+              className={`grid h-5 w-5 place-items-center rounded-full transition-colors ${open ? "text-ink" : "text-faint hover:text-ink"}`}><Icon name="info" size={14} /></button>
+      {open && <span role="tooltip" className="rise absolute left-0 top-full z-30 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-lg border border-edge bg-overlay px-3 py-2 text-[12.5px] font-normal leading-relaxed text-mute shadow-xl shadow-black/40">{text}</span>}
+    </span>
   );
 }
 
@@ -216,21 +337,33 @@ export function Steps({ step, tone }: { step: number; tone: string }) {
 
 /** A key figure: a label, a big number and one line of context. */
 export function Stat({ label, value, sub, icon, tone, children }: { label: string; value: React.ReactNode; sub?: React.ReactNode; icon?: string; tone?: "cue" | "ai" | "accent" | "proof"; children?: React.ReactNode }) {
-  const ring = { cue: "text-cue bg-cue/10", ai: "text-ai bg-ai/10", accent: "text-accent bg-accent/12", proof: "text-proof bg-proof/10" }[tone ?? "accent"];
+  const c = { cue: "text-cue", ai: "text-ai", accent: "text-accent", proof: "text-proof" }[tone ?? "accent"];
   return (
-    <div className="panel flex min-w-0 flex-col gap-3 p-4">
-      <div className="flex items-center justify-between gap-2"><span className="eyebrow truncate">{label}</span>{icon && <span className={`grid h-7 w-7 place-items-center rounded-lg ${ring}`}><Icon name={icon} size={15} /></span>}</div>
-      <div className="mono truncate text-[26px] font-semibold leading-none tracking-tight">{value}</div>
-      {sub && <div className="truncate text-[12.5px] text-mute">{sub}</div>}
-      {children}
+    <div className="panel flex min-w-0 flex-col p-4">
+      <div className="flex items-start justify-between gap-2"><span className="truncate text-[13px] text-mute">{label}</span>{icon && <Icon name={icon} size={17} className={`shrink-0 ${c}`} />}</div>
+      <div className="mono mt-2 truncate text-[26px] font-semibold leading-none tracking-tight">{value}</div>
+      {sub && <div className="mt-2 truncate text-[12px] text-faint">{sub}</div>}
+      {children && <div className="mt-3">{children}</div>}
     </div>
+  );
+}
+
+/** A reading that is also a filter: its count large, its name small, its lamp colour in the corner; the chosen one stays lit. */
+export function Readout({ label, value, icon, tone = "accent", on, onClick }: { label: string; value: React.ReactNode; icon: string; tone?: "cue" | "ai" | "accent" | "proof" | "tally" | "ink"; on?: boolean; onClick: () => void }) {
+  const c = { cue: "text-cue", ai: "text-ai", accent: "text-accent", proof: "text-proof", tally: "text-tally", ink: "text-ink" }[tone];
+  return (
+    <button type="button" role="radio" aria-checked={!!on} onClick={onClick} className="tile flex min-w-0 flex-col p-3.5 text-left">
+      <span className="flex items-start justify-between gap-2"><span className="truncate text-[13px] text-mute">{label}</span><Icon name={icon} size={16} className={`shrink-0 ${c}`} /></span>
+      <span className="mono mt-2 text-[24px] font-semibold leading-none tracking-tight">{value}</span>
+    </button>
   );
 }
 
 /** A thin bar of a share. */
 export function Meter({ share, tone = "accent" }: { share: number; tone?: "accent" | "cue" | "proof" | "ai" }) {
-  const c = { accent: "bg-accent", cue: "bg-cue", proof: "bg-proof", ai: "bg-ai" }[tone];
-  return <div className="h-1.5 overflow-hidden rounded-full bg-overlay"><div className={`h-full rounded-full ${c}`} style={{ width: `${Math.max(0, Math.min(1, share)) * 100}%` }} /></div>;
+  // Each bar runs from its colour into a neighbouring one, as the gauges on the overview do.
+  const c = { accent: "from-accent to-[#3b82f6]", cue: "from-cue to-[#f97316]", proof: "from-proof to-[#3b82f6]", ai: "from-ai to-[#f43f5e]" }[tone];
+  return <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.06]"><div className={`h-full rounded-full bg-gradient-to-r ${c}`} style={{ width: `${Math.max(0, Math.min(1, share)) * 100}%` }} /></div>;
 }
 
 /** What a screen shows when it has nothing yet. */

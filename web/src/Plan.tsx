@@ -1,7 +1,7 @@
 import { t as tr, tv, locale } from "./i18n";
 import { useMemo, useState } from "react";
 import { call, post, timecode, usePoll, type Campaign, type Channel, type CalendarRow, type Publication, type Publishing, type Radar, type RadarSubject } from "./api";
-import { Button, Empty, Icon, Page, Section, Tabs, Tag, ask, toast } from "./parts";
+import { Button, Empty, Icon, Page, Section, SideGroup, SideLink, Tabs, Tag, ask, toast } from "./parts";
 
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const WEEKDAYS = ["Th 2", "Th 3", "Th 4", "Th 5", "Th 6", "Th 7", "CN"];
@@ -53,8 +53,8 @@ function Calendar() {
                 const day = iso(d), items = byDay.get(day) ?? [], today = day === data?.today;
                 return (
                   <div key={day} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { const id = e.dataTransfer.getData("text/plain"); if (id) plan(id, day); }}
-                       className={`min-h-[96px] border-r border-line p-1.5 last:border-r-0 ${d.getMonth() === at.m ? "" : "bg-raised/30 text-faint"}`}>
-                    <div className={`mono mb-1 inline-grid h-6 min-w-6 place-items-center rounded-md px-1 text-[12px] ${today ? "bg-accent text-white" : ""}`}>{d.getDate()}</div>
+                       className={`min-h-[96px] border-r border-line p-1.5 last:border-r-0 ${today ? "bg-accent/[0.06] shadow-[inset_0_0_0_1px_rgba(48,175,255,0.35)]" : d.getMonth() === at.m ? "" : "bg-raised/30 text-faint"}`}>
+                    <div className={`mono mb-1 inline-grid h-6 min-w-6 place-items-center rounded-md px-1 text-[12px] ${today ? "bg-accent text-[#03111f] font-semibold" : ""}`}>{d.getDate()}</div>
                     <div className="grid gap-1">
                       {items.map((p) => (
                         <button key={p.project_id} type="button" draggable onDragStart={(e) => e.dataTransfer.setData("text/plain", p.project_id)} onClick={() => open(`/du-an/${p.project_id}`)} title={`${p.title} — ${p.stage}`}
@@ -279,10 +279,12 @@ function Results() {
 
 export default function Plan() {
   const asked = new URLSearchParams(window.location.search).get("xem");
+  const PLAN_TABS: { key: "calendar" | "radar" | "results"; label: string; icon: string }[] = [{ key: "calendar", label: tr("Lịch biên tập"), icon: "calendar" }, { key: "radar", label: tr("Radar cơ hội"), icon: "radar" }, { key: "results", label: tr("Kết quả"), icon: "pulse" }];
   const [tab, setTab] = useState<"calendar" | "radar" | "results">(() => (asked === "radar" ? "radar" : asked === "ket-qua" ? "results" : "calendar"));
   return (
     <Page eyebrow={tr("Sản xuất")} title={tr("Kế hoạch")} note={tr("Lịch đăng của các video đang làm, những gì kho footage còn làm được, và kết quả của các video đã đăng.")}
-          tabs={<Tabs value={tab} onChange={setTab} items={[{ key: "calendar", label: tr("Lịch biên tập"), icon: "calendar" }, { key: "radar", label: tr("Radar cơ hội"), icon: "radar" }, { key: "results", label: tr("Kết quả"), icon: "pulse" }]} />}>
+          side={<SideGroup label={tr("Kế hoạch")}>{PLAN_TABS.map((t) => <SideLink key={t.key} label={t.label} icon={t.icon} on={tab === t.key} onClick={() => setTab(t.key)} />)}</SideGroup>}
+          tabs={<div className="lg:hidden"><Tabs value={tab} onChange={setTab} items={PLAN_TABS} /></div>}>
       {tab === "calendar" ? <Calendar /> : tab === "radar" ? <RadarView /> : <Results />}
     </Page>
   );

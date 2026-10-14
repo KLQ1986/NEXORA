@@ -69,7 +69,7 @@ def ffmpeg_capabilities(binary: str = "ffmpeg") -> dict:
     enc = {line.split()[1] for line in encoders.splitlines() if len(line.split()) > 2}
     return {
         "binary": binary,
-        "filters": {name: name in have for name in ("blackdetect", "scale", "fps", "zscale", "tonemap", "subtitles", "drawtext", "loudnorm")},
+        "filters": {name: name in have for name in ("blackdetect", "scale", "fps", "zscale", "tonemap", "subtitles", "drawtext", "loudnorm", "blurdetect")},
         "encoders": {name: name in enc for name in ("h264_videotoolbox", "hevc_videotoolbox", "libx264")},
     }
 
@@ -78,6 +78,7 @@ class FFmpegAdapter(Adapter):
     def __init__(self, binary: str = ""):
         self._binary = find_ffmpeg(binary)
         self._can_tonemap: bool | None = None
+        self._can_blurdetect: bool | None = None
 
     def environment(self) -> dict:
         return ffmpeg_capabilities(self._binary)
@@ -95,7 +96,7 @@ class FFmpegAdapter(Adapter):
         return [HDR_TO_SDR]
 
     def describe(self) -> Capability:
-        return Capability(name="ffmpeg", operations=("blackdetect", "freezedetect", "proxy", "thumbnail", "frames", "segment", "concat", "loudness", "envelope", "enhance", "silencedetect", "scenecuts"), runs="local", supports_cancel=True)
+        return Capability(name="ffmpeg", operations=("blackdetect", "freezedetect", "proxy", "thumbnail", "frames", "segment", "concat", "loudness", "envelope", "enhance", "silencedetect", "scenecuts", "analysis", "unusable"), runs="local", supports_cancel=True)
 
     def submit(self, request: Request) -> Result:
         timeout = request.deadline_seconds or 3600
@@ -120,6 +121,22 @@ class FFmpegAdapter(Adapter):
         ranges = [[round(float(a), 3), round(float(b), 3)] for a, b in _BLACK.findall(done.stderr)]
         return Result(outputs={"black_ranges": ranges})
 
+    def _unusable(self, src: Path, params: dict, timeout: float) -> Result:
+        """Black stretches and frozen stretches in one pass over the file. Long 4K footage takes minutes to decode, so the two
+        are looked for together instead of one after the other."""
+        done = self._run(["-i", str(src), "-vf", f"blackdetect=d={params.get('min_black', 0.5)}:pix_th=0.10,freezedetect=n=-60dB:d={params.get('min_frozen', 2.0)}",
+                          "-an", "-f", "null", "-"], timeout, "unusable")
+        black = [[round(float(a), 3), round(float(b), 3)] for a, b in _BLACK.findall(done.stderr)]
+        frozen, start = [], None
+        for kind, value in _FREEZE.findall(done.stderr):
+            if kind == "start":
+                start = float(value)
+            elif start is not None:
+                frozen.append([round(start, 3), round(float(value), 3)]); start = None
+        if start is not None:                                   # frozen until the end of the file
+            frozen.append([round(start, 3), None])
+        return Result(outputs={"black_ranges": black, "frozen_ranges": frozen})
+
     def _scenecuts(self, src: Path, params: dict, timeout: float) -> Result:
         """The instants at which the picture changes outright: one shot ends and another begins. Measured on a small copy of
         each frame, which is enough to see a cut and far quicker."""
@@ -127,6 +144,32 @@ class FFmpegAdapter(Adapter):
         done = self._run(["-i", str(src), "-vf", f"{','.join([*self._sdr(params), 'scale=320:-2'])},select='gt(scene,{threshold})',showinfo", "-an", "-f", "null", "-"], timeout, "scenecuts")
         times = [round(float(t), 2) for t in __import__("re").findall(r"pts_time:([\d.]+)", done.stderr)]
         return Result(outputs={"cuts": sorted(t for t in dict.fromkeys(times) if t > 0.2)})
+
+    def _analysis(self, src: Path, params: dict, timeout: float) -> Result:
+        """Small copies of the frames for measuring, written raw to `out`: every frame at `fps`, `width` by `height`, three bytes a
+        pixel. In the same pass, how blurred the full-size picture is, twice a second, where this build can measure it."""
+        out, fps = Path(params["out"]), float(params.get("fps", 25.0))
+        width, height, blur_rate = int(params.get("width", 96)), int(params.get("height", 54)), float(params.get("blur_rate", 2.0))
+        out.parent.mkdir(parents=True, exist_ok=True)
+        notes = out.with_suffix(".blur.txt")
+        small = f"fps={fps:g},scale={width}:{height}:flags=area,format=rgb24"
+        head = ",".join([*self._sdr(params), "split=2"]) if self._has_blurdetect() else ",".join([*self._sdr(params), "null"])
+        if self._has_blurdetect():
+            notes.unlink(missing_ok=True)
+            graph = f"[0:v]{head}[a][b];[a]{small}[small];[b]fps={blur_rate:g},blurdetect=block_pct=80,metadata=print:file='{notes}'[soft]"
+            maps = ["-map", "[small]", "-f", "rawvideo", str(out), "-map", "[soft]", "-f", "null", "-"]
+        else:
+            graph, maps = f"[0:v]{head},{small}[small]", ["-map", "[small]", "-f", "rawvideo", str(out)]
+        self._run(["-y", "-i", str(src), "-filter_complex", graph, "-an", *maps], timeout, "analysis")
+        blur = [round(float(v), 3) for v in __import__("re").findall(r"lavfi\.blur=([\d.]+)", notes.read_text())] if notes.is_file() else []
+        notes.unlink(missing_ok=True)
+        return Result(outputs={"fps": fps, "width": width, "height": height, "frames": out.stat().st_size // (width * height * 3),
+                               "blur": blur, "blur_rate": blur_rate if blur else 0.0}, files=(str(out),))
+
+    def _has_blurdetect(self) -> bool:
+        if self._can_blurdetect is None:
+            self._can_blurdetect = bool(ffmpeg_capabilities(self._binary)["filters"].get("blurdetect"))
+        return self._can_blurdetect
 
     def _freezedetect(self, src: Path, params: dict, timeout: float) -> Result:
         done = self._run(["-i", str(src), "-vf", f"freezedetect=n=-60dB:d={params.get('min_duration', 2.0)}", "-an", "-f", "null", "-"],

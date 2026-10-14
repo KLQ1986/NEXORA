@@ -1,8 +1,9 @@
 import { t as tr, tv, locale } from "./i18n";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { call, post, projectState, scriptText, stageName, timecode, usePoll, type Idea, type Source, type AgentTask, type Asset, type Settings, type Candidate, type Project, type RenderItem, type Shot, type BibleEntry, type GapPlan, type Op, type Rights, type Publishing, type Channel } from "./api";
 import Board from "./Board";
-import { Button, Empty, Filmstrip, Icon, Meter, Page, Section, Seg, SkeletonCards, StageRail, Steps, Tabs, Tag, TimeChip, toast } from "./parts";
+import { Button, Empty, Filmstrip, goTo, Icon, Meter, Page, Section, Seg, SideGroup, SideLink, SkeletonCards, StageRail, Steps, Tabs, Tag, TimeChip, toast, Readout } from "./parts";
 import Timeline from "./Timeline";
 
 const VERDICT: Record<string, [string, "proof" | "tally" | "cue"]> = { supported: [tr("Nguồn xác nhận"), "proof"], contradicted: [tr("Trái với nguồn"), "tally"], not_found: [tr("Chưa có căn cứ"), "cue"] };
@@ -398,28 +399,190 @@ function AgentLog({ projectId }: { projectId: string }) {
   );
 }
 
-const STEPS = [[tr("Kịch bản"), "edit"], [tr("Chọn clip"), "sparkles"], [tr("Duyệt clip"), "check"], [tr("Dựng video"), "scissors"], [tr("Duyệt bản dựng"), "play"]] as const;
+type View = "script" | "clips" | "cut" | "publish" | "timeline" | "board";
+const VIEWS: View[] = ["script", "clips", "cut", "publish", "timeline", "board"];
+const FLOW: [View, string, string][] = [["script", tr("Kịch bản"), "edit"], ["clips", tr("Chọn clip"), "sparkles"], ["cut", tr("Dựng và duyệt"), "scissors"], ["publish", tr("Xuất bản"), "globe"]];
 
-/** Where the video stands: five stations on one line. The current one is lit; the two review gates turn amber when they wait. */
-function Pipeline({ step }: { step: number }) {
-  const current = STEPS[Math.min(step, STEPS.length - 1)]?.[0];
+/** The steps of a video as the page's own navigation: each one is a screen. A step lights amber when it waits for the operator,
+    green when it is behind, white where the work stands; the selected one carries the underline. Beside them, the two views of the whole. */
+/** Where a step stands for this project. */
+function stepState(k: View, step: number, reviewing: boolean, renderReview: boolean, packaged: boolean): "done" | "now" | "wait" | "later" {
+  if (k === "script") return step > 0 ? "done" : "now";
+  if (k === "clips") return reviewing ? "wait" : step >= 3 ? "done" : step >= 1 ? "now" : "later";
+  if (k === "cut") return renderReview ? "wait" : step >= 5 ? "done" : step >= 3 ? "now" : "later";
+  return step >= 5 ? (packaged ? "done" : "now") : "later";
+}
+
+/** The steps of a video down the side menu: a lamp for where each stands, the open one lit. Then the two views of the whole. */
+function StepSide({ view, step, reviewing, renderReview, packaged, onChange }: { view: View; step: number; reviewing: boolean; renderReview: boolean; packaged: boolean; onChange: (v: View) => void }) {
+  const dot = { done: "border-proof/40 bg-proof/15 text-proof", now: "border-accent/60 bg-accent/15 text-accent", wait: "border-cue/60 bg-cue/15 text-cue", later: "border-line text-faint" };
+  const said = { done: tr("Đã xong"), now: tr("Đang ở bước này"), wait: tr("Chờ bạn"), later: tr("Chưa tới") };
   return (
-    <div className="panel mb-6 px-3 py-3 sm:px-4 sm:py-3.5">
-      <ol className="flex items-center gap-1.5 sm:gap-2" aria-label={tr("Các bước làm video")}>
-        {STEPS.map(([label, icon], i) => {
-          const done = i < step, now = i === step, gate = now && (i === 2 || i === 4);
+    <>
+      <SideGroup label={tr("Các bước")}>
+        {FLOW.map(([k, label, icon]) => { const st = stepState(k, step, reviewing, renderReview, packaged); return (
+          <SideLink key={k} label={label} on={view === k} onClick={() => onChange(k)} title={said[st]}
+                    lead={<span className={`relative grid h-6 w-6 shrink-0 place-items-center rounded-full border ${dot[st]}`}><Icon name={st === "done" ? "check" : icon} size={12} />{st === "wait" && <span className="ping absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-cue" />}</span>} />); })}
+      </SideGroup>
+      <SideGroup label={tr("Toàn cảnh")}>
+        <SideLink label={tr("Dòng thời gian")} icon="timeline" on={view === "timeline"} onClick={() => onChange("timeline")} />
+        <SideLink label={tr("Bảng theo dõi")} icon="board" on={view === "board"} onClick={() => onChange("board")} />
+      </SideGroup>
+    </>
+  );
+}
+
+/** The projects section's side menu: the open project's steps first (when one is open), then every project by where it stands. */
+function ProjectSide({ current, steps, filter }: { current?: string; steps?: React.ReactNode; filter?: { value: Filter; set: (f: Filter) => void; counts: Record<Filter, number> } }) {
+  const { data } = usePoll<Project[]>("/api/v1/projects", 15000);
+  const all = data ?? [];
+  const lamp = { mute: "bg-faint", cue: "bg-cue", proof: "bg-proof", tally: "bg-tally" };
+  const row = (p: Project) => { const st = projectState(p); return (
+    <SideLink key={p.project_id} small label={p.title} title={`${p.title}: ${st.label}`} on={p.project_id === current} onClick={() => goTo(`/du-an/${p.project_id}`)}
+              lead={<span className={`relative h-1.5 w-1.5 shrink-0 rounded-full ${lamp[st.tone]} ${st.tone === "cue" ? "ping" : ""}`} />} />); };
+  const active = all.filter((p) => projectState(p).step < 5), done = all.filter((p) => projectState(p).step === 5);
+  return (
+    <>
+      {steps}
+      {filter ? (
+        <SideGroup label={tr("Dự án")}>
+          {FILTERS.map(([k, name]) => <SideLink key={k} label={name} icon={({ all: "layers", active: "pulse", waiting: "bell", done: "check" } as const)[k]} on={filter.value === k} onClick={() => filter.set(k)} count={filter.counts[k]} tone={k === "waiting" ? "cue" : undefined} />)}
+        </SideGroup>
+      ) : <SideGroup><SideLink label={tr("Tất cả dự án")} icon="layers" onClick={() => goTo("/du-an")} count={all.length} /></SideGroup>}
+      {active.length > 0 && <SideGroup label={tr("Đang làm")} end={<span className="mono">{active.length}</span>}>{active.map(row)}</SideGroup>}
+      {done.length > 0 && <SideGroup label={tr("Đã xong")} end={<span className="mono">{done.length}</span>}>{done.map(row)}</SideGroup>}
+    </>
+  );
+}
+
+function StepTabs({ view, step, reviewing, renderReview, packaged, onChange }: { view: View; step: number; reviewing: boolean; renderReview: boolean; packaged: boolean; onChange: (v: View) => void }) {
+  const state = (k: View) => stepState(k, step, reviewing, renderReview, packaged);
+  const dot = { done: "border-proof/40 bg-proof/15 text-proof", now: "border-accent/60 bg-accent/15 text-accent", wait: "border-cue/60 bg-cue/15 text-cue", later: "border-line text-faint" };
+  const tab = (k: View, label: string, inner: React.ReactNode) => (
+    <button key={k} type="button" role="tab" aria-selected={view === k} onClick={() => onChange(k)}
+            className={`relative flex h-11 shrink-0 items-center gap-2 whitespace-nowrap px-2.5 text-[13.5px] transition-colors after:absolute after:inset-x-2 after:-bottom-px after:h-0.5 after:rounded-full after:transition-colors ${view === k ? "font-medium text-ink after:bg-accent" : "text-mute after:bg-transparent hover:text-ink"}`}>
+      {inner}{label}
+    </button>
+  );
+  return (
+    <div className="scroll-x -mb-px flex items-center gap-0.5" role="tablist" aria-label={tr("Các bước làm video")}>
+      {FLOW.map(([k, label, icon], i) => {
+        const st = state(k);
+        return (
+          <span key={k} className="flex shrink-0 items-center">
+            {i > 0 && <span className={`mx-0.5 hidden h-px w-5 sm:block ${state(FLOW[i - 1][0]) === "done" ? "bg-proof/40" : "bg-line"}`} aria-hidden="true" />}
+            {tab(k, label, <span className={`relative grid h-6 w-6 place-items-center rounded-full border text-[11px] ${dot[st]}`} title={{ done: tr("Đã xong"), now: tr("Đang ở bước này"), wait: tr("Chờ bạn"), later: tr("Chưa tới") }[st]}>
+              <Icon name={st === "done" ? "check" : icon} size={13} />{st === "wait" && <span className="ping absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-cue" />}</span>)}
+          </span>
+        );
+      })}
+      <span className="mx-2 h-5 w-px shrink-0 bg-line" aria-hidden="true" />
+      {tab("timeline", tr("Dòng thời gian"), <Icon name="timeline" size={15} />)}
+      {tab("board", tr("Bảng theo dõi"), <Icon name="board" size={15} />)}
+    </div>
+  );
+}
+
+/** A panel that slides in from the right over the page, for what is set once and rarely touched. */
+function Drawer({ title, close, children }: { title: string; close: () => void; children: React.ReactNode }) {
+  useEffect(() => { const key = (e: KeyboardEvent) => { if (e.key === "Escape") close(); }; window.addEventListener("keydown", key); return () => window.removeEventListener("keydown", key); }, [close]);
+  return createPortal(                                                       // above the page, not inside its animated scroll area
+    <div className="scrim fixed inset-0 z-40" onMouseDown={close}>
+      <aside role="dialog" aria-modal="true" aria-label={title} onMouseDown={(e) => e.stopPropagation()}
+             className="drawer absolute inset-y-0 right-0 flex w-full max-w-[440px] flex-col border-l border-edge bg-surface shadow-[var(--shadow-float)]">
+        <div className="flex h-14 shrink-0 items-center gap-2 border-b border-line px-5"><Icon name="sliders" size={16} className="text-mute" /><h2 className="flex-1 text-[15px] font-semibold">{title}</h2>
+          <button type="button" onClick={close} className="grid h-8 w-8 place-items-center rounded-md text-faint hover:bg-raised hover:text-ink" aria-label={tr("Đóng")}><Icon name="x" size={16} /></button></div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-5">{children}</div>
+      </aside>
+    </div>, document.body);
+}
+
+/** One line at a time: the clip big, the other candidates beside it, keys to move and to swap. The fast way through a review. */
+function QuickReview({ shots, locked, changed, reviewing, approve, busy }: { shots: Shot[]; locked: boolean; changed: () => void; reviewing: boolean; approve: () => void; busy: boolean }) {
+  const first = Math.max(0, shots.findIndex((s) => !s.selection || s.selection.status === "gap"));
+  const [i, setI] = useState(first);
+  const [swapping, setSwapping] = useState<number | null>(null);
+  const n = Math.min(i, shots.length - 1);
+  const shot = shots[n];
+  const sel = shot?.selection ?? null;
+  const gap = !sel || sel.status === "gap";
+  const alts = sel?.alternates.slice(0, 6) ?? [];
+  const swap = useCallback(async (k: number) => {
+    if (locked || !shot || !alts[k]) return;
+    setSwapping(k);
+    try { await post(`/api/v1/shots/${shot.shot_id}/swap`, { alternate: k }); toast(tv`Câu ${n + 1}: đã đổi sang phương án ${k + 1}.`, { tone: "proof" }); } catch (e) { toast((e as Error).message, { tone: "tally" }); }
+    setSwapping(null); changed();
+  }, [locked, shot, alts, n, changed]);
+  const none = async () => { if (!shot || locked) return; await post(`/api/v1/shots/${shot.shot_id}/gap`).catch(() => {}); toast(tv`Câu ${n + 1}: đánh dấu không có clip hợp.`); changed(); };
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if ((t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT")) || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === "ArrowRight" || e.key === "Enter") { e.preventDefault(); setI((x) => Math.min(shots.length - 1, x + 1)); }
+      else if (e.key === "ArrowLeft") { e.preventDefault(); setI((x) => Math.max(0, x - 1)); }
+      else if (/^[1-6]$/.test(e.key)) { e.preventDefault(); void swap(Number(e.key) - 1); }
+    };
+    window.addEventListener("keydown", key); return () => window.removeEventListener("keydown", key);
+  }, [shots.length, swap]);
+  if (!shot) return null;
+  const thumb = (s: Shot) => (s.selection && s.selection.status !== "gap" ? s.selection.frame_url ?? s.selection.asset?.thumbnail_url ?? null : null);
+  return (
+    <div className="grid gap-4">
+      <ol className="scroll-x flex gap-1.5 pb-1" aria-label={tr("Các câu")}>
+        {shots.map((s, k) => {
+          const g = !s.selection || s.selection.status === "gap", src = thumb(s);
           return (
-            <li key={label} aria-current={now ? "step" : undefined} className={`flex min-w-0 items-center gap-2 sm:gap-2.5 ${i < STEPS.length - 1 ? "sm:flex-1" : ""}`}>
-              <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full border text-[12px] sm:h-8 sm:w-8 ${done ? "border-proof/40 bg-proof/15 text-proof" : gate ? "border-cue/60 bg-cue/15 text-cue shadow-[0_0_14px_-2px_var(--color-cue)]" : now ? "border-accent/60 bg-accent/15 text-accent" : "border-line text-faint"}`} title={label}>
-                <Icon name={done ? "check" : icon} size={15} /></span>
-              <span className={`hidden whitespace-nowrap text-[13px] sm:inline ${now ? "font-medium text-ink" : done ? "text-mute" : "text-faint"}`}>{label}</span>
-              {i < STEPS.length - 1 && <span className={`hidden h-px min-w-2 flex-1 sm:block ${done ? "bg-proof/40" : "bg-line"}`} />}
+            <li key={s.shot_id} className="shrink-0">
+              <button type="button" onClick={() => setI(k)} aria-current={k === n ? "true" : undefined} title={`${k + 1}. ${s.text}`}
+                      className={`relative block h-12 w-[76px] overflow-hidden rounded-md ring-2 transition ${k === n ? "ring-accent" : g ? "ring-cue/50 opacity-80 hover:opacity-100" : s.selection?.decided_by === "operator" ? "ring-accent/30 opacity-70 hover:opacity-100" : "ring-transparent opacity-60 hover:opacity-100"}`}>
+                {src ? <img src={src} alt="" className="h-full w-full object-cover" /> : <span className={`block h-full w-full ${g ? "hatch-cue bg-raised" : "bg-raised"}`} />}
+                <span className="mono absolute left-1 top-1 rounded bg-black/70 px-1 text-[10px]">{k + 1}</span>
+              </button>
             </li>
           );
         })}
-        {/* On a phone the names do not fit beside the circles, so only the current step is named, after the row. */}
-        {current && <li className="ml-auto min-w-0 truncate text-[13px] font-medium sm:hidden" aria-hidden="true">{current}</li>}
       </ol>
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+        <div className="min-w-0">
+          <div className="relative mx-auto max-w-[calc(56vh*16/9)] overflow-hidden rounded-xl bg-black ring-1 ring-line">
+            {!gap && sel?.asset && sel.t_in != null && sel.t_out != null
+              ? <Clip url={sel.asset.proxy_url} tIn={sel.t_in} tOut={sel.t_out} poster={sel.frame_url ?? sel.asset.thumbnail_url} />
+              : <div className="hatch-cue grid aspect-video place-items-center bg-raised text-cue"><span className="flex flex-col items-center gap-2"><Icon name="alert" size={24} />{tr("Câu này chưa có hình")}</span></div>}
+          </div>
+          <div className="mt-4 flex items-start gap-3">
+            <span className="mono grid h-8 min-w-8 place-items-center rounded-lg bg-overlay px-1.5 text-[12px] text-mute">{n + 1}/{shots.length}</span>
+            <div className="min-w-0 flex-1">
+              {shot.scene && <p className="eyebrow mb-1 !text-accent">{shot.scene}</p>}
+              <p className="text-[18px] leading-relaxed">{shot.text}</p>
+              {!gap && sel?.asset && <p className="mt-1 flex items-center gap-2 text-[12.5px] text-mute"><Icon name="film" size={13} className="text-faint" />{sel.asset.name}{sel.t_in != null && <span className="mono text-faint">{timecode(sel.t_in)}–{timecode(sel.t_out)}</span>}{sel.decided_by === "operator" && <Tag tone="accent">{tr("Bạn chọn")}</Tag>}</p>}
+            </div>
+          </div>
+          {!gap && sel?.reason && <p className="ai-card mt-3 px-3.5 py-2.5 text-[13px] text-mute"><span className="font-medium text-ai">{tr("Vì sao chọn")} </span>{sel.reason}</p>}
+        </div>
+        <aside className="grid gap-3">
+          <p className="eyebrow">{alts.length ? tr("Phương án khác · bấm số để đổi") : tr("Không có phương án khác")}</p>
+          <ul className="grid grid-cols-2 gap-2">
+            {alts.map((a: Candidate, k: number) => (
+              <li key={a.moment_id}>
+                <button type="button" disabled={locked || swapping !== null} onClick={() => void swap(k)} title={a.reason}
+                        className="group relative block w-full overflow-hidden rounded-lg ring-1 ring-line transition hover:ring-accent disabled:opacity-50">
+                  <img src={a.frame_url} alt="" className="aspect-video w-full bg-black object-cover" />
+                  <span className="mono absolute left-1.5 top-1.5 grid h-5 w-5 place-items-center rounded bg-black/75 text-[11px] font-semibold">{k + 1}</span>
+                  <TimeChip className="absolute bottom-1.5 right-1.5 !h-[18px] !text-[10px]">{timecode(a.t_in)}</TimeChip>
+                  <span className="absolute inset-0 hidden place-items-center bg-black/45 text-[12px] font-medium group-hover:grid">{swapping === k ? tr("Đang đổi…") : tr("Dùng cảnh này")}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+          {!locked && !gap && <Button onClick={none}><Icon name="x" size={14} />{tr("Không clip nào hợp")}</Button>}
+          <div className="mt-1 grid grid-cols-2 gap-2">
+            <Button disabled={n === 0} onClick={() => setI(n - 1)}><Icon name="back" size={14} />{tr("Câu trước")}</Button>
+            {n < shots.length - 1 ? <Button kind={reviewing ? "plain" : "primary"} onClick={() => setI(n + 1)}>{tr("Câu sau")}<Icon name="next" size={14} /></Button>
+              : reviewing ? <Button kind="primary" busy={busy} onClick={approve}><Icon name="check" size={14} />{tr("Duyệt các clip này")}</Button> : <span />}
+          </div>
+          <p className="text-[11.5px] text-faint"><kbd className="mono rounded border border-line px-1">← →</kbd> {tr("chuyển câu")} · <kbd className="mono rounded border border-line px-1">1–6</kbd> {tr("đổi phương án")} · <kbd className="mono rounded border border-line px-1">Enter</kbd> {tr("câu sau")}</p>
+        </aside>
+      </div>
     </div>
   );
 }
@@ -430,9 +593,11 @@ function Detail({ id, back }: { id: string; back: () => void }) {
   const [topic, setTopic] = useState("");
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const asked = new URLSearchParams(window.location.search).get("tab");
-  const [tab, setTabState] = useState<"work" | "timeline" | "board">(asked === "timeline" || asked === "board" ? asked : "work");
-  const setTab = (k: "work" | "timeline" | "board") => { setTabState(k); window.history.replaceState({}, "", k === "work" ? `/du-an/${id}` : `/du-an/${id}?tab=${k}`); };
+  const asked = new URLSearchParams(window.location.search).get("tab") as View | null;
+  const [chosen, setChosen] = useState<View | null>(asked && VIEWS.includes(asked) ? asked : null);          // until the operator picks a step, the page opens where the work stands
+  const setView = (k: View) => { setChosen(k); window.history.replaceState({}, "", `/du-an/${id}?tab=${k}`); document.querySelector("main .overflow-y-auto")?.scrollTo(0, 0); };
+  const [mode, setMode] = useState<"quick" | "list">("quick");
+  const [settings, setSettings] = useState(false);
   const [takes, setTakes] = useState<string | null>(null);
   const [music, setMusic] = useState<string | null>(null);
   const [style, setStyle] = useState<string | null>(null);
@@ -464,7 +629,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
     const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); };       // the browser asks before the unsaved script is lost
     window.addEventListener("beforeunload", warn); return () => window.removeEventListener("beforeunload", warn);
   }, [unsaved]);
-  if (!p) return <Page title={tr("Đang mở dự án…")} back={{ label: tr("Dự án"), onClick: back }}><div className="grid gap-4" aria-busy="true"><div className="panel h-16" /><div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]"><div className="panel h-72" /><div className="panel h-72" /></div></div></Page>;
+  if (!p) return <Page title={tr("Đang mở dự án…")} back={{ label: tr("Dự án"), onClick: back }} side={<ProjectSide current={id} />}><div className="grid gap-4" aria-busy="true"><div className="panel h-16" /><div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]"><div className="panel h-72" /><div className="panel h-72" /></div></div></Page>;
   const run = async (fn: () => Promise<unknown>) => { setBusy(true); setNote(null); try { await fn(); } catch (e) { setNote((e as Error).message); } setBusy(false); reload(); };
   const saved = scriptText(p.shots);
   const dirty = text !== null && text.trim() !== saved.trim();
@@ -476,6 +641,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
   const latest = p.renders.find(() => true);
   const renderReview = p.render?.status === "waiting_review";
   const step = !p.script ? 0 : !p.match ? 1 : matching ? 1 : reviewing ? 2 : !approved ? 1 : !p.render || rendering ? 3 : renderReview ? 4 : 5;
+  const view: View = chosen ?? (step === 0 ? "script" : step <= 2 ? "clips" : step <= 4 ? "cut" : "publish");
   const gaps = p.shots.filter((s) => s.selection?.status === "gap").length;
   const st = projectState(p);
   const patch = (body: Record<string, unknown>) => run(() => post(`/api/v1/projects/${id}`, body, "PATCH"));
@@ -495,72 +661,161 @@ function Detail({ id, back }: { id: string; back: () => void }) {
   const facts = (p?.shots ?? []).filter((s) => s.is_fact);
   return (
     <Page title={p.title} back={{ label: tr("Tất cả dự án"), onClick: back }} wide
-          note={<span className="flex flex-wrap items-center gap-x-3 gap-y-1"><Tag tone={st.tone}>{st.label}</Tag><span className="flex items-center gap-1.5"><Icon name="captions" size={13} />{tv`${p.shots.length} câu`}</span>
-            <span className="flex items-center gap-1.5"><Icon name="image" size={13} />{FORMATS[p.format] ?? p.format}</span>{latest && <span className="mono flex items-center gap-1.5"><Icon name="play" size={12} />{timecode(latest.qc.duration)}</span>}
-            {p.template && <span className="flex items-center gap-1.5"><Icon name="layers" size={13} />{p.template}</span>}</span>}
-          tabs={<Tabs value={tab} onChange={(k) => { setTab(k); document.querySelector("main .overflow-y-auto")?.scrollTo(0, 0); }} items={[{ key: "work", label: tr("Làm video"), icon: "edit" }, { key: "timeline", label: tr("Dòng thời gian"), icon: "timeline" }, { key: "board", label: tr("Bảng theo dõi"), icon: "board" }]} />}
-          actions={next && <Button kind="primary" busy={busy} disabled={next.label === tr("Lưu kịch bản") && !(text ?? "").trim()} onClick={next.go}>{!busy && <Icon name={next.icon} />}{next.label}</Button>}>
-      {tab === "work" && <Pipeline step={step} />}
+          note={<Slate state={<Tag tone={st.tone}>{st.label}</Tag>} items={[
+            [String(p.shots.length), tr("câu")],
+            [String(new Set(p.shots.map((s) => s.scene).filter(Boolean)).size || "–"), tr("cảnh")],
+            [String(p.renders.length || "–"), tr("bản dựng")],
+            [latest ? timecode(latest.qc.duration) : "–", tr("thời lượng")],
+          ]} extra={<>{FORMATS[p.format] ?? p.format}{p.template ? <span className="ml-3">{p.template}</span> : null}</>} />}
+          side={<ProjectSide current={id} steps={<StepSide view={view} step={step} reviewing={!!reviewing} renderReview={!!renderReview} packaged={!!latest?.package} onChange={setView} />} />}
+          tabs={<div className="lg:hidden"><StepTabs view={view} step={step} reviewing={!!reviewing} renderReview={!!renderReview} packaged={!!latest?.package} onChange={setView} /></div>}
+          actions={<><Button onClick={() => setSettings(true)} title={tr("Mẫu, khung hình, nhạc, lời dẫn, kênh, ngày đăng")}><Icon name="sliders" size={15} />{tr("Thiết lập")}</Button>{next && <Button kind="primary" busy={busy} disabled={next.label === tr("Lưu kịch bản") && !(text ?? "").trim()} onClick={next.go}>{!busy && <Icon name={next.icon} />}{next.label}</Button>}</>}>
       {note && <p className="mb-5 flex items-center gap-2 rounded-xl border border-tally/40 bg-tally/10 px-4 py-3 text-tally"><Icon name="alert" />{note}</p>}
       <AgentLog projectId={id} />
-      {tab === "board" && <Board project={p} />}
-      {tab === "timeline" && <Timeline project={p} reload={reload} busy={busy} rerender={() => run(() => post(`/api/v1/projects/${id}/render`))} />}
+      {view === "board" && <Board project={p} />}
+      {view === "timeline" && <Timeline project={p} reload={reload} busy={busy} rerender={() => run(() => post(`/api/v1/projects/${id}/render`))} />}
 
-      <div className={`grid items-start gap-8 xl:grid-cols-[minmax(0,1fr)_360px] ${tab === "work" ? "" : "hidden"}`}>
-        <div className="grid min-w-0 gap-10">
-          <Section title={tr("Kịch bản")} icon="edit" note={tr("Mỗi dòng là một câu lời dẫn; hệ thống tìm một clip cho từng câu. Dòng bắt đầu bằng dấu # là tên một cảnh.")}>
-            <div className={`panel overflow-hidden ${dirty ? "glow" : ""}`}>
-              <div className="flex flex-wrap items-center gap-3 border-b border-line bg-raised/40 px-4 py-2 text-[12px] text-mute">
-                <span className="mono">{p.script ? `v${p.script.version}` : tr("bản nháp")}</span><span className="mono">{tv`${lines} câu`}</span>
-                {dirty && <span className="flex items-center gap-1.5 text-accent"><span className="h-1.5 w-1.5 rounded-full bg-accent" />{tr("Chưa lưu")}</span>}
-                <span className="ml-auto" />
-                <Button size="sm" disabled={busy || !dirty || !(text ?? "").trim()} onClick={() => run(() => post(`/api/v1/projects/${id}/script`, { lines: (text ?? "").split("\n") }, "PUT"))}>{tr("Lưu kịch bản")}</Button>
+      {view === "script" && (
+        <div className="rise grid items-start gap-8 xl:grid-cols-[minmax(0,1fr)_380px]">
+          <div className="min-w-0">
+              <Section title={tr("Kịch bản")} icon="edit" note={tr("Mỗi dòng là một câu lời dẫn; hệ thống tìm một clip cho từng câu. Dòng bắt đầu bằng dấu # là tên một cảnh.")}>
+                <div className={`panel overflow-hidden ${dirty ? "glow" : ""}`}>
+                  <div className="flex flex-wrap items-center gap-3 border-b border-line bg-raised/40 px-4 py-2 text-[12px] text-mute">
+                    <span className="mono">{p.script ? `v${p.script.version}` : tr("bản nháp")}</span><span className="mono">{tv`${lines} câu`}</span>
+                    {dirty && <span className="flex items-center gap-1.5 text-accent"><span className="h-1.5 w-1.5 rounded-full bg-accent" />{tr("Chưa lưu")}</span>}
+                    <span className="ml-auto" />
+                    <Button size="sm" disabled={busy || !dirty || !(text ?? "").trim()} onClick={() => run(() => post(`/api/v1/projects/${id}/script`, { lines: (text ?? "").split("\n") }, "PUT"))}>{tr("Lưu kịch bản")}</Button>
+                  </div>
+                  <textarea value={text ?? ""} onChange={(e) => setText(e.target.value)} rows={Math.max(6, (text ?? "").split("\n").length + 1)} aria-label={tr("Kịch bản")}
+                            className="bare block w-full !rounded-none px-5 py-4 text-[15px] leading-[1.95]" placeholder={tr("Chợ Hội An buổi sáng tấp nập người mua kẻ bán.")} />
+                  <form className="flex flex-wrap items-center gap-2 border-t border-line bg-ai/[0.04] px-4 py-2.5" onSubmit={(e) => e.preventDefault()}>
+                    <Icon name="sparkles" size={15} className="text-ai" />
+                    <label htmlFor="topic" className="sr-only">{tr("Chủ đề để viết nháp")}</label>
+                    <input id="topic" value={topic} onChange={(e) => setTopic(e.target.value)} placeholder={tr("Viết nháp từ kho footage — nhập chủ đề, ví dụ: một buổi sáng ở chợ")} className="bare h-8 min-w-0 flex-1 px-1" />
+                    <Button kind="ai" size="sm" disabled={busy || !topic.trim()} onClick={() => run(async () => { const r = await post<{ lines: string[] }>(`/api/v1/projects/${id}/draft`, { topic }); if (r.lines.length) setText(r.lines.join("\n")); else setNote(tr("Mô hình không viết được câu nào. Hãy thử chủ đề khác.")); })}>{tr("Viết nháp")}</Button>
+                  </form>
+                </div>
+                {dirty && p.script && <p className="mt-2 text-[12.5px] text-mute">{tr("Lưu sẽ tạo phiên bản kịch bản mới; các clip đã chọn cho phiên bản cũ không áp dụng nữa.")}</p>}
+                {p.script && !dirty && (
+                  <div className="mt-3 rounded-xl border border-line bg-raised/30 px-4 py-3 text-[13px]">
+                    <div className="flex flex-wrap items-center gap-2"><Icon name="eye" size={15} className="text-ai" /><span className="font-medium">{tr("Phản biện kịch bản")}</span>
+                      <span className="text-faint">{p.script.critique == null ? tr("Chưa xin nhận xét cho phiên bản này.") : p.script.critique.length ? tv`${p.script.critique.length} điểm nên sửa` : tr("Không có điểm nào cần sửa.")}</span>
+                      <span className="ml-auto flex gap-2">
+                        <Button size="sm" kind="ai" disabled={busy} onClick={() => run(() => post(`/api/v1/projects/${id}/critique`))}>{p.script.critique == null ? tr("Xin nhận xét") : tr("Nhận xét lại")}</Button>
+                        {!!p.script.critique?.length && <Button size="sm" disabled={busy || !!rendering} title={tr("Tạo phiên bản kịch bản mới; clip của những câu bị đổi phải tìm lại")} onClick={() => run(async () => { const r = await post<{ revised: boolean }>(`/api/v1/projects/${id}/revise`); if (!r.revised) setNote(tr("Bản viết lại không khác bản cũ nên kịch bản được giữ nguyên.")); setText(null); })}>{tr("Viết lại theo nhận xét")}</Button>}
+                      </span></div>
+                    {!!p.script.critique?.length && <ul className="mt-2 grid gap-1.5">{p.script.critique.map((c, i) => (
+                      <li key={i} className="flex gap-2.5"><span className="mono w-14 shrink-0 text-faint">{c.line ? tv`Câu ${c.line}` : tr("Cả bài")}</span><span className="min-w-0">{c.issue}{c.fix && <span className="text-mute"> {c.fix}</span>}</span></li>))}</ul>}
+                  </div>
+                )}
+              </Section>
+          </div>
+          <aside className="grid gap-4 xl:sticky xl:top-0" aria-label={tr("Nguồn tham khảo")}>
+              <div className={card}>
+                <div><h2 className="flex items-center gap-2 text-[14px] font-semibold"><Icon name="link" size={15} className="text-mute" />{tr("Nguồn tham khảo")}<span className="mono ml-auto text-[12px] font-normal text-faint">{p.research.length}</span></h2>
+                  <p className="mt-1 text-[12px] text-faint">{tr("Câu nào nêu dữ kiện thì gắn với một nguồn ở đây. Dữ kiện chưa có nguồn sẽ bị nêu ra khi kiểm tra bản dựng.")}</p></div>
+                <ul className="rows empty:hidden">
+                  {p.research.map((src) => (
+                    <li key={src.title} className="py-2 text-[13px]"><div className="flex justify-between gap-2"><span className="min-w-0 font-medium">{/^https?:\/\//i.test(src.url) ? <a href={src.url} target="_blank" rel="noreferrer" className="underline decoration-edge underline-offset-2">{src.title}</a> : src.title}</span>
+                      <button type="button" className="link shrink-0" onClick={() => { const before = p.research; patch({ research: before.filter((x) => x.title !== src.title) }); toast(tv`Đã bỏ nguồn “${src.title}”.`, { undo: () => patch({ research: before }) }); }}>{tr("Bỏ")}</button></div>
+                      <p className="text-mute">{[src.publisher, src.date].filter(Boolean).join(", ")}</p>{src.passage && <p className="mt-0.5 border-l-2 border-edge pl-2 text-mute">“{src.passage}”</p>}</li>
+                  ))}
+                </ul>
+                <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); const f = e.currentTarget; const url = String(new FormData(f).get("url") ?? "").trim(); if (url) run(async () => { await post(`/api/v1/projects/${id}/sources/read`, { url }); f.reset(); }); }}>
+                  <input name="url" type="url" aria-label={tr("Địa chỉ trang web cần đọc")} placeholder={tr("Dán địa chỉ bài viết để hệ thống đọc")} className="min-w-0 flex-1 px-3" />
+                  <Button type="submit" disabled={busy} title={tr("Chỉ địa chỉ này được gửi ra ngoài máy")}><Icon name="globe" size={14} />{tr("Đọc")}</Button>
+                </form>
+                <div className="flex flex-wrap items-center gap-2 text-[12.5px] text-faint"><Button size="sm" disabled={busy} title={tr("Chỉ tên dự án được gửi đi làm từ khoá tìm kiếm")} onClick={() => run(async () => { const r = await post<{ found: number }>(`/api/v1/projects/${id}/sources/find`, {}); if (!r.found) setNote(tr("Không tìm thấy bài nào trên Wikipedia cho tên dự án này.")); })}><Icon name="search" size={14} />{tr("Tự tìm nguồn")}</Button>
+                  <span>{tr("Tìm trên Wikipedia theo tên dự án rồi đọc tối đa 3 bài.")}</span></div>
+                {p.script && <div className="flex flex-wrap gap-2 border-t border-line pt-3">
+                  <Button size="sm" kind="ai" disabled={busy} onClick={() => run(async () => { const r = await post<{ found: number }>(`/api/v1/projects/${id}/facts/find`); if (!r.found) setNote(tr("Không thấy câu nào nêu dữ kiện cần kiểm chứng.")); })}>{tr("Tìm câu nêu dữ kiện")}</Button>
+                  <Button size="sm" disabled={busy || !p.shots.some((s) => s.is_fact)} title={p.shots.some((s) => s.is_fact) ? tr("So từng câu nêu dữ kiện với các nguồn ở trên") : tr("Chưa có câu nào được đánh dấu là dữ kiện")} onClick={() => run(() => post(`/api/v1/projects/${id}/facts/check`))}>{tr("Đối chiếu với nguồn")}</Button>
+                  {facts.length > 0 && <p className="w-full text-[12px] text-faint">{tv`${facts.length} câu nêu dữ kiện: ${facts.filter((s) => s.fact_check?.verdict === "supported").length} có nguồn xác nhận, ${facts.filter((s) => s.fact_check?.verdict === "contradicted").length} trái nguồn, ${facts.filter((s) => !s.fact_check || s.fact_check.verdict === "not_found").length} chưa có căn cứ.`}</p>}
+                </div>}
+                <details className="group">
+                  <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[13px] text-accent"><Icon name="plus" size={14} />{tr("Tự nhập một nguồn")}</summary>
+                  <form className="mt-3 grid gap-2" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); const src = Object.fromEntries(["title", "publisher", "date", "url", "passage"].map((k) => [k, String(f.get(k) ?? "")])); if (!src.title.trim()) return; patch({ research: [...p.research, src] }); e.currentTarget.reset(); }}>
+                    <input name="title" aria-label={tr("Tên nguồn")} placeholder={tr("Tên nguồn, ví dụ: Niên giám thống kê 2025")} className="px-3" />
+                    <div className="flex gap-2"><input name="publisher" aria-label={tr("Nơi xuất bản")} placeholder={tr("Nơi xuất bản")} className="min-w-0 flex-1 px-3" /><input name="date" aria-label={tr("Ngày")} placeholder={tr("Ngày")} className="w-24 px-3" /></div>
+                    <input name="url" aria-label={tr("Đường dẫn")} placeholder={tr("Đường dẫn (nếu có)")} className="px-3" />
+                    <textarea name="passage" aria-label={tr("Đoạn trích")} rows={2} placeholder={tr("Đoạn trích chứng minh dữ kiện")} className="p-2.5" />
+                    <div><Button type="submit">{tr("Thêm nguồn")}</Button></div>
+                  </form>
+                </details>
               </div>
-              <textarea value={text ?? ""} onChange={(e) => setText(e.target.value)} rows={Math.max(6, (text ?? "").split("\n").length + 1)} aria-label={tr("Kịch bản")}
-                        className="bare block w-full !rounded-none px-5 py-4 text-[15px] leading-[1.95]" placeholder={tr("Chợ Hội An buổi sáng tấp nập người mua kẻ bán.")} />
-              <form className="flex flex-wrap items-center gap-2 border-t border-line bg-ai/[0.04] px-4 py-2.5" onSubmit={(e) => e.preventDefault()}>
-                <Icon name="sparkles" size={15} className="text-ai" />
-                <label htmlFor="topic" className="sr-only">{tr("Chủ đề để viết nháp")}</label>
-                <input id="topic" value={topic} onChange={(e) => setTopic(e.target.value)} placeholder={tr("Viết nháp từ kho footage — nhập chủ đề, ví dụ: một buổi sáng ở chợ")} className="bare h-8 min-w-0 flex-1 px-1" />
-                <Button kind="ai" size="sm" disabled={busy || !topic.trim()} onClick={() => run(async () => { const r = await post<{ lines: string[] }>(`/api/v1/projects/${id}/draft`, { topic }); if (r.lines.length) setText(r.lines.join("\n")); else setNote(tr("Mô hình không viết được câu nào. Hãy thử chủ đề khác.")); })}>{tr("Viết nháp")}</Button>
-              </form>
-            </div>
-            {dirty && p.script && <p className="mt-2 text-[12.5px] text-mute">{tr("Lưu sẽ tạo phiên bản kịch bản mới; các clip đã chọn cho phiên bản cũ không áp dụng nữa.")}</p>}
-            {p.script && !dirty && (
-              <div className="mt-3 rounded-xl border border-line bg-raised/30 px-4 py-3 text-[13px]">
-                <div className="flex flex-wrap items-center gap-2"><Icon name="eye" size={15} className="text-ai" /><span className="font-medium">{tr("Phản biện kịch bản")}</span>
-                  <span className="text-faint">{p.script.critique == null ? tr("Chưa xin nhận xét cho phiên bản này.") : p.script.critique.length ? tv`${p.script.critique.length} điểm nên sửa` : tr("Không có điểm nào cần sửa.")}</span>
-                  <span className="ml-auto flex gap-2">
-                    <Button size="sm" kind="ai" disabled={busy} onClick={() => run(() => post(`/api/v1/projects/${id}/critique`))}>{p.script.critique == null ? tr("Xin nhận xét") : tr("Nhận xét lại")}</Button>
-                    {!!p.script.critique?.length && <Button size="sm" disabled={busy || !!rendering} title={tr("Tạo phiên bản kịch bản mới; clip của những câu bị đổi phải tìm lại")} onClick={() => run(async () => { const r = await post<{ revised: boolean }>(`/api/v1/projects/${id}/revise`); if (!r.revised) setNote(tr("Bản viết lại không khác bản cũ nên kịch bản được giữ nguyên.")); setText(null); })}>{tr("Viết lại theo nhận xét")}</Button>}
-                  </span></div>
-                {!!p.script.critique?.length && <ul className="mt-2 grid gap-1.5">{p.script.critique.map((c, i) => (
-                  <li key={i} className="flex gap-2.5"><span className="mono w-14 shrink-0 text-faint">{c.line ? tv`Câu ${c.line}` : tr("Cả bài")}</span><span className="min-w-0">{c.issue}{c.fix && <span className="text-mute"> {c.fix}</span>}</span></li>))}</ul>}
-              </div>
-            )}
-          </Section>
+          </aside>
+        </div>
+      )}
 
+      {view === "clips" && (
+        <div className="rise grid min-w-0 gap-10">
+          {!p.script && <Empty icon="edit" title={tr("Chưa có kịch bản")} action={<Button kind="primary" onClick={() => setView("script")}>{tr("Viết kịch bản")}</Button>}>{tr("Viết kịch bản trước; hệ thống sẽ tìm một clip cho từng câu.")}</Empty>}
           {p.script && (
             <Section title={tr("Clip cho từng câu")} icon="film"
                      note={reviewing ? <span className="text-cue">{tr("Xem từng clip, đổi sang phương án khác nếu cần, rồi duyệt.")}{gaps > 0 ? tv` Còn ${gaps} câu chưa có hình.` : ""}</span> : matching ? <span className="text-ai">{tr("Đang tìm trong kho footage…")}</span> : approved ? <span className="text-proof">{tr("Đã duyệt")}</span> : undefined}
                      actions={<>
+                       {p.shots.some((s) => s.selection) && <Seg label={tr("Cách xem clip")} value={mode} onChange={setMode} items={[["quick", tr("Duyệt nhanh")], ["list", tr("Danh sách")]] as const} />}
                        <Button size="sm" disabled={busy || !!matching || dirty} onClick={() => run(() => post(`/api/v1/projects/${id}/match`))}><Icon name="refresh" size={14} />{p.match ? tr("Tìm lại clip") : tr("Tìm clip cho kịch bản")}</Button>
                        {reviewing && <Button size="sm" kind="primary" disabled={busy} onClick={() => run(() => post(`/api/v1/projects/${id}/match/approve`))}><Icon name="check" size={14} />{tr("Duyệt các clip này")}</Button>}
                      </>}>
               {matching && p.match && <div className="mb-3"><StageRail stages={p.match.stages} labels /></div>}
               <Gaps id={id} shots={p.shots} run={run} />
-              {p.shots.some((s) => s.selection) && <div className="mb-4"><TimelineStrip shots={p.shots} /></div>}
+              {p.shots.some((s) => s.selection) && mode === "list" && <div className="mb-4"><TimelineStrip shots={p.shots} /></div>}
+              {mode === "quick" && p.shots.some((s) => s.selection) ? <QuickReview shots={p.shots} locked={!!rendering} changed={reload} reviewing={reviewing} approve={() => run(() => post(`/api/v1/projects/${id}/match/approve`))} busy={busy} /> : (
               <ol className="grid gap-3">
                 {p.shots.map((s, i) => <ShotRow key={s.shot_id} shot={s} n={i + 1} locked={!!rendering} changed={reload} heading={s.scene && s.scene !== p.shots[i - 1]?.scene ? s.scene : null} sources={p.research} effects={(lib?.assets ?? []).filter((a) => a.kind === "audio")} remote={p.remote} />)}
-              </ol>
+              </ol>)}
             </Section>
           )}
+          {p.script && (
+            <div className="ai-card grid gap-4 p-4">
+              <div><h2 className="flex items-center gap-2 text-[14px] font-semibold"><Icon name="spark" size={15} className="text-ai" />{tr("Sinh hình bằng AI")}</h2>
+                <p className="mt-1 text-[12px] text-mute">{tr("Cho phim hoạt hình, hoặc khi kho footage không có hình. Hệ thống sinh ảnh tĩnh cho mỗi câu để bạn duyệt, rồi mới sinh video.")}</p></div>
+              {!p.generators.image || !p.generators.video ? (
+                <p className="rounded-lg border border-cue/30 bg-cue/5 px-3 py-2 text-[12.5px] text-cue">{tr("Chưa có nhà cung cấp sinh ảnh và sinh video. Cần khoá API của một nhà cung cấp để bật.")}</p>
+              ) : (
+                <>
+                  <form onSubmit={(e) => { e.preventDefault(); patch({ style: (style ?? "").trim() || null }); }}>
+                    <label htmlFor="style" className={field}>{tr("Phong cách hình")}</label>
+                    <div className="flex gap-2"><input id="style" value={style ?? p.style ?? ""} onChange={(e) => setStyle(e.target.value)} placeholder={tr("Ví dụ: hoạt hình màu nước")} className="min-w-0 flex-1 px-3" />
+                      <Button disabled={busy || style === null} onClick={() => patch({ style: (style ?? "").trim() || null })}>{tr("Lưu")}</Button></div>
+                  </form>
+                  <form onSubmit={(e) => { e.preventDefault(); patch({ budget_cap: budget === "" || budget === null ? null : Number(budget) }); }}>
+                    <label htmlFor="budget" className={field}>{tr("Ngân sách cho dự án (USD)")}</label>
+                    <div className="flex gap-2"><input id="budget" type="number" inputMode="decimal" min="0" step="0.5" value={budget ?? p.budget_cap ?? ""} onChange={(e) => setBudget(e.target.value)} placeholder={tr("Không giới hạn")} className="mono min-w-0 flex-1 px-3" />
+                      <Button disabled={busy || budget === null} onClick={() => patch({ budget_cap: budget === "" || budget === null ? null : Number(budget) })}>{tr("Lưu")}</Button></div>
+                    <p className="mono mt-1.5 text-[12px] text-mute">{tv`Đã tiêu ${p.spent.toFixed(2)} USD`}{p.budget_cap != null ? tv` trên ${p.budget_cap.toFixed(2)} USD` : ""}</p>
+                    {p.budget_cap != null && <div className="mt-1.5"><Meter share={p.spent / p.budget_cap} tone={p.spent >= p.budget_cap ? "cue" : "ai"} /></div>}
+                  </form>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button kind="ai" disabled={busy || dirty || (!!p.generate && ["queued", "running"].includes(p.generate.status))} onClick={() => run(() => post(`/api/v1/projects/${id}/generate`))}>{p.generate ? tr("Sinh lại") : tr("Sinh ảnh cho từng câu")}</Button>
+                    {p.generate?.status === "waiting_review" && <Button kind="primary" disabled={busy} onClick={() => run(() => post(`/api/v1/projects/${id}/generate/approve`))}>
+                      {p.generate.stages.find((s) => s.status === "waiting_review")?.stage_key === "keyframes" ? tr("Duyệt ảnh, sinh video") : tr("Duyệt các clip này")}</Button>}
+                    {p.generate && ["queued", "running"].includes(p.generate.status) && <span className="text-[13px] text-ai">{tr("Đang sinh…")}</span>}
+                    {p.generate?.status === "blocked" && <span className="text-[13px] text-cue">{tr("Đang dừng, xem ở mục Tiến trình")}</span>}
+                  </div>
+                  <p className="text-[12px] text-faint">{tv`Ảnh: ${p.generators.image_providers.map((x) => x.label).join(", ")}. Video: ${p.generators.video_providers.map((x) => x.label === "motion" ? tr("chuyển động từ ảnh tĩnh (trên máy)") : x.label).join(", ")}.`}</p>
+                  <ol className="grid gap-2">
+                    {p.shots.map((s, i) => <GenRow key={s.shot_id} shot={s} n={i + 1} providers={p.generators} changed={reload} />)}
+                  </ol>
+                  <Bible entries={p.bible} save={(bible) => patch({ bible })} images={(lib?.assets ?? []).filter((a) => a.kind === "image")}
+                         train={(name, assets) => run(() => post(`/api/v1/projects/${id}/characters/train`, { name, assets }))} />
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
+      {view === "cut" && (
+        <div className="rise grid min-w-0 gap-10">
+          {!approved && <Empty icon="check" title={tr("Duyệt clip trước khi dựng")} action={<Button kind="primary" onClick={() => setView("clips")}>{tr("Tới bước chọn clip")}</Button>}>{tr("Khi các clip của kịch bản đã được duyệt, hệ thống mới đọc lời dẫn, vẽ phụ đề và ghép thành video.")}</Empty>}
           {approved && (
             <Section title={tr("Bản dựng")} icon="play"
                      note={rendering ? <span className="text-ai">{tr("Đang dựng…")}</span> : undefined}
                      actions={<>{rendering && p.render && <div className="w-48"><StageRail stages={p.render.stages} name={(k) => stageName(k, "edit.render")} /></div>}
                        <Button size="sm" disabled={busy || previewing} title={tr("Bản nhỏ, dựng nhanh, không đọc lời dẫn mới; chỉ để xem nhịp và hình")} onClick={() => run(() => post(`/api/v1/projects/${id}/preview`))}><Icon name="bolt" size={14} />{previewing ? tr("Đang dựng bản xem thử…") : tr("Xem thử nhanh")}</Button>
+                       {latest && <Button size="sm" onClick={() => { window.history.pushState({}, "", `/phong-chieu?r=${latest.render_id}`); window.dispatchEvent(new PopStateEvent("popstate")); }}><Icon name="screen" size={14} />{tr("Mở trong Phòng chiếu")}</Button>}
                        <Button size="sm" disabled={busy || !!rendering} onClick={() => run(() => post(`/api/v1/projects/${id}/render`))}><Icon name="scissors" size={14} />{latest ? tr("Dựng lại") : tr("Dựng video")}</Button></>}>
               <Command id={id} busy={busy} reload={reload} />
               {p.previews[0] && !previewing && (
@@ -574,9 +829,9 @@ function Detail({ id, back }: { id: string; back: () => void }) {
               {p.render?.status === "blocked" && <p className="mb-3 text-cue">{tr("Việc dựng đang dừng và cần bạn xử lý. Xem ở mục Tiến trình.")}</p>}
               {!latest && !rendering && <Empty icon="scissors" title={tr("Sẵn sàng dựng")}>{tr("Các clip đã được duyệt. Bấm Dựng video để hệ thống đọc lời dẫn, vẽ phụ đề và ghép cảnh.")}</Empty>}
               {latest && (
-                <div className="grid gap-6 2xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-                  <div className="panel overflow-hidden bg-black p-0">
-                    <video ref={cut} key={latest.url} src={latest.url} controls className={`w-full bg-black ${latest.qc.format === "portrait" ? "mx-auto aspect-[9/16] max-h-[70vh] w-auto" : latest.qc.format === "square" ? "mx-auto aspect-square max-h-[70vh] w-auto" : "aspect-video"}`} />
+                <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+                  <div className="panel overflow-hidden bg-black p-0 xl:sticky xl:top-0">
+                    <video ref={cut} key={latest.url} src={latest.url} controls className={`w-full bg-black ${latest.qc.format === "portrait" ? "mx-auto aspect-[9/16] max-h-[70vh] w-auto" : latest.qc.format === "square" ? "mx-auto aspect-square max-h-[70vh] w-auto" : "aspect-video max-h-[62vh]"}`} />
                   </div>
                   <div className="grid min-w-0 content-start gap-4">
                     {latest.qc.external && <p className="panel px-4 py-3 text-[13px] text-mute">{tr("Bản này được hoàn thiện ở phần mềm khác rồi nhập vào. Kiểm tra bên dưới đo trên chính file đó.")}</p>}
@@ -619,7 +874,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
                         </div>
                       </div>
                     )}
-                    {p.render?.status === "succeeded" && <><p className="flex items-center gap-2 text-proof"><Icon name="check" />{tr("Bạn đã duyệt bản dựng này.")}</p><PackagePanel render={latest} reload={reload} /></>}
+                    {p.render?.status === "succeeded" && <div className="flex flex-wrap items-center gap-3 rounded-xl border border-proof/30 bg-proof/[0.06] px-4 py-3"><Icon name="check" className="text-proof" /><span className="flex-1 text-proof">{tr("Bạn đã duyệt bản dựng này.")}</span><Button size="sm" kind="primary" onClick={() => setView("publish")}>{tr("Sang bước Xuất bản")}<Icon name="next" size={14} /></Button></div>}
                     <Finishing id={id} render={latest} format={p.format} run={run} />
                     <p className="text-[13px]"><a className="inline-flex items-center gap-1.5 text-ink underline decoration-edge underline-offset-4 hover:decoration-mute" href={`/api/v1/renders/${latest.render_id}/edl`} download><Icon name="download" size={14} />{tr("Tải danh sách cắt (EDL)")}</a> <span className="text-mute">{tr("hoặc")}</span> <a className="text-ink underline decoration-edge underline-offset-4 hover:decoration-mute" href={`/api/v1/renders/${latest.render_id}/otio`} download>OpenTimelineIO</a> <span className="text-mute">{tr("để dựng tiếp trong DaVinci Resolve từ file gốc")}</span></p>
                     <Lineage renderId={latest.render_id} />
@@ -641,133 +896,70 @@ function Detail({ id, back }: { id: string; back: () => void }) {
             </Section>
           )}
         </div>
+      )}
 
-        <aside className="grid gap-4 xl:sticky xl:top-0" aria-label={tr("Thiết lập của dự án")}>
-          <div className={card}>
-            <h2 className="flex items-center gap-2 text-[14px] font-semibold"><Icon name="sliders" size={15} className="text-mute" />{tr("Thiết lập")}</h2>
-            <div>
-              <label htmlFor="template" className={field}>{tr("Mẫu định dạng")}</label>
-              <select id="template" value={p.template ?? ""} disabled={busy} onChange={(e) => e.target.value && run(() => post(`/api/v1/projects/${id}/template`, { name: e.target.value }))} className="w-full pl-2.5">
-                <option value="">{tr("Chưa dùng mẫu")}</option>{(prefs?.templates ?? []).map((t) => <option key={t.name}>{t.name}</option>)}
-              </select>
-              <p className="mt-1.5 text-[12px] text-faint">{tr("Mẫu đặt sẵn khung hình, giọng đọc, mức nhạc và cách duyệt. Sửa mẫu ở mục Hệ thống.")}</p>
-            </div>
-            <div>
-              <p className={field} id="format-label">{tr("Khung hình")}</p>
-              <div className="seg w-full" role="radiogroup" aria-labelledby="format-label">
-                {Object.entries(FORMATS).map(([key, label]) => (
-                  <button key={key} type="button" role="radio" aria-checked={p.format === key} disabled={busy} onClick={() => patch({ format: key })} className="flex-1">{label}</button>
-                ))}
-              </div>
-            </div>
-            <form onSubmit={(e) => { e.preventDefault(); patch({ music_path: (music ?? "").trim() || null }); }}>
-              <label htmlFor="music" className={field}>{tr("Nhạc nền")}</label>
-              <div className="flex gap-2">
-                <input id="music" list="tracks" value={music ?? p.music_path ?? ""} onChange={(e) => setMusic(e.target.value)} placeholder={tr("Chọn trong thư viện hoặc dán đường dẫn")} className="min-w-0 flex-1 px-3" />
-                <Button disabled={busy || music === null || (music ?? "") === (p.music_path ?? "")} onClick={() => patch({ music_path: (music ?? "").trim() || null })}>{tr("Lưu")}</Button>
-              </div>
-              <datalist id="tracks">{tracks.map((a) => <option key={a.asset_id} value={a.path}>{`${a.name}, ${timecode(a.duration)}`}</option>)}</datalist>
-              <p className="mt-1.5 text-[12px] text-faint">{tr("Nhạc tự nhỏ lại khi có lời dẫn.")}</p>
-              <MusicIdeas id={id} choose={(path) => patch({ music_path: path })} />
-            </form>
-            <form onSubmit={(e) => { e.preventDefault(); patch({ narration_dir: (takes ?? "").trim() || null }); }}>
-              <label htmlFor="takes" className={field}>{tr("Lời dẫn bạn tự thu")}</label>
-              <div className="flex gap-2">
-                <input id="takes" value={takes ?? p.narration_dir ?? ""} onChange={(e) => setTakes(e.target.value)} placeholder={tr("Thư mục chứa 1.wav, 2.m4a")} className="min-w-0 flex-1 px-3" />
-                <Button disabled={busy || takes === null || (takes ?? "") === (p.narration_dir ?? "")} onClick={() => patch({ narration_dir: (takes ?? "").trim() || null })}>{tr("Lưu")}</Button>
-              </div>
-              <p className="mt-1.5 text-[12px] text-faint">{!p.narration_dir ? tr("Đặt tên file theo số câu. Câu nào không có file thì dùng giọng máy.") : p.own_takes.length ? tv`Đã có bản thu cho câu ${p.own_takes.join(", ")}. Các câu còn lại dùng giọng máy.` : tr("Chưa thấy file thu âm nào trong thư mục này.")}</p>
-            </form>
-            <div className="grid gap-2">
-              {p.music_path && <label className="flex items-start gap-2.5 text-[13px]"><input type="checkbox" className="mt-0.5" checked={!!p.options.music_cleared} disabled={busy} onChange={(e) => patch({ options: { music_cleared: e.target.checked } })} />
-                <span>{tr("Tôi có quyền dùng bản nhạc này")}<span className="block text-[12px] text-faint">{tr("Chưa xác nhận thì video không được đóng gói để đăng.")}</span></span></label>}
-              {p.remote.length > 0 && <label className="flex items-start gap-2.5 text-[13px]"><input type="checkbox" className="mt-0.5" checked={!!p.options.footage_may_leave} disabled={busy} onChange={(e) => patch({ options: { footage_may_leave: e.target.checked } })} />
-                <span>{tr("Cho gửi footage của tôi lên RunPod")}<span className="block text-[12px] text-faint">{tr("Chỉ áp dụng cho các cảnh bạn bật khớp khẩu hình hoặc phóng to bằng mô hình ở dự án này. Tắt thì chỉ hình sinh bằng AI mới được gửi. Chế độ riêng tư luôn chặn.")}</span></span></label>}
-              <label className="flex items-start gap-2.5 text-[13px]"><input type="checkbox" className="mt-0.5" checked={!!p.options.clean_audio} disabled={busy} onChange={(e) => patch({ options: { clean_audio: e.target.checked } })} />
-                <span>{tr("Làm sạch âm thanh")}<span className="block text-[12px] text-faint">{tr("Giảm tiếng ù và tiếng xì ở lời tự thu và âm thanh gốc.")}</span></span></label>
-              <label className="flex items-start gap-2.5 text-[13px]"><input type="checkbox" className="mt-0.5" checked={!!p.options.match_colour} disabled={busy} onChange={(e) => patch({ options: { match_colour: e.target.checked } })} />
-                <span>{tr("Cân màu giữa các cảnh")}<span className="block text-[12px] text-faint">{tr("Kéo độ sáng và tương phản của từng cảnh về cùng một mức.")}</span></span></label>
-            </div>
-            {channels.length > 0 && <div><label htmlFor="channel" className={field}>{tr("Kênh")}</label>
-              <select id="channel" value={p.channel ?? ""} disabled={busy} onChange={(e) => patch({ channel: e.target.value })} className="mt-1.5 h-9 w-full pl-2.5"><option value="">{tr("Chưa thuộc kênh nào")}</option>{channels.map((c) => <option key={c.name}>{c.name}</option>)}</select></div>}
-            <div><label htmlFor="due" className={field}>{tr("Ngày dự định đăng")}</label>
-              <input id="due" type="date" defaultValue={p.due_date ?? ""} key={p.due_date ?? "none"} onChange={(e) => patch({ due_date: e.target.value })} className="mono mt-1.5 h-9 w-full px-3" /></div>
-            <label className="flex items-start gap-2.5 rounded-lg border border-line bg-raised/50 p-3"><input type="checkbox" className="mt-0.5" checked={p.auto_accept} disabled={busy} onChange={(e) => patch({ auto_accept: e.target.checked ? 1 : 0 })} />
-              <span className="text-[13px]">{tr("Tự duyệt clip")}<span className="block text-[12px] text-faint">{tr("Chỉ khi mọi câu đều có clip và mô hình chấm chắc chắn.")}</span></span></label>
-          </div>
+      {view === "publish" && (
+        <div className="rise grid max-w-4xl gap-6">
+          {latest && p.render?.status === "succeeded" ? <PackagePanel render={latest} reload={reload} />
+            : <Empty icon="globe" title={tr("Duyệt bản dựng trước khi xuất bản")} action={latest ? <Button kind="primary" onClick={() => setView("cut")}>{tr("Xem bản dựng")}</Button> : undefined}>{tr("Gói xuất bản gồm video, phụ đề rời, ảnh đại diện và kiểm tra bản quyền; nó chỉ được tạo từ một bản dựng bạn đã duyệt.")}</Empty>}
+        </div>
+      )}
 
-          <div className={card}>
-            <div><h2 className="flex items-center gap-2 text-[14px] font-semibold"><Icon name="link" size={15} className="text-mute" />{tr("Nguồn tham khảo")}<span className="mono ml-auto text-[12px] font-normal text-faint">{p.research.length}</span></h2>
-              <p className="mt-1 text-[12px] text-faint">{tr("Câu nào nêu dữ kiện thì gắn với một nguồn ở đây. Dữ kiện chưa có nguồn sẽ bị nêu ra khi kiểm tra bản dựng.")}</p></div>
-            <ul className="rows empty:hidden">
-              {p.research.map((src) => (
-                <li key={src.title} className="py-2 text-[13px]"><div className="flex justify-between gap-2"><span className="min-w-0 font-medium">{/^https?:\/\//i.test(src.url) ? <a href={src.url} target="_blank" rel="noreferrer" className="underline decoration-edge underline-offset-2">{src.title}</a> : src.title}</span>
-                  <button type="button" className="link shrink-0" onClick={() => { const before = p.research; patch({ research: before.filter((x) => x.title !== src.title) }); toast(tv`Đã bỏ nguồn “${src.title}”.`, { undo: () => patch({ research: before }) }); }}>{tr("Bỏ")}</button></div>
-                  <p className="text-mute">{[src.publisher, src.date].filter(Boolean).join(", ")}</p>{src.passage && <p className="mt-0.5 border-l-2 border-edge pl-2 text-mute">“{src.passage}”</p>}</li>
-              ))}
-            </ul>
-            <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); const f = e.currentTarget; const url = String(new FormData(f).get("url") ?? "").trim(); if (url) run(async () => { await post(`/api/v1/projects/${id}/sources/read`, { url }); f.reset(); }); }}>
-              <input name="url" type="url" aria-label={tr("Địa chỉ trang web cần đọc")} placeholder={tr("Dán địa chỉ bài viết để hệ thống đọc")} className="min-w-0 flex-1 px-3" />
-              <Button type="submit" disabled={busy} title={tr("Chỉ địa chỉ này được gửi ra ngoài máy")}><Icon name="globe" size={14} />{tr("Đọc")}</Button>
-            </form>
-            <div className="flex flex-wrap items-center gap-2 text-[12.5px] text-faint"><Button size="sm" disabled={busy} title={tr("Chỉ tên dự án được gửi đi làm từ khoá tìm kiếm")} onClick={() => run(async () => { const r = await post<{ found: number }>(`/api/v1/projects/${id}/sources/find`, {}); if (!r.found) setNote(tr("Không tìm thấy bài nào trên Wikipedia cho tên dự án này.")); })}><Icon name="search" size={14} />{tr("Tự tìm nguồn")}</Button>
-              <span>{tr("Tìm trên Wikipedia theo tên dự án rồi đọc tối đa 3 bài.")}</span></div>
-            {p.script && <div className="flex flex-wrap gap-2 border-t border-line pt-3">
-              <Button size="sm" kind="ai" disabled={busy} onClick={() => run(async () => { const r = await post<{ found: number }>(`/api/v1/projects/${id}/facts/find`); if (!r.found) setNote(tr("Không thấy câu nào nêu dữ kiện cần kiểm chứng.")); })}>{tr("Tìm câu nêu dữ kiện")}</Button>
-              <Button size="sm" disabled={busy || !p.shots.some((s) => s.is_fact)} title={p.shots.some((s) => s.is_fact) ? tr("So từng câu nêu dữ kiện với các nguồn ở trên") : tr("Chưa có câu nào được đánh dấu là dữ kiện")} onClick={() => run(() => post(`/api/v1/projects/${id}/facts/check`))}>{tr("Đối chiếu với nguồn")}</Button>
-              {facts.length > 0 && <p className="w-full text-[12px] text-faint">{tv`${facts.length} câu nêu dữ kiện: ${facts.filter((s) => s.fact_check?.verdict === "supported").length} có nguồn xác nhận, ${facts.filter((s) => s.fact_check?.verdict === "contradicted").length} trái nguồn, ${facts.filter((s) => !s.fact_check || s.fact_check.verdict === "not_found").length} chưa có căn cứ.`}</p>}
-            </div>}
-            <details className="group">
-              <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[13px] text-accent"><Icon name="plus" size={14} />{tr("Tự nhập một nguồn")}</summary>
-              <form className="mt-3 grid gap-2" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); const src = Object.fromEntries(["title", "publisher", "date", "url", "passage"].map((k) => [k, String(f.get(k) ?? "")])); if (!src.title.trim()) return; patch({ research: [...p.research, src] }); e.currentTarget.reset(); }}>
-                <input name="title" aria-label={tr("Tên nguồn")} placeholder={tr("Tên nguồn, ví dụ: Niên giám thống kê 2025")} className="px-3" />
-                <div className="flex gap-2"><input name="publisher" aria-label={tr("Nơi xuất bản")} placeholder={tr("Nơi xuất bản")} className="min-w-0 flex-1 px-3" /><input name="date" aria-label={tr("Ngày")} placeholder={tr("Ngày")} className="w-24 px-3" /></div>
-                <input name="url" aria-label={tr("Đường dẫn")} placeholder={tr("Đường dẫn (nếu có)")} className="px-3" />
-                <textarea name="passage" aria-label={tr("Đoạn trích")} rows={2} placeholder={tr("Đoạn trích chứng minh dữ kiện")} className="p-2.5" />
-                <div><Button type="submit">{tr("Thêm nguồn")}</Button></div>
+      {settings && (
+        <Drawer title={tr("Thiết lập dự án")} close={() => setSettings(false)}>
+            <div className="grid gap-5">
+              <div>
+                <label htmlFor="template" className={field}>{tr("Mẫu định dạng")}</label>
+                <select id="template" value={p.template ?? ""} disabled={busy} onChange={(e) => e.target.value && run(() => post(`/api/v1/projects/${id}/template`, { name: e.target.value }))} className="w-full pl-2.5">
+                  <option value="">{tr("Chưa dùng mẫu")}</option>{(prefs?.templates ?? []).map((t) => <option key={t.name}>{t.name}</option>)}
+                </select>
+                <p className="mt-1.5 text-[12px] text-faint">{tr("Mẫu đặt sẵn khung hình, giọng đọc, mức nhạc và cách duyệt. Sửa mẫu ở mục Hệ thống.")}</p>
+              </div>
+              <div>
+                <p className={field} id="format-label">{tr("Khung hình")}</p>
+                <div className="seg w-full" role="radiogroup" aria-labelledby="format-label">
+                  {Object.entries(FORMATS).map(([key, label]) => (
+                    <button key={key} type="button" role="radio" aria-checked={p.format === key} disabled={busy} onClick={() => patch({ format: key })} className="flex-1">{label}</button>
+                  ))}
+                </div>
+              </div>
+              <form onSubmit={(e) => { e.preventDefault(); patch({ music_path: (music ?? "").trim() || null }); }}>
+                <label htmlFor="music" className={field}>{tr("Nhạc nền")}</label>
+                <div className="flex gap-2">
+                  <input id="music" list="tracks" value={music ?? p.music_path ?? ""} onChange={(e) => setMusic(e.target.value)} placeholder={tr("Chọn trong thư viện hoặc dán đường dẫn")} className="min-w-0 flex-1 px-3" />
+                  <Button disabled={busy || music === null || (music ?? "") === (p.music_path ?? "")} onClick={() => patch({ music_path: (music ?? "").trim() || null })}>{tr("Lưu")}</Button>
+                </div>
+                <datalist id="tracks">{tracks.map((a) => <option key={a.asset_id} value={a.path}>{`${a.name}, ${timecode(a.duration)}`}</option>)}</datalist>
+                <p className="mt-1.5 text-[12px] text-faint">{tr("Nhạc tự nhỏ lại khi có lời dẫn.")}</p>
+                <MusicIdeas id={id} choose={(path) => patch({ music_path: path })} />
               </form>
-            </details>
-          </div>
-
-          {p.script && (
-            <div className="ai-card grid gap-4 p-4">
-              <div><h2 className="flex items-center gap-2 text-[14px] font-semibold"><Icon name="spark" size={15} className="text-ai" />{tr("Sinh hình bằng AI")}</h2>
-                <p className="mt-1 text-[12px] text-mute">{tr("Cho phim hoạt hình, hoặc khi kho footage không có hình. Hệ thống sinh ảnh tĩnh cho mỗi câu để bạn duyệt, rồi mới sinh video.")}</p></div>
-              {!p.generators.image || !p.generators.video ? (
-                <p className="rounded-lg border border-cue/30 bg-cue/5 px-3 py-2 text-[12.5px] text-cue">{tr("Chưa có nhà cung cấp sinh ảnh và sinh video. Cần khoá API của một nhà cung cấp để bật.")}</p>
-              ) : (
-                <>
-                  <form onSubmit={(e) => { e.preventDefault(); patch({ style: (style ?? "").trim() || null }); }}>
-                    <label htmlFor="style" className={field}>{tr("Phong cách hình")}</label>
-                    <div className="flex gap-2"><input id="style" value={style ?? p.style ?? ""} onChange={(e) => setStyle(e.target.value)} placeholder={tr("Ví dụ: hoạt hình màu nước")} className="min-w-0 flex-1 px-3" />
-                      <Button disabled={busy || style === null} onClick={() => patch({ style: (style ?? "").trim() || null })}>{tr("Lưu")}</Button></div>
-                  </form>
-                  <form onSubmit={(e) => { e.preventDefault(); patch({ budget_cap: budget === "" || budget === null ? null : Number(budget) }); }}>
-                    <label htmlFor="budget" className={field}>{tr("Ngân sách cho dự án (USD)")}</label>
-                    <div className="flex gap-2"><input id="budget" type="number" inputMode="decimal" min="0" step="0.5" value={budget ?? p.budget_cap ?? ""} onChange={(e) => setBudget(e.target.value)} placeholder={tr("Không giới hạn")} className="mono min-w-0 flex-1 px-3" />
-                      <Button disabled={busy || budget === null} onClick={() => patch({ budget_cap: budget === "" || budget === null ? null : Number(budget) })}>{tr("Lưu")}</Button></div>
-                    <p className="mono mt-1.5 text-[12px] text-mute">{tv`Đã tiêu ${p.spent.toFixed(2)} USD`}{p.budget_cap != null ? tv` trên ${p.budget_cap.toFixed(2)} USD` : ""}</p>
-                    {p.budget_cap != null && <div className="mt-1.5"><Meter share={p.spent / p.budget_cap} tone={p.spent >= p.budget_cap ? "cue" : "ai"} /></div>}
-                  </form>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button kind="ai" disabled={busy || dirty || (!!p.generate && ["queued", "running"].includes(p.generate.status))} onClick={() => run(() => post(`/api/v1/projects/${id}/generate`))}>{p.generate ? tr("Sinh lại") : tr("Sinh ảnh cho từng câu")}</Button>
-                    {p.generate?.status === "waiting_review" && <Button kind="primary" disabled={busy} onClick={() => run(() => post(`/api/v1/projects/${id}/generate/approve`))}>
-                      {p.generate.stages.find((s) => s.status === "waiting_review")?.stage_key === "keyframes" ? tr("Duyệt ảnh, sinh video") : tr("Duyệt các clip này")}</Button>}
-                    {p.generate && ["queued", "running"].includes(p.generate.status) && <span className="text-[13px] text-ai">{tr("Đang sinh…")}</span>}
-                    {p.generate?.status === "blocked" && <span className="text-[13px] text-cue">{tr("Đang dừng, xem ở mục Tiến trình")}</span>}
-                  </div>
-                  <p className="text-[12px] text-faint">{tv`Ảnh: ${p.generators.image_providers.map((x) => x.label).join(", ")}. Video: ${p.generators.video_providers.map((x) => x.label === "motion" ? tr("chuyển động từ ảnh tĩnh (trên máy)") : x.label).join(", ")}.`}</p>
-                  <ol className="grid gap-2">
-                    {p.shots.map((s, i) => <GenRow key={s.shot_id} shot={s} n={i + 1} providers={p.generators} changed={reload} />)}
-                  </ol>
-                  <Bible entries={p.bible} save={(bible) => patch({ bible })} images={(lib?.assets ?? []).filter((a) => a.kind === "image")}
-                         train={(name, assets) => run(() => post(`/api/v1/projects/${id}/characters/train`, { name, assets }))} />
-                </>
-              )}
+              <form onSubmit={(e) => { e.preventDefault(); patch({ narration_dir: (takes ?? "").trim() || null }); }}>
+                <label htmlFor="takes" className={field}>{tr("Lời dẫn bạn tự thu")}</label>
+                <div className="flex gap-2">
+                  <input id="takes" value={takes ?? p.narration_dir ?? ""} onChange={(e) => setTakes(e.target.value)} placeholder={tr("Thư mục chứa 1.wav, 2.m4a")} className="min-w-0 flex-1 px-3" />
+                  <Button disabled={busy || takes === null || (takes ?? "") === (p.narration_dir ?? "")} onClick={() => patch({ narration_dir: (takes ?? "").trim() || null })}>{tr("Lưu")}</Button>
+                </div>
+                <p className="mt-1.5 text-[12px] text-faint">{!p.narration_dir ? tr("Đặt tên file theo số câu. Câu nào không có file thì dùng giọng máy.") : p.own_takes.length ? tv`Đã có bản thu cho câu ${p.own_takes.join(", ")}. Các câu còn lại dùng giọng máy.` : tr("Chưa thấy file thu âm nào trong thư mục này.")}</p>
+              </form>
+              <div className="grid gap-2">
+                {p.music_path && <label className="flex items-start gap-2.5 text-[13px]"><input type="checkbox" className="mt-0.5" checked={!!p.options.music_cleared} disabled={busy} onChange={(e) => patch({ options: { music_cleared: e.target.checked } })} />
+                  <span>{tr("Tôi có quyền dùng bản nhạc này")}<span className="block text-[12px] text-faint">{tr("Chưa xác nhận thì video không được đóng gói để đăng.")}</span></span></label>}
+                {p.remote.length > 0 && <label className="flex items-start gap-2.5 text-[13px]"><input type="checkbox" className="mt-0.5" checked={!!p.options.footage_may_leave} disabled={busy} onChange={(e) => patch({ options: { footage_may_leave: e.target.checked } })} />
+                  <span>{tr("Cho gửi footage của tôi lên RunPod")}<span className="block text-[12px] text-faint">{tr("Chỉ áp dụng cho các cảnh bạn bật khớp khẩu hình hoặc phóng to bằng mô hình ở dự án này. Tắt thì chỉ hình sinh bằng AI mới được gửi. Chế độ riêng tư luôn chặn.")}</span></span></label>}
+                <label className="flex items-start gap-2.5 text-[13px]"><input type="checkbox" className="mt-0.5" checked={!!p.options.clean_audio} disabled={busy} onChange={(e) => patch({ options: { clean_audio: e.target.checked } })} />
+                  <span>{tr("Làm sạch âm thanh")}<span className="block text-[12px] text-faint">{tr("Giảm tiếng ù và tiếng xì ở lời tự thu và âm thanh gốc.")}</span></span></label>
+                <label className="flex items-start gap-2.5 text-[13px]"><input type="checkbox" className="mt-0.5" checked={!!p.options.match_colour} disabled={busy} onChange={(e) => patch({ options: { match_colour: e.target.checked } })} />
+                  <span>{tr("Cân màu giữa các cảnh")}<span className="block text-[12px] text-faint">{tr("Kéo độ sáng và tương phản của từng cảnh về cùng một mức.")}</span></span></label>
+              </div>
+              {channels.length > 0 && <div><label htmlFor="channel" className={field}>{tr("Kênh")}</label>
+                <select id="channel" value={p.channel ?? ""} disabled={busy} onChange={(e) => patch({ channel: e.target.value })} className="mt-1.5 h-9 w-full pl-2.5"><option value="">{tr("Chưa thuộc kênh nào")}</option>{channels.map((c) => <option key={c.name}>{c.name}</option>)}</select></div>}
+              <div><label htmlFor="due" className={field}>{tr("Ngày dự định đăng")}</label>
+                <input id="due" type="date" defaultValue={p.due_date ?? ""} key={p.due_date ?? "none"} onChange={(e) => patch({ due_date: e.target.value })} className="mono mt-1.5 h-9 w-full px-3" /></div>
+              <label className="flex items-start gap-2.5 rounded-lg border border-line bg-raised/50 p-3"><input type="checkbox" className="mt-0.5" checked={p.auto_accept} disabled={busy} onChange={(e) => patch({ auto_accept: e.target.checked ? 1 : 0 })} />
+                <span className="text-[13px]">{tr("Tự duyệt clip")}<span className="block text-[12px] text-faint">{tr("Chỉ khi mọi câu đều có clip và mô hình chấm chắc chắn.")}</span></span></label>
             </div>
-          )}
-        </aside>
-      </div>
+        </Drawer>
+      )}
     </Page>
   );
 }
@@ -896,6 +1088,7 @@ export default function Projects({ sub, go }: { sub: string | null; go: (to: str
   const toggle = (m: typeof mode) => { setMode(mode === m ? "none" : m); if (window.location.search) window.history.replaceState({}, "", "/du-an"); };
   return (
     <Page eyebrow={tr("Sản xuất")} title={tr("Dự án")} note={tr("Mỗi dự án là một video, từ kịch bản tới bản dựng đã duyệt.")}
+          side={<ProjectSide filter={{ value: filter, set: setFilter, counts: { all: all.length, active: all.filter((p) => bucket(p) === "active").length, waiting: all.filter((p) => bucket(p) === "waiting").length, done: all.filter((p) => bucket(p) === "done").length } }} />}
           actions={<><Button kind="quiet" onClick={() => toggle("ideas")}><Icon name="spark" />{tr("Gợi ý ý tưởng")}</Button><Button kind="ai" onClick={() => toggle("agent")}><Icon name="sparkles" />{tr("Giao cho trợ lý")}</Button><Button kind="primary" onClick={() => toggle("new")}><Icon name="plus" />{tr("Dự án mới")}</Button></>}>
       {mode === "new" && (
         <form className="panel glow rise mb-6 max-w-3xl p-5" onSubmit={(e) => { e.preventDefault(); if (title.trim()) create(); }}>
@@ -952,12 +1145,11 @@ export default function Projects({ sub, go }: { sub: string | null; go: (to: str
       )}
       {data && data.length === 0 && <Empty icon="clapper" title={tr("Chưa có dự án nào")} action={<Button kind="primary" onClick={() => setMode("new")}><Icon name="plus" />{tr("Dự án mới")}</Button>}>{tr("Bấm Dự án mới để tự viết kịch bản, hoặc Giao cho trợ lý để nó viết và dựng bản đầu tiên từ kho footage của bạn.")}</Empty>}
       {all.length > 0 && (
-        <div className="mb-4 flex flex-wrap items-center gap-3">
-          <div className="seg" role="radiogroup" aria-label={tr("Lọc dự án")}>
-            {FILTERS.map(([k, name]) => { const n = k === "all" ? all.length : all.filter((p) => bucket(p) === k).length; return (
-              <button key={k} type="button" role="radio" aria-checked={filter === k} onClick={() => setFilter(k)}>{name}<span className="mono ml-1.5 text-[11px] text-faint">{n}</span></button>); })}
+        <div className="mb-4 flex flex-wrap items-end gap-3">
+          <div className="grid min-w-0 flex-1 grid-cols-2 gap-3 md:grid-cols-4 lg:hidden" role="radiogroup" aria-label={tr("Lọc dự án")}>
+            {FILTERS.map(([k, name]) => { const n = k === "all" ? all.length : all.filter((p) => bucket(p) === k).length; const look = ({ all: ["layers", "ink"], active: ["pulse", "accent"], waiting: ["bell", "cue"], done: ["check", "proof"] } as const)[k]; return (
+              <Readout key={k} label={name} value={n} icon={look[0]} tone={look[1]} on={filter === k} onClick={() => setFilter(k)} />); })}
           </div>
-          <span className="ml-auto" />
           <div className="seg" role="radiogroup" aria-label={tr("Cách xem")}>
             <button type="button" role="radio" aria-checked={view === "grid"} onClick={() => setLook("grid")} aria-label={tr("Lưới")}><Icon name="grid" size={15} /></button>
             <button type="button" role="radio" aria-checked={view === "list"} onClick={() => setLook("list")} aria-label={tr("Danh sách")}><Icon name="list" size={15} /></button>
@@ -980,8 +1172,8 @@ export default function Projects({ sub, go }: { sub: string | null; go: (to: str
                   {task && <span className="chip absolute bottom-2.5 left-2.5 !text-ai"><Icon name="sparkles" size={12} />{tr("Trợ lý đang làm")}</span>}
                 </div>
                 <div className="px-4 pb-4 pt-1.5">
-                  <p className="truncate text-[15px] font-medium">{p.title}</p>
-                  <p className="mt-0.5 truncate text-[12.5px] text-mute">{p.shots.length ? tv`${p.shots.length} câu` : tr("Chưa có kịch bản")} · {FORMATS[p.format] ?? p.format}</p>
+                  <p className="display truncate text-[15.5px] leading-snug">{p.title}</p>
+                  <p className="mt-0.5 flex gap-3 truncate text-[12.5px] text-mute"><span>{p.shots.length ? tv`${p.shots.length} câu` : tr("Chưa có kịch bản")}</span><span>{FORMATS[p.format] ?? p.format}</span></p>
                   <div className="mt-3 flex items-center justify-between"><Steps step={st.step} tone={st.tone} /><span className="mono text-[11px] text-faint">{new Date(p.created_at * 1000).toLocaleDateString(locale)}</span></div>
                 </div>
               </a></li>
@@ -1009,5 +1201,16 @@ export default function Projects({ sub, go }: { sub: string | null; go: (to: str
         </ul>
       )}
     </Page>
+  );
+}
+
+/** The project's slate: its numbers set large in the reel face, each with a small plain label, the state lamp first. */
+function Slate({ state, items, extra }: { state: React.ReactNode; items: [string, string][]; extra?: React.ReactNode }) {
+  return (
+    <span className="flex flex-wrap items-center gap-x-4 gap-y-2">
+      {state}
+      {items.map(([n, label]) => <span key={label} className="flex items-baseline gap-1.5"><span className="mono text-[14px] font-medium leading-none text-ink">{n}</span><span className="text-[12.5px] text-faint">{label}</span></span>)}
+      {extra && <span className="text-[12.5px] text-faint">{extra}</span>}
+    </span>
   );
 }

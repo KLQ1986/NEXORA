@@ -1,7 +1,7 @@
 import { t as tr, tv, locale } from "./i18n";
 import { useState } from "react";
 import { call, megabytes, post, usePoll, type EvalRun, type Settings, type Template } from "./api";
-import { Button, Icon, LangSwitch, Meter, Page, Tag, ask, toast } from "./parts";
+import { Button, Icon, LangSwitch, Meter, OpsSide, Page, SideLink, Tag, ask, toast } from "./parts";
 
 type Env = { ffmpeg?: { filters: Record<string, boolean>; encoders: Record<string, boolean> }; disk: { free_bytes: number; total_bytes: number };
              adapters: { name: string; runs: string; operations: string[] }[] };
@@ -203,6 +203,41 @@ function Benchmark() {
   );
 }
 
+type BoundaryScore = { found: number; marked: number; matched: number; precision: number | null; recall: number | null };
+type StructureRun = { run_id: string; created_at: number; summary: { assets: number; faults: number; shot: BoundaryScore; beat: BoundaryScore };
+  change?: { regression: boolean; config: Record<string, [unknown, unknown]>; shot_precision: number | null; shot_recall: number | null; beat_precision: number | null; beat_recall: number | null } };
+
+/** How well footage is divided: the boundaries the rules find, held against the ones the operator marked on their own footage. */
+function DivisionBenchmark() {
+  const { data, reload } = usePoll<{ structure: { references: { asset_id: string; name: string; shots: number; beats: number }[]; runs: StructureRun[] } }>("/api/v1/evaluation", 15000);
+  const [note, setNote] = useState<string | null>(null);
+  const run = async () => { setNote(null); try { await post("/api/v1/evaluation/structure/run"); } catch (e) { setNote((e as Error).message); } reload(); };
+  const pct = (v: number | null) => (v == null ? "–" : `${Math.round(v * 100)}%`);
+  const s = data?.structure;
+  const score = (name: string, b: BoundaryScore) => <span>{name} <span className="mono">{pct(b.recall)}</span> <span className="text-faint">{tr("bắt được")}</span> · <span className="mono">{pct(b.precision)}</span> <span className="text-faint">{tr("đúng")}</span></span>;
+  return (
+    <Card title={tr("Mẫu đo cách chia footage")} icon="layers" tone="ai" note={tr("Những video bạn đã rà và đánh dấu ranh giới là đúng. Hệ thống tự chia lại, không dùng dấu của bạn, rồi so với đáp án: bắt được bao nhiêu ranh giới bạn đánh dấu, và bao nhiêu ranh giới nó đặt là đúng. Sai lệch cho phép nửa giây.")}
+          actions={<Button kind="ai" onClick={run}>{tr("Đo cách chia")}</Button>}>
+      {note && <p className="mb-2 text-[13px] text-tally">{note}</p>}
+      {s && s.references.length === 0 && <p className="text-[13px] text-mute">{tr("Chưa có video mẫu nào. Trong Thư viện, mở một video, sửa các ranh giới cho đúng rồi đánh dấu “Dùng video này làm mẫu đo”.")}</p>}
+      {!!s?.runs.length && (
+        <ul className="rows mb-3 text-[13px]">
+          {s.runs.map((r) => (
+            <li key={r.run_id} className="py-2">
+              <p className="flex flex-wrap items-center gap-x-3 gap-y-1"><span className="mono text-faint">{new Date(r.created_at * 1000).toLocaleString(locale, { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+                {score(tr("Cú máy"), r.summary.shot)}{score(tr("Nhịp"), r.summary.beat)}<span className="text-faint">{tv`${r.summary.assets} video mẫu`}</span>
+                {r.summary.faults > 0 ? <Tag tone="tally">{tv`${r.summary.faults} video chưa phủ kín`}</Tag> : <Tag tone="proof">{tr("Phủ kín cả kho")}</Tag>}
+                {r.change && <Tag tone={r.change.regression ? "tally" : "mute"}>{r.change.regression ? tr("Kém đi") : tr("Không kém đi")}</Tag>}</p>
+              {r.change && Object.keys(r.change.config).length > 0 && <p className="mt-0.5 text-[12.5px] text-mute">{tr("Đã đổi:")} {Object.entries(r.change.config).map(([k, [a, b]]) => tv`${k} từ ${String(a)} thành ${String(b)}`).join("; ")}</p>}
+            </li>))}
+        </ul>)}
+      {!!s?.references.length && (
+        <details className="text-[13px]"><summary className="cursor-pointer list-none text-accent">{tv`${s.references.length} video mẫu đang giữ`}</summary>
+          <ul className="rows mt-2">{s.references.map((v) => <li key={v.asset_id} className="flex gap-3 py-1.5"><span className="min-w-0 flex-1 truncate">{v.name}</span><span className="mono shrink-0 text-faint">{tv`${v.shots} ranh giới cú máy · ${v.beats} ranh giới nhịp`}</span></li>)}</ul></details>)}
+    </Card>
+  );
+}
+
 const ROLES: Record<string, string> = { vision: tr("Xem và mô tả footage"), judge: tr("Chấm clip và tìm chủ thể"), writer: tr("Viết kịch bản và từ khoá"), embed: tr("Lập chỉ mục để tìm bằng lời") };
 const SHAPES: Record<string, string> = { landscape: tr("Ngang 16:9"), portrait: tr("Dọc 9:16"), square: tr("Vuông 1:1") };
 
@@ -395,13 +430,13 @@ export default function System() {
   const toggle = async () => { await call("/api/v1/control/kill-switch", { method: "POST", body: JSON.stringify({ on: !control?.kill_switch }) }); reload(); };
   const kill = !!control?.kill_switch;
   return (
-    <Page eyebrow={tr("Vận hành")} title={tr("Hệ thống")} note={tr("Điều khiển, cài đặt, dữ liệu và sức khoẻ của máy.")} wide
+    <Page side={<OpsSide>{AREAS.map(([k, name, icon]) => <SideLink key={k} small label={name} icon={icon} on={area === k} onClick={() => setArea(k)} />)}</OpsSide>} eyebrow={tr("Vận hành")} title={tr("Hệ thống")} note={tr("Điều khiển, cài đặt, dữ liệu và sức khoẻ của máy.")} wide
           actions={<><span className={`flex items-center gap-2 text-[13px] ${kill ? "text-tally" : "text-proof"}`}><span className={`h-2 w-2 rounded-full ${kill ? "bg-tally" : "bg-proof"}`} />{kill ? tr("Đang dừng khẩn cấp") : tr("Hoạt động bình thường")}</span><Button kind={kill ? "primary" : "danger"} onClick={toggle}><Icon name="power" size={15} />{kill ? tr("Cho chạy lại") : tr("Dừng khẩn cấp")}</Button></>}>
-      <div className="grid items-start gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
-        <nav className="scroll-x flex gap-1 lg:sticky lg:top-0 lg:flex-col" aria-label={tr("Mục cài đặt")}>
+      <div className="grid items-start gap-6">
+        <nav className="panel scroll-x flex gap-1 p-1.5 lg:hidden" aria-label={tr("Mục cài đặt")}>
           {AREAS.map(([k, name, icon]) => (
             <button key={k} type="button" onClick={() => setArea(k)} aria-current={area === k ? "page" : undefined}
-                    className={`flex h-9 shrink-0 items-center gap-2.5 whitespace-nowrap rounded-lg px-3 text-[13.5px] transition-colors ${area === k ? "bg-raised font-medium text-ink" : "text-mute hover:bg-raised/50 hover:text-ink"}`}>
+                    className={`flex h-9 shrink-0 items-center gap-2.5 whitespace-nowrap rounded-lg px-3 text-[13.5px] transition-colors ${area === k ? "bg-accent/10 font-medium text-accent shadow-[inset_0_0_0_1px_rgba(48,175,255,0.2)]" : "text-mute hover:bg-raised/50 hover:text-ink"}`}>
               <Icon name={icon} size={16} className={area === k ? "text-accent" : ""} />{name}</button>
           ))}
         </nav>
@@ -434,7 +469,7 @@ export default function System() {
           {area === "library" && <><WatchFolders /><Volumes /></>}
           {area === "templates" && <Templates />}
           {area === "storage" && <StoreCards />}
-          {area === "health" && <><Health /><Capabilities /><Benchmark /><Tools /></>}
+          {area === "health" && <><Health /><Capabilities /><Benchmark /><DivisionBenchmark /><Tools /></>}
         </div>
       </div>
     </Page>

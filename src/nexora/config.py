@@ -15,7 +15,7 @@ class Config:
     writer_model: str = ""
     voice: str = "Linh"
     match_threshold: float = 0.52
-    segment_seconds: float = 12.0
+    segment_seconds: float = 15.0
     judge: bool = True
     openmontage_repo: str = "~/openmontage"
     min_free_gb: float = 2.0
@@ -66,7 +66,7 @@ judge_model = ""                  # judges candidates and finds the subject; emp
 writer_model = ""                 # drafts scripts and search words; empty means the vision model
 voice = "Linh"                    # a voice of the macOS `say` command
 match_threshold = 0.52            # how alike a moment must be to a script line to be considered (0 to 1)
-segment_seconds = 12.0            # the length of footage described as one moment
+segment_seconds = 15.0            # the longest stretch of footage described as one moment; footage is divided where its content changes
 judge = true                      # let the vision model look at candidate frames before a clip is proposed
 openmontage_repo = "~/openmontage"
 min_free_gb = 2.0                 # below this much free disk, work that writes large files waits for the operator

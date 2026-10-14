@@ -151,6 +151,7 @@ def main() -> None:
         print(f"NEXORA: http://127.0.0.1:{port}" + ("" if web.is_dir() else "  (Web UI not built: run `npm run build` in web/)"))
         system.library.measure_unmeasured_music()        # tracks taken in by an older version are listened to once more
         system.library.find_missing_cuts()               # and footage taken in by an older version is looked through for scene cuts
+        system.library.find_unmeasured()                 # and measured, so that it is divided into shots and beats like the rest
         uvicorn.run(create_app(system, web_dir=web, config=config), host="127.0.0.1", port=port, log_level="warning", timeout_graceful_shutdown=2)
 
 
