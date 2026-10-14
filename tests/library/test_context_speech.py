@@ -206,3 +206,18 @@ def test_a_word_left_over_from_an_invented_sentence_goes_with_it():
             {"t_start": 9.0, "t_end": 9.5, "text": "Dạ", "words": [{"p": 0.9}]}]
     kept, dropped = drop_invented(said, [{"t": t / 2, "d": 1.0, "top": [["wind", 0.9]]} for t in range(12)] + [{"t": 9.0, "d": 1.0, "top": [["speech", 0.9]]}])
     assert [s["text"] for s in kept] == ["Dạ"] and [d["text"] for d in dropped] == ["Hãy subscribe cho kênh Ghiền", "Mì", "Gõ để không bỏ lỡ những video hấp dẫn"]
+
+
+def test_two_voices_are_told_apart_by_their_sound():
+    import numpy as np
+    from nexora.modules.library.transcribe import speakers, voice_print
+    rate = 16000
+    t = np.arange(int(rate * 1.5)) / rate
+    def voice(pitch, seed):
+        rng = np.random.default_rng(seed)
+        tone = sum(np.sin(2 * np.pi * pitch * h * t) / h for h in range(1, 12))
+        return (tone * (0.6 + 0.4 * np.sin(2 * np.pi * 3 * t)) + 0.05 * rng.standard_normal(len(t))).astype(np.float32)
+    low, high = [voice_print(voice(110, k), rate) for k in range(3)], [voice_print(voice(240, 10 + k), rate) for k in range(3)]
+    said = speakers([low[0], high[0], low[1], None, high[1], low[2]])
+    assert said == [1, 2, 1, 1, 2, 1]
+    assert speakers([low[0], low[1]]) == [1, 1]

@@ -195,3 +195,45 @@ export function ReviewQueue() {
     </div>
   );
 }
+
+type AssetProfileView = { asset: { duration: number; orientation: string; language: string | null; log_profile: boolean;
+    pacing: { shots: number; cuts_per_minute: number; shot_median: number | null; transitions: Record<string, number> };
+    hook: { first_word_at: number | null; face_in_first_3s: boolean; text_in_first_3s: boolean; strength: string; sound_early: string[] };
+    calls_to_action: string[]; platforms: Record<string, { fits: string; reasons: string[] }>;
+    style: { shot_sizes: Record<string, number>; camera: Record<string, number>; look: Record<string, number>; palette: Record<string, number>; speech_share: number; music_share: number; loudness_lufs: number | null; captions: unknown };
+    loudness: { integrated?: number | null; range?: number | null; true_peak?: number | null }; quality: { beats_with_flaws: number; beats: number; watermark: boolean };
+    sound: Record<string, number> };
+  text_spans: { text: string; start: number; kind: string }[]; recognised: boolean };
+type ScenesView = { scenes: { number: number; name: string; why: string[]; assets: string[]; beats: { asset_id: string; start: number; end: number }[] }[] };
+
+const share = (o: Record<string, number>) => Object.entries(o).map(([k, v]) => `${CAMERA[k] ?? k} ${Math.round(v * 100)}%`).join(", ");
+const FIT: Record<string, "proof" | "cue" | "tally"> = { "tốt": "proof", "được, cần sửa": "cue", "kém": "tally" };
+
+/** The profile of the whole recording: how it is cut, how it opens, which platforms it suits, its style, and its scenes. */
+export function AssetProfile({ assetId }: { assetId: string }) {
+  const { data } = usePoll<AssetProfileView>(`/api/v1/assets/${assetId}/profile`, 30000);
+  const { data: scenes } = usePoll<ScenesView>(`/api/v1/assets/${assetId}/scenes`, 60000);
+  if (!data?.asset) return null;
+  const a = data.asset;
+  const mine = scenes?.scenes.filter((s) => s.assets.includes(assetId)) ?? [];
+  return (
+    <details className="rounded-lg border border-line bg-raised/30 p-2.5 text-[12.5px]">
+      <summary className="cursor-pointer list-none"><span className="eyebrow">{tr("Hồ sơ của cả video")}</span>
+        <span className="ml-2 text-faint">{tv`${a.orientation}, ${a.pacing.shots} cú máy, mở đầu ${a.hook.strength}`}{a.log_profile ? tr(", quay log") : ""}</span></summary>
+      <dl className="mt-2 grid gap-x-4 gap-y-1.5 sm:grid-cols-[9rem_1fr]">
+        <dt className="text-faint">{tr("Nhịp dựng")}</dt><dd>{tv`${a.pacing.cuts_per_minute} lần cắt mỗi phút; cú máy dài trung bình ${a.pacing.shot_median ?? "–"} giây`}</dd>
+        <dt className="text-faint">{tr("Ba giây đầu")}</dt><dd>{[a.hook.first_word_at != null ? tv`lời đầu ở giây ${a.hook.first_word_at}` : tr("không có lời"), a.hook.face_in_first_3s ? tr("có mặt người") : tr("không có mặt người"), a.hook.text_in_first_3s ? tr("có chữ") : tr("không có chữ")].join("; ")}</dd>
+        <dt className="text-faint">{tr("Nền tảng")}</dt><dd className="flex flex-wrap gap-1.5">{Object.entries(a.platforms).map(([name, f]) => <span key={name} title={f.reasons.join("; ")}><Tag tone={FIT[f.fits] ?? "mute"}>{`${name}: ${f.fits}`}</Tag></span>)}</dd>
+        <dt className="text-faint">{tr("Phong cách")}</dt><dd>{[share(a.style.shot_sizes), share(a.style.camera), share(a.style.look)].filter(Boolean).join(" · ")}</dd>
+        <dt className="text-faint">{tr("Màu")}</dt><dd>{Object.entries(a.style.palette).map(([k, v]) => `${k} ${Math.round(v * 100)}%`).join(", ")}</dd>
+        <dt className="text-faint">{tr("Âm thanh")}</dt><dd>{[a.loudness.integrated != null ? `${a.loudness.integrated} LUFS` : null, a.loudness.true_peak != null ? tv`đỉnh ${a.loudness.true_peak} dBTP` : null,
+          tv`lời nói ${Math.round(a.style.speech_share * 100)}%`, tv`nhạc ${Math.round(a.style.music_share * 100)}%`, Object.entries(a.sound).filter(([k]) => k !== "lời nói").map(([k, v]) => `${k} ${v}s`).join(", ")].filter(Boolean).join("; ")}</dd>
+        {a.calls_to_action.length > 0 && <><dt className="text-faint">{tr("Kêu gọi hành động")}</dt><dd>{a.calls_to_action.join(", ")}</dd></>}
+        <dt className="text-faint">{tr("Chất lượng")}</dt><dd>{tv`${a.quality.beats_with_flaws}/${a.quality.beats} nhịp có lỗi kỹ thuật`}{a.quality.watermark ? tr("; có watermark") : ""}</dd>
+        {data.text_spans.length > 0 && <><dt className="text-faint">{tr("Chữ trên hình")}</dt><dd>{data.text_spans.slice(0, 6).map((s) => `${timecode(s.start)} ${s.kind}: ${s.text || "(logo)"}`).join(" · ")}</dd></>}
+        {mine.length > 0 && <><dt className="text-faint">{tr("Phân cảnh")}</dt><dd>{mine.map((s) => <span key={s.number} className="mr-3 inline-block">{tv`#${s.number} ${s.name}`}{s.assets.length > 1 ? tv` (${s.assets.length} file)` : ""}</span>)}</dd></>}
+        {!data.recognised && <><dt /><dd className="text-faint">{tr("Máy này chưa có bộ nhận diện của Apple: người, chữ và âm thanh chưa được nhận diện.")}</dd></>}
+      </dl>
+    </details>
+  );
+}

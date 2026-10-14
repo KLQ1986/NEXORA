@@ -61,6 +61,76 @@ class Profiler:
         made = self.profile(asset_id) or {}
         return {(b["start"], b["end"]): b["profile"] for b in made.get("beats", [])}
 
+    def beat_prints(self, asset_id: str) -> dict[tuple[float, float], np.ndarray]:
+        """One feature print a beat, by (start, end)."""
+        prints, made = self.prints(asset_id), self.profile(asset_id)
+        if prints is None or not made:
+            return {}
+        out = {}
+        for b in made["beats"]:
+            v = P.beat_print(prints, 1 / P.LOOK_FPS, b["start"], b["end"])
+            if v is not None:
+                out[(b["start"], b["end"])] = v
+        return out
+
+    def alike(self, asset_id: str, t_start: float, t_end: float, *, among: list[str], limit: int = 8) -> list[tuple[float, str, float, float]]:
+        """Beats anywhere in `among` whose pictures look most like this one: (likeness 0-1, asset, start, end), best first."""
+        mine = self.beat_prints(asset_id).get((round(t_start, 2), round(t_end, 2)))
+        if mine is None:
+            return []
+        found = []
+        for other in among:
+            for (a, b), v in self.beat_prints(other).items():
+                if other == asset_id and abs(a - t_start) < 0.01:
+                    continue
+                found.append((round(float(mine @ v), 4), other, a, b))
+        return sorted(found, reverse=True)[:limit]
+
+    def scenes(self, asset_ids: list[str]) -> list[dict]:
+        """The scenes of a shoot: the beats of its recordings in the order they were filmed, grouped (design group 03)."""
+        from datetime import datetime
+        dated = []
+        for asset_id in asset_ids:
+            meta = self._assets.original(asset_id).metadata
+            made = self.profile(asset_id)
+            created = (meta.get("probe") or {}).get("created")
+            if not made or not created:
+                continue
+            try:
+                at = datetime.fromisoformat(str(created).replace("Z", "+00:00")).timestamp()
+            except ValueError:
+                continue
+            dated.append((at, asset_id, made))
+        dated.sort()
+        if not dated:
+            return []
+        origin = dated[0][0]
+        beats = []
+        for at, asset_id, made in dated:
+            prints = self.beat_prints(asset_id)
+            for b in made["beats"]:
+                p = b["profile"]
+                beats.append({"asset_id": asset_id, "start": b["start"], "end": b["end"], "at": at - origin + b["start"], "end_at": at - origin + b["end"],
+                              "print": prints.get((b["start"], b["end"])), "place": (p.get("place") or {}).get("value"), "tags": (p.get("scene_tags") or {}).get("value")})
+        made = P.scenes_of(beats)
+        for k, scene in enumerate(made, 1):
+            scene["number"] = k
+            scene["beats"] = [{key: b[key] for key in ("asset_id", "start", "end")} for b in scene["beats"]]
+        return made
+
+    def publish_scenes(self, asset_ids: list[str]) -> list[dict]:
+        """Keep the scenes of a shoot where search finds them: one line a scene in each recording it passes through."""
+        made = self.scenes(asset_ids)
+        for asset_id in asset_ids:
+            self._index.remove(asset_id, "scene")
+        for scene in made:
+            for asset_id in scene["assets"]:
+                mine = [b for b in scene["beats"] if b["asset_id"] == asset_id]
+                self._index.upsert(asset_id, "scene", mine[0]["start"], mine[-1]["end"], f"Phân cảnh {scene['number']}: {scene['name']}.",
+                                   data={"scene": scene["number"], "why": scene["why"], "assets": scene["assets"], "files": len(scene["assets"]), "measured": True},
+                                   analyzer=ANALYZER)
+        return made
+
     def prints(self, asset_id: str) -> np.ndarray | None:
         """The feature print of every looked-at frame, one row a frame, for finding pictures that look alike."""
         try:
@@ -181,7 +251,18 @@ class Profiler:
         made = self.build(ctx.subject_ref)
         if made is None:
             return {"skipped": "nothing measured yet"}
-        return {"beats": len(made["beats"]), "text": len(made["text_spans"]), "sound": len(made["sound_events"])}
+        scenes = self.publish_scenes(self.shoot_of(ctx.subject_ref))
+        return {"beats": len(made["beats"]), "text": len(made["text_spans"]), "sound": len(made["sound_events"]), "scenes_in_shoot": len(scenes)}
+
+    def shoot_of(self, asset_id: str) -> list[str]:
+        """The recordings of the same shoot: the same session named by the operator, else the same folder."""
+        def key(a: dict) -> tuple:
+            return ("session", a["session"]) if a.get("session") else ("folder", str(self._assets.path_of(self._assets.original(a["asset_id"])).parent))
+        mine = self._assets.asset(asset_id)
+        if mine is None:
+            return []
+        wanted = key(mine)
+        return [a["asset_id"] for a in self._assets.assets() if a["kind"] == "video" and key(a) == wanted]
 
     # ------------------------------------------------------------------------------------------------------- joining
     def build(self, asset_id: str) -> dict | None:

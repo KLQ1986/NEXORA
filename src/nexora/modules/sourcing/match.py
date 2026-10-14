@@ -45,18 +45,27 @@ def asked(line: str) -> dict[str, str]:
     return out
 
 
-def held(moment_data: dict, field: str):
+# Where a measured field has no answer, the model's label for the same thing may stand in for it, if it has proved itself too:
+# measured on the operator's footage, the recogniser left bathrooms without an indoor-or-outdoor answer that the model gave right.
+STAND_IN = {"place": "model.noi_chon", "people": "model.so_nguoi", "shot_size": "model.co_canh"}
+
+
+def held(moment_data: dict, field: str, released: set[str] | None = None):
+    """The value of a field for a moment, from its measured profile, or from the model's label when that field is released."""
     profile = moment_data.get("profile") or {}
-    return (profile.get(field) or {}).get("value")
+    value = (profile.get(field) or {}).get("value") if field in (released if released is not None else {field}) else None
+    if value is None and released is not None and STAND_IN.get(field) in released:
+        value = ((moment_data.get("model_labels") or {}).get(STAND_IN[field].split(".", 1)[1]) or {}).get("value")
+    return value
 
 
 def label_fit(wanted: dict[str, str], moment_data: dict, released: set[str]) -> tuple[float, list[str]]:
     """How much the measured labels of a moment agree with what a line asks for, counting released fields only."""
     change, why = 0.0, []
     for field, value in wanted.items():
-        if field not in released:
+        if field not in released and STAND_IN.get(field) not in released:
             continue
-        have = held(moment_data, field)
+        have = held(moment_data, field, released)
         if have is None:
             continue
         if have == value:

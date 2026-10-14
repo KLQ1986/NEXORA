@@ -110,6 +110,81 @@ def tighten(words: list[dict], envelope: list[float], rate: int) -> list[dict]:
     return out
 
 
+BANDS = 24               # bands of the spectrum a voice is described by
+SAME_VOICE = 0.12        # cosine distance under which two sentences are said in the same voice
+MOST_SPEAKERS = 4
+
+
+def voice_print(samples, rate: int):
+    """What a voice sounds like over a stretch: the shape of its spectrum in 24 bands on a log scale between 80 Hz and 4 kHz,
+    with the spread over time, and the typical pitch. Loudness is taken out, so a near and a far voice of one person agree."""
+    import numpy as np
+    step = int(rate * 0.025)
+    n = len(samples) // step
+    if n < 4:
+        return None
+    frames = samples[: n * step].reshape(n, step) * np.hanning(step)
+    power = np.abs(np.fft.rfft(frames, axis=1)) ** 2
+    energy = power.sum(1)
+    voiced = energy > np.percentile(energy, 40)
+    if voiced.sum() < 3:
+        return None
+    freqs = np.fft.rfftfreq(step, 1 / rate)
+    edges = np.geomspace(80, min(4000, rate / 2 - 1), BANDS + 1)
+    bands = np.stack([power[:, (freqs >= a) & (freqs < b)].sum(1) for a, b in zip(edges, edges[1:])], 1)[voiced]
+    logs = np.log(bands + 1e-9)
+    logs -= logs.mean(1, keepdims=True)
+    lags = np.arange(int(rate / 400), int(rate / 70))
+    pitches = []
+    for frame in frames[voiced][:: max(1, int(voiced.sum()) // 40)]:
+        ac = np.correlate(frame, frame, "full")[len(frame) - 1:]
+        if ac[0] > 0 and len(ac) > lags[-1]:
+            lag = lags[np.argmax(ac[lags])]
+            if ac[lag] / ac[0] > 0.3:
+                pitches.append(rate / lag)
+    pitch = float(np.median(pitches)) if pitches else 0.0
+    return np.concatenate([logs.mean(0), 0.5 * logs.std(0), [np.log(max(pitch, 50.0)) - np.log(150.0)]])
+
+
+def speakers(prints: list) -> list[int | None]:
+    """Group sentences by voice: agglomerative, joining the two closest groups while they are closer than `SAME_VOICE`, at
+    most four voices. A sentence too short to have a print gets the voice of the sentence before it. Numbered from 1 in the
+    order the voices are first heard."""
+    import numpy as np
+    known = [i for i, p in enumerate(prints) if p is not None]
+    if not known:
+        return [None] * len(prints)
+    vecs = np.array([prints[i] for i in known], dtype=float)
+    vecs /= np.linalg.norm(vecs, axis=1, keepdims=True) + 1e-9
+    groups = [[k] for k in range(len(known))]
+    centre = lambda g: vecs[g].mean(0) / (np.linalg.norm(vecs[g].mean(0)) + 1e-9)
+    while len(groups) > 1:
+        best = None
+        for a in range(len(groups)):
+            for b in range(a + 1, len(groups)):
+                d = 1 - float(centre(groups[a]) @ centre(groups[b]))
+                if best is None or d < best[0]:
+                    best = (d, a, b)
+        if best[0] > SAME_VOICE and len(groups) <= MOST_SPEAKERS:
+            break
+        _, a, b = best
+        groups[a] += groups.pop(b)
+    label = {}
+    for g in groups:
+        for k in g:
+            label[known[k]] = g
+    order, out, last = [], [], None
+    for i in range(len(prints)):
+        if i in label:
+            g = id(label[i])
+            if g not in order:
+                order.append(g)
+            last = order.index(g) + 1
+        out.append(last)
+    first = next((x for x in out if x is not None), None)
+    return [x if x is not None else first for x in out]
+
+
 def sentences(words: list[dict]) -> list[dict]:
     """Group timed words into sentences: at a full stop, at a pause, at a comma once the sentence is long enough, or when it has run long.
     Speech models often give no pauses and few full stops, so the last two rules do most of the work."""
@@ -164,8 +239,12 @@ class Transcription:
         self._index.remove(ctx.subject_ref, "speech")
         made, dropped = drop_invented(sentences(words), windows)
         words = [w for s in made for w in s["words"]]
-        for s in made:
-            self._index.upsert(ctx.subject_ref, "speech", round(s["t_start"], 2), round(s["t_end"], 2), s["text"], data={"words": s["words"]}, analyzer="speech:v1")
+        voices = self._voices(path, made, ctx)
+        for k, s in enumerate(made):
+            data = {"words": s["words"]}
+            if voices[k] is not None:
+                data["speaker"] = {"value": voices[k], "source": "measured", "confidence": "medium" if len(set(v for v in voices if v)) > 1 else "low"}
+            self._index.upsert(ctx.subject_ref, "speech", round(s["t_start"], 2), round(s["t_end"], 2), s["text"], data=data, analyzer="speech:v2")
         embedded = 0
         pending = [m for m in self._index.without_vectors(ctx.subject_ref) if m.level == "speech"]
         try:
@@ -182,6 +261,27 @@ class Transcription:
                                                                  "doubtful": sum(w["p"] < MIN_SURE for w in words), "language": heard.get("language"),
                                                                  "dropped": dropped, "voice_checked": bool(windows)})
         return {"words": len(words), "sentences": len(made), "embedded": embedded, "dropped": len(dropped)}
+
+    def _voices(self, path, made: list[dict], ctx) -> list[int | None]:
+        """Who says each sentence, by the sound of the voice; nothing when the sound cannot be read."""
+        import numpy as np
+        if len(made) < 2:
+            return [1 if made else None] * len(made)
+        raw = Path(tempfile.gettempdir()) / f"nexora-{ctx.subject_ref}-{ctx.claim.attempt_id}.pcm"
+        try:
+            got = self._adapters.submit("ffmpeg", Request("pcm", inputs={"path": str(path)}, params={"out": str(raw), "rate": 16000}, attempt_id=ctx.claim.attempt_id)).outputs
+            samples = np.fromfile(raw, dtype=np.float32)
+        except (AdapterError, OSError):
+            return [None] * len(made)
+        finally:
+            raw.unlink(missing_ok=True)
+        rate = got["rate"]
+        prints = []
+        for s in made:
+            spans = [samples[int(w["start"] * rate):int(w["end"] * rate)] for w in s["words"]]
+            chunk = np.concatenate(spans) if spans else np.zeros(0, np.float32)
+            prints.append(voice_print(chunk, rate) if len(chunk) >= rate * 0.6 else None)
+        return speakers(prints)
 
     def vocabulary(self, asset_id: str) -> str:
         """Names the speech model should expect: what the operator wrote about the recording, its shoot and its title. Names of

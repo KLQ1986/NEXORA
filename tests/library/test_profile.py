@@ -202,3 +202,34 @@ def test_without_recognisers_the_measured_fields_are_still_there(tmp_path):
     assert made and not made["recognised"]
     beat = made["beats"][0]["profile"]
     assert "people" not in beat and beat["light"]["value"] and beat["colour"]["value"]
+
+
+def test_beats_doing_the_same_thing_are_one_event_with_phases_and_an_event_at_the_end_of_its_shot_is_cut_off():
+    act = lambda verb: {"hanh_dong": [{"ai": "người bán", "lam_gi": verb, "voi": "bột"}]}
+    beats = [{"start": 0.0, "end": 3.0, "shot": 0, "detail": {}}, {"start": 3.0, "end": 6.0, "shot": 0, "detail": act("nhào")},
+             {"start": 6.0, "end": 9.0, "shot": 0, "detail": act("nhào")}, {"start": 9.0, "end": 12.0, "shot": 0, "detail": act("nhào")},
+             {"start": 12.0, "end": 15.0, "shot": 1, "detail": act("cắt")}]
+    shots = [{"start": 0.0, "end": 12.0}, {"start": 12.0, "end": 15.0}]
+    made = P.events_of(beats, shots, motion=lambda a, b: {3.0: 0.1, 6.0: 0.6, 9.0: 0.2}.get(a, 0.0))
+    assert [(e["start"], e["end"], e["actions"]) for e in made] == [(3.0, 12.0, ["nhào"]), (12.0, 15.0, ["cắt"])]
+    assert made[0]["phases"]["cao trào"] == [6.0, 9.0] and made[0]["beats"] == 3 and made[0]["who"] == "người bán"
+    assert made[0]["cut_end"] is True and made[0]["cut_start"] is False
+    assert made[1]["cut_start"] is True and made[1]["cut_end"] is True
+
+
+def test_a_shoot_is_grouped_into_scenes_across_files_by_time_place_and_picture():
+    v = lambda *xs: np.array(xs, np.float32) / np.linalg.norm(xs)
+    beach, beach2, room = v(1, 0.1, 0), v(1, 0.15, 0.05), v(0, 0.2, 1)
+    beats = [{"asset_id": "a", "start": 0, "end": 5, "at": 0, "end_at": 5, "print": beach, "place": "ngoài trời", "tags": ["bãi biển", "thuyền"]},
+             {"asset_id": "b", "start": 0, "end": 5, "at": 60, "end_at": 65, "print": beach2, "place": "ngoài trời", "tags": ["bãi biển", "cát"]},
+             {"asset_id": "c", "start": 0, "end": 5, "at": 120, "end_at": 125, "print": room, "place": "trong nhà", "tags": ["phòng tắm", "gương"]},
+             {"asset_id": "d", "start": 0, "end": 5, "at": 5000, "end_at": 5005, "print": room, "place": "trong nhà", "tags": ["phòng tắm"]}]
+    scenes = P.scenes_of(beats)
+    assert [s["assets"] for s in scenes] == [["a", "b"], ["c"], ["d"]]
+    assert "đổi nơi chốn" in scenes[1]["why"] and scenes[2]["why"][0].startswith("cách nhau")
+    assert scenes[0]["name"] == "ngoài trời: bãi biển, thuyền, cát"
+
+
+def test_a_beat_print_is_the_unit_mean_of_its_frames():
+    prints = np.array([[1, 0], [1, 0], [0, 1], [0, 1]], np.float16)
+    assert np.allclose(P.beat_print(prints, 0.5, 0.0, 1.0), [1, 0]) and np.allclose(P.beat_print(prints, 0.5, 0.0, 2.0), [0.7071, 0.7071], atol=1e-3)

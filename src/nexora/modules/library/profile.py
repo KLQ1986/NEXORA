@@ -723,3 +723,114 @@ def cross_checks(fields: dict, detail: dict, labels: dict, *, has_audio: bool) -
     if (labels.get("sharpness") or {}).get("value") == "poor" or (labels.get("shake") or {}).get("value") == "poor":
         flags.append({"rule": "chất lượng thấp", "message": "nhịp mất nét hoặc rung nặng: mô tả có thể không đáng tin"})
     return flags
+
+
+# ----------------------------------------------------------------------------------------------- events (design group 07)
+EDGE = 0.5                        # seconds: an event this close to the edge of its shot was cut off there
+
+
+def _acts(detail: dict) -> set[str]:
+    out = set()
+    for a in detail.get("hanh_dong") or []:
+        verb = vocab.canonical(a.get("lam_gi", "") if isinstance(a, dict) else str(a))
+        if verb:
+            out.add(verb)
+    return out
+
+
+def events_of(beats: list[dict], shots: list[dict], motion=None) -> list[dict]:
+    """Join beats in a row, in the same shot, that show the same action into one event with a start, a peak and an end
+    (design 10-13, section 7). `beats`: {start, end, shot, detail} in order. `motion(start, end)`: how much the subject moves
+    in a stretch, measured; the beat that moves most is the peak. An event that touches the start or end of its shot was cut
+    off there. A beat with no action is no event."""
+    events, current = [], None
+    for beat in beats:
+        acts = _acts(beat.get("detail") or {})
+        if current and acts and beat.get("shot") == current["shot"] and acts & current["acts"]:
+            current["beats"].append(beat)
+            current["acts"] &= acts if acts & current["acts"] else current["acts"]
+            continue
+        if current:
+            events.append(current)
+        current = {"shot": beat.get("shot"), "acts": set(acts), "beats": [beat]} if acts else None
+    if current:
+        events.append(current)
+    out = []
+    for e in events:
+        first, last = e["beats"][0], e["beats"][-1]
+        shot = shots[e["shot"]] if e["shot"] is not None and e["shot"] < len(shots) else {"start": first["start"], "end": last["end"]}
+        moving = [(motion(b["start"], b["end"]) if motion else 0.0, b) for b in e["beats"]]
+        peak = max(moving, key=lambda m: m[0])[1] if motion and len(moving) > 1 else e["beats"][len(e["beats"]) // 2]
+        who = next((a.get("ai") for b in e["beats"] for a in (b.get("detail") or {}).get("hanh_dong") or [] if isinstance(a, dict) and a.get("ai")), "")
+        what = sorted(e["acts"])
+        out.append({"start": first["start"], "end": last["end"], "shot": e["shot"], "who": who, "actions": what, "beats": len(e["beats"]),
+                    "phases": {"bắt đầu": [first["start"], first["end"]], "cao trào": [peak["start"], peak["end"]], "kết thúc": [last["start"], last["end"]]},
+                    "cut_start": first["start"] - shot["start"] <= EDGE and shot["start"] > 0.0 or first["start"] <= EDGE and first["start"] - shot["start"] <= EDGE,
+                    "cut_end": shot["end"] - last["end"] <= EDGE, "source": "measured+model"})
+    return out
+
+
+# ------------------------------------------------------------------------- pictures alike, scenes across files (groups 03, 15)
+def beat_print(prints: np.ndarray, step: float, start: float, end: float) -> np.ndarray | None:
+    """One feature print for a beat: the mean of its frames' prints, made unit length."""
+    if prints is None or not len(prints):
+        return None
+    k0, k1 = int(math.ceil(start / step - 1e-6)), int(math.floor((end - 1e-6) / step))
+    rows = prints[max(k0, 0):min(k1 + 1, len(prints))].astype(np.float32)
+    rows = rows[np.abs(rows).sum(1) > 0]
+    if not len(rows):
+        return None
+    v = rows.mean(0)
+    n = float(np.linalg.norm(v))
+    return v / n if n > 0 else None
+
+
+SCENE_GAP = 600.0                 # seconds between two recordings beyond which they are two scenes, whatever they show
+SCENE_SPLIT = 1.0                 # a boundary score at or above this opens a new scene
+
+
+def scene_boundary(a: dict, b: dict) -> tuple[float, list[str]]:
+    """How much two consecutive beats of a shoot (in the order they were filmed) look like the end of one scene and the start
+    of another, and why. Each beat: {at (seconds since the shoot began), end, print, place, tags, asset_id}."""
+    score, why = 0.0, []
+    gap = b["at"] - a["end_at"]
+    if gap > SCENE_GAP:
+        return 9.0, [f"cách nhau {round(gap / 60)} phút"]
+    if a.get("place") and b.get("place") and a["place"] != b["place"]:
+        score += 0.8; why.append("đổi nơi chốn")
+    if a.get("print") is not None and b.get("print") is not None:
+        alike = float(a["print"] @ b["print"])
+        if alike < 0.55:
+            score += 0.6; why.append("hình khác hẳn")
+        elif alike < 0.7:
+            score += 0.3
+    ta, tb = set(a.get("tags") or []), set(b.get("tags") or [])
+    if ta and tb and len(ta & tb) / len(ta | tb) < 0.25:
+        score += 0.4; why.append("đổi chủ thể")
+    if a["asset_id"] != b["asset_id"] and gap > 120:
+        score += 0.3; why.append("file khác, cách vài phút")
+    return score, why
+
+
+def scenes_of(beats: list[dict]) -> list[dict]:
+    """Group the beats of a shoot, in filming order, into scenes. Returns scenes with their beats and why each began."""
+    out: list[dict] = []
+    for beat in beats:
+        if out:
+            score, why = scene_boundary(out[-1]["beats"][-1], beat)
+            if score < SCENE_SPLIT:
+                out[-1]["beats"].append(beat)
+                continue
+        else:
+            why = ["đầu buổi quay"]
+        out.append({"beats": [beat], "why": why})
+    for scene in out:
+        tags: dict[str, int] = {}
+        for b in scene["beats"]:
+            for t in (b.get("tags") or [])[:6]:
+                tags[t] = tags.get(t, 0) + 1
+        top = [t for t, _ in sorted(tags.items(), key=lambda kv: -kv[1]) if t not in ("ngoài trời", "trong nhà", "bầu trời")][:4]
+        places = {b.get("place") for b in scene["beats"] if b.get("place")}
+        scene["name"] = (", ".join(sorted(places)) + ": " if places else "") + (", ".join(top) if top else "cảnh")
+        scene["assets"] = sorted({b["asset_id"] for b in scene["beats"]}, key=lambda a: next(b["at"] for b in scene["beats"] if b["asset_id"] == a))
+    return out

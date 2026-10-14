@@ -203,8 +203,9 @@ def split_segments(usable: list[list[float]], seconds: float) -> list[tuple[floa
 
 class Understanding:
     def __init__(self, assets: AssetStore, index: MomentIndex, adapters: AdapterRegistry, media_dir: str | Path, *, segment_seconds: float = 12.0,
-                 structure_of=None, profile_of=None):
+                 structure_of=None, profile_of=None, signals_of=None):
         self._assets, self._index, self._adapters, self._media = assets, index, adapters, Path(media_dir)
+        self._signals_of = signals_of or (lambda asset_id: None)
         self._profile_of = profile_of or (lambda asset_id: {})          # the measured and recognised fields of each beat, by (start, end)
         self._seconds = segment_seconds
         self._structure_of = structure_of or (lambda asset_id: None)      # the shots and beats of an asset, once it has been measured
@@ -351,7 +352,7 @@ class Understanding:
                 continue                                                    # cached: no model call
             if not seg["frames"]:
                 continue
-            out = None
+            out, who, frames_shown = None, None, 0
             # A small model shown many frames at once sometimes answers with something that is not JSON. It is then shown fewer:
             # the first, the middle and the last say most of what the stretch holds; failing that, the middle one alone.
             middle = seg["frames"][len(seg["frames"]) // 2]
@@ -366,9 +367,11 @@ class Understanding:
                     prompt = DESCRIBE_PROMPT.format(n=len(shown), gap=round(gap, 1))
                 prompt += CONTEXT_NOTE.format(context=context)
                 try:
-                    out = self._adapters.submit("model", Request("describe", inputs={"images": shown},
-                                                                params={"prompt": prompt, "index": i, "max_tokens": 900 if measured else 700},
-                                                                attempt_id=ctx.claim.attempt_id)).outputs["json"]
+                    answer = self._adapters.submit("model", Request("describe", inputs={"images": shown},
+                                                                   params={"prompt": prompt, "index": i, "max_tokens": 900 if measured else 700},
+                                                                   attempt_id=ctx.claim.attempt_id)).outputs
+                    out, frames_shown = answer["json"], len(shown)
+                    who = answer.get("model")
                     break
                 except AdapterError as err:
                     if err.code is not ErrorCode.OUTPUT_INVALID:
@@ -376,7 +379,10 @@ class Understanding:
             if out is None:
                 unreadable += 1                      # one bad answer must not cost the whole video; the segment stays undescribed
                 continue
-            data = {"frame": seg["frames"][len(seg["frames"]) // 2], "frames": seg["frames"], **measured}
+            data = {"frame": seg["frames"][len(seg["frames"]) // 2], "frames": seg["frames"], **measured,
+                    # Provenance (design 2026-10-14, group 16): which model said it, asked what, shown how many frames, when.
+                    "provenance": {"model": who, "prompt": BEAT_PROMPT_VERSION if measured else PROMPT_VERSION, "vocabulary": vocab.VERSION,
+                                   "frames_shown": frames_shown, "facts": facts or None, "at": round(__import__("time").time())}}
             if measured:
                 foreign = vocab.foreign_words(" ".join(str(out.get(k) or "") for k in ("mo_ta", "khac_truoc", "boi_canh")))
                 out = tidy(out)
@@ -398,10 +404,31 @@ class Understanding:
             ctx.heartbeat()
         return {"described": done, "unreadable": unreadable}
 
+    def _events(self, asset_id: str, segments) -> int:
+        """Join beats showing one action into events (design group 07) and make them findable."""
+        from nexora.modules.library.profile import events_of
+        structure = self._structure_of(asset_id) or {}
+        shots = [{"start": to_seconds(s["start"], 2), "end": to_seconds(s["end"], 2)} for s in structure.get("shots", [])]
+        found = self._signals_of(asset_id)
+        motion = None
+        if found is not None and len(getattr(found, "subject", [])):
+            fps = found.fps
+            motion = lambda a, b: float(found.subject[int(a * fps):max(int(a * fps) + 1, int(b * fps))].mean())
+        beats = [{"start": m.t_start, "end": m.t_end, "shot": m.data.get("shot"), "detail": m.data.get("detail") or {}} for m in segments]
+        made = events_of(beats, shots, motion)
+        self._index.remove(asset_id, "event")
+        for e in made:
+            cut = ", bị cụt đầu" if e["cut_start"] else ""
+            cut += ", bị cụt đuôi" if e["cut_end"] else ""
+            self._index.upsert(asset_id, "event", e["start"], e["end"], f"Sự việc: {(e['who'] + ' ') if e['who'] else ''}{', '.join(e['actions'])}{cut}.",
+                               data={"event": e}, analyzer=self.analyzer)
+        return len(made)
+
     def _summarise(self, ctx):
         segments = self._index.moments(ctx.subject_ref, level="segment")
         if not segments:
             return {"skipped": "nothing to summarise"}
+        self._events(ctx.subject_ref, segments)
         lines = self.context(ctx.subject_ref) + "\n\n" + "\n".join(f"[{clock(m.t_start)}] {m.text}" for m in segments)[:12000]
         out = self._adapters.submit("model", Request("chat", params={"prompt": SUMMARY_PROMPT.format(lines=lines), "json": True, "max_tokens": 400},
                                                     attempt_id=ctx.claim.attempt_id)).outputs["json"]

@@ -81,3 +81,16 @@ def test_a_field_that_gives_no_value_on_the_hard_cases_is_not_released(tmp_path)
     result = system.fields.measure({})["fields"]["speaker"]
     assert result["coverage"] == 0.0 and result["status"] == "trial"
     assert system.fields.measure({})["fields"]["model.co_canh"]["labels"] == 0
+
+
+def test_pictures_alike_and_the_scenes_of_a_shoot_are_served(tmp_path):
+    system = build(tmp_path / "data", model=FakeModel(), segment_seconds=2.0, recognisers=[FakeVision(), FakeSound()])
+    a, _ = system.library.ingest(make_video(tmp_path / "shoot" / "a.mp4", picture=4))
+    b, _ = system.library.ingest(make_video(tmp_path / "shoot" / "b.mp4", picture=4))
+    drain(system)
+    api = TestClient(create_app(system))
+    first = system.index.moments(a, level="segment")[0]
+    alike = api.get(f"/api/v1/moments/{first.moment_id}/alike").json()["alike"]
+    assert alike and alike[0]["score"] > 0.99
+    scenes = api.get(f"/api/v1/assets/{a}/scenes").json()
+    assert set(scenes["assets"]) == {a, b}

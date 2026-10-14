@@ -65,8 +65,8 @@ class OllamaAdapter(Adapter):
             body["format"] = "json"
         text = self._post("/api/chat", body, timeout)["message"].get("content", "")
         if not want_json:
-            return Result(outputs={"text": text.strip()})
+            return Result(outputs={"text": text.strip(), "model": body["model"]})
         try:
-            return Result(outputs={"json": json.loads(text)})
+            return Result(outputs={"json": json.loads(text), "model": body["model"]})
         except json.JSONDecodeError:
             raise AdapterError(ErrorCode.OUTPUT_INVALID, f"the model did not return JSON: {text[:120]}") from None

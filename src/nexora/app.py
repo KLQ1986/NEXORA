@@ -448,7 +448,7 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
         adapters.register(model)
         index.embed = lambda texts: adapters.submit("model", Request("embed", inputs={"texts": texts})).outputs["vectors"]
         understanding = Understanding(assets, index, adapters, data_dir / "media", segment_seconds=segment_seconds, structure_of=analysis.structure,
-                                      profile_of=profiler.beat_fields)
+                                      profile_of=profiler.beat_fields, signals_of=analysis.signals)
     registry = PipelineRegistry()
     library = Library(orch, assets, adapters, data_dir / "media", min_free_bytes=min_free_bytes, understanding=understanding, transcription=transcription,
                       analysis=analysis, profiler=profiler)

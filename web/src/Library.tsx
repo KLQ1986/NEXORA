@@ -5,6 +5,7 @@ import { call, megabytes, post, timecode, usePoll, type Asset, type Hit, type Mo
 const LEVEL: Record<string, string> = { segment: tr("CẢNH"), speech: tr("LỜI NÓI"), note: tr("GHI CHÚ"), frame: tr("KHUNG HÌNH") };
 import { ask, Button, Icon, Page, RangeStrip, SkeletonCards, StageRail, StatusText, Tabs, TimeChip, toast, goTo } from "./parts";
 import { StructureStrip } from "./Structure";
+import { AssetProfile } from "./Profile";
 
 function AddFootage({ onDone }: { onDone: () => void }) {
   const [path, setPath] = useState("");
@@ -193,6 +194,7 @@ function Player({ asset, start, others, close, similar }: { asset: Asset; start?
         </div>
         {!asset.still && asset.kind === "video" && <div className="px-4 pt-3"><RangeStrip asset={asset} tall playhead={t} onSeek={seek} /></div>}
         {!asset.still && asset.kind === "video" && !asset.duplicate_of && <div className="px-4 pt-3"><StructureStrip asset={asset} t={t} seek={seek} /></div>}
+        {!asset.still && asset.kind === "video" && !asset.duplicate_of && <div className="px-4 pt-3"><AssetProfile assetId={asset.asset_id} /></div>}
         <div className="grid gap-2 px-4 pt-3">
           {unusable > 0 && <p className="flex items-center gap-2 text-[12.5px] text-mute"><span className="hatch inline-block h-3 w-5 rounded-sm" />{tr("Có")} <span className="mono text-ink">{timecode(unusable)}</span> {tr("khung đen — hệ thống sẽ không chọn clip từ phần này.")}</p>}
           {asset.duplicate_of && <p className="text-[12.5px] text-mute">{tr("File này trùng nội dung với một video đã có trong thư viện nên không được xử lý lại.")}</p>}

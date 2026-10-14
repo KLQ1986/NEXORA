@@ -1549,6 +1549,27 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             raise HTTPException(409, "Đây là bản trùng của một footage đã có")
         return {"run_id": run_id}
 
+    @app.get("/api/v1/moments/{moment_id}/alike")
+    def alike(moment_id: str, limit: int = 8):
+        """Stretches anywhere in the library whose pictures look like this one (Apple's feature print, design group 15)."""
+        moment = system.index.by_id(moment_id)
+        if moment is None or system.library.profiler is None:
+            raise HTTPException(404, "no such moment")
+        among = [a["asset_id"] for a in system.assets.assets() if a["kind"] == "video"]
+        out = []
+        for score, asset_id, a, b in system.library.profiler.alike(moment.asset_id, moment.t_start, moment.t_end, among=among, limit=limit):
+            m = system.index.get(asset_id, "segment", a, b)
+            if m is not None:
+                out.append({**moment_view(m, score), "asset": asset_brief(asset_id)})
+        return {"alike": out}
+
+    @app.get("/api/v1/assets/{asset_id}/scenes")
+    def shoot_scenes(asset_id: str):
+        """The scenes of the shoot this recording belongs to, across its files (design group 03)."""
+        need_asset(asset_id)
+        shoot = system.library.profiler.shoot_of(asset_id)
+        return {"assets": shoot, "scenes": system.library.profiler.scenes(shoot)}
+
     @app.get("/api/v1/assets/{asset_id}/profile")
     def asset_profile(asset_id: str):
         made = system.library.profiler.profile(asset_id) if system.library.profiler else None
