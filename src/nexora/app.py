@@ -278,6 +278,37 @@ def purge_trash(system: "System", *, assets: list[str] | None = None, projects: 
     return {**done, "kept": kept}
 
 
+def footage_insights(system: "System") -> dict:
+    """What the channel's own figures say about the footage used: for each published video, the share of it watched on average
+    and the measured traits of the stretches it was cut from (design 2026-10-14, group 12). Lives here because it joins three
+    modules: what went out, the cut, and the profile of the footage."""
+    from nexora.modules.library.profile import what_works
+    rows = system.publishing._conn.execute("SELECT p.publication_id, p.render_id, (SELECT figures FROM metric_snapshots m WHERE m.publication_id = p.publication_id "
+                                           "ORDER BY at DESC LIMIT 1) AS figures FROM publications p WHERE p.status = 'published'").fetchall()
+    videos = []
+    for row in rows:
+        figures = json.loads(row["figures"] or "{}")
+        render = system.projects.render(row["render_id"])
+        shots = (render or {}).get("qc", {}).get("shots") or []
+        length = sum((s.get("t_out") or 0) - (s.get("t_in") or 0) for s in shots) or (render or {}).get("qc", {}).get("duration") or 0
+        if not figures.get("views") or not figures.get("watch_seconds") or not length:
+            continue
+        sizes, faces, words = [], 0, 0
+        for s in shots:
+            made = system.library.profiler.profile(s.get("asset_id") or "") if s.get("asset_id") else None
+            for b in (made or {}).get("beats", []):
+                if b["start"] < (s.get("t_out") or 0) and b["end"] > (s.get("t_in") or 0):
+                    p = b["profile"]
+                    sizes.append((p.get("shot_size") or {}).get("value"))
+                    faces += bool((p.get("people") or {}).get("faces"))
+                    words += bool(p.get("speaker"))
+        sizes = [x for x in sizes if x]
+        traits = {"cỡ cảnh chính": max(set(sizes), key=sizes.count) if sizes else "không rõ", "có mặt người": faces > 0, "có người nói": words > 0,
+                  "số cảnh mỗi phút": "nhiều" if len(shots) / max(length / 60, 1e-3) >= 12 else "ít"}
+        videos.append({"retention": min(1.0, figures["watch_seconds"] / figures["views"] / length), "traits": traits, "publication_id": row["publication_id"]})
+    return what_works(videos)
+
+
 def render_rights(system: "System", render_id: str) -> dict:
     """The rights report of a render. Lives here because it reads what three modules own: the cut, the assets and the project."""
     render = system.projects.render(render_id)

@@ -2,7 +2,7 @@ import { t as tr, tv, locale } from "./i18n";
 import { useState } from "react";
 import { call, megabytes, post, usePoll, type EvalRun, type Settings, type Template } from "./api";
 import { Button, Icon, LangSwitch, Meter, OpsSide, Page, SideLink, Tag, ask, toast } from "./parts";
-import { FieldAccuracy, ReviewQueue } from "./Profile";
+import { FieldAccuracy, PeopleCard, ReviewQueue } from "./Profile";
 
 type Env = { ffmpeg?: { filters: Record<string, boolean>; encoders: Record<string, boolean> }; disk: { free_bytes: number; total_bytes: number };
              adapters: { name: string; runs: string; operations: string[] }[] };
@@ -467,7 +467,7 @@ export default function System() {
           {area === "autonomy" && <AutonomyCard />}
           {area === "audit" && <AuditCard />}
           {area === "ai" && <><VoiceModels /><ModelRoutes /><Providers /></>}
-          {area === "library" && <><WatchFolders /><Volumes /></>}
+          {area === "library" && <><WatchFolders /><Volumes /><PeopleCard /></>}
           {area === "templates" && <Templates />}
           {area === "storage" && <StoreCards />}
           {area === "quality" && <><FieldAccuracy /><ReviewQueue /><Benchmark /><DivisionBenchmark /></>}

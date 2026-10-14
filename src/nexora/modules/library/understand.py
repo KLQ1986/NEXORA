@@ -442,7 +442,7 @@ class Understanding:
             fps = found.fps
             motion = lambda a, b: float(found.subject[int(a * fps):max(int(a * fps) + 1, int(b * fps))].mean())
         beats = [{"start": m.t_start, "end": m.t_end, "shot": m.data.get("shot"), "detail": m.data.get("detail") or {}} for m in segments]
-        made = events_of(beats, shots, motion)
+        made = events_of(beats, shots, motion, (found.subject, found.fps) if motion else None)
         by_start = {m.t_start: m for m in segments}
         for e in made[:MAX_STATES]:
             first, last = by_start.get(e["phases"]["bắt đầu"][0]), by_start.get(e["phases"]["kết thúc"][0])

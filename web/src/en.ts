@@ -1838,6 +1838,14 @@ const en: Record<string, string> = {
   "Hệ thống vẫn đo và lập thẻ phong cách cho video này, nhưng không bao giờ cắt hình hay tiếng của nó vào video của bạn.": "The system still measures it and makes a style card, but never cuts its picture or sound into your videos.",
   "Người xuất hiện đã đồng ý": "The people in it agreed",
   "Khi footage có mặt người, video dùng nó chỉ được đăng sau khi bạn xác nhận họ đồng ý xuất hiện.": "When footage shows people's faces, a video using it is published only after you confirm they agreed to appear.",
+  "Đã tạo mẫu “{0}”. Chọn nó ở dự án.": "Template “{0}” made. Pick it in a project.",
+  "Tên mẫu định dạng": "Template name",
+  "Tạo mẫu từ phong cách video này": "Make a template from this video's style",
+  "Sổ người": "People",
+  "Khuôn mặt trong kho được gom theo độ giống nhau, mỗi nhóm là một người. Đặt tên để tìm và để ghi ai xuất hiện. Đặc trưng khuôn mặt chỉ lưu trên máy này.": "Faces in the library are grouped by likeness, each group one person. Name them to find them and to record who appears. Face features stay on this machine.",
+  "Chưa thấy khuôn mặt nào đủ rõ trong kho.": "No face clear enough in the library yet.",
+  "Chưa đặt tên": "Not named",
+  "{0} lần thấy, trong {1} video": "seen {0} times, in {1} videos",
 };
 
 export default en;

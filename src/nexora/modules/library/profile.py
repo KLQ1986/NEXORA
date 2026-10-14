@@ -751,7 +751,7 @@ def _acts(detail: dict) -> set[str]:
     return out
 
 
-def events_of(beats: list[dict], shots: list[dict], motion=None) -> list[dict]:
+def events_of(beats: list[dict], shots: list[dict], motion=None, series: tuple | None = None) -> list[dict]:
     """Join beats in a row, in the same shot, that show the same action into one event with a start, a peak and an end
     (design 10-13, section 7). `beats`: {start, end, shot, detail} in order. `motion(start, end)`: how much the subject moves
     in a stretch, measured; the beat that moves most is the peak. An event that touches the start or end of its shot was cut
@@ -776,7 +776,9 @@ def events_of(beats: list[dict], shots: list[dict], motion=None) -> list[dict]:
         peak = max(moving, key=lambda m: m[0])[1] if motion and len(moving) > 1 else e["beats"][len(e["beats"]) // 2]
         who = next((a.get("ai") for b in e["beats"] for a in (b.get("detail") or {}).get("hanh_dong") or [] if isinstance(a, dict) and a.get("ai")), "")
         what = sorted(e["acts"])
+        exact = refine_bounds(first["start"], last["end"], *series) if series is not None else None
         out.append({"start": first["start"], "end": last["end"], "shot": e["shot"], "who": who, "actions": what, "beats": len(e["beats"]),
+                    "moving_from": exact[0] if exact else None, "moving_to": exact[1] if exact else None,
                     "phases": {"bắt đầu": [first["start"], first["end"]], "cao trào": [peak["start"], peak["end"]], "kết thúc": [last["start"], last["end"]]},
                     "cut_start": first["start"] - shot["start"] <= EDGE and shot["start"] > 0.0 or first["start"] <= EDGE and first["start"] - shot["start"] <= EDGE,
                     "cut_end": shot["end"] - last["end"] <= EDGE, "source": "measured+model"})
@@ -868,3 +870,104 @@ def group_faces(prints: np.ndarray, *, same: float = SAME_FACE) -> list[list[int
         groups.append([i])
         centres.append(v)
     return groups
+
+
+# ------------------------------------------------------------------------------- following things through a shot (group 06)
+def tracks_of(pictures: list[dict], *, step: float, shots: list[dict], kinds=("humans", "faces", "hands", "animals")) -> list[dict]:
+    """People, faces, hands and animals followed from frame to frame inside each shot: a box in one frame continues the track
+    whose last box it overlaps most (at least a fifth), one frame may be missed. A track never crosses a cut."""
+    out = []
+    for kind in kinds:
+        open_tracks: list[dict] = []
+        for k, picture in enumerate(pictures):
+            t = k * step
+            shot = next((i for i, s in enumerate(shots) if s["start"] <= t < s["end"]), None)
+            boxes = [x["box"] for x in picture.get(kind) or [] if x.get("confidence", 1) >= 0.4 and x.get("box")]
+            still = []
+            for tr in open_tracks:
+                if tr["shot"] != shot or t - tr["times"][-1] > step * 2.01:
+                    out.append(tr)
+                    continue
+                best = max(boxes, key=lambda b: _iou(b, tr["boxes"][-1]), default=None)
+                if best is not None and _iou(best, tr["boxes"][-1]) >= 0.2:
+                    tr["boxes"].append(best); tr["times"].append(t); boxes.remove(best)
+                still.append(tr)
+            open_tracks = still + [{"kind": kind, "shot": shot, "boxes": [b], "times": [t]} for b in boxes]
+        out += open_tracks
+    made = []
+    for tr in out:
+        if len(tr["times"]) < 2:
+            continue
+        first, last = tr["boxes"][0], tr["boxes"][-1]
+        dx = (last[0] + last[2] / 2) - (first[0] + first[2] / 2)
+        made.append({"kind": tr["kind"], "shot": tr["shot"], "start": round(tr["times"][0], 2), "end": round(tr["times"][-1] + step, 2), "frames": len(tr["times"]),
+                     "first_box": first, "last_box": last, "moves": "trái sang phải" if dx > 0.15 else "phải sang trái" if dx < -0.15 else "tại chỗ",
+                     "grows": round(last[2] * last[3] / max(first[2] * first[3], 1e-6), 2), "source": "recognized"})
+    return sorted(made, key=lambda x: (x["start"], x["kind"]))
+
+
+def refine_bounds(start: float, end: float, motion: np.ndarray, fps: float, *, quiet: float = 0.25) -> tuple[float, float]:
+    """The instant an action starts and stops, to a tenth of a second: inside [start, end], where the subject's movement first
+    rises above, and last stays above, a share `quiet` of its peak there. Unchanged when nothing moves."""
+    a, b = int(start * fps), max(int(start * fps) + 1, int(end * fps))
+    part = motion[a:b]
+    if not len(part) or float(part.max()) <= 1e-6:
+        return start, end
+    above = np.nonzero(part >= quiet * float(part.max()))[0]
+    return round((a + above[0]) / fps, 1), round(min(end, (a + above[-1] + 1) / fps), 1)
+
+
+def has_content_credentials(path, *, reach: int = 8 * 1024 * 1024) -> bool:
+    """Whether a file carries C2PA content credentials (design group 16): their store is labelled "c2pa" in a box near the
+    start or the end of the file. Only their presence is read here; checking their signature needs the C2PA tools."""
+    try:
+        size = path.stat().st_size
+        with open(path, "rb") as f:
+            head = f.read(min(reach, size))
+            if b"c2pa" in head:
+                return True
+            if size > reach:
+                f.seek(max(0, size - reach))
+                return b"c2pa" in f.read(reach)
+    except OSError:
+        return False
+    return False
+
+
+# ----------------------------------------------------------------- what the channel's own figures say (design group 12)
+MIN_VIDEOS = 5
+
+
+def what_works(videos: list[dict]) -> dict:
+    """Which measured traits of the footage used in published videos go with videos watched longer. `videos`: {retention
+    (share of the video watched on average), traits: {name: value}}. Below five videos nothing is claimed; a trait is only
+    compared when at least two videos have it and two do not. These are associations on the operator's own channel, not causes."""
+    if len(videos) < MIN_VIDEOS:
+        return {"videos": len(videos), "enough": False, "findings": []}
+    findings = []
+    names = {(k, str(v)) for x in videos for k, v in x["traits"].items()}
+    for name, value in sorted(names):
+        have = [x["retention"] for x in videos if str(x["traits"].get(name)) == value]
+        rest = [x["retention"] for x in videos if str(x["traits"].get(name)) != value]
+        if len(have) >= 2 and len(rest) >= 2:
+            gap = sum(have) / len(have) - sum(rest) / len(rest)
+            findings.append({"trait": name, "value": value, "with": len(have), "without": len(rest), "retention_with": round(sum(have) / len(have), 3),
+                             "retention_without": round(sum(rest) / len(rest), 3), "difference": round(gap, 3)})
+    findings.sort(key=lambda f: -abs(f["difference"]))
+    return {"videos": len(videos), "enough": True, "findings": findings[:12]}
+
+
+def template_from_style(whole: dict, name: str) -> dict:
+    """A format template made from the style of a recording (design group 13): its shape, where and how big its captions sit,
+    how present its music is, and, as notes the editing follows, its pace, its usual size of frame and its colour."""
+    style = whole.get("style") or {}
+    captions = style.get("captions") or {}
+    y = captions.get("position_y")
+    position = "bottom" if y is None or y >= 0.6 else ("top" if y < 0.33 else "middle")
+    scale = round(max(0.7, min(1.6, (captions.get("height") or 0.05) / 0.05)), 2)
+    shape = {"dọc": "portrait", "vuông": "square"}.get(whole.get("orientation"), "landscape")
+    sizes = style.get("shot_sizes") or {}
+    return {"name": name.strip(), "format": shape, "voice": "", "music_gain": 0.5 if (style.get("music_share") or 0) > 0.5 else 0.35, "auto_accept": False,
+            "caption_scale": scale, "caption_position": position, "typeface": "sans", "caption_colour": None, "logo_path": "", "pronounce": {},
+            "style": {"cuts_per_minute": style.get("cuts_per_minute"), "shot_size": max(sizes, key=sizes.get) if sizes else None,
+                      "look": max(style.get("look") or {"tự nhiên": 1}, key=(style.get("look") or {"tự nhiên": 1}).get), "loudness_lufs": style.get("loudness_lufs")}}

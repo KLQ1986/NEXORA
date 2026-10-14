@@ -256,3 +256,39 @@ def test_a_summary_keeps_only_what_the_footage_shows_for_it():
     assert out["chu_de"] == ["bãi biển"] and out["the_loai"] == "vlog du lịch"
     assert out["cau_truc"] == [{"phan": "mở đầu", "tu": "0:00"}] and out["cam_xuc"] == [{"tu": "0:05", "cam_xuc": "vui"}]
     assert "khan_gia" in out["inferred"]
+
+
+def test_a_person_is_followed_through_a_shot_and_never_across_a_cut():
+    person = lambda x: {"humans": [{"box": [x, 0.2, 0.2, 0.6], "confidence": 0.9}]}
+    pictures = [person(0.1), person(0.15), person(0.2), person(0.3), person(0.35)]
+    made = P.tracks_of(pictures, step=0.5, shots=[{"start": 0.0, "end": 1.5}, {"start": 1.5, "end": 3.0}])
+    assert [(t["start"], t["end"], t["frames"]) for t in made] == [(0.0, 1.5, 3), (1.5, 2.5, 2)]
+    assert made[0]["moves"] == "tại chỗ" and P.tracks_of([person(0.1), person(0.18), person(0.26), person(0.34)], step=0.5, shots=[{"start": 0, "end": 9}])[0]["moves"] == "trái sang phải"
+
+
+def test_an_action_is_timed_to_a_tenth_of_a_second_from_how_the_subject_moves():
+    motion = np.zeros(300, np.float32); motion[62:181] = 0.8
+    assert P.refine_bounds(0.0, 10.0, motion, 30.0) == (2.1, 6.0)
+    assert P.refine_bounds(0.0, 10.0, np.zeros(300, np.float32), 30.0) == (0.0, 10.0)
+
+
+def test_content_credentials_are_noticed(tmp_path):
+    marked, plain = tmp_path / "a.mp4", tmp_path / "b.mp4"
+    marked.write_bytes(b"\\0" * 100 + b"jumbc2pa" + b"\\0" * 100); plain.write_bytes(b"\\0" * 300)
+    assert P.has_content_credentials(marked) and not P.has_content_credentials(plain)
+
+
+def test_what_the_channel_says_needs_five_videos_and_compares_with_and_without():
+    few = P.what_works([{"retention": 0.5, "traits": {"x": True}}] * 4)
+    assert few["enough"] is False and few["findings"] == []
+    videos = [{"retention": r, "traits": {"có mặt người": f}} for r, f in ((0.7, True), (0.6, True), (0.65, True), (0.3, False), (0.35, False))]
+    found = P.what_works(videos)["findings"]
+    assert abs(found[0]["difference"]) == pytest.approx(0.325, abs=1e-3) and next(f for f in found if f["value"] == "True")["difference"] > 0 and {f["value"] for f in found} == {"True", "False"}
+
+
+def test_a_template_takes_the_shape_captions_and_pace_of_a_reference_video():
+    whole = {"orientation": "dọc", "style": {"captions": {"position_y": 0.8, "height": 0.07}, "music_share": 0.7, "cuts_per_minute": 24,
+                                             "shot_sizes": {"cận": 0.6, "toàn": 0.4}, "look": {"rực rỡ": 1.0}, "loudness_lufs": -14}}
+    made = P.template_from_style(whole, "Như kênh X")
+    assert (made["format"], made["caption_position"], made["caption_scale"], made["music_gain"]) == ("portrait", "bottom", 1.4, 0.5)
+    assert made["style"] == {"cuts_per_minute": 24, "shot_size": "cận", "look": "rực rỡ", "loudness_lufs": -14}

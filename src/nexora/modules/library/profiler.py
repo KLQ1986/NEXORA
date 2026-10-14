@@ -206,6 +206,7 @@ class Profiler:
         if not path.is_file():
             return {"skipped": "the original is not available; the description read at ingest stays"}
         info = self._adapters.submit("ffprobe", Request("probe", inputs={"path": str(path)}, attempt_id=ctx.claim.attempt_id)).outputs
+        info["content_credentials"] = P.has_content_credentials(path)
         kept = original.metadata.get("probe", {})
         self._assets.update_metadata(original.version_id, probe={**kept, **info, "still": kept.get("still"), "audio_only": kept.get("audio_only")})
         return {"fields": len(info)}
@@ -359,8 +360,9 @@ class Profiler:
         whole = P.asset_profile(probe=probe, shots=shots, beats=beats, words=words, spans=spans, events=events, integrated=listen.get("integrated"),
                                 signals_diff=getattr(found, "diff", None), fps=getattr(found, "fps", None),
                                 language=original.metadata.get("speech", {}).get("language"))
+        tracks = P.tracks_of(pictures, step=step, shots=shots) if look.get("looked") else []
         made = {"version": P.VERSION, "beats": [{"start": b["start"], "end": b["end"], "profile": b["profile"]} for b in beats],
-                "text_spans": spans, "sound_events": events, "asset": whole, "recognised": bool(look.get("looked"))}
+                "text_spans": spans, "sound_events": events, "tracks": tracks, "asset": whole, "recognised": bool(look.get("looked"))}
         _write_json(self._path(asset_id, "_profile.json"), made)
         self._assets.update_metadata(original.version_id, probe={**original.metadata.get("probe", {}), "log_profile": log_profile},
                                      profile={k: whole[k] for k in ("orientation", "language", "log_profile", "pacing", "hook", "platforms", "quality", "loudness", "calls_to_action")})

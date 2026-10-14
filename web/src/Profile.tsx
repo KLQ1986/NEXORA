@@ -234,6 +234,43 @@ export function AssetProfile({ assetId }: { assetId: string }) {
         {mine.length > 0 && <><dt className="text-faint">{tr("Phân cảnh")}</dt><dd>{mine.map((s) => <span key={s.number} className="mr-3 inline-block">{tv`#${s.number} ${s.name}`}{s.assets.length > 1 ? tv` (${s.assets.length} file)` : ""}</span>)}</dd></>}
         {!data.recognised && <><dt /><dd className="text-faint">{tr("Máy này chưa có bộ nhận diện của Apple: người, chữ và âm thanh chưa được nhận diện.")}</dd></>}
       </dl>
+      <MakeTemplate assetId={assetId} />
     </details>
+  );
+}
+
+/** A format template from the style of this recording: shape, captions, music and pace. */
+function MakeTemplate({ assetId }: { assetId: string }) {
+  const [name, setName] = useState("");
+  const [note, setNote] = useState<string | null>(null);
+  const make = async () => { setNote(null); try { await post(`/api/v1/assets/${assetId}/template`, { name }); setNote(tv`Đã tạo mẫu “${name}”. Chọn nó ở dự án.`); setName(""); } catch (e) { setNote((e as Error).message); } };
+  return (
+    <form className="mt-2 flex flex-wrap items-center gap-2" onSubmit={(e) => { e.preventDefault(); if (name.trim()) make(); }}>
+      <input className="h-8 min-w-0 flex-1 rounded-md border border-line bg-raised px-2" placeholder={tr("Tên mẫu định dạng")} value={name} onChange={(e) => setName(e.target.value)} />
+      <Button size="sm" type="submit" disabled={!name.trim()}>{tr("Tạo mẫu từ phong cách video này")}</Button>
+      {note && <span className="w-full text-faint">{note}</span>}
+    </form>
+  );
+}
+
+type Person = { key: string; name: string | null; faces: number; assets: string[]; confidence: string };
+
+/** The people of the library: faces grouped by likeness. The operator names them; a name follows its person. */
+export function PeopleCard() {
+  const { data, reload } = usePoll<{ people: Person[] }>("/api/v1/people", 60000);
+  const [names, setNames] = useState<Record<string, string>>({});
+  const save = async (key: string) => { await post("/api/v1/people/name", { key, name: names[key] ?? "" }).catch(() => {}); reload(); };
+  return (
+    <div className="panel p-5">
+      <h2 className="text-[15px] font-semibold">{tr("Sổ người")}</h2>
+      <p className="mt-0.5 max-w-2xl text-[13px] text-mute">{tr("Khuôn mặt trong kho được gom theo độ giống nhau, mỗi nhóm là một người. Đặt tên để tìm và để ghi ai xuất hiện. Đặc trưng khuôn mặt chỉ lưu trên máy này.")}</p>
+      {!data?.people.length && <p className="mt-2 text-[13px] text-faint">{tr("Chưa thấy khuôn mặt nào đủ rõ trong kho.")}</p>}
+      <ul className="rows mt-2">{data?.people.map((p) => (
+        <li key={p.key} className="flex flex-wrap items-center gap-2 py-2 text-[13px]">
+          <span className="min-w-0 flex-1">{p.name ?? tr("Chưa đặt tên")} <span className="text-faint">{tv`${p.faces} lần thấy, trong ${p.assets.length} video`}</span></span>
+          <input className="h-8 w-40 rounded-md border border-line bg-raised px-2" placeholder={tr("Tên")} value={names[p.key] ?? p.name ?? ""} onChange={(e) => setNames({ ...names, [p.key]: e.target.value })} />
+          <Button size="sm" onClick={() => save(p.key)}>{tr("Lưu")}</Button>
+        </li>))}</ul>
+    </div>
   );
 }

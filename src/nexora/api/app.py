@@ -332,7 +332,8 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
                       "caption_scale": max(0.7, min(1.6, float(t.get("caption_scale") or 1.0))), "caption_position": t.get("caption_position") if t.get("caption_position") in ("top", "middle", "bottom") else "bottom",
                       "typeface": "serif" if t.get("typeface") == "serif" else "sans", "caption_colour": t.get("caption_colour") if isinstance(t.get("caption_colour"), list) and len(t["caption_colour"]) == 3 else None,
                       "logo_path": str(Path(str(t["logo_path"])).expanduser()) if t.get("logo_path") else "",
-                      "pronounce": {str(k).strip(): str(v).strip() for k, v in (t.get("pronounce") or {}).items() if str(k).strip() and str(v).strip()}} for t in body["templates"] if str(t.get("name", "")).strip()]
+                      "pronounce": {str(k).strip(): str(v).strip() for k, v in (t.get("pronounce") or {}).items() if str(k).strip() and str(v).strip()},
+                      **({"style": t["style"]} if isinstance(t.get("style"), dict) else {})} for t in body["templates"] if str(t.get("name", "")).strip()]
             system.orch.set_setting("templates", json.dumps(clean, ensure_ascii=False))
         return get_settings()
 
@@ -1498,7 +1499,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
 
     @app.get("/api/v1/assets/{asset_id}/golden")
     def golden_labels(asset_id: str):
-        return {"labels": system.fields.labels(asset_id)}
+        return {"labels": system.fields.labels(asset_id), "history": system.fields.history(asset_id)}
 
     @app.post("/api/v1/assets/{asset_id}/golden", status_code=201)
     def add_golden_labels(asset_id: str, body: dict):
@@ -1574,6 +1575,25 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             if m is not None:
                 out.append({**moment_view(m, score), "asset": asset_brief(asset_id)})
         return {"alike": out}
+
+    @app.post("/api/v1/assets/{asset_id}/template", status_code=201)
+    def template_from_asset(asset_id: str, body: dict):
+        """Make a format template from the style of this recording, typically a reference video (design group 13)."""
+        from nexora.app import templates
+        from nexora.modules.library.profile import template_from_style
+        made = system.library.profiler.profile(asset_id) if system.library.profiler else None
+        name = str(body.get("name") or "").strip()
+        if made is None or not name:
+            raise HTTPException(409, "Cần một tên, và footage phải được đo và nhận diện trước")
+        template = template_from_style(made["asset"], name)
+        kept = [t for t in templates(system) if t["name"] != name] + [template]
+        system.orch.set_setting("templates", json.dumps(kept, ensure_ascii=False))
+        return template
+
+    @app.get("/api/v1/insights/footage")
+    def insights_footage():
+        from nexora.app import footage_insights
+        return footage_insights(system)
 
     @app.get("/api/v1/people")
     def people():

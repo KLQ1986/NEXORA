@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS golden_labels (label_id TEXT PRIMARY KEY, asset_id TE
     value TEXT NOT NULL, labelled_by TEXT NOT NULL, created_at REAL NOT NULL, UNIQUE (asset_id, t_start, t_end, field));
 CREATE TABLE IF NOT EXISTS field_runs (run_id TEXT PRIMARY KEY, created_at REAL NOT NULL, config TEXT NOT NULL, results TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS field_status (field TEXT PRIMARY KEY, status TEXT NOT NULL, accuracy REAL, labels INTEGER NOT NULL, changed_at REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS field_history (at REAL NOT NULL, asset_id TEXT NOT NULL, t_start REAL NOT NULL, t_end REAL NOT NULL, field TEXT NOT NULL,
+    old TEXT, new TEXT, by TEXT NOT NULL);
 """
 MIN_LABELS = 10          # a field is not released on fewer labels than this, however right it was
 MIN_COVERAGE = 0.8       # nor if it gave no value for more than a fifth of the labelled stretches: silence on the hard cases is not accuracy
@@ -87,17 +89,28 @@ class Fields:
         if value not in FIELDS[field]["values"]:
             raise ValueError(f"{value} is not a value of {field}")
         with db.write(self._conn) as c:
-            row = c.execute("SELECT label_id FROM golden_labels WHERE asset_id = ? AND t_start = ? AND t_end = ? AND field = ?",
+            row = c.execute("SELECT label_id, value FROM golden_labels WHERE asset_id = ? AND t_start = ? AND t_end = ? AND field = ?",
                             (asset_id, round(t_start, 2), round(t_end, 2), field)).fetchone()
             label_id = row[0] if row else new_id("gld")
+            if row is None or row[1] != value:                # every change of an answer is kept: who, when, from what to what
+                c.execute("INSERT INTO field_history (at, asset_id, t_start, t_end, field, old, new, by) VALUES (?,?,?,?,?,?,?,?)",
+                          (time.time(), asset_id, round(t_start, 2), round(t_end, 2), field, row[1] if row else None, value, by))
             c.execute("INSERT INTO golden_labels (label_id, asset_id, t_start, t_end, field, value, labelled_by, created_at) VALUES (?,?,?,?,?,?,?,?) "
                       "ON CONFLICT(label_id) DO UPDATE SET value = excluded.value, labelled_by = excluded.labelled_by, created_at = excluded.created_at",
                       (label_id, asset_id, round(t_start, 2), round(t_end, 2), field, value, by, time.time()))
         return label_id
 
-    def unlabel(self, label_id: str) -> None:
+    def unlabel(self, label_id: str, *, by: str = "operator") -> None:
         with db.write(self._conn) as c:
+            row = c.execute("SELECT * FROM golden_labels WHERE label_id = ?", (label_id,)).fetchone()
+            if row is not None:
+                c.execute("INSERT INTO field_history (at, asset_id, t_start, t_end, field, old, new, by) VALUES (?,?,?,?,?,?,?,?)",
+                          (time.time(), row["asset_id"], row["t_start"], row["t_end"], row["field"], row["value"], None, by))
             c.execute("DELETE FROM golden_labels WHERE label_id = ?", (label_id,))
+
+    def history(self, asset_id: str | None = None, limit: int = 200) -> list[dict]:
+        where, args = ("WHERE asset_id = ?", (asset_id, limit)) if asset_id else ("", (limit,))
+        return [dict(r) for r in self._conn.execute(f"SELECT * FROM field_history {where} ORDER BY at DESC LIMIT ?", args)]
 
     def labels(self, asset_id: str | None = None) -> list[dict]:
         if asset_id:

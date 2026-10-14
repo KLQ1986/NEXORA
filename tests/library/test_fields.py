@@ -129,3 +129,14 @@ def test_faces_are_grouped_into_people_and_a_name_follows_its_person(tmp_path):
     assert len(found) == 1 and found[0]["faces"] >= 6 and found[0]["assets"] == [one]
     named = api.post("/api/v1/people/name", json={"key": found[0]["key"], "name": "Bà Tư"}).json()["people"]
     assert named[0]["name"] == "Bà Tư"
+
+
+def test_every_change_of_an_answer_is_kept(tmp_path):
+    from nexora.core.index import MomentIndex
+    from nexora.modules.quality.fields import Fields
+    fields = Fields(tmp_path / "f.db", MomentIndex(tmp_path / "f.db"))
+    fields.label("a", 0, 2, "people", "một", by="claude")
+    fields.label("a", 0, 2, "people", "một", by="claude")              # the same answer again: nothing changed
+    label = fields.label("a", 0, 2, "people", "hai", by="operator")
+    fields.unlabel(label)
+    assert [(h["old"], h["new"], h["by"]) for h in fields.history("a")] == [("hai", None, "operator"), ("một", "hai", "operator"), (None, "một", "claude")]
