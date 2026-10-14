@@ -233,6 +233,12 @@ function Player({ asset, start, others, close, similar }: { asset: Asset; start?
                 </div>
                 <label className="flex items-start gap-2.5 rounded-lg border border-line bg-raised/50 p-3"><input type="checkbox" className="mt-0.5" checked={asset.rejected} onChange={(e) => post(`/api/v1/assets/${asset.asset_id}`, { rejected: e.target.checked }, "PATCH")} />
                   <span>{tr("Không dùng nguyên liệu này")}<span className="block text-[12px] text-faint">{tr("Nó vẫn nằm trong thư viện nhưng không được đề xuất cho kịch bản nào và không hiện khi tìm kiếm.")}</span></span></label>
+                {asset.kind === "video" && <>
+                  <label className="flex items-start gap-2.5 rounded-lg border border-line bg-raised/50 p-3"><input type="checkbox" className="mt-0.5" checked={!!asset.reference_only} onChange={(e) => post(`/api/v1/assets/${asset.asset_id}`, { reference_only: e.target.checked }, "PATCH")} />
+                    <span>{tr("Chỉ để tham khảo phong cách")}<span className="block text-[12px] text-faint">{tr("Hệ thống vẫn đo và lập thẻ phong cách cho video này, nhưng không bao giờ cắt hình hay tiếng của nó vào video của bạn.")}</span></span></label>
+                  <label className="flex items-start gap-2.5 rounded-lg border border-line bg-raised/50 p-3"><input type="checkbox" className="mt-0.5" checked={asset.consent === "given" || asset.consent === "not_needed"} onChange={(e) => post(`/api/v1/assets/${asset.asset_id}`, { consent: e.target.checked ? "given" : "" }, "PATCH")} />
+                    <span>{tr("Người xuất hiện đã đồng ý")}<span className="block text-[12px] text-faint">{tr("Khi footage có mặt người, video dùng nó chỉ được đăng sau khi bạn xác nhận họ đồng ý xuất hiện.")}</span></span></label>
+                </>}
               </div>
               <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-line bg-line">
                 {facts.map(([k, v]) => <div key={k} className="bg-surface px-3 py-2"><dt className="eyebrow !text-[10px]">{k}</dt><dd className="mono mt-0.5 text-[13px]">{v}</dd></div>)}

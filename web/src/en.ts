@@ -1834,6 +1834,10 @@ const en: Record<string, string> = {
   "{0}/{1} nhịp có lỗi kỹ thuật": "{0}/{1} beats with technical flaws",
   "#{0} {1}": "#{0} {1}",
   " ({0} file)": " ({0} files)",
+  "Chỉ để tham khảo phong cách": "Only to study its style",
+  "Hệ thống vẫn đo và lập thẻ phong cách cho video này, nhưng không bao giờ cắt hình hay tiếng của nó vào video của bạn.": "The system still measures it and makes a style card, but never cuts its picture or sound into your videos.",
+  "Người xuất hiện đã đồng ý": "The people in it agreed",
+  "Khi footage có mặt người, video dùng nó chỉ được đăng sau khi bạn xác nhận họ đồng ý xuất hiện.": "When footage shows people's faces, a video using it is published only after you confirm they agreed to appear.",
 };
 
 export default en;

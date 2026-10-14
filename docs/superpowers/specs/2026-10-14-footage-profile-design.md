@@ -1,6 +1,6 @@
 # Hồ sơ footage: đủ 16 nhóm thông tin, có bảo đảm độ chính xác
 
-Bản thiết kế, 2026-10-14. Bổ sung cho `2026-10-13-footage-understanding-design.md` (gọi tắt là **thiết kế 10-13**); số mục dạng "10-13 §5" trỏ về bản đó. Phần nào của thiết kế 10-13 không bị nhắc lại ở đây thì vẫn giữ nguyên.
+Bản thiết kế, 2026-10-14; trạng thái triển khai ở mục 14. Bổ sung cho `2026-10-13-footage-understanding-design.md` (gọi tắt là **thiết kế 10-13**); số mục dạng "10-13 §5" trỏ về bản đó. Phần nào của thiết kế 10-13 không bị nhắc lại ở đây thì vẫn giữ nguyên.
 
 ## 1. Mục đích
 
@@ -538,3 +538,28 @@ Nối tiếp danh sách của 10-13 §15:
 - Nhận diện danh tính người thật theo khuôn mặt với cơ sở dữ liệu bên ngoài: không làm. Sổ nhân vật chỉ gom người trong kho của người vận hành, và người vận hành đặt tên.
 - Đánh giá giá trị nghệ thuật như một con số quyết định: điểm thẩm mỹ chỉ để sắp xếp, không để loại.
 - Dự đoán độ giữ chân khi chưa có số liệu thật của kênh: chỉ là giả thuyết có ghi rõ.
+
+## 14. Trạng thái triển khai (2026-10-15)
+
+Đã có code, test tự động và đã chạy trên 10 clip DJI của kho thật:
+
+| Phần | Nằm ở | Ghi chú |
+|---|---|---|
+| Adapter `vision` và `sound` (Swift, Apple Vision, SoundAnalysis); thêm nhận diện bàn tay | `adapters/apple.py`, `adapters/apple_see.swift` | Biên dịch lúc dùng lần đầu; máy khác không có thì các trường để trống |
+| Thông số kỹ thuật đầy đủ (nhóm 01), giải mã phần cứng có đường lùi | `adapters/media.py` | |
+| Dây chuyền `library.profile`: người, cỡ cảnh đo được, tư thế, nơi, chân trời, vùng chủ thể, ánh sáng, ngược sáng, màu, nhiệt độ màu, bảng màu, log, nhiễu, bố cục, độ sâu, chữ trên hình theo thời gian và loại, watermark không chữ, loại âm, độ lớn R 128, cắt đỉnh, gió, người nói trong khung | `library/profile.py`, `library/profiler.py` | Chạy trước bước mô tả |
+| Hồ sơ cả file: nhịp dựng, ba giây đầu, lời kêu gọi hành động, độ hợp nền tảng, thẻ phong cách, chất lượng | `profile.asset_profile` | Màn hình Thư viện |
+| Bộ từ vựng chuẩn, chặn tiếng Anh | `library/vocab.py` | |
+| Mô tả phiên bản 3 (phiên bản 2 đã thử và bỏ, xem mục 7 dưới đây) | `library/understand.py` | |
+| Kiểm tra chéo, cờ, hàng chờ xem lại | `profile.cross_checks`, API `/flags`, Hệ thống > Độ chính xác | |
+| Lời nói: VAD, không mang ngữ cảnh, lọc câu bịa, siết ranh giới từ, gợi ý từ vựng, phân biệt người nói theo giọng | `library/transcribe.py`, `adapters/speech.py` | |
+| Sự việc, ba pha, cụt đầu và cụt đuôi | `profile.events_of` | Từ hành động mô hình nêu; đỉnh theo chuyển động đo được |
+| Phân cảnh qua nhiều file của một buổi quay | `profile.scenes_of`, `Profiler.publish_scenes` | Tên phân cảnh lấy từ nhãn, không gọi mô hình |
+| Tìm cảnh giống cảnh (dấu vân hình ảnh) | API `/moments/{id}/alike` | |
+| Bộ mẫu, đo theo trường, độ phủ, hiệu chỉnh độ tin cậy, cổng phát hành, so lần đo | `quality/fields.py` | |
+| Khớp kịch bản dùng trường đã phát hành, nhãn mô hình đã phát hành đứng thay khi trường đo trống, phương án thay thế ở chỗ khác nhau | `sourcing/match.py` | |
+| Nguồn gốc của mô tả: mô hình, prompt, từ vựng, số đo đã đưa | `moments.data.provenance` | |
+
+**Mục 7, mô tả phân biệt, đã đổi theo số đo.** Phiên bản 2 cho mô hình xem mô tả của nhịp trước: trên clip 0050, mô hình 7B chép lại mô tả cũ và độ giống giữa hai nhịp kề nhau tăng từ 0,79 lên 0,95. Phiên bản 3 không cho xem nữa; "điểm mới" do code tính từ các vật được nêu ở hai nhịp. Độ giống còn 0,78.
+
+**Chưa làm:** giải luồng dữ liệu cảm biến của máy DJI (mục 4.5); bám thực thể qua các khung bằng `VNTrackObjectRequest` và sổ nhân vật gom theo hình dáng (nhóm 06, hiện chỉ có đếm người, tay, tư thế); quan hệ không gian có khung toạ độ (prompt phiên bản 2 có hỏi, phiên bản 3 bỏ vì mô hình 7B trả sai); điểm đầu và cuối hành động chính xác tới 0,1 giây; trạng thái trước và sau; nhân quả; kể chuyện và cảm xúc bằng mô hình (nhóm 12, hiện chỉ có phần đo được); video tham khảo; khép vòng với số liệu kênh; trạng thái đồng ý của người xuất hiện và C2PA (nhóm 16); câu hỏi tự nhiên thành bộ lọc; lịch sử sửa riêng cho từng trường (đang dựa vào nhật ký thao tác chung); so PhoWhisper và mô hình nhìn mạnh hơn trên bộ mẫu.

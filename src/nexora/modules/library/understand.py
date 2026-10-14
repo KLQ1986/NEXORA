@@ -104,9 +104,36 @@ FRAME_PROMPT = (
 )
 MAX_DEEP_FRAMES = 8
 SUMMARY_PROMPT = (
-    "Dưới đây là mô tả từng đoạn của một video, theo thứ tự thời gian. Hãy tóm tắt cả video bằng tiếng Việt. "
-    "Chỉ trả về JSON với các khoá: tieu_de (một tiêu đề ngắn), tom_tat (2 đến 3 câu), chu_de (danh sách chủ đề chính).\n\n{lines}"
+    "Dưới đây là mô tả từng đoạn của một video, theo thứ tự thời gian, và lời nói nghe được. Hãy tóm tắt cả video bằng tiếng Việt. "
+    "Chỉ trả về JSON với các khoá: tieu_de (một tiêu đề ngắn), tom_tat (2 đến 3 câu), chu_de (danh sách chủ đề chính, mỗi chủ đề là một cụm từ có trong mô tả), "
+    "the_loai (một trong: {genres}), muc_dich (giới thiệu, hướng dẫn, kể chuyện, quảng cáo, ghi lại hoặc giải trí), khan_gia (một cụm từ), "
+    "thong_diep (một câu, hoặc chuỗi rỗng nếu không có), cau_truc (danh sách các phần, mỗi phần là {{\"phan\": một trong mở đầu, phát triển, cao trào, kết, "
+    "\"tu\": mốc phút:giây lấy từ các dòng bên dưới, \"vi\": lý do ngắn}}), cam_xuc (danh sách {{\"tu\": mốc phút:giây, \"cam_xuc\": một trong {emotions}}}).\n\n{lines}"
 )
+SECTIONS = ("mở đầu", "phát triển", "cao trào", "kết")
+
+
+def grounded(out: dict, texts: list[str], marks: set[str]) -> dict:
+    """Keep only what the summary can show for itself (design 2026-10-14, group 02): a topic whose words appear in a described
+    beat or in what was said, a section or a change of feeling at a time that is one of the beats' own. What it guesses about
+    purpose, audience and message is kept, marked as inferred."""
+    said = " ".join(texts).lower()
+    keep = lambda topic: any(len(w) >= 3 and w in said for w in vocab.norm(str(topic)).split())
+    out = dict(out)
+    out["chu_de"] = [t for t in out.get("chu_de") or [] if keep(t)]
+    genre = vocab.canonical(str(out.get("the_loai") or ""))
+    out["the_loai"] = genre if genre in vocab.GENRES else ""
+    out["cau_truc"] = [x for x in out.get("cau_truc") or [] if isinstance(x, dict) and vocab.canonical(str(x.get("phan"))) in SECTIONS and str(x.get("tu")) in marks]
+    out["cam_xuc"] = [x for x in out.get("cam_xuc") or [] if isinstance(x, dict) and vocab.canonical(str(x.get("cam_xuc"))) in vocab.EMOTIONS and str(x.get("tu")) in marks]
+    out["inferred"] = ["muc_dich", "khan_gia", "thong_diep", "cau_truc", "cam_xuc"]
+    return out
+
+
+STATE_PROMPT = (
+    "Khung thứ nhất là lúc một việc bắt đầu, khung thứ hai là lúc nó kết thúc. Việc đó là: {what}. "
+    "Chỉ trả về JSON với các khoá truoc (một câu: tình trạng lúc đầu) và sau (một câu: tình trạng lúc cuối), chỉ nói điều thấy trong hình."
+)
+MAX_STATES = 20          # events a recording gets before-and-after states for; each is one look by the model
 
 
 UNKNOWN = frozenset({"", "không rõ", "không có", "không", "không có người", "không có hành động", "không có vật", "none", "null", "n/a"})
@@ -416,11 +443,23 @@ class Understanding:
             motion = lambda a, b: float(found.subject[int(a * fps):max(int(a * fps) + 1, int(b * fps))].mean())
         beats = [{"start": m.t_start, "end": m.t_end, "shot": m.data.get("shot"), "detail": m.data.get("detail") or {}} for m in segments]
         made = events_of(beats, shots, motion)
+        by_start = {m.t_start: m for m in segments}
+        for e in made[:MAX_STATES]:
+            first, last = by_start.get(e["phases"]["bắt đầu"][0]), by_start.get(e["phases"]["kết thúc"][0])
+            frames = [f for f in ((first.data.get("frames") or [None])[0] if first else None, (last.data.get("frames") or [None])[-1] if last else None) if f]
+            if len(frames) == 2 and frames[0] != frames[1]:
+                try:
+                    said = self._adapters.submit("model", Request("describe", inputs={"images": frames}, params={
+                        "prompt": STATE_PROMPT.format(what=f"{e['who']} {', '.join(e['actions'])}".strip()), "task": "state", "max_tokens": 200})).outputs["json"]
+                    e["before"], e["after"] = vocab.mend(str(said.get("truoc") or "")), vocab.mend(str(said.get("sau") or ""))
+                except AdapterError:
+                    pass                                   # an event without its states is still an event
         self._index.remove(asset_id, "event")
         for e in made:
             cut = ", bị cụt đầu" if e["cut_start"] else ""
             cut += ", bị cụt đuôi" if e["cut_end"] else ""
-            self._index.upsert(asset_id, "event", e["start"], e["end"], f"Sự việc: {(e['who'] + ' ') if e['who'] else ''}{', '.join(e['actions'])}{cut}.",
+            states = f" Trước: {e['before']} Sau: {e['after']}" if e.get("before") and e.get("after") else ""
+            self._index.upsert(asset_id, "event", e["start"], e["end"], f"Sự việc: {(e['who'] + ' ') if e['who'] else ''}{', '.join(e['actions'])}{cut}.{states}",
                                data={"event": e}, analyzer=self.analyzer)
         return len(made)
 
@@ -429,9 +468,12 @@ class Understanding:
         if not segments:
             return {"skipped": "nothing to summarise"}
         self._events(ctx.subject_ref, segments)
-        lines = self.context(ctx.subject_ref) + "\n\n" + "\n".join(f"[{clock(m.t_start)}] {m.text}" for m in segments)[:12000]
-        out = self._adapters.submit("model", Request("chat", params={"prompt": SUMMARY_PROMPT.format(lines=lines), "json": True, "max_tokens": 400},
-                                                    attempt_id=ctx.claim.attempt_id)).outputs["json"]
+        speech = self._index.moments(ctx.subject_ref, level="speech")
+        rows = sorted([(m.t_start, f"[{clock(m.t_start)}] {m.text}") for m in segments] + [(m.t_start, f"[{clock(m.t_start)}] (lời nói) {m.text}") for m in speech])
+        lines = self.context(ctx.subject_ref) + "\n\n" + "\n".join(r for _, r in rows)[:12000]
+        out = self._adapters.submit("model", Request("chat", params={"prompt": SUMMARY_PROMPT.format(lines=lines, genres=", ".join(vocab.GENRES), emotions=", ".join(vocab.EMOTIONS)),
+                                                                    "json": True, "max_tokens": 900}, attempt_id=ctx.claim.attempt_id)).outputs["json"]
+        out = grounded(out, [m.text for m in segments] + [m.text for m in speech], {clock(m.t_start) for m in segments} | {clock(m.t_start) for m in speech})
         duration = self._assets.original(ctx.subject_ref).metadata.get("probe", {}).get("duration", segments[-1].t_end)
         self._index.upsert(ctx.subject_ref, "video", 0.0, round(float(duration), 1), str(out.get("tom_tat", "")).strip(),
                            data={"detail": out}, analyzer=self.analyzer)

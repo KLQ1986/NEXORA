@@ -94,3 +94,38 @@ def test_pictures_alike_and_the_scenes_of_a_shoot_are_served(tmp_path):
     assert alike and alike[0]["score"] > 0.99
     scenes = api.get(f"/api/v1/assets/{a}/scenes").json()
     assert set(scenes["assets"]) == {a, b}
+
+
+def test_a_reference_video_is_never_proposed_and_faces_without_consent_block_publishing():
+    from nexora.modules.quality.rights import rights_report
+    report = rights_report([{"asset_id": "a"}], {"a": {"origin": "self_shot", "name": "a.mp4", "people": 3, "consent": None}})
+    assert not report["clear"] and "đồng ý" in report["blockers"][0]
+    assert rights_report([{"asset_id": "a"}], {"a": {"origin": "self_shot", "name": "a.mp4", "people": 3, "consent": "given"}})["clear"]
+    assert rights_report([{"asset_id": "a"}], {"a": {"origin": "self_shot", "name": "a.mp4", "people": 0, "consent": None}})["clear"]
+
+
+def test_search_reads_what_a_query_asks_to_see_and_a_reference_video_is_left_out(tmp_path):
+    system = build(tmp_path / "data", model=FakeModel(), segment_seconds=2.0, recognisers=[FakeVision(), FakeSound()])
+    asset, _ = system.library.ingest(make_video(tmp_path / "f.mp4", picture=4))
+    drain(system)
+    api = TestClient(create_app(system))
+    out = api.get("/api/v1/library/search", params={"q": "cận cảnh chợ rau củ"}).json()
+    assert out["asked"] == {"shot_size": "cận"} and out["used"] == [] and out["hits"]
+    assert api.patch(f"/api/v1/assets/{asset}", json={"reference_only": True}).json()["reference_only"] is True
+    assert api.get("/api/v1/library/search", params={"q": "chợ rau củ"}).json()["hits"] == []
+    assert api.patch(f"/api/v1/assets/{asset}", json={"consent": "maybe"}).status_code == 422
+
+
+def test_faces_are_grouped_into_people_and_a_name_follows_its_person(tmp_path):
+    import numpy as np
+    from nexora.modules.library.profile import group_faces
+    a, b = np.array([1, 0, 0], np.float32), np.array([0, 1, 0], np.float32)
+    assert group_faces(np.array([a, b, a * 0.99 + b * 0.05, b])) == [[0, 2], [1, 3]]
+    system = build(tmp_path / "data", model=FakeModel(), segment_seconds=2.0, recognisers=[FakeVision(), FakeSound()])
+    one, _ = system.library.ingest(make_video(tmp_path / "f.mp4", picture=4))
+    drain(system)
+    api = TestClient(create_app(system))
+    found = api.get("/api/v1/people").json()["people"]
+    assert len(found) == 1 and found[0]["faces"] >= 6 and found[0]["assets"] == [one]
+    named = api.post("/api/v1/people/name", json={"key": found[0]["key"], "name": "Bà Tư"}).json()["people"]
+    assert named[0]["name"] == "Bà Tư"

@@ -287,7 +287,12 @@ def render_rights(system: "System", render_id: str) -> dict:
         asset = system.assets.asset(shot.get("asset_id") or "")
         if asset:
             original = system.assets.original(asset["asset_id"])
-            by_id[asset["asset_id"]] = {"origin": asset["origin"], "name": system.assets.path_of(original).name, "rights": original.metadata.get("rights")}
+            used = [s for s in render["qc"].get("shots") or [] if s.get("asset_id") == asset["asset_id"]]
+            made = system.library.profiler.profile(asset["asset_id"]) if system.library.profiler else None
+            with_people = sum(1 for b in (made or {}).get("beats", []) if (b["profile"].get("people") or {}).get("count", 0) > 0 and (b["profile"]["people"].get("faces") or 0) > 0
+                              and any(u.get("t_in") is None or (b["start"] < (u.get("t_out") or 1e9) and b["end"] > (u.get("t_in") or 0)) for u in used))
+            by_id[asset["asset_id"]] = {"origin": asset["origin"], "name": system.assets.path_of(original).name, "rights": original.metadata.get("rights"),
+                                        "people": with_people, "consent": asset.get("consent")}
     options = json.loads(project.get("options") or "{}")
     music = project["music_path"] if render["qc"].get("music") and project.get("music_path") else None
     return rights_report(render["qc"].get("shots") or [], by_id, music=music, music_cleared=bool(options.get("music_cleared")))

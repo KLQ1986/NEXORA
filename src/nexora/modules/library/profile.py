@@ -847,3 +847,24 @@ def scenes_of(beats: list[dict]) -> list[dict]:
         scene["name"] = (", ".join(sorted(places)) + ": " if places else "") + (", ".join(top) if top else "cảnh")
         scene["assets"] = sorted({b["asset_id"] for b in scene["beats"]}, key=lambda a: next(b["at"] for b in scene["beats"] if b["asset_id"] == a))
     return out
+
+
+SAME_FACE = 0.80                  # likeness of two face prints above which they are taken for one person; a guess until labels measure it
+
+
+def group_faces(prints: np.ndarray, *, same: float = SAME_FACE) -> list[list[int]]:
+    """Faces grouped into people: each face joins the group whose centre it is most like, if like enough, else starts one."""
+    groups: list[list[int]] = []
+    centres: list[np.ndarray] = []
+    for i, v in enumerate(prints):
+        if centres:
+            likeness = np.array([float(c @ v) for c in centres])
+            best = int(likeness.argmax())
+            if likeness[best] >= same:
+                groups[best].append(i)
+                c = prints[groups[best]].mean(0)
+                centres[best] = c / (np.linalg.norm(c) + 1e-9)
+                continue
+        groups.append([i])
+        centres.append(v)
+    return groups

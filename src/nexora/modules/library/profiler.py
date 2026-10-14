@@ -131,6 +131,54 @@ class Profiler:
                                    analyzer=ANALYZER)
         return made
 
+    # ------------------------------------------------------------------------------------------------ people (group 06)
+    def _faces(self, asset_id: str):
+        try:
+            with np.load(self._path(asset_id, "_faces.npz")) as data:
+                return data["prints"].astype(np.float32), data["where"], data["boxes"]
+        except (OSError, ValueError, KeyError):
+            return None
+
+    def people(self, asset_ids: list[str]) -> list[dict]:
+        """The people of the library: faces from every recording grouped by how alike they look, each group one person, with
+        where they appear and the name the operator gave (design group 06). Names are kept in `people.json` by a face that
+        belongs to the group, so a name follows its person through every later grouping."""
+        rows, prints = [], []
+        for asset_id in asset_ids:
+            got = self._faces(asset_id)
+            if got is None:
+                continue
+            p, where, boxes = got
+            for v, (k, j), box in zip(p, where, boxes):
+                n = float(np.linalg.norm(v))
+                if n > 0:
+                    rows.append({"asset_id": asset_id, "t": round(int(k) / P.LOOK_FPS, 2), "face": int(j), "box": [round(float(x), 3) for x in box]})
+                    prints.append(v / n)
+        groups = P.group_faces(np.array(prints)) if prints else []
+        names = self._names()
+        out = []
+        for g in groups:
+            members = [rows[i] for i in g]
+            keys = {f"{m['asset_id']}@{m['t']}#{m['face']}" for m in members}
+            named = next((n for key, n in names.items() if key in keys), None)
+            out.append({"key": sorted(keys)[0], "name": named, "faces": len(members), "assets": sorted({m["asset_id"] for m in members}),
+                        "appearances": members[:50], "source": "measured", "confidence": "low" if len(members) < 3 else "medium"})
+        return sorted(out, key=lambda x: -x["faces"])
+
+    def _names(self) -> dict:
+        try:
+            return json.loads((self._media / "people.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+
+    def name_person(self, key: str, name: str) -> None:
+        names = self._names()
+        if name.strip():
+            names[key] = name.strip()
+        else:
+            names.pop(key, None)
+        _write_json(self._media / "people.json", names)
+
     def prints(self, asset_id: str) -> np.ndarray | None:
         """The feature print of every looked-at frame, one row a frame, for finding pictures that look alike."""
         try:
@@ -189,6 +237,7 @@ class Profiler:
                     if err.code is not ErrorCode.UNAVAILABLE:
                         raise
             prints = [p.pop("print", None) for p in pictures]
+            faces = [(k, j, f.get("box"), f.pop("print")) for k, p in enumerate(pictures) for j, f in enumerate(p.get("faces") or []) if f.get("print")]
             from PIL import Image
             measures, stack = [], []
             for k, frame in enumerate(frames):
@@ -210,7 +259,13 @@ class Profiler:
             matrix = np.array([p if p is not None and len(p) == width else [0.0] * width for p in prints], np.float16)
             with open(self._path(ctx.subject_ref, "_prints.npz"), "wb") as out:
                 np.savez_compressed(out, prints=matrix, step=1 / P.LOOK_FPS)
-        return {"frames": len(frames), "recognised": looked}
+        faces_file = self._path(ctx.subject_ref, "_faces.npz")
+        faces_file.unlink(missing_ok=True)
+        if faces:
+            with open(faces_file, "wb") as out:
+                np.savez_compressed(out, prints=np.array([f[3] for f in faces], np.float16), where=np.array([[f[0], f[1]] for f in faces], np.int32),
+                                    boxes=np.array([f[2] for f in faces], np.float32))
+        return {"frames": len(frames), "recognised": looked, "faces": len(faces)}
 
     def _listen(self, ctx):
         if self._skip(ctx.subject_ref):

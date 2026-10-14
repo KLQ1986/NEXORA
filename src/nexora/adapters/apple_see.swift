@@ -73,6 +73,17 @@ func look(_ path: String) -> [String: Any] {
         if let mouth = mouthOpen(f.landmarks) { face["mouth"] = mouth }
         let b = box(f.boundingBox)
         if let q = qualities.first(where: { abs($0.0[0] - b[0]) < 0.02 && abs($0.0[1] - b[1]) < 0.02 })?.1 { face["quality"] = round4(q) }
+        // A print of the face and a little around it, to know the same person again in another shot. Only for faces big enough to tell apart.
+        if f.boundingBox.height > 0.08 {
+            let around = f.boundingBox.insetBy(dx: -f.boundingBox.width * 0.25, dy: -f.boundingBox.height * 0.25).intersection(CGRect(x: 0, y: 0, width: 1, height: 1))
+            let facePrint = VNGenerateImageFeaturePrintRequest()
+            facePrint.regionOfInterest = around
+            if (try? handler.perform([facePrint])) != nil, let fp = facePrint.results?.first, fp.elementType == .float {
+                var values = [Float](repeating: 0, count: fp.elementCount)
+                fp.data.withUnsafeBytes { raw in for i in 0..<fp.elementCount { values[i] = raw.load(fromByteOffset: i * 4, as: Float.self) } }
+                face["print"] = values.map { round4(Double($0)) }
+            }
+        }
         return face
     }
     out["humans"] = (humans.results ?? []).map { ["box": box($0.boundingBox), "confidence": round4(Double($0.confidence))] }

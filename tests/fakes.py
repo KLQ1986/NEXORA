@@ -168,7 +168,7 @@ class FakeVision(Adapter):
         self.calls += 1
         pictures = []
         for k, _ in enumerate(request.inputs["images"]):
-            face = {"box": [0.4, 0.2, self.face_height * 9 / 16, self.face_height], "confidence": 0.9, "mouth": 0.05 + 0.1 * (k % 2)} if self.face_height else None
+            face = {"box": [0.4, 0.2, self.face_height * 9 / 16, self.face_height], "confidence": 0.9, "mouth": 0.05 + 0.1 * (k % 2), "print": [1.0, 0.1, 0.0, 0.2]} if self.face_height else None
             pictures.append({"classes": [["outdoor", 0.9], ["sky", 0.8]], "faces": [face] if face else [], "humans": [{"box": [0.35, 0.15, 0.3, 0.8], "confidence": 0.9}] if face else [],
                              "poses": [], "animals": [], "text": [{"text": self.text, "confidence": 0.95, "box": [0.3, 0.85, 0.4, 0.06]}] if self.text else [],
                              "horizon": 0.5, "salient": [[0.3, 0.1, 0.4, 0.8]], "aesthetic": 0.3, "utility": False, "print": [0.1] * 8})

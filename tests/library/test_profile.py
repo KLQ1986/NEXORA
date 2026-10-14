@@ -246,3 +246,13 @@ def test_text_being_typed_is_one_stretch_and_a_fragment_read_once_is_dropped():
 def test_hands_seen_from_the_operators_eyes_are_one_person():
     hands = {"faces": [], "humans": [], "hands": [{"box": [0.4, 0.5, 0.2, 0.3], "confidence": 0.9}, {"box": [0.1, 0.5, 0.2, 0.3], "confidence": 0.8}]}
     assert P.people_in(hands)["count"] == 1 and P.people_in({"faces": [], "humans": [], "hands": []})["count"] == 0
+
+
+def test_a_summary_keeps_only_what_the_footage_shows_for_it():
+    from nexora.modules.library.understand import grounded
+    out = grounded({"chu_de": ["bãi biển", "tàu vũ trụ"], "the_loai": "vlog du lịch", "cau_truc": [{"phan": "mở đầu", "tu": "0:00"}, {"phan": "cao trào", "tu": "9:99"}],
+                    "cam_xuc": [{"tu": "0:05", "cam_xuc": "vui"}, {"tu": "0:05", "cam_xuc": "phấn khích"}], "khan_gia": "người thích du lịch"},
+                   ["Bãi biển vắng, thuyền thúng trên cát."], {"0:00", "0:05"})
+    assert out["chu_de"] == ["bãi biển"] and out["the_loai"] == "vlog du lịch"
+    assert out["cau_truc"] == [{"phan": "mở đầu", "tu": "0:00"}] and out["cam_xuc"] == [{"tu": "0:05", "cam_xuc": "vui"}]
+    assert "khan_gia" in out["inferred"]

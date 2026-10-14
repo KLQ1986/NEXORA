@@ -274,6 +274,8 @@ MIGRATIONS = [
     ("assets", "session", "TEXT"),                # the operator's name for the shoot, in place of the folder name
     ("projects", "trashed_at", "REAL"),
     ("runs", "dismissed_at", "REAL"),             # the operator has seen this failure and set it aside
+    ("assets", "reference_only", "INTEGER NOT NULL DEFAULT 0"),   # studied for its style, never cut into a video
+    ("assets", "consent", "TEXT"),                # the people seen in it agreed to appear ("given"), or none need to ("not_needed")
 ]
 
 

@@ -27,6 +27,11 @@ def rights_report(shots: list[dict], assets: dict[str, dict], *, music: str | No
                     blockers.append(f"“{a['name']}” (câu {n}) là clip lấy từ bên ngoài mà chưa có giấy phép và nguồn.")
             elif a["origin"] == "generated":
                 item["note"] = "Hình sinh bằng AI. Cần ghi rõ khi đăng."
+            if a.get("people") and a.get("consent") not in ("given", "not_needed"):
+                # People recognised in footage that goes out: the operator says they agreed, or that none need to (design group 16).
+                item["ok"] = False
+                item["note"] = (item["note"] + " " if item["note"] else "") + f"Có người xuất hiện ({a['people']} nhịp) mà chưa xác nhận họ đồng ý."
+                blockers.append(f"“{a['name']}” (câu {n}) có người xuất hiện mà chưa xác nhận họ đồng ý xuất hiện trong video.")
             items.append(item)
         verdict = (shot.get("fact_check") or {}).get("verdict") if shot.get("is_fact") else None
         if verdict == "contradicted":

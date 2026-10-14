@@ -63,7 +63,7 @@ def asset_view(system, asset: dict, used: dict | None = None) -> dict:
         "usable_ranges": meta.get("usable_ranges", []), "black_ranges": meta.get("black_ranges", []),
         "frozen_ranges": meta.get("frozen_ranges", []), "scene_cuts": meta.get("scene_cuts", []),
         "angles": [{"asset_id": other, "offset": shift} for other, shift in meta.get("angles", {}).items()],
-        "rejected": bool(asset.get("rejected")), "speech": meta.get("speech"), "session": asset.get("session") or f"{path.parent.name}, {str(probe.get('created') or '')[:10]}".rstrip(", "),
+        "rejected": bool(asset.get("rejected")), "reference_only": bool(asset.get("reference_only")), "consent": asset.get("consent"), "speech": meta.get("speech"), "session": asset.get("session") or f"{path.parent.name}, {str(probe.get('created') or '')[:10]}".rstrip(", "),
         "session_set": asset.get("session"), "trashed_at": asset.get("trashed_at"),
         "used_in": [{"project_id": pid, "title": (system.projects.project(pid) or {}).get("title", "")} for pid in (used if used is not None else system.projects.used_assets()).get(asset["asset_id"], [])],
         "transcribe": next((run_view(system, r) for r in runs if system.orch.pipeline_of(r) == "library.transcribe"), None),
@@ -168,8 +168,12 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
     def annotate_asset(asset_id: str, body: dict):
         if system.assets.asset(asset_id) is None:
             raise HTTPException(404, "no such asset")
-        system.library.annotate(asset_id, rating=body.get("rating"), collections=body.get("collections"), note=body.get("note"),
-                                rejected=body.get("rejected") if "rejected" in body else None, title=body.get("title"), session=body.get("session"))
+        try:
+            system.library.annotate(asset_id, rating=body.get("rating"), collections=body.get("collections"), note=body.get("note"),
+                                    rejected=body.get("rejected") if "rejected" in body else None, title=body.get("title"), session=body.get("session"),
+                                    reference_only=body.get("reference_only") if "reference_only" in body else None, consent=body.get("consent"))
+        except ValueError as err:
+            raise HTTPException(422, str(err))
         return asset_view(system, system.assets.asset(asset_id))
 
     @app.get("/api/v1/events/stream")
@@ -569,8 +573,16 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
     @app.get("/api/v1/library/search")
     def search(q: str, limit: int = 24):
         # Pictures, speech and the operator's own notes are searched together; assets set aside are left out.
-        hits = system.index.search(q, limit=limit, min_score=0.3, level=("segment", "speech", "note", "frame"), exclude_assets=system.assets.rejected())
-        return {"hits": [{**moment_view(h.moment, h.score), "asset": asset_brief(h.moment.asset_id)} for h in hits]}
+        # What the words ask to see ("cận cảnh", "không có người", "trong nhà") is held against the fields that have proved
+        # accurate (design group 15): an agreeing stretch moves up, a disagreeing one down, and the reason is shown.
+        from nexora.modules.sourcing.match import asked, label_fit
+        hits = system.index.search(q, limit=limit * 3, min_score=0.3, level=("segment", "speech", "note", "frame", "text", "sound", "event", "scene"),
+                                   exclude_assets=system.assets.rejected())
+        wanted, released = asked(q), system.fields.released()
+        fits = {h.moment.moment_id: label_fit(wanted, h.moment.data, released) for h in hits}
+        hits = sorted(hits, key=lambda h: h.score + fits[h.moment.moment_id][0], reverse=True)[:limit]
+        return {"asked": wanted, "used": sorted(f for f in wanted if f in released),
+                "hits": [{**moment_view(h.moment, h.score), "asset": asset_brief(h.moment.asset_id), "fits": fits[h.moment.moment_id][1]} for h in hits]}
 
     @app.get("/api/v1/assets/{asset_id}/moments")
     def asset_moments(asset_id: str):
@@ -1562,6 +1574,16 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             if m is not None:
                 out.append({**moment_view(m, score), "asset": asset_brief(asset_id)})
         return {"alike": out}
+
+    @app.get("/api/v1/people")
+    def people():
+        """The people of the library, faces grouped by likeness, with the names the operator gave (design group 06)."""
+        return {"people": system.library.profiler.people([a["asset_id"] for a in system.assets.assets() if a["kind"] == "video"])}
+
+    @app.post("/api/v1/people/name")
+    def name_person(body: dict):
+        system.library.profiler.name_person(str(body.get("key", "")), str(body.get("name", "")))
+        return people()
 
     @app.get("/api/v1/assets/{asset_id}/scenes")
     def shoot_scenes(asset_id: str):
