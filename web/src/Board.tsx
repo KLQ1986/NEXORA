@@ -2,6 +2,7 @@ import { t as tr, tv, locale } from "./i18n";
 import { useState } from "react";
 import { stageName, timecode, usePoll, type BoardEvent, type Project } from "./api";
 import { Icon, Section, Tag, TimeChip } from "./parts";
+import { MatchReport } from "./MatchReport";
 
 const RAIL = [
   { key: "script", label: tr("Kịch bản"), icon: "edit" }, { key: "match", label: tr("Chọn clip"), icon: "sparkles" }, { key: "match_review", label: tr("Duyệt clip"), icon: "check" },
@@ -94,6 +95,7 @@ export default function Board({ project: p }: { project: Project }) {
               })}
             </ol>
           </Section>
+          {p.shots.some((s) => s.selection) && <MatchReport projectId={p.project_id} />}
           {latest && (
             <Section title={tr("Bản dựng")} icon="play">
               <ul className="panel rows overflow-hidden">

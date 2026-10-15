@@ -165,3 +165,28 @@ API: `GET /api/v1/assets/{id}/dossier` (JSON) và `?format=md` (trang Markdown �
 Đi kèm: `retell` tự đóng cờ "ngôn ngữ" khi từ tiếng Anh đã được dịch. `telemetry` được ghi là đã chạy cả khi máy quay không ghi dữ liệu cảm biến, nên footage không phải DJI không còn bị báo là phân tích cũ.
 
 Trên 0059: 9,1 giây dùng được, phân tích ở phiên bản mới nhất. Cỡ cảnh của cả hai nhịp chỉ do mô hình nói, vì không có người để đo cỡ cảnh từ thân người. Đây là việc của D.
+
+### C. Báo cáo ghép nguyên liệu (Script-to-Asset Match Report)
+
+`modules/sourcing/report.py` đọc kết quả ghép, không tìm hay chấm lại:
+- **Theo câu:** đoạn được chọn, điểm chấm 0–10 của mô hình, điểm hình (theo `core/usability.py`), có ngắn hơn số giây cần không, lý do, các phương án dự phòng.
+- **Theo clip:** clip nào được chọn cho câu nào, dự phòng cho câu nào, dùng bao nhiêu giây, và clip nào không được dùng.
+- **Tổng:** số câu tốt, tạm, thiếu; số giây cần và số giây có hình; điểm chấm trung bình.
+
+Một câu là **tốt** khi người dùng đã duyệt, hoặc mô hình chấm từ `AUTO_ACCEPT` (8) trở lên và hình không lỗi. Câu có hình lỗi thì tối đa là **tạm**. Câu không có hình là **thiếu**. Điểm chấm của lựa chọn chính nay được lưu trong `extras.judge` của lựa chọn. Luật chấm hình và tiếng chuyển từ dossier sang `core/usability.py`, vì các module không được import lẫn nhau.
+
+API: `GET /api/v1/projects/{id}/match/report` (JSON) và `?format=md`. Trên bảng dự án, mục "Báo cáo ghép nguyên liệu" nằm dưới các cảnh.
+
+Chạy thật với kịch bản thử 7 câu trên kho hiện có (2026-10-15):
+
+| Câu | Đáp án | Chọn |
+|---|---|---|
+| Một người quay video trong phòng tắm | 0059, 0–5,2 | 0059, 0–2,7 ✓ |
+| Phòng tắm có cửa sổ gỗ và bồn cầu trắng | 0059, 5,2–9,1 | 0059, 5,2–9,1 ✓ |
+| Thuyền thúng xanh nằm trên bãi cát | 0038 | 0038, 6,0–8,7 ✓ |
+| Vòng quay khổng lồ trong công viên giải trí | 0034 | 0034, 0–3,5 ✓ |
+| Hoa mỏ két màu cam trong vườn | 0090 | 0090, 1,7–4,4 ✓ |
+| Sóng biển vỗ vào bờ cát | 0026 | 0038, 15,9–18,4 ✓ (có sóng và bờ cát; 0026 ở phương án dự phòng) |
+| Tên lửa phóng lên quỹ đạo | thiếu | thiếu ✓ |
+
+7/7 đúng, 87% số giây cần đã có hình. Mô hình chấm 10/10 cho mọi lựa chọn, nên điểm chấm chưa phân biệt được lựa chọn tốt với lựa chọn vừa đủ. Các phương án dự phòng sai ngữ cảnh được chấm 5/10.

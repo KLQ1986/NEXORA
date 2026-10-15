@@ -1857,6 +1857,16 @@ const en: Record<string, string> = {
   "Lưu ý: {0}": "Note: {0}",
   "Lời: {0}": "Words: {0}",
   "Cần xem lại: {0}": "Check: {0}",
+  "Báo cáo ghép nguyên liệu": "Footage match report",
+  "{0} tốt · {1} tạm · {2} thiếu · có hình {3}%": "{0} good · {1} fair · {2} missing · {3}% has a picture",
+  "Tải báo cáo (.md)": "Download report (.md)",
+  "Câu {0}: {1}": "Line {0}: {1}",
+  " (ngắn hơn cần)": " (shorter than needed)",
+  "chưa có hình": "no picture yet",
+  "Theo clip": "By clip",
+  "chọn cho câu {0}": "chosen for line {0}",
+  "; dự phòng cho câu {0}": "; alternate for line {0}",
+  "Không được dùng: {0}": "Not used: {0}",
 };
 
 export default en;

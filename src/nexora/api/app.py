@@ -1034,6 +1034,17 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             raise HTTPException(404, "no such shot")
         return {"attempt": system.generation.vary(shot_id)}
 
+    @app.get("/api/v1/projects/{project_id}/match/report")
+    def match_report(project_id: str, format: str = "json"):
+        """How well the footage serves the script: each line, each recording, and how much has a picture (design 2026-10-15, 9 C)."""
+        from fastapi.responses import PlainTextResponse
+        from nexora.modules.sourcing import report
+        names = {a["asset_id"]: Path(system.assets.original(a["asset_id"]).relative_path).name for a in system.assets.assets() if a["kind"] == "video"}
+        made = report.build(system.projects, system.vi, current_script_id(project_id), names=names)
+        if format == "md":
+            return PlainTextResponse(report.markdown(made, title=need_project(project_id)["title"]), media_type="text/markdown; charset=utf-8")
+        return made
+
     @app.get("/api/v1/projects/{project_id}/gaps")
     def gap_plan(project_id: str):
         have = system.generation.available()

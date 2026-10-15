@@ -213,6 +213,7 @@ class Sourcing:
                               key=lambda h: (told.get(h.moment.moment_id) == "accepted", verdicts[h.moment.moment_id][0], h.score), reverse=True)
             if not hits:
                 self._projects.set_selection(shot.shot_id, status="gap", reason="Không có footage nào đủ khớp với câu này.")
+                self._projects.set_extras(shot.shot_id, judge=None, judged=[verdicts[m][0] for m in verdicts])
                 gaps += 1
                 continue
             best, rest = self._candidate(hits[0], need), [self._candidate(h, need) for h in hits[1:]]
@@ -230,6 +231,7 @@ class Sourcing:
                         cand["reason"] = f"{why} ({points}/10). {cand['reason']}"
             used.add(best["moment_id"])
             self._projects.set_selection(shot.shot_id, status="proposed", alternates=rest, **_fields(best))
+            self._projects.set_extras(shot.shot_id, judge=best.get("judge"))         # how well the frames show the line, 0-10, for the report
             matched += 1
         # Review by exception: with the project's gate set to confidence-based, a match with no gap and every
         # selection judged strong on real frames is accepted without waiting. Anything less waits for the operator.
