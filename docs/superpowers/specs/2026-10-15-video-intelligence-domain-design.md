@@ -102,7 +102,7 @@ SigLIP 2 so400m kém hơn bản base trên 0050 (đúng vị trí đầu 4/10) v
 
 ## 8. Mô tả nhịp v4 và độ phân giải khung, đo ngày 2026-10-15 trên 0038
 
-Ollama đưa mọi ảnh về khoảng 1 megapixel trước khi qwen3-vl xem. Một khung 448 px và một khung 960 px tốn cùng số token (7796 cho 7 khung). Khung 448 px cắt từ proxy chỉ bị phóng to, nên thuyền ngoài khơi, hoa tím và rau muống biển không thấy được. Từ v4, khung của nhịp được trích từ file gốc, rộng 960 px, chất lượng JPEG 2.
+Ollama đưa mọi ảnh về khoảng 1 megapixel trước khi qwen3-vl xem. Một khung 448 px và một khung 960 px tốn cùng số token (7796 cho 7 khung). Khung 448 px cắt từ proxy chỉ bị phóng to, nên thuyền ngoài khơi, hoa tím và rau muống biển không thấy được. Từ v4, khung của nhịp được trích từ file gốc, chất lượng JPEG 2. Lúc đầu dùng rộng 960 px; sau đó thống nhất dùng **1280 px** (tốn hơn khoảng 4% token: 8097 so với 7796 cho 7 khung), để giữ nhiều chi tiết của file gốc hơn.
 
 Prompt v4: mô hình không còn đặt cỡ cảnh và góc máy, vì máy đo và cảm biến làm tốt hơn. Mô hình được hỏi theo lớp (chủ thể và vị trí, gần máy, giữa, xa), có danh mục tên vật hay gặp ở Việt Nam (chỉ dùng khi thấy rõ), và không được dùng câu mở đầu, câu phủ định hay câu cảm xúc. Bộ lọc bỏ thêm câu mở đầu ("Hình ảnh cho thấy"), câu phủ định và câu nói về chuyển động máy. Văn bản dùng để tìm không còn chứa nhãn âm thanh.
 
@@ -113,6 +113,6 @@ Prompt v4: mô hình không còn đặt cỡ cảnh và góc máy, vì máy đo 
 | **v4, 960 px gốc** | **18** | **0,89** | **7/8** | **0,94** |
 | v4, 1280 px gốc | 18 | 0,88 | 4/8 | 0,73 |
 
-Mới đo trên 3 nhịp, nên chênh lệch giữa 960 px và 1280 px phần lớn là ngẫu nhiên. Cần đo thêm trên một clip có người và chữ.
+Mới đo trên 3 nhịp, nên chênh lệch giữa 960 px và 1280 px phần lớn là ngẫu nhiên: hai cỡ nêu đúng cùng 18 vật. Cần đo thêm trên một clip có người và chữ. Lần chạy thật ở dưới dùng 960 px; từ commit sau, nhịp được mô tả ở 1280 px.
 
 Sau khi chạy thật cho 0038, đo qua tìm kiếm của cả kho với 8 câu của 0038: chỉ dùng mô tả, đúng vị trí đầu giảm từ 5/8 xuống 4/8 (MRR 0,71 xuống 0,68). Kết hợp với hình thì đúng vị trí đầu tăng từ 5/8 lên 6/8, đúng trong 3 kết quả đầu 8/8, MRR từ 0,76 lên 0,83. Mô tả mới nêu đúng nhiều vật hơn, nhưng trên cả kho, mô tả một mình chưa tìm tốt hơn. Câu "đường chân trời trên mặt biển" tụt từ #8 xuống #9, vì v4 không còn nhắc đường chân trời.

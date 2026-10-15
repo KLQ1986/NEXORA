@@ -27,11 +27,11 @@ PROMPT_VERSION = "v1"
 BEAT_PROMPT_VERSION = "v4"       # beats of measured footage are described with what was measured about their picture
 FRAME_FPS = 0.5
 BEAT_FRAME_FPS = 2.0             # frames are drawn at this rate for footage that has been divided into beats; each beat keeps the few it chose
-# Beat frames are drawn from the original, 960 wide. Ollama brings every picture to about one megapixel before qwen3-vl sees it
+# Beat frames are drawn from the original, 1280 wide. Ollama brings every picture to about one megapixel before qwen3-vl sees it
 # (a 448 and a 960 wide frame cost the same tokens), so a small frame from the proxy was only enlarged: measured on 0038, the
 # boats out at sea, a purple flower and the beach morning glory were seen at 960 from the original and not at 448 from the
-# proxy; search for its beats went from 5 of 8 first to 7 of 8. At 1280, no better.
-BEAT_WIDTH = 960
+# proxy. 1280 named as many things as 960 for about 4% more tokens; it was settled on to keep more of the original's detail.
+BEAT_WIDTH = 1280
 DESCRIBE_PROMPT = (
     "Đây là {n} khung hình liên tiếp, cách nhau {gap:g} giây, của cùng một đoạn video không có lời thoại. "
     "Hãy mô tả đúng những gì nhìn thấy, bằng tiếng Việt, gọi tên cụ thể đồ vật, món ăn, con vật, địa điểm, hành động của tay và người. "
