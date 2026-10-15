@@ -38,7 +38,7 @@ class Intelligence:
             registry.register(TRANSCRIBE, self._transcription.handlers(), on_success=lambda run_id, asset_id: self.redivide(asset_id))
         if self._understanding:
             from nexora.modules.intelligence.understand import UNDERSTAND
-            registry.register(UNDERSTAND, self._understanding.handlers(), on_success=lambda run_id, asset_id: [listener(asset_id) for listener in self.on_understood])
+            registry.register(UNDERSTAND, self._understanding.handlers(), on_success=lambda run_id, asset_id: [self.follow(asset_id)] + [listener(asset_id) for listener in self.on_understood])
 
     # ------------------------------------------------------------------------------------------- what the library hands over
     def taken_in(self, asset_id: str) -> None:
@@ -99,6 +99,7 @@ class Intelligence:
             everyone = [a["asset_id"] for a in self._assets.assets() if a["kind"] == "video"]
             publish.entities(self.store, "person", self.profiler.people(everyone))
             publish.entities(self.store, "place", self.profiler.places(everyone))
+            done["followed"] = self.follow(asset_id)
         return done
 
     def settle_flag(self, moment_id: str, index: int, state: str, note: str | None = None) -> list[dict]:
@@ -122,6 +123,20 @@ class Intelligence:
         self.profiler.name_person(key, name)
         everyone = [a["asset_id"] for a in self._assets.assets() if a["kind"] == "video"]
         publish.entities(self.store, "person", self.profiler.people(everyone))
+
+    def follow(self, asset_id: str) -> dict:
+        """Follow what the beats of a recording show into entities of the library (design 2026-10-15, section 9 E): things named
+        beat after beat, people and animals known again across cuts, and where every sound comes from."""
+        from nexora.modules.intelligence import publish
+        from nexora.modules.intelligence.analyzers import BY_NAME
+        if self.profiler is None or self._assets.asset(asset_id) is None:
+            return {}
+        everyone = [a["asset_id"] for a in self._assets.assets() if a["kind"] == "video"]
+        things, subjects, sounds = self.profiler.things(everyone), self.profiler.subjects(everyone), self.profiler.sounds(asset_id)
+        publish.entities(self.store, "thing", things)
+        publish.entities(self.store, "subject", subjects)
+        publish.followed(self.store, asset_id, sounds, BY_NAME["follow"])
+        return {"things": len(things), "subjects": len(subjects), "sounds": len(sounds)}
 
     def forget(self, asset_id: str) -> int:
         return self.store.forget(asset_id)

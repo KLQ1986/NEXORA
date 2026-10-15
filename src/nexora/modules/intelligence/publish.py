@@ -131,3 +131,10 @@ def entities(store: IntelligenceStore, kind: str, groups: list[dict]) -> None:
                 for a in g["appearances"]]
         store.entity(kind, key, name=g.get("name") if kind == "person" else None, data={k: v for k, v in g.items() if k not in ("appearances", "key")}, appearances=seen)
     store.drop_entities(kind, keep)
+
+
+def followed(store: IntelligenceStore, asset_id: str, sounds: list[dict], analyzer: Analyzer) -> None:
+    """Where every sound of a recording comes from: what in the picture could make it, or out of frame (design 2026-10-15, 9 E)."""
+    store.replace_segments(asset_id, "sound_source", [(s["start"], s["end"], {k: v for k, v in s.items() if k not in ("start", "end")}) for s in sounds],
+                           analyzer=f"{analyzer.name}@{analyzer.version}")
+    store.ran(asset_id, analyzer)

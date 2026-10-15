@@ -988,7 +988,8 @@ def tracks_of(pictures: list[dict], *, step: float, shots: list[dict], kinds=("h
         dx = (last[0] + last[2] / 2) - (first[0] + first[2] / 2)
         made.append({"kind": tr["kind"], "shot": tr["shot"], "start": round(tr["times"][0], 2), "end": round(tr["times"][-1] + step, 2), "frames": len(tr["times"]),
                      "first_box": first, "last_box": last, "moves": "trái sang phải" if dx > 0.15 else "phải sang trái" if dx < -0.15 else "tại chỗ",
-                     "grows": round(last[2] * last[3] / max(first[2] * first[3], 1e-6), 2), "source": "recognized"})
+                     "grows": round(last[2] * last[3] / max(first[2] * first[3], 1e-6), 2), "source": "recognized",
+                     "looks": [[round(t / step), b] for t, b in zip(tr["times"], tr["boxes"])][:240]})       # frame and box, to know it again by its picture
     return sorted(made, key=lambda x: (x["start"], x["kind"]))
 
 

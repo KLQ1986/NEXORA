@@ -209,3 +209,20 @@ Chạy thật với kịch bản thử 7 câu trên kho hiện có (2026-10-15):
 | Cỡ cảnh nhịp 1 | trung | không đo: có người trong gương nhưng không thấy mặt, nên luật chủ ý không đoán |
 
 Kho hiện chưa có clip nào có người nói trước máy, nên việc gắn người nói mới chỉ được kiểm bằng test, chưa có số đo trên footage thật.
+
+### E. Entity xuyên shot và liên kết âm thanh–hình
+
+`modules/intelligence/entities.py` (hàm thuần) và bộ phân tích mới `follow` (chạy sau mỗi lần mô tả, hoặc `POST /api/v1/assets/{id}/follow`):
+- **Vật** (`thing`): vật cùng tên chuẩn hoá, sau khi bỏ số lượng và màu sắc ("thuyền thúng màu xanh lá" → "thuyền thúng"), được nối qua các nhịp liền nhau thành một lần xuất hiện. `across_cut` ghi khi lần xuất hiện đó kéo qua điểm cắt shot. Vật cùng tên ở các clip khác là cùng một thực thể của thư viện. Những cụm không phải vật ("không người", "không gian yên tĩnh") bị bỏ. Mỗi lần xuất hiện được kiểm bằng hình (`seen`): tỉ lệ khung *ngoài* đoạn đó có điểm SigLIP 2 thấp hơn trung vị của đoạn. 0,5 nghĩa là không hơn phần còn lại; chỉ dùng thứ hạng, không dùng xác suất.
+- **Chủ thể** (`subject`): bước `look` cắt vùng người và động vật ở mỗi khung (độ tin từ 0,4, diện tích từ 0,4% khung) và lưu vector SigLIP 2 vào `_subjects.npz`. Mỗi track trong một shot được biểu diễn bằng vector trung bình của các vùng cắt. Các track được nối qua điểm cắt và qua các clip khi cosine từ 0,88; hai track cùng lúc trong một clip, hoặc một người với một con vật, không bao giờ được nối. Chỉ giữ chủ thể có từ 2 track.
+- **Nguồn âm** (`sound_source`): mỗi âm thanh nghe được gắn với vật trong hình có thể phát ra nó (bảng `SOURCES`: sóng biển → biển, sóng, bãi biển…). Âm thanh từ người (lời nói, tiếng cười…) là trong khung khi người nói được đo là trong khung. Không thấy nguồn thì ghi "ngoài khung"; âm không có trong bảng thì ghi "chưa rõ", không đoán.
+
+Hồ sơ có thêm "Vật theo dõi được", "Chủ thể xuyên shot", và âm thanh của từng nhịp.
+
+Trên 0059:
+- 13 vật. Gương, bồn rửa, khăn, giá treo khăn được xác nhận 1,0 ở nhịp 1, đèn trần và gạch tường 1,0 ở nhịp 2, đúng với khung hình.
+- Bồn cầu, vòi sen, cửa sổ có mặt cả clip, nên được 0,5.
+- Lời "Mì" có nguồn là người, ngoài khung (đúng).
+- Không có chủ thể xuyên shot: clip chỉ có một shot và Vision không nhận ra thân người.
+
+Trên cả thư viện có 83 vật. Ví dụ: "thuyền thúng" có ở 0038 và 0040, "cây dừa" ở 0090 và 0094.

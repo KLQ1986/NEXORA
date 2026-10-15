@@ -26,6 +26,9 @@ BATCH = 120                       # pictures handed to the recogniser at once
 ANALYZER = f"profile:{P.VERSION}"
 
 
+SUBJECT_KINDS = ("humans", "animals")     # what is followed across cuts by its picture
+
+
 class Profiler:
     def __init__(self, assets: AssetStore, index: MomentIndex, adapters: AdapterRegistry, media_dir: str | Path, *,
                  structure_of: Callable[[str], dict | None], signals_of: Callable = lambda asset_id: None,
@@ -180,6 +183,92 @@ class Profiler:
                                  if ((b.get("profile") or {}).get("speaker") or {}).get("value") == "trong khung"]
         return P.voices_of(sentences, faces, talking, step=1 / P.LOOK_FPS) if sentences and faces else {}
 
+    def subjects(self, asset_ids: list[str]) -> list[dict]:
+        """People and animals followed across cuts and recordings (design 2026-10-15, section 9 E): the tracks of every recording,
+        each known by the mean SigLIP 2 vector of its crops, joined when alike. Only subjects seen in more than one track are kept:
+        one track alone is already followed inside its shot."""
+        from nexora.modules.intelligence import entities as E
+        tracks, vectors = [], []
+        for asset_id in asset_ids:
+            made = self.profile(asset_id) or {}
+            kept = self._path(asset_id, "_subjects.npz")
+            crops = {}
+            if kept.is_file():
+                with np.load(kept) as z:
+                    for v, w in zip(z["vectors"].astype(np.float32), z["where"]):
+                        crops[(int(w[0]), int(w[1]), tuple(round(float(x), 3) for x in w[2:6]))] = v
+            for tr in made.get("tracks", []):
+                if tr["kind"] not in SUBJECT_KINDS:
+                    continue
+                code = SUBJECT_KINDS.index(tr["kind"])
+                mine = [crops.get((int(k), code, tuple(round(float(x), 3) for x in box))) for k, box in tr.get("looks", [])]
+                mine = [v for v in mine if v is not None]
+                tracks.append({**{k: tr[k] for k in ("kind", "shot", "start", "end", "frames", "moves")}, "asset_id": asset_id})
+                vectors.append(np.mean(mine, axis=0) if mine else None)
+        groups: dict[int, list[dict]] = {}
+        for tr, g in zip(tracks, E.subjects_of(tracks, vectors)):
+            if g is not None:
+                groups.setdefault(g, []).append(tr)
+        out = []
+        for members in groups.values():
+            if len(members) < 2:
+                continue
+            first = members[0]
+            out.append({"key": f"{first['asset_id']}@{first['start']}#{first['kind']}", "kind": first["kind"], "tracks": len(members),
+                        "assets": sorted({m["asset_id"] for m in members}), "across_cut": len({(m["asset_id"], m["shot"]) for m in members}) > 1,
+                        "appearances": [{k: m[k] for k in ("asset_id", "start", "end", "shot", "moves")} for m in members][:100],
+                        "source": "recognized", "confidence": "low"})
+        return sorted(out, key=lambda x: -x["tracks"])
+
+    def things(self, asset_ids: list[str]) -> list[dict]:
+        """Things the descriptions name, followed through the beats of every recording and the library, each appearance with how
+        far the recording's pictures answer the thing's name (SigLIP 2, when it is set up)."""
+        from nexora.modules.intelligence import entities as E
+        beats = []
+        for asset_id in asset_ids:
+            for m in self._index.moments(asset_id, level="segment"):
+                said = (m.data.get("detail") or {}).get("chu_the") or []
+                beats.append({"asset_id": asset_id, "start": m.t_start, "end": m.t_end, "shot": m.data.get("shot"), "things": said})
+        made = E.things_of(beats)
+        if made and self._has("picture_text"):
+            try:
+                texts = self._adapters.submit("picture_text", Request("texts", inputs={"texts": [f"ảnh {t['name']}" for t in made]})).outputs["vectors"]
+            except AdapterError:
+                texts = None
+            if texts:
+                frames = {}
+                for asset_id in {a["asset_id"] for t in made for a in t["appearances"]}:
+                    kept = self._path(asset_id, "_pictures.npz")
+                    if kept.is_file():
+                        with np.load(kept) as z:
+                            frames[asset_id] = (z["vectors"].astype(np.float32), float(z["step"]))
+                for t, v in zip(made, texts):
+                    v = np.array(v, np.float32)
+                    for a in t["appearances"]:
+                        got = frames.get(a["asset_id"])
+                        if got is not None:
+                            a["seen"] = E.seen_in_pictures(v, got[0], got[1], [(a["start"], a["end"])])[0]
+        for t in made:
+            t["key"] = t["name"]
+            seen = [a["seen"] for a in t["appearances"] if "seen" in a]
+            t["confidence"] = "medium" if t["beats"] >= 2 or (seen and max(seen) >= 0.75) else "low"
+            t["source"] = "model"
+        return made
+
+    def sounds(self, asset_id: str) -> list[dict]:
+        """Every sound heard in a recording, tied to what in its picture could make it, or said to come from out of frame."""
+        from nexora.modules.intelligence import entities as E
+        made = self.profile(asset_id) or {}
+        said = {m.t_start: (m.data.get("detail") or {}) for m in self._index.moments(asset_id, level="segment")}
+        beats = []
+        for b in made.get("beats", []):
+            prof = b.get("profile") or {}
+            detail = said.get(b["start"]) or next((d for t, d in said.items() if abs(t - b["start"]) < 0.05), {})
+            beats.append({"start": b["start"], "end": b["end"], "things": detail.get("chu_the") or [],
+                          "people": (prof.get("people") or {}).get("value"), "speaker": (prof.get("speaker") or {}).get("value")})
+        sounds = [{"kind": e["kind"], "start": e["start"], "end": e["end"]} for e in made.get("sound_events", []) if e.get("kind") and e["kind"] != "im lặng"]
+        return E.sound_sources(sounds, beats)
+
     def places(self, asset_ids: list[str], *, same: float = 0.85) -> list[dict]:
         """Places of the library: beats whose pictures look alike (feature prints), from any recording, grouped (design group 06).
         Each place lists where it appears and the words the recogniser and the operator's notes give it."""
@@ -295,6 +384,7 @@ class Profiler:
             if looked:
                 self._read_closer(ctx, source, on_proxy, probe, pictures)
             embedded = self._embed_pictures(ctx.subject_ref, frames, attempt_id=ctx.claim.attempt_id, heartbeat=ctx.heartbeat)
+            self._embed_subjects(ctx.subject_ref, frames, pictures, drawn, attempt_id=ctx.claim.attempt_id)
             prints = [p.pop("print", None) for p in pictures]
             faces = [(k, j, f.get("box"), f.pop("print")) for k, p in enumerate(pictures) for j, f in enumerate(p.get("faces") or []) if f.get("print")]
             from PIL import Image
@@ -325,6 +415,48 @@ class Profiler:
                 np.savez_compressed(out, prints=np.array([f[3] for f in faces], np.float16), where=np.array([[f[0], f[1]] for f in faces], np.int32),
                                     boxes=np.array([f[2] for f in faces], np.float32))
         return {"frames": len(frames), "recognised": looked, "faces": len(faces), "pictures": embedded}
+
+    def _embed_subjects(self, asset_id: str, frames: list[str], pictures: list[dict], drawn: Path, *, attempt_id: str | None = None) -> int:
+        """The people and animals seen in every looked-at frame, cut out and kept as SigLIP 2 vectors, so that one tracked in one
+        shot can be known again in the next (design 2026-10-15, section 9 E). Without the picture model, nothing is kept."""
+        from PIL import Image
+        target = self._path(asset_id, "_subjects.npz")
+        target.unlink(missing_ok=True)
+        if not self._has("picture_text"):
+            return 0
+        crops, where = [], []
+        out_dir = drawn / "subjects"
+        for k, (frame, picture) in enumerate(zip(frames, pictures)):
+            for code, kind in enumerate(SUBJECT_KINDS):
+                for j, x in enumerate(picture.get(kind) or []):
+                    box = x.get("box")
+                    if not box or x.get("confidence", 1) < 0.4 or box[2] * box[3] < 0.004:
+                        continue
+                    if not crops and not out_dir.exists():
+                        out_dir.mkdir(parents=True, exist_ok=True)
+                    with Image.open(frame) as im:
+                        w, h = im.size
+                        pad_x, pad_y = box[2] * 0.1, box[3] * 0.1                 # a little of what is around them
+                        left, top = max(0, int((box[0] - pad_x) * w)), max(0, int((box[1] - pad_y) * h))
+                        right, bottom = min(w, int((box[0] + box[2] + pad_x) * w)), min(h, int((box[1] + box[3] + pad_y) * h))
+                        if right - left < 8 or bottom - top < 8:
+                            continue
+                        crop = im.convert("RGB").crop((left, top, right, bottom))
+                        crop.thumbnail((256, 256))
+                        path = out_dir / f"{k:05d}_{code}_{j}.jpg"
+                        crop.save(path, quality=90)
+                    crops.append(str(path)); where.append((k, code, *[float(v) for v in box]))
+        if not crops:
+            return 0
+        vectors = []
+        try:
+            for start in range(0, len(crops), 64):
+                vectors += self._adapters.submit("picture_text", Request("images", inputs={"images": crops[start:start + 64]}, attempt_id=attempt_id)).outputs["vectors"]
+        except AdapterError:
+            return 0                                          # people are still followed inside each shot; only across cuts is lost
+        with open(target, "wb") as out:
+            np.savez_compressed(out, vectors=np.array(vectors, np.float16), where=np.array(where, np.float32))
+        return len(crops)
 
     def _embed_pictures(self, asset_id: str, frames: list[str], *, attempt_id: str | None = None, heartbeat=lambda: None) -> bool:
         """Every looked-at frame as a vector of the picture-and-words model, kept beside the footage and named in the canonical
@@ -519,7 +651,7 @@ class Profiler:
             from nexora.modules.intelligence import publish
             from nexora.modules.intelligence.analyzers import BY_NAME
             kept = {kind: self._path(asset_id, suffix) for kind, suffix in (("signals", "_signals.npz"), ("look", "_look.json"), ("listen", "_listen.json"),
-                    ("prints", "_prints.npz"), ("faces", "_faces.npz"), ("pictures", "_pictures.npz"), ("telemetry", "_telemetry.json"), ("profile", "_profile.json"), ("structure", "_structure.json"))}
+                    ("prints", "_prints.npz"), ("faces", "_faces.npz"), ("pictures", "_pictures.npz"), ("subjects", "_subjects.npz"), ("telemetry", "_telemetry.json"), ("profile", "_profile.json"), ("structure", "_structure.json"))}
             # Telemetry was looked for whether or not the camera wrote any: finding none is what it learnt, not a run still owed.
             used = [BY_NAME["look"], BY_NAME["listen"], BY_NAME["telemetry"]]
             publish.profile(self.store, asset_id, made, probe=probe, artifacts={k: str(v) for k, v in kept.items() if v.is_file()}, analyzers=used)

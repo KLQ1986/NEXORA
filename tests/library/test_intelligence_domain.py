@@ -82,3 +82,16 @@ def test_a_field_an_older_prompt_asked_the_model_for_is_gone_once_the_recording_
     store.observe(asset, 0.0, 3.2, "angle", "từ trên cao", source="model", confidence="medium", analyzer="describe@v3")   # said by v3 alone
     publish.descriptions(store, asset, system.index.moments(asset, level="segment"), BY_NAME["describe"])
     assert not [o for o in system.vi.observations(asset, "angle") if o.source == "model" and o.analyzer == "describe@v3"]
+
+
+def test_what_the_beats_show_is_followed_into_things_of_the_library_and_every_sound_gets_a_source(tmp_path):
+    system = build(tmp_path / "data", model=FakeModel(), segment_seconds=2.0, recognisers=[FakeVision(), FakeSound()], speech=FakeSpeech(), pictures=FakePictures())
+    asset, _ = system.library.ingest(camera(tmp_path / "talk.mp4", room_sound(tmp_path / "s.wav", 1), seconds=6))
+    drain(system)
+    vi = system.vi
+    assert vi.analysed(asset)["follow"] == "1" and "follow" not in vi.stale(asset)
+    things = vi.entities("thing")
+    assert things and all(a["asset_id"] == asset for t in things for a in t["appearances"])
+    assert any("seen" in a["evidence"] for t in things for a in t["appearances"])           # checked against the pictures
+    heard = vi.segments(asset, "sound_source")
+    assert all(s.data["where"] in ("trong khung", "ngoài khung", "chưa rõ") for s in heard)

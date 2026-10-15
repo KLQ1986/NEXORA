@@ -13,6 +13,7 @@ ANALYZERS = (
     Analyzer("describe", "v4", ("look", "structure", "speech"), ("description", "model.shot_size", "model.people", "model.place", "model.angle")),
     Analyzer("events", "1", ("describe",), ("event",)),
     Analyzer("scenes", "1", ("look",), ("scene",)),
-    Analyzer("pictures", "1", ("file",), ("pictures",)),          # frames as SigLIP 2 vectors, for search by what is in the picture
+    Analyzer("pictures", "1", ("file",), ("pictures",)),
+    Analyzer("follow", "1", ("describe", "look", "listen"), ("thing", "subject", "sound_source")),   # things, subjects and sounds followed          # frames as SigLIP 2 vectors, for search by what is in the picture
 )
 BY_NAME = {a.name: a for a in ANALYZERS}

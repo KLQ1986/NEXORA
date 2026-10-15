@@ -59,6 +59,7 @@ def build(vi: VideoIntelligence, asset_id: str, *, name: str | None = None) -> d
     sentences = vi.segments(asset_id, "sentence")
     spans = [s for s in vi.segments(asset_id, "span") if s.data.get("type") == "text"]
     beats_out = []
+    heard_all = vi.segments(asset_id, "sound_source")
     beats = vi.segments(asset_id, "beat")
     for k, beat in enumerate(beats):
         span = (beat.t_start, beat.t_end)
@@ -66,6 +67,8 @@ def build(vi: VideoIntelligence, asset_id: str, *, name: str | None = None) -> d
         picture, picture_why = picture_grade(values)
         sound, sound_why = sound_grade(values)
         said = [s.data.get("text", "") for s in sentences if s.t_end > beat.t_start and s.t_start < beat.t_end]
+        heard = [f"{h.data['kind']} ({'nguồn: ' + h.data['source'] + ', ' if h.data.get('source') else ''}{h.data['where']})"
+                 for h in heard_all if h.t_end > beat.t_start and h.t_start < beat.t_end]
         flags = [f for f in (_value(values, "flags") or []) if f.get("state", "open") == "open"]
         beats_out.append({
             "index": k + 1, "t_start": beat.t_start, "t_end": beat.t_end, "seconds": round(beat.t_end - beat.t_start, 2),
@@ -79,6 +82,7 @@ def build(vi: VideoIntelligence, asset_id: str, *, name: str | None = None) -> d
             "sound": {"grade": sound, "why": sound_why},
             "uses": uses_of(values, first=k == 0, last=k == len(beats) - 1, speech=bool(said)),
             "speech": said,
+            "sounds": heard,
             "text_on_screen": [s.data.get("text", "") for s in spans if s.t_end > beat.t_start and s.t_start < beat.t_end],
             "aesthetic": _value(values, "aesthetic"),
             "flags": [f.get("message", "") for f in flags],
@@ -101,6 +105,13 @@ def build(vi: VideoIntelligence, asset_id: str, *, name: str | None = None) -> d
         "people": [{"name": e["name"] or e["data"].get("name") or "chưa đặt tên", "key": e["key"],
                     "at": [(a["t_start"], a["t_end"]) for a in e["appearances"] if a["asset_id"] == asset_id]} for e in people],
         "places": [{"name": e["name"] or e["data"].get("name") or e["key"], "key": e["key"]} for e in places],
+        "things": sorted(({"name": e["key"], "at": [(a["t_start"], a["t_end"]) for a in e["appearances"] if a["asset_id"] == asset_id],
+                           "seen": max((a["evidence"].get("seen", 0.5) for a in e["appearances"] if a["asset_id"] == asset_id), default=0.5),
+                           "elsewhere": sorted({a["asset_id"] for a in e["appearances"]} - {asset_id})}
+                          for e in vi.entities("thing") if any(a["asset_id"] == asset_id for a in e["appearances"])), key=lambda t: -t["seen"]),
+        "subjects": [{"kind": e["data"].get("kind"), "key": e["key"], "at": [(a["t_start"], a["t_end"]) for a in e["appearances"] if a["asset_id"] == asset_id],
+                      "elsewhere": sorted({a["asset_id"] for a in e["appearances"]} - {asset_id})}
+                     for e in vi.entities("subject") if any(a["asset_id"] == asset_id for a in e["appearances"])],
         "speech": [{"t_start": s.t_start, "t_end": s.t_end, "text": s.data.get("text", ""), "speaker": (s.data.get("speaker") or {}).get("value"),
                     "person": who_said.get(round(s.t_start, 2))} for s in sentences],
         "text_on_screen": [{"t_start": s.t_start, "t_end": s.t_end, "text": s.data.get("text", ""), "kind": s.data.get("kind")} for s in spans],
@@ -159,11 +170,23 @@ def markdown(d: dict) -> str:
         out.append("- Dùng làm: " + ", ".join(b["uses"]))
         if b["speech"]:
             out.append("- Lời: " + " ".join(f"“{s}”" for s in b["speech"]))
+        if b["sounds"]:
+            out.append("- Âm thanh: " + ", ".join(b["sounds"]))
         if b["text_on_screen"]:
             out.append("- Chữ trên hình: " + ", ".join(b["text_on_screen"]))
         if b["flags"]:
             out.append("- Cần xem lại: " + "; ".join(b["flags"]))
         out.append("")
+    if d["things"]:
+        out += ["## Vật theo dõi được", ""]
+        for t in d["things"]:
+            where = ", ".join(f"{_clock(a)}–{_clock(b)}" for a, b in t["at"])
+            out.append(f"- {t['name']}: {where}" + (" · hình xác nhận" if t["seen"] >= 0.75 else "")
+                       + (f" · có ở {len(t['elsewhere'])} clip khác" if t["elsewhere"] else ""))
+        out.append("")
+    if d["subjects"]:
+        out += ["## Chủ thể xuyên shot", ""] + [f"- {s['kind']}: " + ", ".join(f"{_clock(a)}–{_clock(b)}" for a, b in s["at"])
+                                                 + (f" · có ở {len(s['elsewhere'])} clip khác" if s["elsewhere"] else "") for s in d["subjects"]] + [""]
     if d["people"] or d["places"]:
         out += ["## Người và nơi", ""]
         out += [f"- Người: {p['name']} ({', '.join(f'{_clock(a)}–{_clock(b)}' for a, b in p['at'])})" for p in d["people"]]

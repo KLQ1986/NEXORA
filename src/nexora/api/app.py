@@ -1588,6 +1588,13 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             return PlainTextResponse(dossier.markdown(made), media_type="text/markdown; charset=utf-8")
         return made
 
+    @app.post("/api/v1/assets/{asset_id}/follow")
+    def follow(asset_id: str):
+        """Follow what a recording shows into things, subjects and sound sources of the library again, from what is kept."""
+        if system.assets.asset(asset_id) is None:
+            raise HTTPException(404, "no such asset")
+        return system.intelligence.follow(asset_id)
+
     @app.post("/api/v1/assets/{asset_id}/retell")
     def retell(asset_id: str):
         """Build the beats' texts again from what the model already said, after the way answers are cleaned has changed."""
