@@ -48,3 +48,10 @@ def test_people_tracked_in_two_shots_are_one_subject_when_they_look_alike_but_ne
     assert made[0] == made[3] and len({made[0], made[1], made[2]}) == 3 - 1     # 1 and 2 are seen together: one of them is someone else
     assert made[4] != made[0]                                                    # an animal is not a person
     assert E.subjects_of([t("a", 0, 1)], [None]) == [None]
+
+
+def test_two_tracks_whose_faces_are_two_people_are_never_one_subject_however_alike_their_pictures():
+    t = lambda a, s, e, who: {"asset_id": a, "start": s, "end": e, "kind": "humans", "who": who}
+    v = np.array([1.0, 0.0, 0.0], np.float32)
+    made = E.subjects_of([t("a", 2, 13, ["lewis"]), t("a", 13, 26, ["hjalmarsson"]), t("a", 27, 37, ["hjalmarsson"]), t("a", 39, 42, [])], [v, v, v, v])
+    assert made[0] != made[1] and made[1] == made[2]       # a track with no face seen goes with the closest it may join

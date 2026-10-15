@@ -144,6 +144,8 @@ def subjects_of(tracks: list[dict], vectors: list[np.ndarray | None], *, same: f
 
     def together(i: int, j: int) -> bool:
         a, b = tracks[i], tracks[j]
+        if a.get("who") and b.get("who") and not set(a["who"]) & set(b["who"]):
+            return True             # their faces are two people's: alike pictures of two men in suits are still two men (2026-10-16)
         return a.get("asset_id") == b.get("asset_id") and a["start"] < b["end"] and b["start"] < a["end"]
 
     pairs = sorted(((float(unit[i] @ unit[j]), i, j) for i in range(n) for j in range(i + 1, n)

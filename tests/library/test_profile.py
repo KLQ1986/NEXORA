@@ -298,6 +298,24 @@ def test_faces_grouped_apart_are_one_person_when_the_same_voice_speaks_through_e
     assert sum(len(x) for x in both.values()) == 2                   # a sentence carried by the voice is not given to a second person
 
 
+def test_a_voice_heard_for_two_men_neither_joins_them_nor_gives_one_mans_words_to_the_other():
+    # VOA interview, 2026-10-16: Lewis talks in shot 1, Hjalmarsson in shot 2, and the recogniser heard one voice for both.
+    said = lambda t0, t1: {"asset_id": "v", "t_start": t0, "t_end": t1, "voice": 1, "text": "câu"}
+    faces = [{"asset_id": "v", "t": t, "group": 0, "shot": 1} for t in (2.0, 2.5, 3.0, 3.5)] + \
+            [{"asset_id": "v", "t": t, "group": 1, "shot": 1} for t in (2.0, 2.5)] + \
+            [{"asset_id": "v", "t": t, "group": 2, "shot": 2} for t in (27.0, 27.5, 28.0, 28.5, 31.0, 31.5)]
+    who = P.voices_of([said(2.0, 3.4), said(27.0, 29.0), said(31.0, 32.0)], faces, {"v": [(2.0, 13.0), (13.0, 42.0)]})
+    assert set(who) == {2} and [x["t_start"] for x in who[2]] == [27.0, 31.0]       # Lewis's words stay unattributed, not given to Hjalmarsson
+    sized = [{**f, "size": 0.18 if f["group"] == 0 else 0.08 if f["group"] == 1 else 0.3} for f in faces]
+    near = P.voices_of([said(2.0, 3.4), said(27.0, 29.0)], sized, {"v": [(2.0, 13.0), (13.0, 42.0)]})
+    assert [x["t_start"] for x in near[0]] == [2.0] and [x["t_start"] for x in near[2]] == [27.0]   # the face near the camera is the speaker
+    lone = {0: [{"asset_id": "v", "t_start": 2.0, "voice": 1, "by": "mặt"}], 2: [{"asset_id": "v", "t_start": 27.0, "voice": 1, "by": "mặt"}]}
+    assert P.joined_by_voice(lone, faces) == []                                      # seen only in different shots: not joined on a voice
+    stray = faces + [{"asset_id": "v", "t": 13.0, "group": 0, "shot": 2}]           # one of Hjalmarsson's faces grouped with Lewis at the cut
+    assert P.joined_by_voice(lone, stray) == []
+    assert P.joined_by_voice(lone, [{**f, "shot": 1} for f in faces if f["group"] != 1]) == [{0, 2}]   # one shot, never together: one man
+
+
 def test_one_beat_of_action_still_has_a_start_a_peak_and_an_end_from_how_the_subject_moves():
     beats = [{"start": 0.0, "end": 5.0, "shot": 0, "detail": {"hanh_dong": [{"ai": "người", "lam_gi": "quay video", "voi": ""}]}}]
     fps = 10.0

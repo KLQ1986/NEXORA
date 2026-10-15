@@ -941,8 +941,17 @@ def voices_of(sentences: list[dict], faces: list[dict], talking: dict[str, list[
             continue
         looks = [f for f in faces if f["asset_id"] == a and t0 - step / 2 <= f["t"] < t1 + step / 2]
         groups = {f["group"] for f in looks}
+        if len(groups) > 1:
+            # Several faces: the one talking to the camera is the one much nearer it. A face at least twice the height of every
+            # other is taken for the speaker (Lewis, 2026-10-16, with a man passing far behind him); otherwise it is not known.
+            size = {g: float(np.median([f.get("size", 0.0) for f in looks if f["group"] == g])) for g in groups}
+            first, second = sorted(size.values(), reverse=True)[:2]
+            if first <= 0 or first < 2 * second:
+                continue
+            groups = {max(size, key=size.get)}
+            looks = [f for f in looks if f["group"] in groups]
         if len(groups) != 1:
-            continue                                             # nobody, or more than one face: who spoke is not known
+            continue                                             # nobody seen: who spoke is not known
         g = groups.pop()
         times = {round(f["t"], 2) for f in looks}
         if len(times) * step < 0.5 * spoken:
@@ -953,6 +962,12 @@ def voices_of(sentences: list[dict], faces: list[dict], talking: dict[str, list[
     taken = {(x["asset_id"], x["t_start"]) for xs in out.values() for x in xs}
     for s in sentences:                                          # the same voice in the same recording, heard out of frame
         g = voice_of.get((s["asset_id"], s.get("voice")))
+        a, t0, t1 = s["asset_id"], float(s["t_start"]), float(s["t_end"])
+        t1 = max(t1, t0 + step)                                  # a fragment of a sentence is judged over one look at least
+        on_screen = sum(max(0.0, min(t1, b) - max(t0, a0)) for a0, b in talking.get(a, [])) >= 0.5 * (t1 - t0)
+        seen = {f["group"] for f in faces if f["asset_id"] == a and t0 - step / 2 <= f["t"] < t1 + step / 2}
+        if on_screen and seen and g not in seen:
+            continue        # someone else is in the frame talking: a voice the recogniser could not tell apart is not enough (2026-10-16)
         if g is not None and s.get("voice") is not None and (s["asset_id"], s["t_start"]) not in taken:
             out[g].append({**s, "by": "giọng"})                  # a sentence is one person's: never given to a second
             taken.add((s["asset_id"], s["t_start"]))
@@ -961,10 +976,31 @@ def voices_of(sentences: list[dict], faces: list[dict], talking: dict[str, list[
     return out
 
 
-def joined_by_voice(said: dict[int, list[dict]]) -> list[set[int]]:
+def joined_by_voice(said: dict[int, list[dict]], faces: list[dict] | None = None) -> list[set[int]]:
     """Face groups that are one person: each was seen alone in the frame, mouth moving, while the same voice spoke in the same
     recording. Faces of one person seen in other light are sometimes grouped apart (an interview, 2026-10-16: one man in three
     groups); his voice says they are him. Returns the sets of groups to join, each of two or more."""
+    shots: dict[int, dict] = {}
+    moments: dict[int, set] = {}
+    for f in faces or []:
+        here = shots.setdefault(f["group"], {})
+        here[(f["asset_id"], f.get("shot"))] = here.get((f["asset_id"], f.get("shot")), 0) + 1
+        moments.setdefault(f["group"], set()).add((f["asset_id"], round(f["t"], 2)))
+
+    def truly_in(g: int) -> set:
+        """The shots a group is truly seen in: a quarter of its sightings at least, so that one face put in the wrong group at
+        a cut does not count (2026-10-16: Hjalmarsson's first frame grouped with Lewis)."""
+        counts = shots.get(g, {})
+        total = sum(counts.values()) or 1
+        return {k for k, n in counts.items() if n / total >= 0.25}
+
+    def may_join(a: int, b: int) -> bool:
+        # Two groups seen at the same instant are two people. Two groups not seen in one same shot are not joined on a voice
+        # alone: the recogniser of voices puts two men talking in turn under one voice (an interview, 2026-10-16).
+        if faces is None:
+            return True
+        return not moments.get(a, set()) & moments.get(b, set()) and bool(truly_in(a) & truly_in(b))
+
     by_voice: dict[tuple, set[int]] = {}
     for g, xs in said.items():
         for x in xs:
@@ -972,9 +1008,18 @@ def joined_by_voice(said: dict[int, list[dict]]) -> list[set[int]]:
                 by_voice.setdefault((x["asset_id"], x["voice"]), set()).add(g)
     sets: list[set[int]] = []
     for gs in by_voice.values():
-        joined = [s for s in sets if s & gs]
-        merged = set(gs).union(*joined) if joined else set(gs)
-        sets = [s for s in sets if not s & gs] + [merged]
+        for g in sorted(gs):
+            home = next((s for s in sets if g in s), None)
+            if home is None:
+                home = {g}; sets.append(home)
+            for other in sorted(gs - {g}):
+                there = next((s for s in sets if other in s), None)
+                if there is home or not all(may_join(x, y) for x in home for y in (there or {other})):
+                    continue
+                if there is not None:
+                    sets.remove(there); home |= there
+                else:
+                    home.add(other)
     return [s for s in sets if len(s) > 1]
 
 

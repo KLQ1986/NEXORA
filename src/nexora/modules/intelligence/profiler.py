@@ -160,21 +160,45 @@ class Profiler:
                     prints.append(v / n)
         groups = P.group_faces(np.array(prints)) if prints else []
         names = self._names()
-        said = self._who_said(asset_ids, [{"asset_id": rows[i]["asset_id"], "t": rows[i]["t"], "group": n} for n, g in enumerate(groups) for i in g])
-        joins = P.joined_by_voice(said)
-        if joins:                                              # one voice through faces grouped apart: one person
+        shot_of = self._shot_finder(asset_ids)
+        seen = lambda gs: [{"asset_id": rows[i]["asset_id"], "t": rows[i]["t"], "group": n, "shot": shot_of(rows[i]["asset_id"], rows[i]["t"]),
+                            "size": rows[i]["box"][3]}
+                           for n, g in enumerate(gs) for i in g]
+        said = self._who_said(asset_ids, seen(groups))
+        joins = P.joined_by_voice(said, seen(groups))
+        if joins:                                              # one voice through faces grouped apart in one shot: one person
             gone = set().union(*joins)
             groups = [g for n, g in enumerate(groups) if n not in gone] + [sorted(i for n in j for i in groups[n]) for j in joins]
-            said = self._who_said(asset_ids, [{"asset_id": rows[i]["asset_id"], "t": rows[i]["t"], "group": n} for n, g in enumerate(groups) for i in g])
+            said = self._who_said(asset_ids, seen(groups))
         out = []
+        # Whose each face is, kept for following people across cuts: a track is known by the faces inside it.
+        self._owners = {(rows[i]["asset_id"], rows[i]["t"]): [] for g in groups for i in g}
+        for g in groups:
+            first = rows[g[0]]
+            key = sorted(f"{rows[i]['asset_id']}@{rows[i]['t']}#{rows[i]['face']}" for i in g)[0]
+            for i in g:
+                self._owners[(rows[i]["asset_id"], rows[i]["t"])].append((key, rows[i]["box"]))
         for n, g in enumerate(groups):
             members = [rows[i] for i in g]
             keys = {f"{m['asset_id']}@{m['t']}#{m['face']}" for m in members}
             named = next((n for key, n in names.items() if key in keys), None)
+            # A face seen in one look alone (half a second), saying nothing and named by no one, is a stray detection, not a
+            # person (an interview, 2026-10-16: a group of one beside the 219 faces of the man speaking).
+            if len(members) < 2 and not said.get(n) and not named:
+                continue
             out.append({"key": sorted(keys)[0], "name": named, "faces": len(members), "assets": sorted({m["asset_id"] for m in members}),
                         "appearances": members[:50], "source": "measured", "confidence": "low" if len(members) < 3 else "medium",
                         "speaks": [{k: x[k] for k in ("asset_id", "t_start", "t_end", "text", "voice", "by")} for x in said.get(n, [])][:200]})
         return sorted(out, key=lambda x: -x["faces"])
+
+    def _shot_finder(self, asset_ids: list[str]):
+        """The shot a moment of a recording falls in, by its structure; None when it has none."""
+        from nexora.core.timebase import to_seconds
+        cuts = {}
+        for a in asset_ids:
+            made = self._structure_of(a) or {}
+            cuts[a] = [(to_seconds(x["start"], 2), to_seconds(x["end"], 2)) for x in made.get("shots", [])]
+        return lambda a, t: next((k for k, (s0, s1) in enumerate(cuts.get(a, [])) if s0 <= t < s1), None)
 
     def _who_said(self, asset_ids: list[str], faces: list[dict]) -> dict[int, list[dict]]:
         """The sentences each face group said, from what was heard and when the speaker was measured in the frame."""
@@ -193,6 +217,9 @@ class Profiler:
         each known by the mean SigLIP 2 vector of its crops, joined when alike. Only subjects seen in more than one track are kept:
         one track alone is already followed inside its shot."""
         from nexora.modules.intelligence import entities as E
+        self.people(asset_ids)                                 # whose each face is
+        owners = getattr(self, "_owners", {})
+        step = 1 / P.LOOK_FPS
         tracks, vectors = [], []
         for asset_id in asset_ids:
             made = self.profile(asset_id) or {}
@@ -208,7 +235,16 @@ class Profiler:
                 code = SUBJECT_KINDS.index(tr["kind"])
                 mine = [crops.get((int(k), code, tuple(round(float(x), 3) for x in box))) for k, box in tr.get("looks", [])]
                 mine = [v for v in mine if v is not None]
-                tracks.append({**{k: tr[k] for k in ("kind", "shot", "start", "end", "frames", "moves")}, "asset_id": asset_id})
+                counted: dict[str, int] = {}
+                for k, box in tr.get("looks", []):
+                    for key, face in owners.get((asset_id, round(int(k) * step, 2)), []):
+                        cx, cy = face[0] + face[2] / 2, face[1] + face[3] / 2
+                        if box[0] <= cx <= box[0] + box[2] and box[1] <= cy <= box[1] + box[3]:
+                            counted[key] = counted.get(key, 0) + 1
+                # A track is the person whose face it shows most: one face grouped wrongly at a cut (2026-10-16, Hjalmarsson's
+                # first frame put with Lewis) must not make two men one.
+                who = [max(counted, key=counted.get)] if counted else []
+                tracks.append({**{k: tr[k] for k in ("kind", "shot", "start", "end", "frames", "moves")}, "asset_id": asset_id, "who": who})
                 vectors.append(np.mean(mine, axis=0) if mine else None)
         groups: dict[int, list[dict]] = {}
         for tr, g in zip(tracks, E.subjects_of(tracks, vectors)):

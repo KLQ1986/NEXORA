@@ -324,3 +324,28 @@ Giới hạn còn lại: bản phiên âm của 0050 có từ kéo dài bất th
   - Các nhóm mặt mà mỗi nhóm đều được thấy một mình đang nói bằng cùng một giọng trong cùng một file được nối thành một người (`profile.joined_by_voice`).
 - **D, sau khi sửa ✓**: một người (219 lần thấy mặt) nói 20/20 câu, không câu nào bị gán hai lần. 19 câu gán theo mặt. Câu còn lại (50,9–55,7 giây) rơi vào lúc lớp hoà hình che mặt, nên được gán theo giọng, đúng người.
 - Còn một nhóm 1 mặt lạc, không có câu nào.
+
+**D và E với hai người khác nhau (2026-10-16).** Clip thứ hai: "Trial of Hamid Noury - VOA interview with Kenneth Lewis and Göran Hjalmarsson" (Commons, phạm vi công cộng, 48 giây), chạy trong cùng NEXORA riêng với clip Nigel Short. Như vậy có 3 người, 2 file, 25 câu nói. Hệ thống chia đúng 4 shot: giới thiệu, Lewis (2–12,7 giây), Hjalmarsson (12,7–42,3 giây), thẻ kết.
+
+Lần chạy đầu lộ ra 3 lỗi:
+- Bước phân biệt giọng nghe hai người đàn ông thành **một giọng**, nên giọng mang câu của Lewis sang Hjalmarsson.
+- Gom mặt xếp mặt Hjalmarsson ở khung đầu sau điểm cắt vào nhóm của Lewis. Dấu vân mặt của Vision không đủ xác định danh tính: Lewis và Hjalmarsson giống nhau 0,88, trong khi hai nhóm của cùng Nigel Short chỉ 0,67.
+- Vì vậy track của Lewis bị nối với Hjalmarsson thành một chủ thể.
+
+Đã sửa bằng các ràng buộc cấu trúc, không dùng ngưỡng độ giống mặt:
+- Giọng không mang câu sang người g khi lúc đó người nói được đo là trong khung, đang thấy mặt người khác và không thấy mặt g.
+- Hai nhóm mặt chỉ được nối nhờ giọng khi cùng có ít nhất 1/4 số lần thấy mặt trong một shot chung, và không bao giờ xuất hiện cùng lúc.
+- Một track thuộc về người có mặt xuất hiện nhiều nhất trong nó. Hai track của hai người khác nhau không bao giờ là một chủ thể.
+- Khi nhiều mặt cùng xuất hiện, mặt cao gấp từ 2 lần mọi mặt khác được coi là người nói.
+- Mảnh câu ngắn được xét trên ít nhất một lần nhìn (0,5 giây).
+- Nhóm mặt chỉ thấy một lần, không nói và chưa được đặt tên, bị bỏ như một lần nhận diện lạc.
+
+Kết quả:
+- **D:** 24/24 câu được gán đều đúng người (độ chính xác 100%), phủ 24/25 câu (96%): Nigel Short 20/20, Hjalmarsson 3/3, Lewis 1. Câu bỏ trống là một mảnh 0,1 giây.
+- **E:** Nigel Short được nối qua điểm cắt; Hjalmarsson là một chủ thể gồm 3 track; Lewis để riêng. Không có lần nối sai nào.
+
+**C với đáp án đã siết.** Các ứng viên "vừa đủ" được thay bằng ứng viên thật sự chỉ vừa đủ: 0034 nhịp 2 cho "nhà mái tranh", 0040 nhịp 2 cho "sóng biển". Kết quả:
+- Prompt cũ: đúng > vừa đủ 6/6, vừa đủ > sai 4/6, điểm TB 10 / 3,8 / 0.
+- Prompt mới: đúng > vừa đủ 6/6, vừa đủ > sai 3/6, điểm TB 10 / 2,7 / 0.
+
+Các ca hoà trước đây đến từ đáp án lỏng. Prompt mới được giữ vì nó mở rộng khoảng cách giữa "đúng" và "vừa đủ"; đó là điều quyết định một câu là "tốt" hay "tạm".
