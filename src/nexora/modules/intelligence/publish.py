@@ -5,6 +5,8 @@ functions turn what it found into segments and observations, with one name per f
 and the measured shot size are both `shot_size`, from two sources, fused when read. They are called at the end of each stage,
 and over the files already kept when a library is moved to the canonical model, so nothing is analysed again for it.
 """
+from dataclasses import replace
+
 from nexora.core.intelligence import Analyzer
 from nexora.core.intelligence_store import IntelligenceStore
 from nexora.core.timebase import to_seconds
@@ -71,7 +73,10 @@ def descriptions(store: IntelligenceStore, asset_id: str, beats: list, analyzer:
             rows.append((m.t_start, m.t_end, "flags", m.data["flags"], "measured", "high", {}))
     fields = tuple({r[2] for r in rows if r[4] == "model"} | {"flags"})
     store.observe_many(asset_id, rows, analyzer=f"{analyzer.name}@{analyzer.version}", replace=fields)
-    store.ran(asset_id, analyzer)
+    # A recording counts as described at the oldest prompt any of its beats was described with, so that one described before
+    # the prompt changed is seen to be out of date, even when its texts were put into words again since.
+    asked = sorted({(m.data.get("provenance") or {}).get("prompt") or "" for m in beats if m.data.get("detail")})
+    store.ran(asset_id, analyzer if not asked or asked[0] == analyzer.version else replace(analyzer, version=asked[0] or "?"))
 
 
 def pictures(store: IntelligenceStore, asset_id: str, path: str, analyzer: Analyzer) -> None:

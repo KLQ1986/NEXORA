@@ -168,11 +168,13 @@ LAYERS = (("chu_the_chinh", "Chủ thể"), ("tien_canh", "Gần máy"), ("trung
 
 def plain(text: str) -> str:
     """A description without its opening formula, its sentences about what is not there and its clauses about feelings."""
-    kept = []
+    kept, about_camera = [], []
     for sentence in __import__("re").split(r"(?<=[.!?])\s+", text.strip()):
         sentence = FEELING.sub("", OPENING.sub("", sentence)).strip()
-        if sentence and not ABSENT.search(sentence) and not CAMERA_TALK.search(sentence) and not CAMERA_MOVE.search(sentence):
-            kept.append(sentence[0].upper() + sentence[1:])
+        if not sentence or ABSENT.search(sentence):
+            continue
+        (about_camera if CAMERA_TALK.search(sentence) or CAMERA_MOVE.search(sentence) else kept).append(sentence[0].upper() + sentence[1:])
+    kept = kept or about_camera             # every sentence told of the camera (0034): they still say what it went past
     return " ".join(s if s.endswith((".", "!", "?")) else s + "." for s in kept)
 
 
@@ -189,6 +191,12 @@ def tidy(out: dict) -> dict:
             value = FEELING.sub("", vocab.mend(out[key])).strip().rstrip(".")
             only_where = not set(__import__("re").findall(r"\w+", vocab.norm(value))) - WHERE_WORDS
             out[key] = "" if vocab.norm(value) in UNKNOWN or ABSENT.search(value) or CAMERA_TALK.search(value) or CAMERA_MOVE.search(value) or only_where else value
+    said_layers = set()
+    for key, _ in LAYERS:                                  # a layer said again word for word (0090: "Xa" = "Giữa") tells nothing more
+        if isinstance(out.get(key), str) and out[key]:
+            if vocab.norm(out[key]) in said_layers:
+                out[key] = ""
+            said_layers.add(vocab.norm(out.get(key) or ""))
     if isinstance(out.get("chu_the"), list):
         things = []
         for v in out["chu_the"]:
@@ -441,7 +449,8 @@ class Understanding:
             else:
                 analyzer = whole
             existing = self._index.get(ctx.subject_ref, "segment", seg["t_start"], seg["t_end"])
-            if existing and (existing.source == "human" or existing.analyzer == analyzer):
+            said = bool(((existing.data.get("detail") or {}).get("mo_ta") if existing else ""))       # a beat left without words is asked again
+            if existing and (existing.source == "human" or (existing.analyzer == analyzer and said)):
                 if measured and any(existing.data.get(k) != v for k, v in measured.items()):
                     self._index.merge_data(existing.moment_id, **measured)   # what was measured may have changed; what was said has not
                 before = vocab.canonical_list((existing.data.get("detail") or {}).get("chu_the") or [])
@@ -469,7 +478,8 @@ class Understanding:
                     who = answer.get("model")
                     break
                 except AdapterError as err:
-                    if err.code is not ErrorCode.OUTPUT_INVALID:
+                    too_long = err.code is ErrorCode.INVALID_REQUEST and "context" in str(err)     # too many frames for the model: fewer
+                    if err.code is not ErrorCode.OUTPUT_INVALID and not too_long:
                         raise
             if out is None:
                 unreadable += 1                      # one bad answer must not cost the whole video; the segment stays undescribed

@@ -55,3 +55,18 @@ def test_deleting_a_recording_forgets_it_in_the_canonical_model(tmp_path):
     assert system.vi.observations(asset)
     remove_asset(system, asset)
     assert system.intelligence.store.forget(asset) == 0 and system.vi.recording(asset) is None
+
+
+def test_a_recording_with_a_beat_described_by_an_older_prompt_is_seen_to_be_out_of_date(tmp_path):
+    from nexora.modules.intelligence import publish
+    from nexora.modules.intelligence.analyzers import BY_NAME
+    system = build(tmp_path / "data", model=FakeModel(), segment_seconds=2.0, recognisers=[FakeVision(), FakeSound()], speech=FakeSpeech(), pictures=FakePictures())
+    asset, _ = system.library.ingest(camera(tmp_path / "talk.mp4", room_sound(tmp_path / "s.wav", 1), seconds=6))
+    drain(system)
+    assert system.vi.analysed(asset)["describe"] == "v4" and "describe" not in system.vi.stale(asset)
+    beats = system.index.moments(asset, level="segment")
+    first = beats[0]
+    system.index.upsert(asset, "segment", first.t_start, first.t_end, first.text, analyzer=first.analyzer,
+                        data={**first.data, "provenance": {**first.data["provenance"], "prompt": "v3"}})
+    publish.descriptions(system.intelligence.store, asset, system.index.moments(asset, level="segment"), BY_NAME["describe"])
+    assert system.vi.analysed(asset)["describe"] == "v3" and "describe" in system.vi.stale(asset)

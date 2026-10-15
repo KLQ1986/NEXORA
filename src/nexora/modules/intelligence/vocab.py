@@ -25,7 +25,7 @@ EMOTIONS = ("vui", "buồn", "ngạc nhiên", "giận", "sợ", "trung tính")
 GENRES = ("vlog du lịch", "ẩm thực", "hướng dẫn", "phỏng vấn", "sự kiện", "giới thiệu sản phẩm", "phong cảnh", "đời sống", "cảnh chèn", "quay màn hình")
 # Things often filmed in Vietnam that a vision model tends to call by a vaguer name ("thuyền nhỏ", "cây cỏ", "xe"). Offered to it
 # as names to use only when the thing is plainly seen; never as a list of what to find.
-LOCAL_NAMES = ("thuyền thúng", "ghe", "tàu cá", "xe điện du lịch", "xe máy", "xích lô", "nón lá", "áo dài", "hoa giấy", "hoa sứ", "cây dừa", "cây phi lao",
+LOCAL_NAMES = ("thuyền thúng", "ghe", "tàu cá", "xe điện du lịch", "xe máy", "xích lô", "nón lá", "áo dài", "hoa giấy", "hoa mỏ két", "hoa sứ", "cây dừa", "cây phi lao",
                "cây bàng", "rau muống biển", "ruộng lúa", "mái lá", "mái ngói đỏ", "nhà sàn", "đèn lồng", "gánh hàng rong", "chợ", "quán cóc", "bánh mì", "phở")
 LIGHT_DIRECTIONS = ("trước", "bên", "sau", "trên", "không rõ")
 

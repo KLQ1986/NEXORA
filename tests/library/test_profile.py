@@ -193,6 +193,8 @@ def test_a_room_is_named_in_vietnamese_without_the_cameras_movement_or_a_subject
     assert out["chu_the"] == ["gương", "giá treo khăn", "khăn tắm", "bình xà phòng", "máy quay"]     # a camera in the picture is a thing
     assert out["chu_the_chinh"] == "" and out["trung_canh"] == "" and out["hau_canh"] == "cửa sổ gỗ, phía sau"
     assert tidy({"chu_the_chinh": "người đàn ông, ở giữa"})["chu_the_chinh"] == "người đàn ông, ở giữa"
+    assert tidy({"mo_ta": "Máy quay lia ngang qua công viên giải trí có vòng quay."})["mo_ta"] == "Máy quay lia ngang qua công viên giải trí có vòng quay."
+    assert tidy({"trung_canh": "cây dừa, mái ngói đỏ", "hau_canh": "Cây dừa, mái ngói đỏ"})["hau_canh"] == ""
     assert vocab.mend("towel rack bên bình xà phòng") == "giá treo khăn bên bình xà phòng"      # a phrase is one thing; "bình" is not "bin"
 
 

@@ -128,3 +128,23 @@ Clip này để lộ ba lỗi của bước dọn mô tả, nay đã sửa:
 - "Điểm mới" so theo tên chuẩn hoá, nên không lặp lại danh sách "Thấy" khi hai bên chỉ khác "một chiếc".
 
 `retell` (POST `/api/v1/assets/{id}/retell`) dựng lại văn bản của các nhịp từ câu trả lời đã lưu, không gọi lại mô hình mô tả, rồi nhúng lại văn bản. Đã chạy cho 0059 và 0038.
+
+## 9. Kế hoạch A–G (2026-10-15)
+
+Thứ tự đã thống nhất: A nền đúng → B Dossier → C Match Report → D Level 2 phần yếu → E entity xuyên shot → F trích xuất asset → G storytelling và đề xuất dựng lại. Mỗi phần chỉ thử trên **một video test: 0059** (phòng tắm, có người, có lời nói, 2 nhịp). Không chạy lại cả kho.
+
+### A. Nền đúng
+
+- Bước `describe` khai phiên bản `v4`. Một clip được tính là mô tả ở prompt cũ nhất trong các nhịp của nó, nên clip mô tả bằng v3 bị báo là cũ, kể cả khi văn bản đã được dựng lại bằng `retell`.
+- Ở 1280 px mỗi khung tốn khoảng 1150 token. Nhịp 7 khung của 0034 vượt 8192 token, nên ngữ cảnh Ollama được nâng lên 16384 cho mọi lệnh gọi. Nếu vẫn vượt, nhịp được hỏi lại với ít khung hơn.
+- Câu mô tả chỉ nói về máy quay thì vẫn được giữ, nếu không còn câu nào khác. Một nhịp v4 không có câu mô tả thì được hỏi lại, không lấy từ bộ nhớ đệm.
+- Một lớp cảnh lặp nguyên văn lớp trước bị bỏ. Thêm "hoa mỏ két" vào danh mục tên.
+
+Đã mô tả lại 0090, 0026, 0034, 0040 trước khi dừng việc chạy cả kho:
+
+| Clip | Vật đúng | Ghi chú |
+|---|---|---|
+| 0090 | 5/8 | Sót trời và mây, bụi cây, cỏ. Máy đo "đứng yên" trong khi khung hình có trôi chậm. |
+| 0026 | 5/6 | Bịa "mặt trời". |
+| 0034 | khoảng 11/13 | Sót người đi xe máy (nhỏ, đang chạy) và bụi cây xén. |
+| 0040 | | Nêu đúng rau muống biển hoa tím, thuyền thúng, công trình mái cong. |

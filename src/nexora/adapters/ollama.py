@@ -7,6 +7,10 @@ from pathlib import Path
 
 from nexora.core.adapter import Adapter, AdapterError, Capability, ErrorCode, Request, Result
 
+# One context size for every request, so that Ollama does not load the model again when it changes. A frame 1280 wide costs
+# about 1150 tokens; seven of them and the prompt went past 8192 on 0034.
+CONTEXT = 16384
+
 
 class OllamaAdapter(Adapter):
     def __init__(self, *, host: str = "http://127.0.0.1:11434", vision_model: str = "qwen3-vl:8b-instruct", embed_model: str = "bge-m3",
@@ -60,7 +64,7 @@ class OllamaAdapter(Adapter):
             message["images"] = [base64.b64encode(p.read_bytes()).decode() for p in paths]
         want_json = request.operation == "describe" or request.params.get("json")
         body = {"model": self.model_for(request), "stream": False, "messages": [message],
-                "options": {"temperature": 0.1, "num_predict": int(request.params.get("max_tokens", 500)), "num_ctx": 8192}}
+                "options": {"temperature": 0.1, "num_predict": int(request.params.get("max_tokens", 500)), "num_ctx": CONTEXT}}
         if want_json:
             body["format"] = "json"
         text = self._post("/api/chat", body, timeout)["message"].get("content", "")

@@ -10,7 +10,7 @@ ANALYZERS = (
                                                   "light", "backlit", "colour", "noise", "composition", "depth", "text", "holding", "span")),
     Analyzer("listen", "1", ("file",), ("sound", "music", "loudness", "clipping", "wind")),
     Analyzer("speech", "2", ("file", "listen"), ("sentence", "speaker_id")),
-    Analyzer("describe", "v3", ("look", "structure", "speech"), ("description", "model.shot_size", "model.people", "model.place", "model.angle")),
+    Analyzer("describe", "v4", ("look", "structure", "speech"), ("description", "model.shot_size", "model.people", "model.place", "model.angle")),
     Analyzer("events", "1", ("describe",), ("event",)),
     Analyzer("scenes", "1", ("look",), ("scene",)),
     Analyzer("pictures", "1", ("file",), ("pictures",)),          # frames as SigLIP 2 vectors, for search by what is in the picture

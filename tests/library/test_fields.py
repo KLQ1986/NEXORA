@@ -67,7 +67,7 @@ def test_a_line_asking_for_a_close_shot_lifts_a_close_beat_only_once_the_field_i
     store = IntelligenceStore(tmp_path / "vi.db")
     store.observe("close", 0, 4, "shot_size", "cận", source="measured", analyzer="look@3")
     store.observe("wide", 0, 4, "shot_size", "toàn", source="measured", analyzer="look@3")
-    store.observe("wide", 0, 4, "shot_size", "cận", source="model", analyzer="describe@v3")
+    store.observe("wide", 0, 4, "shot_size", "cận", source="model", analyzer="describe@v4")
     trial, released = VideoIntelligence(tmp_path / "vi.db"), VideoIntelligence(tmp_path / "vi.db", released=lambda: {"shot_size"})
     assert trial.fit("close", (0, 4), {"shot_size": "cận"}) == (0.0, [])            # on trial: not relied on
     assert released.fit("close", (0, 4), {"shot_size": "cận"})[0] > 0 > released.fit("wide", (0, 4), {"shot_size": "cận"})[0]

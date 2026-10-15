@@ -11,7 +11,7 @@ def make(tmp_path, released=()):
 def test_the_operators_word_wins_then_a_released_measure_then_a_released_model_then_the_most_trusted():
     store, vi = make(tmp_path := __import__("pathlib").Path(__import__("tempfile").mkdtemp()))
     store.observe("a", 0, 5, "shot_size", "toàn", source="measured", confidence="medium", analyzer="profile@3")
-    store.observe("a", 0, 5, "shot_size", "cận", source="model", confidence="medium", analyzer="describe@v3")
+    store.observe("a", 0, 5, "shot_size", "cận", source="model", confidence="medium", analyzer="describe@v4")
     assert vi.value("a", 2.0, "shot_size").value == "toàn" and not vi.value("a", 2.0, "shot_size").released
     assert vi.value("a", 2.0, "shot_size", released_only=True) is None
     _, gated = make(tmp_path, released={"model.shot_size"})
