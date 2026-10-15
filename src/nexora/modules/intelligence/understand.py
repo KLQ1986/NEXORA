@@ -530,9 +530,10 @@ class Understanding:
             motion = lambda a, b: float(found.subject[int(a * fps):max(int(a * fps) + 1, int(b * fps))].mean())
         beats = [{"start": m.t_start, "end": m.t_end, "shot": m.data.get("shot"), "detail": m.data.get("detail") or {}} for m in segments]
         made = events_of(beats, shots, motion, (found.subject, found.fps) if motion else None)
-        by_start = {m.t_start: m for m in segments}
+        def holding(t: float):                     # the beat a phase begins or ends in
+            return next((m for m in segments if m.t_start <= t < m.t_end), segments[-1] if segments and t >= segments[-1].t_start else None)
         for e in made[:MAX_STATES]:
-            first, last = by_start.get(e["phases"]["bắt đầu"][0]), by_start.get(e["phases"]["kết thúc"][0])
+            first, last = holding(e["phases"]["bắt đầu"][0]), holding(max(e["phases"]["kết thúc"][1] - 0.05, e["phases"]["kết thúc"][0]))
             frames = [f for f in ((first.data.get("frames") or [None])[0] if first else None, (last.data.get("frames") or [None])[-1] if last else None) if f]
             if len(frames) == 2 and frames[0] != frames[1]:
                 try:

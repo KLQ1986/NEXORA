@@ -71,7 +71,9 @@ def descriptions(store: IntelligenceStore, asset_id: str, beats: list, analyzer:
                 rows.append((m.t_start, m.t_end, {"chu_the": "things", "hanh_dong": "actions", "quan_he": "relations"}[key], detail[key], "model", "medium", evidence))
         if m.data.get("flags"):
             rows.append((m.t_start, m.t_end, "flags", m.data["flags"], "measured", "high", {}))
-    fields = tuple({r[2] for r in rows if r[4] == "model"} | {"flags"})
+    # Every field a description may write goes first, not only those written now: a field an older prompt asked the model for
+    # and this one does not (v3 named the size of frame, v4 leaves it to measurement) would otherwise be read as current.
+    fields = tuple({r[2] for r in rows if r[4] == "model"} | set(MODEL_FIELDS.values()) | {"description", "things", "actions", "relations", "flags"})
     store.observe_many(asset_id, rows, analyzer=f"{analyzer.name}@{analyzer.version}", replace=fields)
     # A recording counts as described at the oldest prompt any of its beats was described with, so that one described before
     # the prompt changed is seen to be out of date, even when its texts were put into words again since.

@@ -70,3 +70,15 @@ def test_a_recording_with_a_beat_described_by_an_older_prompt_is_seen_to_be_out_
                         data={**first.data, "provenance": {**first.data["provenance"], "prompt": "v3"}})
     publish.descriptions(system.intelligence.store, asset, system.index.moments(asset, level="segment"), BY_NAME["describe"])
     assert system.vi.analysed(asset)["describe"] == "v3" and "describe" in system.vi.stale(asset)
+
+
+def test_a_field_an_older_prompt_asked_the_model_for_is_gone_once_the_recording_is_described_again(tmp_path):
+    from nexora.modules.intelligence import publish
+    from nexora.modules.intelligence.analyzers import BY_NAME
+    system = build(tmp_path / "data", model=FakeModel(), segment_seconds=2.0, recognisers=[FakeVision(), FakeSound()], speech=FakeSpeech(), pictures=FakePictures())
+    asset, _ = system.library.ingest(camera(tmp_path / "talk.mp4", room_sound(tmp_path / "s.wav", 1), seconds=6))
+    drain(system)
+    store = system.intelligence.store
+    store.observe(asset, 0.0, 3.2, "angle", "từ trên cao", source="model", confidence="medium", analyzer="describe@v3")   # said by v3 alone
+    publish.descriptions(store, asset, system.index.moments(asset, level="segment"), BY_NAME["describe"])
+    assert not [o for o in system.vi.observations(asset, "angle") if o.source == "model" and o.analyzer == "describe@v3"]

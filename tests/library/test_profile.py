@@ -268,6 +268,33 @@ def test_beats_doing_the_same_thing_are_one_event_with_phases_and_an_event_at_th
     assert made[1]["cut_start"] is True and made[1]["cut_end"] is True
 
 
+
+def test_a_room_seen_from_inside_is_a_medium_shot_and_never_more_than_low_confidence():
+    classes = [["structure", 0.62], ["wood_processed", 0.6], ["interior_room", 0.27], ["bathroom", 0.27]]    # 0059, the first second
+    assert P.size_from_scene(classes, [[0.26, 0.04, 0.57, 0.72]]) == ("trung", "low")
+    assert P.size_from_scene([["structure", 0.8], ["window", 0.8]], [[0.1, 0.2, 0.6, 0.8]]) is None        # a window alone says nothing
+
+
+def test_a_sentence_is_the_persons_whose_face_alone_is_seen_while_their_mouth_moves_and_their_voice_carries_it_out_of_frame():
+    said = lambda t0, t1, voice, text, a="v": {"asset_id": a, "t_start": t0, "t_end": t1, "voice": voice, "text": text}
+    sentences = [said(1.0, 3.0, 1, "xin chào"), said(5.0, 7.0, 2, "chào bạn"), said(9.0, 10.0, 1, "đi thôi"), said(12.0, 13.0, 3, "ai đó")]
+    faces = [{"asset_id": "v", "t": t, "group": 0} for t in (1.0, 1.5, 2.0, 2.5)] + \
+            [{"asset_id": "v", "t": t, "group": g} for t in (5.0, 5.5, 6.0) for g in (0, 1)] + [{"asset_id": "v", "t": 12.0, "group": 1}]
+    talking = {"v": [(0.0, 7.0)]}                                     # after 7 s the speaker is out of frame
+    who = P.voices_of(sentences, faces, talking)
+    assert [(x["text"], x["by"]) for x in who[0]] == [("xin chào", "mặt"), ("đi thôi", "giọng")]
+    assert 1 not in who                    # two faces while "chào bạn" was said; "ai đó" was said out of frame by a voice never seen
+
+
+def test_one_beat_of_action_still_has_a_start_a_peak_and_an_end_from_how_the_subject_moves():
+    beats = [{"start": 0.0, "end": 5.0, "shot": 0, "detail": {"hanh_dong": [{"ai": "người", "lam_gi": "quay video", "voi": ""}]}}]
+    fps = 10.0
+    motion = np.zeros(60, np.float32); motion[5:45] = 0.3; motion[30] = 1.0          # moves from 0.5 s to 4.5 s, most at 3.0 s
+    made = P.events_of(beats, [{"start": 0.0, "end": 6.0}], motion=lambda a, b: 0.5, series=(motion, fps))
+    assert made[0]["moving_from"] == 0.5 and made[0]["moving_to"] == 4.5
+    assert made[0]["phases"] == {"bắt đầu": [0.5, 2.5], "cao trào": [2.5, 3.5], "kết thúc": [3.5, 4.5], "peak_at": 3.0}
+
+
 def test_a_shoot_is_grouped_into_scenes_across_files_by_time_place_and_picture():
     v = lambda *xs: np.array(xs, np.float32) / np.linalg.norm(xs)
     beach, beach2, room = v(1, 0.1, 0), v(1, 0.15, 0.05), v(0, 0.2, 1)

@@ -86,6 +86,8 @@ def build(vi: VideoIntelligence, asset_id: str, *, name: str | None = None) -> d
     usable = [b for b in beats_out if b["picture"]["grade"] == "dùng được"]
     best = max(usable or beats_out, key=lambda b: b["aesthetic"] or 0.0, default=None)
     people = [e for e in vi.entities("person") if any(a["asset_id"] == asset_id for a in e["appearances"])]
+    who_said = {round(x["t_start"], 2): e["name"] or e["data"].get("name") or "người chưa đặt tên"
+                for e in people for x in e["data"].get("speaks", []) if x["asset_id"] == asset_id}
     places = [e for e in vi.entities("place") if any(a["asset_id"] == asset_id for a in e["appearances"])]
     return {
         "asset_id": asset_id, "name": name,
@@ -99,8 +101,8 @@ def build(vi: VideoIntelligence, asset_id: str, *, name: str | None = None) -> d
         "people": [{"name": e["name"] or e["data"].get("name") or "chưa đặt tên", "key": e["key"],
                     "at": [(a["t_start"], a["t_end"]) for a in e["appearances"] if a["asset_id"] == asset_id]} for e in people],
         "places": [{"name": e["name"] or e["data"].get("name") or e["key"], "key": e["key"]} for e in places],
-        "speech": [{"t_start": s.t_start, "t_end": s.t_end, "text": s.data.get("text", ""), "speaker": (s.data.get("speaker") or {}).get("value")}
-                   for s in sentences],
+        "speech": [{"t_start": s.t_start, "t_end": s.t_end, "text": s.data.get("text", ""), "speaker": (s.data.get("speaker") or {}).get("value"),
+                    "person": who_said.get(round(s.t_start, 2))} for s in sentences],
         "text_on_screen": [{"t_start": s.t_start, "t_end": s.t_end, "text": s.data.get("text", ""), "kind": s.data.get("kind")} for s in spans],
         "events": [{"t_start": e.t_start, "t_end": e.t_end, "who": e.data.get("who") or "", "actions": e.data.get("actions") or [],
                     **{k: e.data[k] for k in ("before", "after") if e.data.get(k)}} for e in vi.segments(asset_id, "event")],
@@ -170,7 +172,7 @@ def markdown(d: dict) -> str:
     if d["events"]:
         out += ["## Sự kiện", ""] + [f"- {_clock(e['t_start'])}–{_clock(e['t_end'])} {', '.join(e['actions'])}" for e in d["events"]] + [""]
     if d["speech"]:
-        out += ["## Lời nói", ""] + [f"- {_clock(s['t_start'])} {s['text']}" for s in d["speech"]] + [""]
+        out += ["## Lời nói", ""] + [f"- {_clock(s['t_start'])} {(s['person'] + ': ') if s.get('person') else ''}{s['text']}" for s in d["speech"]] + [""]
     if d["story"]:
         out += ["## Cấu trúc", ""] + [f"- {p.get('tu', '')} {p.get('phan', '')}: {p.get('vi', '')}" for p in d["story"]] + [""]
     return "\n".join(out).rstrip() + "\n"

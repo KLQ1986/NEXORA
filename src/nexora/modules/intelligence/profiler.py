@@ -157,14 +157,28 @@ class Profiler:
                     prints.append(v / n)
         groups = P.group_faces(np.array(prints)) if prints else []
         names = self._names()
+        said = self._who_said(asset_ids, [{"asset_id": rows[i]["asset_id"], "t": rows[i]["t"], "group": n} for n, g in enumerate(groups) for i in g])
         out = []
-        for g in groups:
+        for n, g in enumerate(groups):
             members = [rows[i] for i in g]
             keys = {f"{m['asset_id']}@{m['t']}#{m['face']}" for m in members}
             named = next((n for key, n in names.items() if key in keys), None)
             out.append({"key": sorted(keys)[0], "name": named, "faces": len(members), "assets": sorted({m["asset_id"] for m in members}),
-                        "appearances": members[:50], "source": "measured", "confidence": "low" if len(members) < 3 else "medium"})
+                        "appearances": members[:50], "source": "measured", "confidence": "low" if len(members) < 3 else "medium",
+                        "speaks": [{k: x[k] for k in ("asset_id", "t_start", "t_end", "text", "voice", "by")} for x in said.get(n, [])][:200]})
         return sorted(out, key=lambda x: -x["faces"])
+
+    def _who_said(self, asset_ids: list[str], faces: list[dict]) -> dict[int, list[dict]]:
+        """The sentences each face group said, from what was heard and when the speaker was measured in the frame."""
+        sentences, talking = [], {}
+        for asset_id in asset_ids:
+            for m in self._index.moments(asset_id, level="speech"):
+                sentences.append({"asset_id": asset_id, "t_start": m.t_start, "t_end": m.t_end, "text": m.text,
+                                  "voice": (m.data.get("speaker") or {}).get("value")})
+            made = self.profile(asset_id) or {}
+            talking[asset_id] = [(b["start"], b["end"]) for b in made.get("beats", [])
+                                 if ((b.get("profile") or {}).get("speaker") or {}).get("value") == "trong khung"]
+        return P.voices_of(sentences, faces, talking, step=1 / P.LOOK_FPS) if sentences and faces else {}
 
     def places(self, asset_ids: list[str], *, same: float = 0.85) -> list[dict]:
         """Places of the library: beats whose pictures look alike (feature prints), from any recording, grouped (design group 06).

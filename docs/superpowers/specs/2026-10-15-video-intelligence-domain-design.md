@@ -190,3 +190,22 @@ Chạy thật với kịch bản thử 7 câu trên kho hiện có (2026-10-15):
 | Tên lửa phóng lên quỹ đạo | thiếu | thiếu ✓ |
 
 7/7 đúng, 87% số giây cần đã có hình. Mô hình chấm 10/10 cho mọi lựa chọn, nên điểm chấm chưa phân biệt được lựa chọn tốt với lựa chọn vừa đủ. Các phương án dự phòng sai ngữ cảnh được chấm 5/10.
+
+### D. Level 2: phần còn yếu
+
+- **Pha của sự kiện** được tính theo chuyển động đo được, không theo nhịp (`profile.phases_of`): cao trào là khoảng một giây quanh lúc chủ thể chuyển động mạnh nhất, bắt đầu và kết thúc là hai phần trước và sau đó. Trước đây một sự kiện chỉ gồm một nhịp có ba pha trùng nhau. Khung "trước / sau" được lấy từ nhịp chứa thời điểm của pha.
+- **Cỡ cảnh trong phòng:** khi Apple Vision nhận ra phòng (`interior_room`, `bathroom`, `kitchen`…) và không có vật nào chiếm từ 75% khung trở lên, cỡ cảnh đo được là "trung", độ tin thấp. Vision không phân biệt được cả căn phòng với một góc phòng. Bộ `look` lên phiên bản 4.
+- **Người nói** (`profile.voices_of`): một câu thuộc về một người khi lúc nói, người nói được đo là trong khung và mặt người đó là mặt duy nhất thấy được trong phần lớn câu. Giọng nghe lúc đó được coi là của người ấy trong file đó, nên các câu khác cùng giọng (kể cả nói ngoài khung) cũng thuộc về họ. Mỗi người trong thư viện mang theo `speaks`; hồ sơ ghi tên người nói trước mỗi câu.
+- **Sửa lỗi mô hình chuẩn:** khi mô tả lại, mọi trường mà bước mô tả có thể ghi đều được xoá trước. Trước đây cỡ cảnh và góc máy do v3 nói vẫn còn và được đọc như hiện hành. Khi một trường không có trong lần ghi mới, `observe_many` nay chỉ xoá những gì cùng bộ phân tích đã ghi trước đó; trước đây nó xoá cả giá trị máy đo của trường đó.
+
+Đo trên 0059:
+
+| | Đáp án | Kết quả |
+|---|---|---|
+| Hành động | một người quay video (trong gương) | "người đàn ông đang quay video" ✓ |
+| Sự kiện | 0–5,2 giây | 0–5,23; chuyển động 0,2–4,0; cao trào 2,7–3,7 ✓ |
+| Người nói | người cầm máy, ngoài khung | "ngoài khung" ✓ |
+| Cỡ cảnh nhịp 2 | toàn hoặc trung (cả phòng tắm) | đo được "trung" (trước là mô hình nói "cực toàn") |
+| Cỡ cảnh nhịp 1 | trung | không đo: có người trong gương nhưng không thấy mặt, nên luật chủ ý không đoán |
+
+Kho hiện chưa có clip nào có người nói trước máy, nên việc gắn người nói mới chỉ được kiểm bằng test, chưa có số đo trên footage thật.

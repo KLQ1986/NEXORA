@@ -248,6 +248,10 @@ def size_from_thing(salient: list) -> tuple[str, str] | None:
         return "cận", "medium"
     return "trung", "low"
 
+# A room seen from inside (0059, a bathroom): Vision names the room, and nothing in it is held up to the camera.
+ROOM = frozenset({"interior_room", "bathroom", "kitchen", "bedroom", "living_room", "dining_room", "office", "classroom", "hallway",
+                  "restaurant", "bar", "lobby", "hotel_room", "store", "shop"})
+
 
 def size_from_scene(classes: list, salient: list) -> tuple[str, str] | None:
     """Without people the size of a frame is read from what it shows: open sky or landscape is wide, one small thing filling the
@@ -257,6 +261,10 @@ def size_from_scene(classes: list, salient: list) -> tuple[str, str] | None:
         return "toàn", "medium"
     if sure & CLOSE_THINGS and salient and len(salient) == 1 and 0.12 <= _area(salient[0]) <= 0.75 and not sure & WIDE_SCENE:
         return "cận", "low"
+    # Inside a room the frame takes in its walls and fittings: a medium shot. A whole room and a corner of it read alike to
+    # Vision, so it is never more than low confidence.
+    if {c for c, p in classes if p >= 0.25} & ROOM and not (salient and _area(salient[0]) >= 0.75):
+        return "trung", "low"
     return None
 
 
@@ -819,9 +827,11 @@ def events_of(beats: list[dict], shots: list[dict], motion=None, series: tuple |
         who = next((a.get("ai") for b in e["beats"] for a in (b.get("detail") or {}).get("hanh_dong") or [] if isinstance(a, dict) and a.get("ai")), "")
         what = sorted(e["acts"])
         exact = refine_bounds(first["start"], last["end"], *series) if series is not None else None
+        # Within the stretch the subject moves, its phases by the instant of most movement; by the beats when nothing was measured.
+        phases = phases_of(exact[0], exact[1], *series) if exact else None
         out.append({"start": first["start"], "end": last["end"], "shot": e["shot"], "who": who, "actions": what, "beats": len(e["beats"]),
                     "moving_from": exact[0] if exact else None, "moving_to": exact[1] if exact else None,
-                    "phases": {"bắt đầu": [first["start"], first["end"]], "cao trào": [peak["start"], peak["end"]], "kết thúc": [last["start"], last["end"]]},
+                    "phases": phases or {"bắt đầu": [first["start"], first["end"]], "cao trào": [peak["start"], peak["end"]], "kết thúc": [last["start"], last["end"]]},
                     "cut_start": first["start"] - shot["start"] <= EDGE,
                     "cut_end": shot["end"] - last["end"] <= EDGE, "source": "measured+model"})
     return out
@@ -915,6 +925,40 @@ def group_faces(prints: np.ndarray, *, same: float = SAME_FACE) -> list[list[int
 
 
 # ------------------------------------------------------------------------------- following things through a shot (group 06)
+def voices_of(sentences: list[dict], faces: list[dict], talking: dict[str, list[tuple[float, float]]], *, step: float = 0.5) -> dict[int, list[dict]]:
+    """Who says what (design 2026-10-15, section 9 D): a sentence belongs to a person when, while it is said, the speaker was
+    measured in the frame (their mouth moves) and that person's face is the only one seen for most of it. The voice heard
+    then is theirs in that recording, so the same voice's other sentences there, said out of frame, are theirs too.
+    `sentences`: {asset_id, t_start, t_end, text, voice}. `faces`: {asset_id, t, group}, one per face seen per look.
+    `talking`: by recording, the stretches where the speaker was measured in the frame. Returns, by face group, its sentences."""
+    out: dict[int, list[dict]] = {}
+    voice_of: dict[tuple[str, object], int] = {}
+    for s in sentences:
+        a, t0, t1 = s["asset_id"], float(s["t_start"]), float(s["t_end"])
+        spoken = max(t1 - t0, step)
+        in_frame = sum(max(0.0, min(t1, b) - max(t0, a0)) for a0, b in talking.get(a, []))
+        if in_frame < 0.5 * spoken:
+            continue
+        looks = [f for f in faces if f["asset_id"] == a and t0 - step / 2 <= f["t"] < t1 + step / 2]
+        groups = {f["group"] for f in looks}
+        if len(groups) != 1:
+            continue                                             # nobody, or more than one face: who spoke is not known
+        g = groups.pop()
+        times = {round(f["t"], 2) for f in looks}
+        if len(times) * step < 0.5 * spoken:
+            continue
+        out.setdefault(g, []).append({**s, "by": "mặt"})
+        if s.get("voice") is not None:
+            voice_of[(a, s["voice"])] = g
+    for s in sentences:                                          # the same voice in the same recording, heard out of frame
+        g = voice_of.get((s["asset_id"], s.get("voice")))
+        if g is not None and s.get("voice") is not None and not any(x["t_start"] == s["t_start"] and x["asset_id"] == s["asset_id"] for x in out.get(g, [])):
+            out[g].append({**s, "by": "giọng"})
+    for g in out:
+        out[g].sort(key=lambda x: (x["asset_id"], x["t_start"]))
+    return out
+
+
 def tracks_of(pictures: list[dict], *, step: float, shots: list[dict], kinds=("humans", "faces", "hands", "animals")) -> list[dict]:
     """People, faces, hands and animals followed from frame to frame inside each shot: a box in one frame continues the track
     whose last box it overlaps most (at least a fifth), one frame may be missed. A track never crosses a cut."""
@@ -946,6 +990,18 @@ def tracks_of(pictures: list[dict], *, step: float, shots: list[dict], kinds=("h
                      "first_box": first, "last_box": last, "moves": "trái sang phải" if dx > 0.15 else "phải sang trái" if dx < -0.15 else "tại chỗ",
                      "grows": round(last[2] * last[3] / max(first[2] * first[3], 1e-6), 2), "source": "recognized"})
     return sorted(made, key=lambda x: (x["start"], x["kind"]))
+
+
+def phases_of(start: float, end: float, motion: np.ndarray, fps: float, *, around: float = 0.5) -> dict | None:
+    """Start, peak and end of an action from how much the subject moves, to a tenth of a second: the peak is the second around
+    the instant it moves most; the start runs up to it, the end runs on from it. None when nothing moves there."""
+    a, b = int(start * fps), max(int(start * fps) + 1, int(end * fps))
+    part = motion[a:b]
+    if not len(part) or float(part.max()) <= 1e-6:
+        return None
+    top = (a + int(np.argmax(part))) / fps
+    p0, p1 = round(max(start, top - around), 1), round(min(end, top + around), 1)
+    return {"bắt đầu": [round(start, 1), p0], "cao trào": [p0, p1], "kết thúc": [p1, round(end, 1)], "peak_at": round(top, 1)}
 
 
 def refine_bounds(start: float, end: float, motion: np.ndarray, fps: float, *, quiet: float = 0.25) -> tuple[float, float]:

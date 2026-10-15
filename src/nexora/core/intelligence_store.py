@@ -52,10 +52,15 @@ class IntelligenceStore:
         now = time.time()
         with db.write(self._conn) as c:
             for f in replace:
-                sources = {r[4] for r in rows if r[2] == f} or {"measured", "recognized", "model"}
+                sources = {r[4] for r in rows if r[2] == f}
                 for s in sources:
                     if s != "human":
                         c.execute("DELETE FROM vi_observations WHERE asset_id = ? AND field = ? AND source = ?", (asset_id, f, s))
+                if not sources:
+                    # Nothing of this field now: what this analyzer said of it before goes, whatever version said it; what other
+                    # analyzers measured of the same field stays.
+                    c.execute("DELETE FROM vi_observations WHERE asset_id = ? AND field = ? AND source != 'human' AND analyzer LIKE ?",
+                              (asset_id, f, analyzer.split("@")[0] + "@%"))
             for a, b, f, value, source, confidence, evidence in rows:
                 if source not in SOURCES:
                     raise ValueError(f"unknown source {source}")
