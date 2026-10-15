@@ -148,3 +148,20 @@ Thứ tự đã thống nhất: A nền đúng → B Dossier → C Match Report 
 | 0026 | 5/6 | Bịa "mặt trời". |
 | 0034 | khoảng 11/13 | Sót người đi xe máy (nhỏ, đang chạy) và bụi cây xén. |
 | 0040 | | Nêu đúng rau muống biển hoa tím, thuyền thúng, công trình mái cong. |
+
+### B. Hồ sơ nguyên liệu (Asset Intelligence Dossier)
+
+`modules/intelligence/dossier.py` gom về một chỗ mọi thứ Video Intelligence biết về một clip, chỉ đọc qua `VideoIntelligence`, không phân tích lại. Hồ sơ gồm:
+- thông số kỹ thuật, tiêu đề, tóm tắt, chủ đề, cấu trúc;
+- phiên bản của từng bộ phân tích và phần nào đã cũ;
+- người, nơi, lời nói, chữ trên hình, sự kiện, cảnh;
+- từng nhịp: mô tả, vật thấy, hành động, đặc điểm (ghi rõ giá trị nào chỉ do mô hình nói), điểm hình, điểm tiếng, gợi ý cách dùng, lời, chữ, cờ cần xem;
+- kết luận: số giây dùng được, dùng tạm, lỗi, và nhịp đẹp nhất.
+
+Điểm hình chỉ tính từ giá trị đo: rung, nét, phơi sáng, chất lượng ở mức "poor" là lỗi; mức "fair", đường chân trời nghiêng, ngược sáng, nhiễu là dùng tạm. Điểm tiếng: méo là lỗi; gió và tiếng rất nhỏ (dưới -45 LUFS) là dùng tạm. Gợi ý cách dùng (cảnh thiết lập, dẫn vào, kết, chèn chi tiết, đoạn nói trước máy, lời dẫn ngoài khung) chỉ dựa trên giá trị đo hoặc nhận diện, không dựa trên điều mô hình nói.
+
+API: `GET /api/v1/assets/{id}/dossier` (JSON) và `?format=md` (trang Markdown để tải). Trong thư viện, mục "Hồ sơ nguyên liệu" nằm dưới hồ sơ video.
+
+Đi kèm: `retell` tự đóng cờ "ngôn ngữ" khi từ tiếng Anh đã được dịch. `telemetry` được ghi là đã chạy cả khi máy quay không ghi dữ liệu cảm biến, nên footage không phải DJI không còn bị báo là phân tích cũ.
+
+Trên 0059: 9,1 giây dùng được, phân tích ở phiên bản mới nhất. Cỡ cảnh của cả hai nhịp chỉ do mô hình nói, vì không có người để đo cỡ cảnh từ thân người. Đây là việc của D.

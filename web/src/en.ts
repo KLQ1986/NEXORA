@@ -1846,6 +1846,17 @@ const en: Record<string, string> = {
   "Chưa thấy khuôn mặt nào đủ rõ trong kho.": "No face clear enough in the library yet.",
   "Chưa đặt tên": "Not named",
   "{0} lần thấy, trong {1} video": "seen {0} times, in {1} videos",
+  "Hồ sơ nguyên liệu": "Footage dossier",
+  "dùng được {0}s, dùng tạm {1}s, lỗi {2}s": "usable {0}s, with care {1}s, faulty {2}s",
+  "Tải hồ sơ (.md)": "Download dossier (.md)",
+  "Phần phân tích đã cũ: {0}": "Out-of-date analysis: {0}",
+  "hình: {0}": "picture: {0}",
+  "tiếng: {0}": "sound: {0}",
+  "đẹp nhất": "best",
+  "Dùng làm: {0}": "Use as: {0}",
+  "Lưu ý: {0}": "Note: {0}",
+  "Lời: {0}": "Words: {0}",
+  "Cần xem lại: {0}": "Check: {0}",
 };
 
 export default en;

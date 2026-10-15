@@ -351,11 +351,14 @@ class Understanding:
             out, profile = tidy(detail), moment.data.get("profile") or {}
             named = vocab.canonical_list(out.get("chu_the") or [])
             out["khac_truoc"] = ", ".join(t for t in named if t not in before) if before else ""
-            data = {**moment.data, "detail": out, "model_labels": model_labels(out, profile),
+            text = text_of(out, profile, moment.data.get("labels") or {})
+            # A flag about English words is settled once the words are put into Vietnamese.
+            flags = [{**f, "state": "resolved", "note": "đã dịch sang tiếng Việt"} if f.get("rule") == "ngôn ngữ" and f.get("state") == "open"
+                     and not vocab.foreign_words(text) else f for f in moment.data.get("flags") or []]
+            data = {**moment.data, "detail": out, "model_labels": model_labels(out, profile), "flags": flags,
                     "new_things": [t for t in named if t not in before] if before else named}
             data["continues"] = bool(before) and not data["new_things"]
-            self._index.upsert(asset_id, "segment", moment.t_start, moment.t_end, text_of(out, profile, moment.data.get("labels") or {}),
-                               data=data, analyzer=moment.analyzer)
+            self._index.upsert(asset_id, "segment", moment.t_start, moment.t_end, text, data=data, analyzer=moment.analyzer)
             before = named or before
             told += 1
         if told:

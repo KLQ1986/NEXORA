@@ -506,7 +506,8 @@ class Profiler:
             from nexora.modules.intelligence.analyzers import BY_NAME
             kept = {kind: self._path(asset_id, suffix) for kind, suffix in (("signals", "_signals.npz"), ("look", "_look.json"), ("listen", "_listen.json"),
                     ("prints", "_prints.npz"), ("faces", "_faces.npz"), ("pictures", "_pictures.npz"), ("telemetry", "_telemetry.json"), ("profile", "_profile.json"), ("structure", "_structure.json"))}
-            used = [BY_NAME["look"], BY_NAME["listen"]] + ([BY_NAME["telemetry"]] if sensed else [])
+            # Telemetry was looked for whether or not the camera wrote any: finding none is what it learnt, not a run still owed.
+            used = [BY_NAME["look"], BY_NAME["listen"], BY_NAME["telemetry"]]
             publish.profile(self.store, asset_id, made, probe=probe, artifacts={k: str(v) for k, v in kept.items() if v.is_file()}, analyzers=used)
         return made
 

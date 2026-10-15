@@ -1563,6 +1563,20 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             raise HTTPException(409, "Đây là bản trùng của một footage đã có")
         return {"run_id": run_id}
 
+    @app.get("/api/v1/assets/{asset_id}/dossier")
+    def asset_dossier(asset_id: str, format: str = "json"):
+        """Everything learnt about a recording in one place, with a word on every beat (design 2026-10-15, section 9 B)."""
+        from fastapi.responses import PlainTextResponse
+        from nexora.modules.intelligence import dossier
+        if system.assets.asset(asset_id) is None:
+            raise HTTPException(404, "no such asset")
+        made = dossier.build(system.vi, asset_id, name=Path(system.assets.original(asset_id).relative_path).name)
+        if made is None:
+            raise HTTPException(404, "Footage này chưa được phân tích")
+        if format == "md":
+            return PlainTextResponse(dossier.markdown(made), media_type="text/markdown; charset=utf-8")
+        return made
+
     @app.post("/api/v1/assets/{asset_id}/retell")
     def retell(asset_id: str):
         """Build the beats' texts again from what the model already said, after the way answers are cleaned has changed."""
