@@ -1623,6 +1623,40 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             raise HTTPException(404, "no such file")
         return FileResponse(path, filename=f"{name}_{file}")
 
+    @app.get("/api/v1/assets/{asset_id}/story")
+    def asset_story(asset_id: str, seconds: float = 30.0, format: str = "json"):
+        """How a recording tells its story and a proposal for cutting it again (design 2026-10-15, section 9 G). `format`: json,
+        md (a page) or edl (an edit decision list for Premiere, Resolve or Avid)."""
+        from fastapi.responses import PlainTextResponse
+        from nexora.modules.intelligence import story
+        if system.assets.asset(asset_id) is None:
+            raise HTTPException(404, "no such asset")
+        name = Path(system.assets.original(asset_id).relative_path).name
+        told = system.intelligence.story(system.vi, asset_id)
+        if told is None:
+            raise HTTPException(404, "Footage này chưa được phân tích")
+        cut = system.intelligence.recut(system.vi, [asset_id], seconds=max(3.0, min(seconds, 600.0)), names={asset_id: name})
+        if format == "edl":
+            return PlainTextResponse(story.edl(system.vi, cut, title=Path(name).stem), media_type="text/plain; charset=utf-8",
+                                     headers={"content-disposition": f'attachment; filename="{Path(name).stem}_{int(seconds)}s.edl"'})
+        if format == "md":
+            return PlainTextResponse(story.markdown(told, cut, name=name), media_type="text/markdown; charset=utf-8")
+        return {"story": told, "recut": cut}
+
+    @app.post("/api/v1/recut")
+    def recut_many(body: dict):
+        """A proposal for cutting several recordings together, in the order given, to `seconds`; `format` json or edl."""
+        from fastapi.responses import PlainTextResponse
+        from nexora.modules.intelligence import story
+        ids = [a for a in body.get("assets", []) if system.assets.asset(a) is not None]
+        if not ids:
+            raise HTTPException(422, "Cần ít nhất một clip có thật")
+        names = {a: Path(system.assets.original(a).relative_path).name for a in ids}
+        cut = system.intelligence.recut(system.vi, ids, seconds=max(3.0, min(float(body.get("seconds", 30)), 600.0)), names=names)
+        if body.get("format") == "edl":
+            return PlainTextResponse(story.edl(system.vi, cut, title=str(body.get("title") or "NEXORA")), media_type="text/plain; charset=utf-8")
+        return cut
+
     @app.post("/api/v1/assets/{asset_id}/follow")
     def follow(asset_id: str):
         """Follow what a recording shows into things, subjects and sound sources of the library again, from what is kept."""

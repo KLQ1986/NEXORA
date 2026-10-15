@@ -138,6 +138,25 @@ class Intelligence:
         publish.followed(self.store, asset_id, sounds, BY_NAME["follow"])
         return {"things": len(things), "subjects": len(subjects), "sounds": len(sounds)}
 
+    def _motion(self, asset_id: str, a: float, b: float) -> float:
+        """How much the subject moves in a stretch of a recording, measured (0 when it was not)."""
+        found = self.analysis.signals(asset_id)
+        subject = getattr(found, "subject", None)
+        if subject is None or not len(subject):
+            return 0.0
+        fps = found.fps
+        return float(subject[int(a * fps):max(int(a * fps) + 1, int(b * fps))].mean())
+
+    def story(self, vi, asset_id: str) -> dict | None:
+        """How a recording tells its story, beat by beat (design 2026-10-15, section 9 G)."""
+        from nexora.modules.intelligence import story
+        return story.story(vi, asset_id, motion=lambda a, b: self._motion(asset_id, a, b))
+
+    def recut(self, vi, asset_ids: list[str], *, seconds: float, names: dict[str, str]) -> dict:
+        """A proposal for cutting recordings again to a length, as a plan and an edit decision list."""
+        from nexora.modules.intelligence import story
+        return story.recut(vi, asset_ids, seconds=seconds, names=names, motion=self._motion)
+
     def forget(self, asset_id: str) -> int:
         return self.store.forget(asset_id)
 

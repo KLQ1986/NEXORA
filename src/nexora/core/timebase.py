@@ -34,3 +34,39 @@ def frame_time(index: int, rate: float) -> int:
     nearest = round(rate)
     exact = Fraction(nearest * 1000, 1001) if abs(rate - nearest * 1000 / 1001) < 0.005 and abs(rate - nearest) > 0.005 else Fraction(rate).limit_denominator(1000)
     return round(Fraction(index * TICKS_PER_SECOND) / exact) if exact > 0 else 0
+
+
+# ----------------------------------------------------------------------------------------------- SMPTE timecode (EDL, design 9 G)
+def _nominal(rate: float) -> int:
+    return int(round(rate))
+
+
+def is_drop(rate: float) -> bool:
+    """29.97 and 59.94 count in drop-frame timecode: frame numbers are skipped so that the clock keeps to real time."""
+    return abs(rate * 1001 / 1000 - round(rate * 1001 / 1000)) < 0.01 and round(rate * 1001 / 1000) in (30, 60) and abs(rate - round(rate)) > 0.001
+
+
+def timecode_frames(tc: str, rate: float) -> int:
+    """The frame count of a timecode "HH:MM:SS:FF" (or ";FF", drop-frame)."""
+    h, m, s, f = (int(x) for x in tc.replace(";", ":").replace(".", ":").split(":"))
+    base = _nominal(rate)
+    frames = ((h * 60 + m) * 60 + s) * base + f
+    if is_drop(rate):
+        drop = 2 * (base // 30)
+        minutes = h * 60 + m
+        frames -= drop * (minutes - minutes // 10)
+    return frames
+
+
+def frames_timecode(frames: int, rate: float) -> str:
+    """A frame count as a timecode, drop-frame (";") at 29.97 and 59.94."""
+    base = _nominal(rate)
+    if is_drop(rate):
+        drop = 2 * (base // 30)
+        per_10 = base * 600 - drop * 9
+        per_min = base * 60 - drop
+        tens, rest = divmod(frames, per_10)
+        frames += drop * 9 * tens + (drop * ((rest - drop) // per_min) if rest > drop else 0)
+    f = frames % base
+    s = frames // base
+    return f"{s // 3600 % 24:02d}:{s // 60 % 60:02d}:{s % 60:02d}{';' if is_drop(rate) else ':'}{f:02d}"

@@ -242,3 +242,30 @@ API:
 Mỗi yêu cầu tối đa 120 giây footage và chạy đồng bộ. Trong hồ sơ nguyên liệu có nút trích xuất cho từng nhịp và cho mọi đoạn dùng được.
 
 Trên 0059: 2 nhịp dùng được, trích xuất trong khoảng 15 giây. Kết quả là 2 clip 3840×2160 HEVC 10-bit 29,97 khung/giây bt709, ảnh still ở giây 4,5 và 6,5, cùng 2 file WAV.
+
+### G. Kể chuyện và đề xuất dựng lại
+
+`modules/intelligence/story.py`:
+- **Câu chuyện của một clip**: mỗi nhịp có một mức năng lượng, đọc từ những gì đo được: chuyển động của chủ thể 0,35, độ to 0,2, lời nói 0,15, vật mới thấy 0,15, máy di chuyển 0,15. Mỗi thành phần được chuẩn hoá trong clip.
+  - Vai trò: nhịp đầu là mở đầu, hoặc thiết lập khi là cảnh rộng và máy đứng yên; nhịp nhiều năng lượng nhất là cao trào (khi clip có từ 3 nhịp); nhịp cuối là kết; còn lại là phát triển. Mỗi nhịp ghi lý do.
+  - Có nhận xét về 3 giây đầu và về độ dài cú máy. Cấu trúc do mô hình đọc trong tóm tắt (`cau_truc`) được đối chiếu với cao trào đo được.
+- **Đề xuất dựng lại** cho một hoặc nhiều clip, theo độ dài đích:
+  - Bỏ nhịp có hình lỗi và nhịp quá ngắn.
+  - Cắt mỗi nhịp về đoạn có chuyển động, hoặc quanh khung đẹp nhất. Cú máy dài tối đa 3, 4 hoặc 6 giây, tuỳ độ dài đích (đến 20 giây, đến 45 giây, dài hơn).
+  - Xếp thứ tự: đoạn nhiều năng lượng nhất lên đầu làm hook (tối đa 3 giây), rồi cảnh thiết lập, rồi các đoạn khác theo thứ tự quay, rồi cảnh kết.
+  - Ghi đoạn nào bị bỏ và vì sao. Nếu hình dùng được ít hơn độ dài cần, đề xuất nói rõ.
+- **EDL (CMX 3600)** theo timecode gốc của từng file, drop-frame ở 29,97 và 59,94 (`core/timebase.py`), mở được trong Premiere, Resolve và Avid. Không render gì; người dùng hoặc người dựng làm tiếp.
+
+API:
+- `GET /api/v1/assets/{id}/story?seconds=30&format=json|md|edl`
+- `POST /api/v1/recut {assets, seconds, format}` cho nhiều clip.
+
+Trong thư viện, mục "Kể chuyện và dựng lại" có đường năng lượng, vai trò, chọn độ dài 15/30/60 giây, và nút tải EDL.
+
+Trên 0059:
+- Nhịp 1 là mở đầu (năng lượng 0,50: chủ thể chuyển động, có lời), nhịp 2 là kết (0,35).
+- Nhận xét: cú máy dài 9 giây, nên cắt còn 2–4 giây cho mạng xã hội.
+- Đề xuất 8 giây: hook 0,6–3,6 giây, kết 5,2–8,2 giây, và báo chỉ có 6 giây dùng được.
+- EDL: timecode nguồn `01:59:54;09`–`01:59:57;09` và `01:59:58;28`–`02:00:01;28`, drop-frame.
+
+Giới hạn: năng lượng chỉ đọc từ những gì đo được, nên nó không biết ý nghĩa câu chuyện (ai làm gì, vì sao). Đề xuất dựng lại cho clip ngắn ít nhịp (như 0059) gần như chỉ còn chọn và cắt. Cách xếp thứ tự có ích nhất với clip dài hoặc nhiều clip của cùng một buổi quay.

@@ -1872,6 +1872,13 @@ const en: Record<string, string> = {
   "Đang trích xuất…": "Extracting…",
   "Trích xuất mọi đoạn dùng được": "Extract every usable beat",
   "Trích xuất": "Extract",
+  "Kể chuyện và dựng lại": "Story and recut",
+  "cao trào ở nhịp {0}; bản dựng {1}s": "peak at beat {0}; recut {1}s",
+  "Năng lượng từng nhịp": "Energy of each beat",
+  "Dựng lại dài": "Recut length",
+  "Tải EDL (Premiere, Resolve)": "Download EDL (Premiere, Resolve)",
+  "Tải đề xuất (.md)": "Download proposal (.md)",
+  "Bỏ ra: {0}": "Left out: {0}",
 };
 
 export default en;
