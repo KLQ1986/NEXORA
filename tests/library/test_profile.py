@@ -163,7 +163,24 @@ def test_the_model_is_told_only_what_is_sure_and_the_text_found_by_says_what_was
     assert "không có người nào trong hình" in facts_of({"people": {"count": 0, "confidence": "high"}}, {})
     text = text_of(tidy({"mo_ta": "Một người ăn phở.", "khac_truoc": "tiếp diễn", "chu_the": ["bát phở"], "hanh_dong": [{"ai": "người", "lam_gi": "ăn", "voi": "phở"}]}),
                    fields, {"camera": {"value": "pan"}})
-    assert text == "Một người ăn phở. Thấy: bát phở. Hành động: người ăn phở. Hình: cảnh cận; máy lia ngang; tiếng chim hót. Chữ trên hình: Phở Thìn."
+    # The sounds heard are found as moments of their own; in a beat's text, a sound wrongly named would mislead a search for the picture.
+    assert text == "Một người ăn phở. Thấy: bát phở. Hành động: người ăn phở. Hình: cảnh cận; máy lia ngang. Chữ trên hình: Phở Thìn."
+
+
+def test_a_description_keeps_what_is_seen_and_says_where_it_is_and_drops_formulas_and_what_is_not_there():
+    out = tidy({"mo_ta": "Hình ảnh cho thấy một bãi biển với thuyền thúng màu xanh trên cát. Không có người nào xuất hiện trong hình.",
+                "chu_the_chinh": "thuyền thúng xanh, giữa khung", "tien_canh": "lá rau muống biển, tạo nên không gian yên bình", "trung_canh": "bãi cát",
+                "hau_canh": "biển và nhiều thuyền nhỏ ngoài khơi", "chu_the": ["thuyền thúng", "biển", "không có người"]})
+    assert out["mo_ta"] == "Một bãi biển với thuyền thúng màu xanh trên cát."
+    assert out["tien_canh"] == "lá rau muống biển" and out["chu_the"] == ["thuyền thúng", "biển"]
+    assert text_of(out, {}, {}) == ("Một bãi biển với thuyền thúng màu xanh trên cát. Chủ thể: thuyền thúng xanh, giữa khung. Gần máy: lá rau muống biển. "
+                                    "Giữa: bãi cát. Xa: biển và nhiều thuyền nhỏ ngoài khơi. Thấy: thuyền thúng, biển.")
+    assert tidy({"mo_ta": "Các khung hình liên tiếp cho thấy hai người đi trên lối đi."})["mo_ta"] == "Hai người đi trên lối đi."
+    assert tidy({"mo_ta": "Đoạn video ghi lại một gian bếp. Trong hình không có chữ."})["mo_ta"] == "Một gian bếp."
+    assert "Điểm mới" not in text_of({"mo_ta": "Bãi cát.", "chu_the": ["cát", "thuyền thúng"], "khac_truoc": "cát, thuyền thúng"}, {}, {})
+    assert "Điểm mới: thuyền thúng." in text_of({"mo_ta": "Bãi cát.", "chu_the": ["cát", "thuyền thúng"], "khac_truoc": "thuyền thúng"}, {}, {})
+    moved = tidy({"mo_ta": "Bãi cát trắng. Máy quay di chuyển từ phải sang trái.", "chu_the_chinh": "máy quay di chuyển từ phải sang trái"})
+    assert moved["mo_ta"] == "Bãi cát trắng." and moved["chu_the_chinh"] == ""        # the camera's movement is measured, not told
 
 
 # ------------------------------------------------------------------------------------------------------- the whole file

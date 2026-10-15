@@ -24,9 +24,14 @@ UNDERSTAND = PipelineDefinition("library.understand", "1", [
 ])
 
 PROMPT_VERSION = "v1"
-BEAT_PROMPT_VERSION = "v3"       # beats of measured footage are described with what was measured about their picture
+BEAT_PROMPT_VERSION = "v4"       # beats of measured footage are described with what was measured about their picture
 FRAME_FPS = 0.5
 BEAT_FRAME_FPS = 2.0             # frames are drawn at this rate for footage that has been divided into beats; each beat keeps the few it chose
+# Beat frames are drawn from the original, 960 wide. Ollama brings every picture to about one megapixel before qwen3-vl sees it
+# (a 448 and a 960 wide frame cost the same tokens), so a small frame from the proxy was only enlarged: measured on 0038, the
+# boats out at sea, a purple flower and the beach morning glory were seen at 960 from the original and not at 448 from the
+# proxy; search for its beats went from 5 of 8 first to 7 of 8. At 1280, no better.
+BEAT_WIDTH = 960
 DESCRIBE_PROMPT = (
     "Đây là {n} khung hình liên tiếp, cách nhau {gap:g} giây, của cùng một đoạn video không có lời thoại. "
     "Hãy mô tả đúng những gì nhìn thấy, bằng tiếng Việt, gọi tên cụ thể đồ vật, món ăn, con vật, địa điểm, hành động của tay và người. "
@@ -35,19 +40,25 @@ DESCRIBE_PROMPT = (
     "hanh_dong (danh sách hành động), boi_canh (một cụm từ về nơi chốn), chu_tren_hinh (chữ đọc được trên hình, hoặc chuỗi rỗng), "
     "co_canh (toàn, trung hoặc cận)."
 )
-# Version 3 (design 2026-10-14, sections 6 and 7). Version 2 showed the model the description of the beat before and asked
-# for a long list of fields; measured on footage 0050, a 7B model copied the earlier description, put actions among the things
-# seen and the spoken words among the text on screen, and adjacent beats came out more alike than before (0.91 against 0.78).
-# So the model is asked for less: what it sees, concretely, and four labels from lists. What is new in a beat is worked out by
-# code from the things named in it and in the beat before; the measurements it is told are only the sure ones about the picture.
+# Version 4 (2026-10-15). Version 3, read beside the frames of 0050 and 0038: descriptions of neighbouring beats said the same
+# thing ("a path surrounded by thatched houses and green trees"), things plainly in the picture went unnamed (coconut palms,
+# a purple flower, basket boats called "small boats"), half the sentences began "the picture shows" or said what was not
+# there, and labels were confused (a shot size given as the place; "close" for a wide beach). So: no shot size or angle from
+# the model (the measures and the camera's sensor do better: 92% against 14 of 25); the picture asked for layer by layer,
+# subject and where it sits, near and far; local names offered for what is plainly seen; no opening formula, no negations.
 BEAT_PROMPT = (
-    "Đây là {n} khung hình liên tiếp, cách nhau {gap:g} giây, của cùng một đoạn video. Hãy mô tả đúng những gì nhìn thấy, bằng tiếng Việt, "
-    "không dùng từ tiếng Anh. Gọi tên cụ thể từng vật, kèm màu hoặc đặc điểm thấy được. Không viết câu chung chung về cảm giác "
-    "(yên tĩnh, thư giãn, đẹp). Không suy đoán điều không thấy.\n{facts}"
-    "Chỉ trả về JSON với các khoá: mo_ta (1 đến 2 câu cụ thể: ai hoặc cái gì, đang làm gì, ở đâu), "
-    "chu_the (danh sách 3 đến 8 vật thể hoặc người thấy rõ, mỗi mục là một cụm từ ngắn), hanh_dong (danh sách cụm từ ngắn, rỗng nếu không ai làm gì), "
-    "boi_canh (một cụm từ về nơi chốn), chu_tren_hinh (chữ in trên hình đọc được, hoặc chuỗi rỗng), "
-    "co_canh (một trong: {sizes}), goc_may (một trong: {angles}), so_nguoi (một trong: không, một, hai, nhóm, đám đông), noi_chon (một trong: {places})."
+    "Đây là {n} khung hình liên tiếp, cách nhau {gap:g} giây, của cùng một đoạn video. Hãy tả đúng những gì nhìn thấy, bằng tiếng Việt, không dùng từ tiếng Anh.\n"
+    "- Viết thẳng vào sự vật; không mở đầu bằng \"Hình ảnh cho thấy\", \"Các khung hình\", \"Đoạn video\".\n"
+    "- Chỉ nói điều có trong hình; không viết điều không có (không viết \"không có người\", \"không có chữ\").\n"
+    "- Không viết về cảm giác (yên tĩnh, thư giãn, đẹp, mờ ảo, thơ mộng).\n"
+    "- Gọi tên cụ thể nhất mà chắc chắn, kèm màu, chất liệu, số lượng. Những tên hay gặp, chỉ dùng khi thấy rõ: {names}.\n"
+    "- Nói cả những vật nhỏ ở xa nếu thấy rõ.\n{facts}"
+    "Chỉ trả về JSON với các khoá: mo_ta (1 đến 2 câu: cái gì hoặc ai, đang làm gì, ở đâu, và điều riêng của đoạn này), "
+    "chu_the_chinh (chủ thể chính và vị trí trong khung: trái, giữa, phải, trên, dưới), "
+    "tien_canh (những gì ở sát máy, chuỗi rỗng nếu không có), trung_canh (ở khoảng giữa), hau_canh (ở xa, phía sau), "
+    "chu_the (danh sách 3 đến 10 vật thể hoặc người thấy rõ, mỗi mục một cụm từ ngắn, không lặp), hanh_dong (danh sách cụm từ ngắn, rỗng nếu không ai làm gì), "
+    "boi_canh (một cụm từ về nơi chốn, ví dụ: bãi biển, lối đi trong khu nghỉ dưỡng, gian bếp), chu_tren_hinh (chữ in trên hình đọc được, hoặc chuỗi rỗng), "
+    "so_nguoi (một trong: không, một, hai, nhóm, đám đông), noi_chon (một trong: {places})."
 )
 MODEL_LABELS = {"noi_chon": vocab.PLACES, "thoi_diem": vocab.TIMES, "so_nguoi": ("không", "một", "hai", "nhóm", "đám đông"), "co_canh": vocab.SHOT_SIZES,
                 "goc_may": vocab.ANGLES, "goc_nhin": vocab.VIEWPOINTS, "loai_noi_dung": vocab.CONTENT_KINDS, "huong_sang": vocab.LIGHT_DIRECTIONS,
@@ -142,6 +153,23 @@ UNKNOWN = frozenset({"", "không rõ", "không có", "không", "không có ngư�
 # A clause about how a place feels says nothing a search can use, and makes every beat of a place read the same.
 FEELING = __import__("re").compile(r",?\s*(tạo nên|tạo ra|mang lại|mang đến|gợi lên)[^.]*(yên tĩnh|thư giãn|yên bình|thanh bình|dễ chịu|ấm cúng|sống động|tươi mát|mờ ảo)[^.]*", __import__("re").IGNORECASE)
 FEELING_THING = __import__("re").compile(r"không gian|bầu không khí|cảm giác")
+# "The picture shows ...": a formula that says nothing and makes every beat begin alike, so that their vectors draw together.
+OPENING = __import__("re").compile(r"^\s*(các |những )?(hình ảnh|khung hình|đoạn video|video|cảnh)( liên tiếp| này)*\s+(cho thấy|ghi lại|thể hiện|mô tả|là)\s+", __import__("re").IGNORECASE)
+# A sentence about what is not in the picture: a search for "người" would find the beats that say there is no one.
+ABSENT = __import__("re").compile(r"\b(không có|không thấy|không xuất hiện|chẳng có)\b", __import__("re").IGNORECASE)
+# How the camera moves is measured; said by the model, it took the place of the subject ("Chủ thể: máy quay di chuyển").
+CAMERA_TALK = __import__("re").compile(r"\bmáy quay\b|\bcamera\b", __import__("re").IGNORECASE)
+LAYERS = (("chu_the_chinh", "Chủ thể"), ("tien_canh", "Gần máy"), ("trung_canh", "Giữa"), ("hau_canh", "Xa"))
+
+
+def plain(text: str) -> str:
+    """A description without its opening formula, its sentences about what is not there and its clauses about feelings."""
+    kept = []
+    for sentence in __import__("re").split(r"(?<=[.!?])\s+", text.strip()):
+        sentence = FEELING.sub("", OPENING.sub("", sentence)).strip()
+        if sentence and not ABSENT.search(sentence) and not CAMERA_TALK.search(sentence):
+            kept.append(sentence[0].upper() + sentence[1:])
+    return " ".join(s if s.endswith((".", "!", "?")) else s + "." for s in kept)
 
 
 def tidy(out: dict) -> dict:
@@ -151,7 +179,11 @@ def tidy(out: dict) -> dict:
         if isinstance(out.get(key), str):
             out[key] = vocab.mend(out[key]).strip()
     if isinstance(out.get("mo_ta"), str):
-        out["mo_ta"] = FEELING.sub("", out["mo_ta"]).strip()
+        out["mo_ta"] = plain(out["mo_ta"])
+    for key, _ in LAYERS:
+        if isinstance(out.get(key), str):
+            value = FEELING.sub("", vocab.mend(out[key])).strip().rstrip(".")
+            out[key] = "" if vocab.norm(value) in UNKNOWN or ABSENT.search(value) or CAMERA_TALK.search(value) else value
     if isinstance(out.get("chu_the"), list):
         things = []
         for v in out["chu_the"]:
@@ -183,10 +215,13 @@ def tidy(out: dict) -> dict:
 def text_of(out: dict, profile: dict, labels: dict) -> str:
     """The text a beat is found by: what the model saw, what is new in it, and what the machine measured, in plain words."""
     parts = [str(out.get("mo_ta", "")).strip()]
+    parts += [f"{name}: {out[key]}." for key, name in LAYERS if isinstance(out.get(key), str) and out[key]]
     new = str(out.get("khac_truoc") or "").strip()
-    if new and vocab.norm(new) not in ("tiếp diễn", "không", "không có gì khác"):
-        parts.append(f"Điểm mới: {new}.")
     things = out.get("chu_the") or []
+    # What is new, when it is not everything: the things of two beats are often named differently, and every one then looks new.
+    everything = {vocab.norm(str(t)) for t in things} if isinstance(things, list) else set()
+    if new and vocab.norm(new) not in ("tiếp diễn", "không", "không có gì khác") and {vocab.norm(x) for x in new.split(", ")} != everything:
+        parts.append(f"Điểm mới: {new}.")
     if isinstance(things, list) and things:
         parts.append(f"Thấy: {', '.join(str(v) for v in things)}.")
     actions = out.get("hanh_dong") or []
@@ -202,9 +237,6 @@ def text_of(out: dict, profile: dict, labels: dict) -> str:
     camera = (labels.get("camera") or {}).get("value")
     if camera in CAMERA_WORDS:
         measured.append(CAMERA_WORDS[camera])
-    sound = (profile.get("sound") or {}).get("value") or []
-    if sound:
-        measured.append("tiếng " + ", ".join(sound[:3]))
     if measured:
         parts.append(("Hình: " + "; ".join(measured)).rstrip(".") + ".")
     text = (profile.get("text") or {}).get("value") or ([out["chu_tren_hinh"]] if out.get("chu_tren_hinh") else [])
@@ -317,12 +349,15 @@ class Understanding:
         # Frames are drawn into a folder of this attempt's own and the chosen ones are then moved into the footage's folder
         # under the name of their place in time. Two runs over the same footage (one started when its words became known,
         # while another was still describing) therefore never take a frame from under each other: a frame, once kept, stays.
-        kept = self._media / original.checksum[:2] / f"{original.checksum}_beats"
+        kept = self._media / original.checksum[:2] / f"{original.checksum}_beats{BEAT_WIDTH}"
         kept.mkdir(parents=True, exist_ok=True)
         drawn = kept.with_name(f"{kept.name}.{ctx.claim.attempt_id or 'draw'}")
         try:
-            frames = self._adapters.submit("ffmpeg", Request("frames", inputs={"path": str(source)}, params={"out_dir": str(drawn), "fps": BEAT_FRAME_FPS},
-                                                            attempt_id=ctx.claim.attempt_id)).outputs["frames"]
+            whole = self._assets.path_of(original)
+            on_original = whole.is_file()
+            frames = self._adapters.submit("ffmpeg", Request("frames", inputs={"path": str(whole if on_original else source)}, params={
+                "out_dir": str(drawn), "fps": BEAT_FRAME_FPS, "width": BEAT_WIDTH, "quality": 2,
+                "color_transfer": original.metadata.get("probe", {}).get("color_transfer") if on_original else None}, attempt_id=ctx.claim.attempt_id)).outputs["frames"]
             segments = []
             fields = self._profile_of(ctx.subject_ref) or {}
             for beat in structure["beats"]:
@@ -368,7 +403,7 @@ class Understanding:
             # the footage is not part of it, so a beat whose bounds, frames and measurements a new division leaves alone keeps
             # what was said about it.
             if measured:
-                analyzer = ":".join([BEAT_PROMPT_VERSION, "beat", hashlib.sha1("|".join(Path(f).name for f in seg["frames"]).encode()).hexdigest()[:8],
+                analyzer = ":".join([BEAT_PROMPT_VERSION, f"w{BEAT_WIDTH}", "beat", hashlib.sha1("|".join(Path(f).name for f in seg["frames"]).encode()).hexdigest()[:8],
                                      hashlib.sha1(facts.encode()).hexdigest()[:8], vocab.VERSION, *whole.split(":")[2:]])
             else:
                 analyzer = whole
@@ -389,8 +424,7 @@ class Understanding:
                     continue
                 gap = (seg["t_end"] - seg["t_start"]) / max(len(shown) - 1, 1) if measured else 1 / FRAME_FPS
                 if measured:
-                    prompt = BEAT_PROMPT.format(n=len(shown), gap=round(gap, 1), facts=facts, sizes=", ".join(vocab.SHOT_SIZES),
-                                                angles=", ".join(vocab.ANGLES), places=", ".join(vocab.PLACES))
+                    prompt = BEAT_PROMPT.format(n=len(shown), gap=round(gap, 1), facts=facts, names=", ".join(vocab.LOCAL_NAMES), places=", ".join(vocab.PLACES))
                 else:
                     prompt = DESCRIBE_PROMPT.format(n=len(shown), gap=round(gap, 1))
                 prompt += CONTEXT_NOTE.format(context=context)

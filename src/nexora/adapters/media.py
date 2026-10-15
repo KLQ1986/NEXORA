@@ -303,7 +303,7 @@ class FFmpegAdapter(Adapter):
         out_dir.mkdir(parents=True, exist_ok=True)
         for old in out_dir.glob("f_*.jpg"):
             old.unlink()
-        self._decode(["-y", "-i", str(src), "-vf", ",".join([*self._sdr(params), f"fps={fps},scale={int(params.get('width', 448))}:-2"]), "-q:v", "4", str(out_dir / "f_%05d.jpg")],
+        self._decode(["-y", "-i", str(src), "-vf", ",".join([*self._sdr(params), f"fps={fps},scale={int(params.get('width', 448))}:-2"]), "-q:v", str(int(params.get("quality", 4))), str(out_dir / "f_%05d.jpg")],
                   timeout, "frames")
         return Result(outputs={"frames": [str(p) for p in sorted(out_dir.glob("f_*.jpg"))], "fps": fps})
 
