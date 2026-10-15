@@ -286,6 +286,18 @@ def test_a_sentence_is_the_persons_whose_face_alone_is_seen_while_their_mouth_mo
     assert 1 not in who                    # two faces while "chào bạn" was said; "ai đó" was said out of frame by a voice never seen
 
 
+def test_faces_grouped_apart_are_one_person_when_the_same_voice_speaks_through_each_of_them_alone():
+    said = lambda t0, voice, a="v": {"asset_id": a, "t_start": t0, "t_end": t0 + 2.0, "voice": voice, "text": "câu"}
+    sentences = [said(0.0, 1), said(10.0, 1), said(20.0, 2)]
+    faces = [{"asset_id": "v", "t": t, "group": g} for t, g in ((0.0, 0), (0.5, 0), (1.0, 0), (1.5, 0), (10.0, 1), (10.5, 1), (11.0, 1), (11.5, 1),
+                                                                (20.0, 2), (20.5, 2), (21.0, 2), (21.5, 2))]
+    who = P.voices_of(sentences, faces, {"v": [(0.0, 30.0)]})
+    assert P.joined_by_voice(who) == [{0, 1}]                       # one voice through groups 0 and 1; group 2 speaks with another
+    both = P.voices_of([said(0.0, 1), said(5.0, 1)], [{"asset_id": "v", "t": t, "group": 0} for t in (0.0, 0.5, 1.0, 1.5)]
+                       + [{"asset_id": "v", "t": t, "group": 1} for t in (5.0, 5.5, 6.0, 6.5)], {"v": [(0.0, 4.0)]})
+    assert sum(len(x) for x in both.values()) == 2                   # a sentence carried by the voice is not given to a second person
+
+
 def test_one_beat_of_action_still_has_a_start_a_peak_and_an_end_from_how_the_subject_moves():
     beats = [{"start": 0.0, "end": 5.0, "shot": 0, "detail": {"hanh_dong": [{"ai": "người", "lam_gi": "quay video", "voi": ""}]}}]
     fps = 10.0

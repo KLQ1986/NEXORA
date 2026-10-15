@@ -161,6 +161,11 @@ class Profiler:
         groups = P.group_faces(np.array(prints)) if prints else []
         names = self._names()
         said = self._who_said(asset_ids, [{"asset_id": rows[i]["asset_id"], "t": rows[i]["t"], "group": n} for n, g in enumerate(groups) for i in g])
+        joins = P.joined_by_voice(said)
+        if joins:                                              # one voice through faces grouped apart: one person
+            gone = set().union(*joins)
+            groups = [g for n, g in enumerate(groups) if n not in gone] + [sorted(i for n in j for i in groups[n]) for j in joins]
+            said = self._who_said(asset_ids, [{"asset_id": rows[i]["asset_id"], "t": rows[i]["t"], "group": n} for n, g in enumerate(groups) for i in g])
         out = []
         for n, g in enumerate(groups):
             members = [rows[i] for i in g]

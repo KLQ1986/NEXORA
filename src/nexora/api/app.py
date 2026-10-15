@@ -1792,6 +1792,9 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             raise HTTPException(404, "Không tìm thấy bản dựng")
         return FileResponse(render["path"], media_type="video/mp4")
 
+    from nexora.api.notes import add_notes
+    add_notes(app, system.data_dir)                  # notes pinned to a moment of a recording or a cut
+
     if web_dir and Path(web_dir).is_dir():
         app.mount("/assets", StaticFiles(directory=Path(web_dir) / "assets"), name="web-assets")
 

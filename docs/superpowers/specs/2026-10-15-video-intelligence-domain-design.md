@@ -311,3 +311,16 @@ Sau khi sửa, bản 30 giây (thực tế 32,1 giây):
 - không điểm cắt nào nằm trong một từ.
 
 Giới hạn còn lại: bản phiên âm của 0050 có từ kéo dài bất thường (ví dụ "luôn" kéo dài 1,5 giây), nên vài đoạn chỉ còn 1,7 giây sau khi né từ.
+
+**D và E trên footage thật có người nói trước máy (2026-10-16).** Kho không có clip loại này, nên tôi dùng một video phạm vi công cộng: "Nigel Short Interview With VOA Persian" (Wikimedia Commons, 116 giây, 1080p). Video được chạy trong một NEXORA riêng (thư mục dữ liệu ở scratchpad), dùng đúng các mô hình của máy, và không đưa vào thư viện.
+
+Đáp án: một người nói suốt clip, luôn trong khung; có đoạn hoà hình quanh giây 54–64 và thẻ kết từ giây 110,5.
+
+- Hệ thống chia ra 3 shot (cắt ở 64,7 và 110,5), đo người nói "trong khung" ở mọi nhịp có ông, "ngoài khung" ở thẻ kết. Phiên âm tiếng Anh có 20 câu, một giọng.
+- **E ✓**: các track người ở shot 0 và shot 1 được nối thành **một chủ thể** (6 track, `across_cut`).
+- **D, lần đầu**: cả 20 câu được gán, nhưng bước gom mặt tách một người thành 3 nhóm (198, 21, 1 lần thấy), và 2 câu bị gán cho hai nhóm.
+- **Đã sửa:**
+  - Một câu chỉ thuộc về một người.
+  - Các nhóm mặt mà mỗi nhóm đều được thấy một mình đang nói bằng cùng một giọng trong cùng một file được nối thành một người (`profile.joined_by_voice`).
+- **D, sau khi sửa ✓**: một người (219 lần thấy mặt) nói 20/20 câu, không câu nào bị gán hai lần. 19 câu gán theo mặt. Câu còn lại (50,9–55,7 giây) rơi vào lúc lớp hoà hình che mặt, nên được gán theo giọng, đúng người.
+- Còn một nhóm 1 mặt lạc, không có câu nào.

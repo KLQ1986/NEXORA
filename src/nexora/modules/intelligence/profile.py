@@ -950,13 +950,32 @@ def voices_of(sentences: list[dict], faces: list[dict], talking: dict[str, list[
         out.setdefault(g, []).append({**s, "by": "mặt"})
         if s.get("voice") is not None:
             voice_of[(a, s["voice"])] = g
+    taken = {(x["asset_id"], x["t_start"]) for xs in out.values() for x in xs}
     for s in sentences:                                          # the same voice in the same recording, heard out of frame
         g = voice_of.get((s["asset_id"], s.get("voice")))
-        if g is not None and s.get("voice") is not None and not any(x["t_start"] == s["t_start"] and x["asset_id"] == s["asset_id"] for x in out.get(g, [])):
-            out[g].append({**s, "by": "giọng"})
+        if g is not None and s.get("voice") is not None and (s["asset_id"], s["t_start"]) not in taken:
+            out[g].append({**s, "by": "giọng"})                  # a sentence is one person's: never given to a second
+            taken.add((s["asset_id"], s["t_start"]))
     for g in out:
         out[g].sort(key=lambda x: (x["asset_id"], x["t_start"]))
     return out
+
+
+def joined_by_voice(said: dict[int, list[dict]]) -> list[set[int]]:
+    """Face groups that are one person: each was seen alone in the frame, mouth moving, while the same voice spoke in the same
+    recording. Faces of one person seen in other light are sometimes grouped apart (an interview, 2026-10-16: one man in three
+    groups); his voice says they are him. Returns the sets of groups to join, each of two or more."""
+    by_voice: dict[tuple, set[int]] = {}
+    for g, xs in said.items():
+        for x in xs:
+            if x.get("by") == "mặt" and x.get("voice") is not None:
+                by_voice.setdefault((x["asset_id"], x["voice"]), set()).add(g)
+    sets: list[set[int]] = []
+    for gs in by_voice.values():
+        joined = [s for s in sets if s & gs]
+        merged = set(gs).union(*joined) if joined else set(gs)
+        sets = [s for s in sets if not s & gs] + [merged]
+    return [s for s in sets if len(s) > 1]
 
 
 def tracks_of(pictures: list[dict], *, step: float, shots: list[dict], kinds=("humans", "faces", "hands", "animals")) -> list[dict]:
