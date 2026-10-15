@@ -9,10 +9,18 @@ from nexora.core.orchestrator import Orchestrator
 from nexora.core.pipeline import PipelineDefinition, PipelineRegistry, StageDef
 from nexora.core.projects import ProjectStore
 
+# The judge names what fills the frames before it marks them, and marks on a scale with anchors. Asked for one number alone it
+# gave 10 to every right stretch, whether the line's subject filled the frame or sat small in the middle of it (design
+# 2026-10-15, section 9 C: good above adequate in 3 of 6 lines; with the scale, 4 of 6).
 JUDGE_PROMPT = (
     "Đây là {n} khung hình liên tiếp của một đoạn video. Câu lời dẫn cần minh hoạ: \"{line}\".\n"
-    "Hình có cho thấy đúng điều câu này nói không? Chấm phu_hop từ 0 đến 10: 0 là không liên quan, 5 là cùng bối cảnh nhưng không đúng ý chính, "
-    "10 là thấy rõ đúng điều được nói. Chỉ trả về JSON với khoá phu_hop (số) và ly_do (một câu ngắn nói hình cho thấy gì)."
+    "Trước hết nói điều chiếm nhiều chỗ nhất trong các khung (chu_the_chinh). Rồi chấm phu_hop từ 0 đến 10 theo thang:\n"
+    "10: điều câu nói là chủ thể chính, thấy rõ, có trong hầu hết các khung, đủ mọi chi tiết câu nêu (màu, số lượng, hành động).\n"
+    "8: thấy rõ và đúng, nhưng không phải chủ thể chính, hoặc chỉ có trong một nửa số khung.\n"
+    "6: có thấy nhưng nhỏ, ở xa, bị che, hoặc thiếu một chi tiết câu nêu.\n"
+    "4: đúng bối cảnh nhưng không thấy điều chính câu nói.\n"
+    "0 đến 2: không liên quan.\n"
+    "Chỉ trả về JSON với các khoá chu_the_chinh, phu_hop (số), ly_do (một câu ngắn)."
 )
 LOCATE_PROMPT = (
     "Đây là {n} khung hình liên tiếp, đánh số từ 1 đến {n}, của một đoạn video. Câu lời dẫn: \"{line}\".\n"
@@ -162,7 +170,7 @@ class Sourcing:
             return self._judge_pass, ""
         try:
             out = self._adapters.submit("model", Request("describe", inputs={"images": frames}, params={
-                "task": "judge", "line": line, "candidate_text": hit.moment.text, "max_tokens": 160,
+                "task": "judge", "line": line, "candidate_text": hit.moment.text, "max_tokens": 220,
                 "prompt": JUDGE_PROMPT.format(n=len(frames), line=line)})).outputs["json"]
             return max(0, min(10, int(float(out.get("phu_hop", 0))))), str(out.get("ly_do", "")).strip()
         except (AdapterError, ValueError, TypeError):

@@ -269,3 +269,26 @@ Trên 0059:
 - EDL: timecode nguồn `01:59:54;09`–`01:59:57;09` và `01:59:58;28`–`02:00:01;28`, drop-frame.
 
 Giới hạn: năng lượng chỉ đọc từ những gì đo được, nên nó không biết ý nghĩa câu chuyện (ai làm gì, vì sao). Đề xuất dựng lại cho clip ngắn ít nhịp (như 0059) gần như chỉ còn chọn và cắt. Cách xếp thứ tự có ích nhất với clip dài hoặc nhiều clip của cùng một buổi quay.
+
+### Kiểm chứng thêm sau khi xong A–G (2026-10-16)
+
+**C. Điểm chấm của bước ghép.** Bộ đo 6 câu, mỗi câu có 3 ứng viên thật trong kho: đúng, vừa đủ (cùng bối cảnh, thiếu ý chính), sai.
+
+| Prompt chấm | Đúng > vừa đủ | Điểm TB: đúng / vừa đủ / sai |
+|---|---|---|
+| Cũ (chỉ hỏi một con số) | 3/6 | 10 / 6,7 / 0 |
+| Mới (nêu chủ thể chính trước, thang có mốc 10/8/6/4/0–2) | 4/6 | 9,7 / 5,3 / 0 |
+
+Hai câu còn hoà là do đáp án chưa chặt: nhịp 1 của 0059 thật ra có cả cửa sổ gỗ và bồn cầu, nhịp 3 của 0038 có sóng vỗ bờ cát. Chạy lại bước ghép thật với kịch bản 7 câu: câu "thuyền thúng xanh nằm trên bãi cát" đổi từ nhịp có rau muống là chủ thể chính (nay 8/10) sang nhịp có hai thuyền nằm ngay trên bờ (10/10). Vẫn đúng 7/7.
+
+**E. Ngưỡng nhận lại chủ thể (0,88) trên vùng cắt thật** (SigLIP 2, cắt như bước `look`):
+
+| Cặp | Cosine |
+|---|---|
+| Cùng người trong gương ở 0059, giây 2,5 và 3,0 | 0,902, được nối |
+| Người ở 0059 với vùng Vision gọi là người ở 0050 (thật ra là cột đèn) | 0,75–0,77 |
+| Người với vật (bồn cầu, cửa sổ) | 0,69–0,79 |
+
+Ngưỡng tách được cặp cùng người với mọi cặp khác, nhưng mới có một cặp dương thật và chưa có cặp hai người khác nhau. Kho không có clip nào có hai người, có nhiều shot, hay có người nói trong khung.
+
+**Chưa đo được trên footage thật:** gắn câu nói với người nói (D), nối chủ thể qua điểm cắt trong một clip nhiều shot (E), và kể chuyện cho clip dài (G). Cần một clip có người nói trước máy, quay qua nhiều shot.
