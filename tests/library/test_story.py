@@ -21,6 +21,8 @@ def test_a_beat_is_trimmed_to_its_action_or_around_its_best_frame():
     assert story._window(beat, 4.0) == (2.0, 4.5)
     assert story._window({**beat, "moving": None}, 4.0) == (6.0, 10.0)               # around the best frame, kept inside the beat
     assert story._window({**beat, "moving": None, "best_frame": None}, 4.0) == (3.0, 7.0)
+    words = [(2.8, 3.4), (6.6, 7.3)]                       # a cut never falls inside a word: 3.0 and 7.0 both would
+    assert story._window({**beat, "moving": None, "best_frame": None}, 4.0, words) == (2.8, 7.3)
 
 
 def test_a_recording_has_a_story_and_a_recut_that_opens_on_its_strongest_moment_and_reads_in_an_editor(tmp_path):

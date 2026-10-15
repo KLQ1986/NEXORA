@@ -114,16 +114,22 @@ def story(vi: VideoIntelligence, asset_id: str, *, motion: Callable[[float, floa
             "model": {"structure": told.get("cau_truc") or [], "agrees": agrees}, "notes": notes}
 
 
-def _window(b: dict, longest: float) -> tuple[float, float]:
-    """The part of a beat to keep: where its action is, or around its best frame, no longer than `longest`."""
+def _window(b: dict, longest: float, words: list[tuple[float, float]] = ()) -> tuple[float, float]:
+    """The part of a beat to keep: where its action is, or around its best frame, no longer than `longest`; then moved off
+    any word it would cut in two (`words`: when each spoken word starts and ends), so that no cut falls inside a word."""
     a, z = b["t_start"], b["t_end"]
     if b["moving"]:
         a, z = max(a, b["moving"][0]), min(z, b["moving"][1])
-    if z - a <= longest:
-        return round(a, 2), round(z, 2)
-    centre = float(b["best_frame"]) if b["best_frame"] is not None and a <= float(b["best_frame"]) <= z else (a + z) / 2
-    start = min(max(a, centre - longest / 2), z - longest)
-    return round(start, 2), round(start + longest, 2)
+    if z - a > longest:
+        centre = float(b["best_frame"]) if b["best_frame"] is not None and a <= float(b["best_frame"]) <= z else (a + z) / 2
+        a = min(max(a, centre - longest / 2), z - longest)
+        z = a + longest
+    for w0, w1 in words:
+        if w0 < a < w1:                                   # a word cut at its start: begin with the word, or after it
+            a = w0 if w0 >= b["t_start"] and z - w0 <= longest + 0.6 else w1
+        if w0 < z < w1:                                   # a word cut at its end: let it finish, or stop before it
+            z = w1 if w1 <= b["t_end"] + 0.6 and w1 - a <= longest + 0.6 else w0
+    return round(a, 2), round(max(z, a), 2)
 
 
 def recut(vi: VideoIntelligence, asset_ids: list[str], *, seconds: float = 30.0, names: dict[str, str] | None = None,
@@ -137,23 +143,27 @@ def recut(vi: VideoIntelligence, asset_ids: list[str], *, seconds: float = 30.0,
         told = story(vi, asset_id, motion=(lambda a, b, x=asset_id: motion(x, a, b)) if motion else None)
         if not told or not told.get("beats"):
             continue
+        words = [(float(w["start"]), float(w["end"])) for sen in vi.segments(asset_id, "sentence") for w in sen.data.get("words") or []
+                 if w.get("start") is not None and w.get("end") is not None]
+        last = told["beats"][-1]["index"]
         for b in told["beats"]:
             grade, why = b["picture"]
             if grade == "lỗi":
                 dropped.append({"asset_id": asset_id, "t_start": b["t_start"], "t_end": b["t_end"], "why": "hình lỗi: " + ", ".join(why)})
                 continue
-            t_in, t_out = _window(b, longest)
+            t_in, t_out = _window(b, longest, words)
             if t_out - t_in < MIN_SHOT:
                 dropped.append({"asset_id": asset_id, "t_start": b["t_start"], "t_end": b["t_end"], "why": "quá ngắn để giữ"})
                 continue
-            pool.append({**b, "asset_id": asset_id, "t_in": t_in, "t_out": t_out,
+            pool.append({**b, "asset_id": asset_id, "t_in": t_in, "t_out": t_out, "last": b["index"] == last and len(told["beats"]) > 2, "words": words,
                          "score": round(0.5 * b["energy"] + 0.3 * max(0.0, b["aesthetic"] + 0.5) + (0.2 if grade == "dùng được" else 0.0), 3)})
     if not pool:
         return {"seconds": 0.0, "target": seconds, "plan": [], "dropped": dropped, "notes": ["Không có đoạn nào dùng được."]}
     order = {(p["asset_id"], p["index"]): n for n, p in enumerate(pool)}           # the order filmed
-    hook = max(pool, key=lambda p: (p["energy"], p["score"]))
+    # The hook is the strongest moment that is not the closing one: a video does not open on its goodbye (0050: "ok cảm ơn nhiều").
+    hook = max((p for p in pool if not p["last"]) or pool, key=lambda p: (p["energy"], p["score"]))
     setting = next((p for p in pool if p["role"] == "thiết lập" and p is not hook), None)
-    ending = next((p for p in reversed(pool) if p["role"] == "kết" and p not in (hook, setting)), None)
+    ending = next((p for p in reversed(pool) if (p["role"] == "kết" or p["last"]) and p not in (hook, setting)), None)
     chosen = [p for p in (hook, setting, ending) if p is not None]
     total = lambda: sum(min(p["t_out"] - p["t_in"], HOOK_SECONDS if p is hook else longest) for p in chosen)
     for p in sorted((p for p in pool if p not in chosen), key=lambda p: -p["score"]):
@@ -168,8 +178,8 @@ def recut(vi: VideoIntelligence, asset_ids: list[str], *, seconds: float = 30.0,
         t_in, t_out = p["t_in"], p["t_out"]
         if p is hook and t_out - t_in > HOOK_SECONDS:                               # the hook is short: the strongest seconds of it
             centre = float(p["best_frame"]) if p["best_frame"] is not None and t_in <= float(p["best_frame"]) <= t_out else (t_in + t_out) / 2
-            t_in = round(min(max(t_in, centre - HOOK_SECONDS / 2), t_out - HOOK_SECONDS), 2)
-            t_out = round(t_in + HOOK_SECONDS, 2)
+            t_in = min(max(t_in, centre - HOOK_SECONDS / 2), t_out - HOOK_SECONDS)
+            t_in, t_out = _window({**p, "t_start": t_in, "t_end": t_in + HOOK_SECONDS, "moving": None, "best_frame": None}, HOOK_SECONDS, p["words"])
         role = "mở (hook)" if p is hook else "thiết lập" if p is setting else "kết" if p is ending else p["role"]
         reason = {"mở (hook)": "đoạn nhiều năng lượng nhất, đưa lên đầu để giữ người xem", "thiết lập": "cảnh rộng, máy đứng yên: cho biết đang ở đâu",
                   "kết": "đoạn cuối, khép lại"}.get(role, "giữ theo thứ tự quay")
@@ -180,6 +190,8 @@ def recut(vi: VideoIntelligence, asset_ids: list[str], *, seconds: float = 30.0,
     notes = []
     if at < seconds * 0.8:
         notes.append(f"Chỉ có {at:.1f} giây hình dùng được, ngắn hơn {seconds:.0f} giây mong muốn: cần quay thêm hoặc chọn độ dài ngắn hơn.")
+    for d in dropped:
+        d["name"] = names.get(d["asset_id"], d["asset_id"])
     return {"seconds": round(at, 2), "target": seconds, "longest_shot": longest, "plan": plan, "dropped": dropped, "notes": notes}
 
 
@@ -224,6 +236,7 @@ def markdown(s: dict | None, r: dict | None, *, name: str = "") -> str:
         for p in r["plan"]:
             out.append(f"{p['order']}. `{Path(p['name']).name}` {p['t_in']:.1f}–{p['t_out']:.1f} s ({p['seconds']:.1f} s) · {p['role']}: {p['why']}")
         if r["dropped"]:
-            out += ["", "Bỏ ra:"] + [f"- `{Path(r_.get('asset_id', '')).name}` {d['t_start']:.1f}–{d['t_end']:.1f} s: {d['why']}" for d in r["dropped"] for r_ in [d]]
+            out += ["", "Bỏ ra:"] + [f"- `{Path(d.get('name') or d['asset_id']).name}` {d['t_start']:.1f}–{d['t_end']:.1f} s: {d['why']}"
+                                     for d in sorted(r["dropped"], key=lambda d: (d["asset_id"], d["t_start"]))]
         out += [f"- {n}" for n in r["notes"]]
     return "\n".join(out).rstrip() + "\n"

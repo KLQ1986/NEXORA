@@ -292,3 +292,22 @@ Hai câu còn hoà là do đáp án chưa chặt: nhịp 1 của 0059 thật ra 
 Ngưỡng tách được cặp cùng người với mọi cặp khác, nhưng mới có một cặp dương thật và chưa có cặp hai người khác nhau. Kho không có clip nào có hai người, có nhiều shot, hay có người nói trong khung.
 
 **Chưa đo được trên footage thật:** gắn câu nói với người nói (D), nối chủ thể qua điểm cắt trong một clip nhiều shot (E), và kể chuyện cho clip dài (G). Cần một clip có người nói trước máy, quay qua nhiều shot.
+
+**G trên clip dài (0050, vlog đi bộ 144 giây, 17 nhịp).** Lần chạy đầu cho thấy 4 lỗi mà 0059 (2 nhịp) không thể lộ ra:
+- hook lấy từ nhịp cuối, nơi có câu chào "ok cảm ơn nhiều";
+- vì thế bản dựng không còn cảnh kết;
+- điểm cắt rơi vào giữa câu nói;
+- danh sách đoạn bị bỏ in mã asset.
+
+Đã sửa:
+- Hook là đoạn mạnh nhất trong các nhịp *không phải* nhịp cuối (khi có từ 3 nhịp).
+- Nhịp cuối luôn được giữ làm cảnh kết.
+- Mọi điểm cắt được đẩy ra khỏi giữa một từ, theo thời gian từng từ của bản phiên âm: lấy trọn từ nếu không quá dài, nếu không thì cắt trước từ đó.
+
+Sau khi sửa, bản 30 giây (thực tế 32,1 giây):
+- hook là lúc reo "Ê điện gió" (101,9 giây);
+- tiếp theo là cảnh nhà tranh ở đầu clip, rồi các đoạn theo thứ tự quay;
+- kết ở quảng trường với câu "ok cảm ơn nhiều";
+- không điểm cắt nào nằm trong một từ.
+
+Giới hạn còn lại: bản phiên âm của 0050 có từ kéo dài bất thường (ví dụ "luôn" kéo dài 1,5 giây), nên vài đoạn chỉ còn 1,7 giây sau khi né từ.
