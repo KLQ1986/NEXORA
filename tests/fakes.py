@@ -183,3 +183,20 @@ class FakeSound(Adapter):
 
     def submit(self, request: Request) -> Result:
         return Result(outputs={"windows": [{"t": k * 0.5, "d": 1.0, "top": [["speech", 0.9], ["music", 0.2]]} for k in range(40)], "window": 1.0, "hop": 0.5})
+
+
+class FakePictures(Adapter):
+    """The picture-and-words model: every picture is the same unit vector; a query naming "chợ" points the same way, any other
+    query elsewhere."""
+
+    def __init__(self):
+        self.calls = 0
+
+    def describe(self) -> Capability:
+        return Capability(name="picture_text", operations=("images", "texts"), runs="local")
+
+    def submit(self, request: Request) -> Result:
+        self.calls += 1
+        if request.operation == "images":
+            return Result(outputs={"vectors": [[1.0, 0.0, 0.0] for _ in request.inputs["images"]], "model": "fake"})
+        return Result(outputs={"vectors": [[1.0, 0.0, 0.0] if "chợ" in t else [0.0, 1.0, 0.0] for t in request.inputs["texts"]], "model": "fake"})

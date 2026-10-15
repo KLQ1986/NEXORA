@@ -280,6 +280,7 @@ class Profiler:
                         raise
             if looked:
                 self._read_closer(ctx, source, on_proxy, probe, pictures)
+            embedded = self._embed_pictures(ctx.subject_ref, frames, attempt_id=ctx.claim.attempt_id, heartbeat=ctx.heartbeat)
             prints = [p.pop("print", None) for p in pictures]
             faces = [(k, j, f.get("box"), f.pop("print")) for k, p in enumerate(pictures) for j, f in enumerate(p.get("faces") or []) if f.get("print")]
             from PIL import Image
@@ -309,7 +310,52 @@ class Profiler:
             with open(faces_file, "wb") as out:
                 np.savez_compressed(out, prints=np.array([f[3] for f in faces], np.float16), where=np.array([[f[0], f[1]] for f in faces], np.int32),
                                     boxes=np.array([f[2] for f in faces], np.float32))
-        return {"frames": len(frames), "recognised": looked, "faces": len(faces)}
+        return {"frames": len(frames), "recognised": looked, "faces": len(faces), "pictures": embedded}
+
+    def _embed_pictures(self, asset_id: str, frames: list[str], *, attempt_id: str | None = None, heartbeat=lambda: None) -> bool:
+        """Every looked-at frame as a vector of the picture-and-words model, kept beside the footage and named in the canonical
+        model, so that a search finds what is in the picture even where no description mentions it. Without the model, nothing."""
+        if not frames or not self._has("picture_text"):
+            return False
+        vectors, model = [], None
+        try:
+            for start in range(0, len(frames), BATCH):
+                got = self._adapters.submit("picture_text", Request("images", inputs={"images": frames[start:start + BATCH]}, attempt_id=attempt_id)).outputs
+                vectors += got["vectors"]
+                model = got.get("model")
+                heartbeat()
+        except AdapterError as err:
+            if err.code is ErrorCode.UNAVAILABLE:
+                return False
+            raise
+        target = self._path(asset_id, "_pictures.npz")
+        partial = target.with_name(target.name + ".partial")
+        with open(partial, "wb") as out:
+            np.savez_compressed(out, vectors=np.array(vectors, np.float16), step=1 / P.LOOK_FPS, model=str(model or ""))
+        partial.replace(target)
+        if self.store is not None and self._assets.asset(asset_id) is not None:
+            from nexora.modules.intelligence import publish
+            from nexora.modules.intelligence.analyzers import BY_NAME
+            publish.pictures(self.store, asset_id, str(target), BY_NAME["pictures"])
+        return True
+
+    def embed_pictures(self, asset_id: str) -> bool:
+        """Footage looked at before the picture-and-words model was set up: draw its frames again and embed them, nothing else."""
+        if self._skip(asset_id):
+            return False
+        original = self._assets.path_of(self._assets.original(asset_id))
+        source = original if original.is_file() else self._source(asset_id)
+        if source is None:
+            raise AdapterError(ErrorCode.MISSING_INPUT, "neither the footage nor its proxy is available")
+        on_proxy = source.name.endswith("_proxy.mp4")
+        probe = self._assets.original(asset_id).metadata.get("probe", {})
+        drawn = self._path(asset_id, "_pictures.draw")
+        try:
+            frames = self._adapters.submit("ffmpeg", Request("frames", inputs={"path": str(source)}, params={
+                "out_dir": str(drawn), "fps": P.LOOK_FPS, "width": P.LOOK_WIDTH, "color_transfer": None if on_proxy else probe.get("color_transfer")})).outputs["frames"]
+            return self._embed_pictures(asset_id, frames)
+        finally:
+            shutil.rmtree(drawn, ignore_errors=True)
 
     def _read_closer(self, ctx, source: Path, on_proxy: bool, probe: dict, pictures: list[dict]) -> int:
         """Read text again, at the footage's own resolution, in the frames where small text is likely: hands holding something, a
@@ -459,7 +505,7 @@ class Profiler:
             from nexora.modules.intelligence import publish
             from nexora.modules.intelligence.analyzers import BY_NAME
             kept = {kind: self._path(asset_id, suffix) for kind, suffix in (("signals", "_signals.npz"), ("look", "_look.json"), ("listen", "_listen.json"),
-                    ("prints", "_prints.npz"), ("faces", "_faces.npz"), ("telemetry", "_telemetry.json"), ("profile", "_profile.json"), ("structure", "_structure.json"))}
+                    ("prints", "_prints.npz"), ("faces", "_faces.npz"), ("pictures", "_pictures.npz"), ("telemetry", "_telemetry.json"), ("profile", "_profile.json"), ("structure", "_structure.json"))}
             used = [BY_NAME["look"], BY_NAME["listen"]] + ([BY_NAME["telemetry"]] if sensed else [])
             publish.profile(self.store, asset_id, made, probe=probe, artifacts={k: str(v) for k, v in kept.items() if v.is_file()}, analyzers=used)
         return made

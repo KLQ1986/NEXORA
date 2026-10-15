@@ -5,7 +5,7 @@ from nexora.api.app import create_app
 from nexora.app import build
 
 from tests.conftest import make_video
-from tests.fakes import FakeModel, FakeSound, FakeSpeech, FakeVision
+from tests.fakes import FakeModel, FakePictures, FakeSound, FakeSpeech, FakeVision
 from tests.library.test_sync import camera, room_sound
 
 
@@ -15,7 +15,7 @@ def drain(system):
 
 
 def test_a_recording_taken_in_is_analysed_once_and_everything_learnt_is_in_the_canonical_model(tmp_path):
-    system = build(tmp_path / "data", model=FakeModel(), segment_seconds=2.0, recognisers=[FakeVision(), FakeSound()], speech=FakeSpeech())
+    system = build(tmp_path / "data", model=FakeModel(), segment_seconds=2.0, recognisers=[FakeVision(), FakeSound()], speech=FakeSpeech(), pictures=FakePictures())
     asset, _ = system.library.ingest(camera(tmp_path / "talk.mp4", room_sound(tmp_path / "s.wav", 1), seconds=6))
     drain(system)
     vi = system.vi
@@ -30,6 +30,8 @@ def test_a_recording_taken_in_is_analysed_once_and_everything_learnt_is_in_the_c
     assert vi.value(asset, (beat.t_start, beat.t_end), "description").value
     assert vi.stale(asset) == [] or set(vi.stale(asset)) <= {"telemetry", "events"}
     assert vi.entities("person") and vi.entities("person")[0]["appearances"][0]["asset_id"] == asset
+    assert vi.analysed(asset)["pictures"] == "1" and vi.artifacts(asset)["pictures"].endswith("_pictures.npz")
+    assert vi.search("chợ buổi sáng") and vi.search("chợ buổi sáng")[0].moment.asset_id == asset    # found by its pictures too
 
 
 def test_a_library_analysed_before_the_canonical_model_is_moved_into_it_without_analysing_again(tmp_path):

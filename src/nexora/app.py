@@ -439,7 +439,7 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
           segment_seconds: float = 12.0, voice: Adapter | None = None, match_threshold: float = 0.5, judge: bool = True,
           generators: list[Adapter] | None = None, stock: Adapter | None = None, desktop: Adapter | None = None, voice_name: str = "Linh",
           ffmpeg_binary: str = "", web: Adapter | None = None, speech: Adapter | None = None, publishers: list[Adapter] | None = None, shot_models: list[Adapter] | None = None, cloud_models: list[Adapter] | None = None,
-          recognisers: list[Adapter] | None = None) -> System:
+          recognisers: list[Adapter] | None = None, pictures: Adapter | None = None) -> System:
     """`model` is the adapter for vision, reasoning and embeddings; without one, footage is ingested but not understood."""
     data_dir = Path(data_dir).resolve()          # tools resolve relative paths differently; keep every path absolute
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -482,6 +482,8 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
                         words=(lambda asset_id: [(w["start"], w["end"]) for w in transcription.words(asset_id)]) if transcription else None)
     for recogniser in recognisers or []:            # Apple's picture and sound recognisers, where this machine has them
         adapters.register(recogniser)
+    if pictures is not None:                        # the picture-and-words model (SigLIP 2), where it has been set up
+        adapters.register(pictures)
     profiler = Profiler(assets, index, adapters, data_dir / "media", structure_of=analysis.structure, signals_of=analysis.signals,
                         words=transcription.words if transcription else (lambda asset_id: []))
     understanding = None
@@ -500,7 +502,9 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     library.on_taken_in.append(intelligence.taken_in)
     library.on_note.append(intelligence.noted)
     vi = VideoIntelligence(db_path, released=lambda: system.fields.released(), exists=lambda asset_id: assets.asset(asset_id) is not None,
-                           search=lambda query, limit, levels, exclude_assets: index.search(query, limit=limit, level=levels, min_score=0.3, exclude_assets=exclude_assets),
+                           search=lambda query, limit, levels, min_score, exclude, exclude_assets: index.search(query, limit=limit, level=levels, min_score=min_score,
+                                                                                                               exclude=exclude, exclude_assets=exclude_assets),
+                           picture_text=(lambda query: adapters.submit("picture_text", Request("texts", inputs={"texts": [query]})).outputs["vectors"][0]) if pictures is not None else None,
                            alike=lambda asset_id, a, b, limit: profiler.alike(asset_id, a, b, among=[x["asset_id"] for x in assets.assets() if x["kind"] == "video"], limit=limit))
     projects = ProjectStore(db_path)
     planning = Planning(projects, assets, index, adapters)
@@ -592,6 +596,7 @@ def build_from_config(config, **overrides) -> System:
                                      judge_model=config.judge_model, writer_model=config.writer_model),
                  voice=SayVoice(), voice_name=config.voice, match_threshold=config.match_threshold,
                  stock=OpenMontageStock(config.openmontage_repo), desktop=DesktopNotifier(), web=WebReader(),
+                 pictures=_pictures(config),
                  recognisers=[AppleVision(AppleTool(Path(config.data_dir) / "tools")), AppleSound(AppleTool(Path(config.data_dir) / "tools"))] if AppleTool(Path(config.data_dir) / "tools").available() else [],
                  speech=WhisperCpp(config.speech_model, language=config.speech_language, vad_model=config.speech_vad_model or None) if config.speech_model else None,
                  generators=[*rented_image, *([PollinationsImage(token=config.pollinations_token)] if config.pollinations else []), *rented, StillMotion()],
@@ -603,6 +608,13 @@ def build_from_config(config, **overrides) -> System:
                  cloud_models=[ClaudeText(_os.environ.get("ANTHROPIC_API_KEY") or config.anthropic_api_key, model=config.claude_model, workspace_id=config.anthropic_workspace_id,
                                           input_price=config.claude_input_price, output_price=config.claude_output_price)]
                  if (_os.environ.get("ANTHROPIC_API_KEY") or config.anthropic_api_key) else [], **overrides)
+
+
+def _pictures(config):
+    """The picture-and-words model, when its environment has been set up (scripts/setup-pictures.sh) and it is not turned off."""
+    from nexora.adapters.siglip import PictureText
+    found = PictureText(Path(config.data_dir) / "tools" / "siglip" / "bin" / "python", config.picture_model) if config.picture_model else None
+    return found if found is not None and found.available() else None
 
 
 def doctor(system: System, config=None) -> list[dict]:

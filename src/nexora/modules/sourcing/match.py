@@ -134,6 +134,13 @@ class Sourcing:
             t_in, t_out = round(length - (t_out - t_in), 2), round(float(length), 2)
         return clear_of_cuts(t_in, t_out, cuts, ceiling=length) if cuts else (t_in, t_out)
 
+    def _search(self, wanted: str, *, limit: int, exclude: frozenset[str]) -> list:
+        """Footage for some words, never what the operator set aside: through the canonical model, which also looks at what is
+        in the pictures, where it is at hand; else by the descriptions alone."""
+        if self._intel is not None:
+            return self._intel.search(wanted, limit=limit, min_score=self._threshold, exclude=exclude, exclude_assets=self._rejected())
+        return self._index.search(wanted, limit=limit, min_score=self._threshold, exclude=exclude, exclude_assets=self._rejected())
+
     def _said(self, line: str, moment) -> str | None:
         """What the operator said before about this stretch of footage for these words: about this very moment, or, when the
         footage has been divided anew since, about a stretch that mostly overlaps it."""
@@ -187,7 +194,7 @@ class Sourcing:
             # What the operator said before about clips for these very words: a clip they turned down is not offered again,
             # and one they chose goes first.
             judged = len(self._projects.feedback(shot.text))
-            hits = self._index.search(wanted, limit=3 * (self._alternates + 1) + judged, min_score=self._threshold, exclude=frozenset(used), exclude_assets=self._rejected())
+            hits = self._search(wanted, limit=3 * (self._alternates + 1) + judged, exclude=frozenset(used))
             # What the line asks to see, held against the measured labels that have proved accurate; then one hit per stretch.
             asks = asked(wanted)
             fits = {h.moment.moment_id: (self._intel.fit(h.moment.asset_id, (h.moment.t_start, h.moment.t_end), asks) if self._intel and asks else (0.0, []))
@@ -324,7 +331,7 @@ class Sourcing:
             raise ValueError("Câu này chưa có hình chính")
         inserts = list(sel.extras.get("inserts", []))
         taken = {sel.moment_id, *(i["moment_id"] for i in inserts)} - {None}
-        hits = self._index.search(keyword, limit=1, min_score=self._threshold, exclude=frozenset(taken), exclude_assets=self._rejected())
+        hits = self._search(keyword, limit=1, exclude=frozenset(taken))
         if not hits:
             raise LookupError(keyword)
         m = hits[0].moment

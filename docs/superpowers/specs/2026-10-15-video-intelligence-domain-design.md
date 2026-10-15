@@ -81,3 +81,21 @@ Không viết lại một lần cả khối. Mỗi bước giữ hệ thống ch
 
 - Duyệt hướng này và tên domain (`intelligence`).
 - Thứ tự: làm ngay, hay sau khi xác nhận nhãn mẫu và chọn mô hình nhìn.
+
+## 7. Tìm theo hình (SigLIP 2), đo ngày 2026-10-15
+
+Bộ phân tích `pictures@1` tính vector cho mỗi khung đã xem (2 khung mỗi giây) bằng SigLIP 2 base (`google/siglip2-base-patch16-256`). Vector được lưu thành `{checksum}_pictures.npz` và ghi nhận là artifact `pictures` trong mô hình chuẩn. `vi.search` lấy các ứng viên theo mô tả và từ khoá như trước, rồi sắp lại bằng cách kết hợp thứ hạng (RRF, k = 10) giữa mô tả và khung khớp nhất trong đoạn. Điểm trả về vẫn là điểm mô tả, phát lại theo thứ tự mới, nên các ngưỡng giữ nguyên nghĩa. Xác suất của SigLIP 2 với câu tiếng Việt không đáng tin (có đáp án đúng chỉ được 0,001), nên chỉ dùng thứ hạng. Đoạn chưa có vector hình giữ thứ hạng mô tả ở cả hai bảng. Khâu chọn clip tìm qua `vi.search`.
+
+Mô hình chạy trong một môi trường riêng (`scripts/setup-pictures.sh`, khoảng 760 MB trong `data/tools/siglip`), qua `adapters/siglip.py` và `siglip_helper.py`. Dự án chính không cần PyTorch. Không có môi trường đó thì tìm kiếm chạy theo mô tả như cũ.
+
+Đo trên 18 câu tiếng Việt (đáp án do Claude đặt từ khung hình):
+
+| Cách | Đúng vị trí đầu | Trong 3 đầu | MRR |
+|---|---|---|---|
+| Thử riêng, 20 nhịp của 0050 và 0038: mô tả | 11/18 | 15/18 | 0,74 |
+| Thử riêng: SigLIP 2 base | 12/18 | 17/18 | 0,81 |
+| Thử riêng: kết hợp | 13/18 | 17/18 | 0,82 |
+| Hệ thống thật, cả kho (chỉ 0050, 0038 có hình): mô tả | 10/18 | 14/18 | 0,68 |
+| Hệ thống thật: kết hợp | 10/18 | 16/18 | 0,72 |
+
+SigLIP 2 so400m kém hơn bản base trên 0050 (đúng vị trí đầu 4/10) và chậm gấp 10 lần. Trên cả kho, đáp án chưa đủ: các nhịp ở clip khác cũng đúng (ví dụ cây dừa ở clip khác) nhưng bị tính là sai. Muốn đo đúng cần đáp án cho cả kho.

@@ -115,15 +115,20 @@ def ensure_schema(db_path: str | Path) -> None:
                 c.execute(statement)
 
 
+PICTURE_RRF = 10           # the place constant of reciprocal rank fusion between descriptions and pictures (as measured)
+
+
 class VideoIntelligence:
     """Reads the canonical model. What every module uses: search, matching, editing, reports, agents, new tasks."""
 
     def __init__(self, db_path: str | Path, *, released: Callable[[], set[str]] = lambda: set(), exists: Callable[[str], bool] = lambda asset_id: True,
-                 search: Callable | None = None, alike: Callable | None = None):
+                 search: Callable | None = None, alike: Callable | None = None, picture_text: Callable[[str], list[float]] | None = None):
         self._db = db.LocalConnections(db_path)
         ensure_schema(db_path)                                         # the tables exist before anyone reads them
         self._released, self._exists = released, exists
         self._search, self._alike = search, alike
+        self._picture_text = picture_text                              # a query, as a vector in the space of the `pictures` artifacts
+        self._picture_cache: dict[str, tuple[float, object]] = {}
 
     @property
     def _conn(self):
@@ -222,16 +227,77 @@ class VideoIntelligence:
 
     # ------------------------------------------------------------------------------------------------ finding things
     def find(self, query: str, *, limit: int = 20, levels: tuple[str, ...] = ("segment",), wanted: dict[str, str] | None = None, exclude_assets=frozenset()):
-        """Stretches that answer a query by meaning and words, lifted where released fields agree with what is `wanted` (e.g.
-        {"shot_size": "cận"}) and lowered where they disagree. Returns (score, moment, reasons) best first."""
-        if self._search is None:
-            return []
-        hits = self._search(query, limit=limit * 3, levels=levels, exclude_assets=exclude_assets)
+        """Stretches that answer a query by meaning, words and pictures (`search`), lifted where released fields agree with what
+        is `wanted` (e.g. {"shot_size": "cận"}) and lowered where they disagree. Returns (score, moment, reasons) best first."""
         out = []
-        for h in hits:
+        for h in self.search(query, limit=limit * 3, levels=levels, exclude_assets=exclude_assets):
             change, why = self.fit(h.moment.asset_id, (h.moment.t_start, h.moment.t_end), wanted or {})
             out.append((round(h.score + change, 4), h.moment, why))
         return sorted(out, key=lambda x: -x[0])[:limit]
+
+    def search(self, query: str, *, limit: int = 20, levels: tuple[str, ...] = ("segment",), min_score: float = 0.3,
+               exclude=frozenset(), exclude_assets=frozenset()) -> list:
+        """Stretches that answer a query: found by their descriptions and words, then put in order by both what was written
+        about them and what their pictures show (the `pictures` artifacts, SigLIP 2), each counting by its place in its own
+        ranking. Measured on 0050 and 0038 (18 queries, 20 beats): first place right 13 times against 11 by descriptions alone.
+
+        The pictures' own scores do not say how sure they are (a right answer may score 0.001 for a Vietnamese query), so only
+        their order is used, and the scores returned are the descriptions', handed out in the new order: thresholds set
+        against them keep their meaning. A stretch with no pictures keeps its descriptions' place in both rankings."""
+        if self._search is None:
+            return []
+        hits = self._search(query, limit=max(limit * 3, 30), levels=levels, min_score=min_score, exclude=exclude, exclude_assets=exclude_assets)
+        seen = self._seen(query, hits) if hits and self._picture_text is not None else {}
+        if not seen:
+            return hits[:limit]
+        by_words = {h.moment.moment_id: r for r, h in enumerate(hits, 1)}
+        by_pictures = {m: r for r, m in enumerate(sorted(seen, key=seen.get, reverse=True), 1)}
+        fused = {m: 1 / (PICTURE_RRF + r) + 1 / (PICTURE_RRF + by_pictures.get(m, r)) for m, r in by_words.items()}
+        ordered = sorted(hits, key=lambda h: (fused[h.moment.moment_id], h.score), reverse=True)
+        scores = sorted((h.score for h in hits), reverse=True)
+        return [type(h)(h.moment, s) for h, s in zip(ordered, scores)][:limit]
+
+    def _seen(self, query: str, hits: list) -> dict[str, float]:
+        """How well the best frame of each hit's stretch answers the query, for the hits whose recording has pictures."""
+        import numpy as np
+        try:
+            q = np.asarray(self._picture_text(query), np.float32)
+        except Exception:
+            return {}                                     # the picture model is not set up or not answering: descriptions alone
+        out = {}
+        for h in hits:
+            got = self._pictures(h.moment.asset_id)
+            if got is None:
+                continue
+            vectors, step = got
+            if vectors.shape[1] != q.shape[0]:
+                continue                                  # made by another model
+            k0, k1 = int(np.ceil(h.moment.t_start / step - 1e-6)), int(np.floor((h.moment.t_end - 1e-6) / step))
+            inside = vectors[max(k0, 0):min(k1 + 1, len(vectors))]
+            if not len(inside):
+                inside = vectors[min(max(round(h.moment.t_start / step), 0), len(vectors) - 1)][None]
+            out[h.moment.moment_id] = float((inside.astype(np.float32) @ q).max())
+        return out
+
+    def _pictures(self, asset_id: str):
+        """The picture vectors of a recording, one row a frame, and the time between frames; kept in memory while the file is unchanged."""
+        import numpy as np
+        path = self.artifacts(asset_id).get("pictures")
+        if not path:
+            return None
+        try:
+            changed = Path(path).stat().st_mtime
+            cached = self._picture_cache.get(asset_id)
+            if cached and cached[0] == changed:
+                return cached[1]
+            with np.load(path) as data:
+                got = (data["vectors"], float(data["step"]))
+        except (OSError, ValueError, KeyError):
+            return None
+        if not len(got[0]):
+            return None
+        self._picture_cache[asset_id] = (changed, got)
+        return got
 
     def fit(self, asset_id: str, span: tuple[float, float], wanted: dict[str, str], *, bonus: float = 0.08, penalty: float = 0.15) -> tuple[float, list[str]]:
         """How far the released values over a stretch agree with what is wanted."""

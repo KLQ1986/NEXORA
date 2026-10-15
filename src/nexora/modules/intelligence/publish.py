@@ -74,6 +74,12 @@ def descriptions(store: IntelligenceStore, asset_id: str, beats: list, analyzer:
     store.ran(asset_id, analyzer)
 
 
+def pictures(store: IntelligenceStore, asset_id: str, path: str, analyzer: Analyzer) -> None:
+    """The frames of a recording as vectors of the picture-and-words model, for search by what is in the picture."""
+    store.artifact(asset_id, "pictures", path, analyzer=f"{analyzer.name}@{analyzer.version}")
+    store.ran(asset_id, analyzer)
+
+
 def summary(store: IntelligenceStore, asset_id: str, detail: dict) -> None:
     store.recording(asset_id, summary={"description": detail})
 

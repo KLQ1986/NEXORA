@@ -63,3 +63,39 @@ def test_a_deleted_recording_is_not_read_and_forgetting_removes_it(tmp_path):
 
 def test_gate_names():
     assert gate_key("shot_size", "measured") == "shot_size" and gate_key("shot_size", "model") == "model.shot_size"
+
+
+def _pictures(tmp_path, name, vectors, step=0.5):
+    import numpy as np
+    path = tmp_path / f"{name}_pictures.npz"
+    np.savez(path, vectors=np.array(vectors, np.float16), step=step)
+    return str(path)
+
+
+def _hit(asset_id, a, b, score):
+    from nexora.core.index import Hit, Moment
+    return Hit(Moment(f"{asset_id}@{a}", asset_id, "segment", a, b, f"{asset_id} {a}", {}, "model", None), score)
+
+
+def test_search_lifts_a_stretch_whose_pictures_answer_the_query(tmp_path):
+    """The descriptions rank m1, m3, m2; the pictures of m2 answer the query best, so m2 comes before m3. m3 has no pictures
+    and keeps its place by its description. The scores stay those of the descriptions, handed out in the new order, so
+    thresholds set against them keep their meaning."""
+    store = IntelligenceStore(tmp_path / "vi.db")
+    store.artifact("a", "pictures", _pictures(tmp_path, "a", [[1, 0], [1, 0], [0, 1], [0, 1]]), analyzer="pictures@1")   # 0–1 s: x, 1–2 s: y
+    hits = [_hit("a", 0, 1, 0.6), _hit("b", 0, 3, 0.55), _hit("a", 1, 2, 0.5)]
+    asked = []
+    vi = VideoIntelligence(tmp_path / "vi.db", search=lambda query, **kw: asked.append(kw) or hits, picture_text=lambda q: [0.0, 1.0])
+    got = vi.search("y", limit=3, min_score=0.4)
+    assert [(h.moment.asset_id, h.moment.t_start) for h in got] == [("a", 0), ("a", 1), ("b", 0)]
+    assert [h.score for h in got] == [0.6, 0.55, 0.5] and asked[0]["min_score"] == 0.4
+    assert [(m.asset_id, m.t_start) for _, m, _ in vi.find("y", limit=3)] == [("a", 0), ("a", 1), ("b", 0)]
+
+
+def test_search_without_the_picture_model_keeps_the_descriptions_order(tmp_path):
+    hits = [_hit("a", 0, 1, 0.6), _hit("b", 0, 3, 0.55), _hit("a", 1, 2, 0.5)]
+    def broken(q):
+        raise RuntimeError("not set up")
+    for picture_text in (None, broken):
+        vi = VideoIntelligence(tmp_path / "vi.db", search=lambda query, **kw: hits, picture_text=picture_text)
+        assert vi.search("y", limit=3) == hits

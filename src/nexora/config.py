@@ -11,6 +11,7 @@ class Config:
     ollama_host: str = "http://127.0.0.1:11434"
     vision_model: str = "qwen3-vl:8b-instruct"
     embed_model: str = "bge-m3"
+    picture_model: str = "google/siglip2-base-patch16-256"
     judge_model: str = ""
     writer_model: str = ""
     voice: str = "Linh"
@@ -63,6 +64,7 @@ port = 8600                       # the Web UI and API listen on 127.0.0.1 at th
 ollama_host = "http://127.0.0.1:11434"
 vision_model = "qwen3-vl:8b-instruct"     # sees frames: describes footage, judges candidates, finds the subject
 embed_model = "bge-m3"            # turns text into vectors for search
+picture_model = "google/siglip2-base-patch16-256"   # finds what is in the picture; set up with scripts/setup-pictures.sh, empty turns it off
 judge_model = ""                  # judges candidates and finds the subject; empty means the vision model
 writer_model = ""                 # drafts scripts and search words; empty means the vision model
 voice = "Linh"                    # a voice of the macOS `say` command
