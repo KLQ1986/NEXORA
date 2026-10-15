@@ -1867,6 +1867,11 @@ const en: Record<string, string> = {
   "chọn cho câu {0}": "chosen for line {0}",
   "; dự phòng cho câu {0}": "; alternate for line {0}",
   "Không được dùng: {0}": "Not used: {0}",
+  "clip": "clip",
+  "tiếng": "sound",
+  "Đang trích xuất…": "Extracting…",
+  "Trích xuất mọi đoạn dùng được": "Extract every usable beat",
+  "Trích xuất": "Extract",
 };
 
 export default en;

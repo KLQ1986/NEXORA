@@ -70,6 +70,7 @@ class System:
     fields: "Fields" = None
     intelligence: "Intelligence" = None          # the analysis domain: the only writer of the canonical model
     vi: "VideoIntelligence" = None               # the canonical model, read by every other module
+    extractor: "Extractor" = None                # pieces of a recording taken out to be used elsewhere
     publishing: Publishing = None
     autonomy: Autonomy = None
 
@@ -543,6 +544,8 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
                Worker(orch, registry, worker_id=f"background-{os.getpid()}", lanes=frozenset({"background"}), log=log, allowed=night_only)]
     system = System(data_dir, orch, assets, adapters, registry, worker, library, index, projects, planning, sourcing, edit, distribution, generation, workers)
     system.intelligence, system.vi = intelligence, vi
+    from nexora.modules.library.extract import Extractor
+    system.extractor = Extractor(assets, adapters, vi, data_dir / "exports" / "assets")
     system.roughcut = RoughCut(projects, assets, index)
     system.commands = Commands(adapters, projects, sourcing, edit)
     system.viewer = Viewer(projects, adapters, data_dir / "media") if model is not None else None

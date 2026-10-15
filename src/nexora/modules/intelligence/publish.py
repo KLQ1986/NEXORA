@@ -45,7 +45,7 @@ def profile(store: IntelligenceStore, asset_id: str, made: dict, *, probe: dict,
     store.observe_many(asset_id, rows, analyzer=tag, replace=tuple({r[2] for r in rows}))
     spans = [(s["start"], s["end"], {**s, "type": "text"}) for s in made.get("text_spans", [])] + \
             [(e["start"], e["end"], {**e, "type": "sound"}) for e in made.get("sound_events", [])] + \
-            [(t["start"], t["end"], {**t, "type": "track"}) for t in made.get("tracks", [])]
+            [(t["start"], t["end"], {**{k: v for k, v in t.items() if k != "looks"}, "type": "track"}) for t in made.get("tracks", [])]
     store.replace_segments(asset_id, "span", spans, analyzer=tag)
     store.recording(asset_id, technical={k: v for k, v in probe.items() if k not in ("still",)}, summary={"profile": made.get("asset", {})})
     for kind, path in artifacts.items():

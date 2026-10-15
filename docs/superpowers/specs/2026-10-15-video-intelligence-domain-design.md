@@ -226,3 +226,19 @@ Trên 0059:
 - Không có chủ thể xuyên shot: clip chỉ có một shot và Vision không nhận ra thân người.
 
 Trên cả thư viện có 83 vật. Ví dụ: "thuyền thúng" có ở 0038 và 0040, "cây dừa" ở 0090 và 0094.
+
+### F. Trích xuất asset
+
+`modules/library/extract.py` và thao tác `extract` của adapter ffmpeg lấy một phần của clip ra để dùng ở nơi khác, lấy từ file gốc, giữ nguyên cỡ và độ sâu màu:
+- **clip**: HEVC, 10-bit khi file gốc 10-bit, có tiếng (AAC 256k), có track timecode. Footage log vẫn là log, HDR vẫn là HDR. Mô tả màu (primaries, transfer, matrix) được ghi thẳng vào luồng bằng `hevc_metadata`, vì VideoToolbox bỏ qua cờ primaries. Không có media engine thì dùng libx265.
+- **ảnh still**: một khung đủ cỡ ở **khung đẹp nhất** của đoạn. Bước `look` nay ghi `best_frame` cho mỗi nhịp: điểm thẩm mỹ của Vision, trừ điểm khung bị đánh dấu là ảnh tiện ích. Footage HDR được đưa về SDR, vì JPEG không chứa được HDR.
+- **tiếng**: WAV 24-bit 48 kHz.
+- **card.json** đi kèm: nguồn (file, checksum, thời điểm), mô tả, vật, nơi, cỡ cảnh, máy, số người, điểm hình và tiếng, định dạng, log hay không, thời điểm của ảnh still.
+
+API:
+- `POST /api/v1/assets/{id}/extract`: `{t_in, t_out}` cho một đoạn, hoặc `{usable: true}` cho mọi nhịp có hình "dùng được"; `kinds` gồm clip, still, audio.
+- `GET /api/v1/assets/{id}/extracts`: danh sách đã trích xuất, kèm link tải.
+
+Mỗi yêu cầu tối đa 120 giây footage và chạy đồng bộ. Trong hồ sơ nguyên liệu có nút trích xuất cho từng nhịp và cho mọi đoạn dùng được.
+
+Trên 0059: 2 nhịp dùng được, trích xuất trong khoảng 15 giây. Kết quả là 2 clip 3840×2160 HEVC 10-bit 29,97 khung/giây bt709, ảnh still ở giây 4,5 và 6,5, cùng 2 file WAV.

@@ -11,6 +11,11 @@ def _rate(value: str | None) -> float:
     return float(num) / float(den) if den and float(den) else 0.0
 
 
+# Colour descriptions by their ffprobe names, as the codes of ITU-T H.273 that a stream carries.
+H273 = {"color_primaries": {"bt709": 1, "bt470m": 4, "bt470bg": 5, "smpte170m": 6, "smpte240m": 7, "bt2020": 9, "smpte432": 12},
+        "color_transfer": {"bt709": 1, "smpte170m": 6, "linear": 8, "iec61966-2-1": 13, "bt2020-10": 14, "smpte2084": 16, "arib-std-b67": 18},
+        "color_space": {"gbr": 0, "bt709": 1, "fcc": 4, "bt470bg": 5, "smpte170m": 6, "bt2020nc": 9, "bt2020c": 10}}
+
 class FFprobeAdapter(Adapter):
     def describe(self) -> Capability:
         return Capability(name="ffprobe", operations=("probe", "duration"), runs="local")
@@ -172,7 +177,7 @@ class FFmpegAdapter(Adapter):
         return [HDR_TO_SDR]
 
     def describe(self) -> Capability:
-        return Capability(name="ffmpeg", operations=("blackdetect", "freezedetect", "proxy", "thumbnail", "frames", "segment", "concat", "loudness", "envelope", "enhance", "silencedetect", "scenecuts", "analysis", "unusable", "r128", "pcm", "telemetry"), runs="local", supports_cancel=True)
+        return Capability(name="ffmpeg", operations=("blackdetect", "freezedetect", "proxy", "thumbnail", "frames", "segment", "concat", "loudness", "envelope", "enhance", "silencedetect", "scenecuts", "analysis", "unusable", "r128", "pcm", "telemetry", "extract"), runs="local", supports_cancel=True)
 
     def submit(self, request: Request) -> Result:
         timeout = request.deadline_seconds or 3600
@@ -477,6 +482,42 @@ class FFmpegAdapter(Adapter):
         for n in (int(x) for x in sizes if x.strip().isdigit()):
             packets.append(raw[pos:pos + n]); pos += n
         return Result(outputs={"packets": [p.hex() for p in packets]})
+
+    def _extract(self, src: Path, params: dict, timeout: float) -> Result:
+        """A piece of the original to keep and use elsewhere (design 2026-10-15, section 9 F), at the original's size and depth:
+        `kind` "clip" (picture and sound from `t_in` to `t_out`, HEVC, 10-bit when the original is), "still" (one frame at `at`,
+        full size) or "audio" (24-bit WAV at 48 kHz). The look is the original's: log footage stays log, HDR stays HDR in a clip;
+        a still of HDR footage is brought to SDR, since a JPEG cannot hold it."""
+        out, kind = Path(params["out"]), params["kind"]
+        out.parent.mkdir(parents=True, exist_ok=True)
+        if kind == "still":
+            vf = self._sdr(params)
+            self._run(["-y", "-ss", str(params["at"]), "-i", str(src), "-frames:v", "1", *(["-vf", ",".join(vf)] if vf else []), "-q:v", "2", str(out)], timeout, "still")
+        else:
+            t_in, t_out = float(params["t_in"]), float(params["t_out"])
+            span = ["-y", "-ss", str(t_in), "-i", str(src), "-t", str(round(t_out - t_in, 3))]
+            if kind == "audio":
+                self._run([*span, "-vn", "-c:a", "pcm_s24le", "-ar", "48000", str(out)], timeout, "audio")
+            elif kind == "clip":
+                deep = int(params.get("bit_depth") or 8) > 8
+                video = (["-c:v", "hevc_videotoolbox", "-profile:v", "main10" if deep else "main", "-q:v", "80", "-tag:v", "hvc1"]
+                         if params.get("hardware", True) else ["-c:v", "libx265", "-crf", "16", "-preset", "fast", "-tag:v", "hvc1",
+                                                              "-pix_fmt", "yuv420p10le" if deep else "yuv420p"])
+                # The encoder does not carry the original's colour description over by itself (VideoToolbox drops the primaries even
+                # when told them); without it an editor reads the clip wrongly. It is written into the stream itself, by H.273 code.
+                codes = [f"{name}={H273[key].get(str(params.get(key)))}" for key, name in (("color_primaries", "colour_primaries"),
+                         ("color_transfer", "transfer_characteristics"), ("color_space", "matrix_coefficients")) if H273[key].get(str(params.get(key)))]
+                colour = ["-bsf:v", "hevc_metadata=" + ":".join(codes)] if codes else []
+                args = [*span, "-map", "0:v:0", "-map", "0:a:0?", *video, *colour, "-c:a", "aac", "-b:a", "256k", "-map_metadata", "0", "-movflags", "+faststart", str(out)]
+                try:
+                    self._run(args, timeout, "clip")
+                except AdapterError:
+                    if not params.get("hardware", True):
+                        raise
+                    return self._extract(src, {**params, "hardware": False}, timeout)     # no media engine: the processor does it
+            else:
+                raise AdapterError(ErrorCode.INVALID_REQUEST, f"unknown kind {kind}")
+        return Result(outputs={"kind": kind, "size": out.stat().st_size}, files=(str(out),))
 
     def _thumbnail(self, src: Path, params: dict, timeout: float) -> Result:
         out = Path(params["out"])

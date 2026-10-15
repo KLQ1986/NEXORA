@@ -626,6 +626,11 @@ class Profiler:
                                              [measures[k] for k in inside if k < len(measures)], words=words, events=events,
                                              momentary=listen.get("momentary", []), audio=listen.get("levels", {}),
                                              camera=(beat["labels"].get("camera") or {}).get("value"), spans=spans, log_profile=log_profile)
+            # The frame of the beat a still is best taken from: Vision's aesthetic score, among frames it found no fault in.
+            scored = [(pictures[k].get("aesthetic"), k) for k in inside if k < len(pictures) and pictures[k] and pictures[k].get("aesthetic") is not None]
+            if scored:
+                best, k = max((sc - (0.5 if pictures[k].get("utility") else 0.0), k) for sc, k in scored)
+                beat["profile"]["best_frame"] = P.label(round(k * step, 2), "recognized", "medium", aesthetic=round(float(best), 3))
         sensed = _read_json(self._path(asset_id, "_telemetry.json"))
         if sensed:
             from nexora.modules.intelligence import telemetry

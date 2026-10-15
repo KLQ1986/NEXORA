@@ -1,6 +1,7 @@
 import { t as tr, tv } from "./i18n";
-import { timecode, usePoll } from "./api";
-import { Tag } from "./parts";
+import { useState } from "react";
+import { post, timecode, usePoll } from "./api";
+import { Button, Tag } from "./parts";
 
 /* The dossier of a recording (design 2026-10-15, section 9 B): everything learnt about it, and a word on every beat, can its
    picture and its sound be used, and what it could serve as in a cut. The grades come from what was measured. */
@@ -19,8 +20,18 @@ type DossierView = {
 
 const TONE: Record<string, "proof" | "cue" | "tally"> = { "dùng được": "proof", "dùng tạm": "cue", "lỗi": "tally" };
 
+type Extract = { name: string; urls: Record<string, string>; card: { source: { t_in: number; t_out: number } } };
+const KIND: Record<string, string> = { clip: tr("clip"), still: tr("ảnh tĩnh"), audio: tr("tiếng") };
+
 export function AssetDossier({ assetId, seek }: { assetId: string; seek?: (t: number) => void }) {
   const { data } = usePoll<DossierView>(`/api/v1/assets/${assetId}/dossier`, 30000);
+  const { data: taken, reload } = usePoll<{ extracts: Extract[] }>(`/api/v1/assets/${assetId}/extracts`, 60000);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const take = async (key: string, body: object) => {
+    setBusy(key); setNote(null);
+    try { await post(`/api/v1/assets/${assetId}/extract`, body); reload?.(); } catch (e) { setNote((e as Error).message); } finally { setBusy(null); }
+  };
   if (!data) return null;
   const v = data.verdict;
   return (
@@ -30,7 +41,12 @@ export function AssetDossier({ assetId, seek }: { assetId: string; seek?: (t: nu
       <div className="mt-2 flex flex-wrap items-center gap-3">
         <a className="text-accent underline" href={`/api/v1/assets/${assetId}/dossier?format=md`} download={`${assetId}.md`}>{tr("Tải hồ sơ (.md)")}</a>
         {data.analysis.out_of_date.length > 0 && <span className="text-faint">{tv`Phần phân tích đã cũ: ${data.analysis.out_of_date.join(", ")}`}</span>}
+        <Button size="sm" disabled={busy !== null || v.usable_seconds === 0} onClick={() => take("usable", { usable: true })}>{busy === "usable" ? tr("Đang trích xuất…") : tr("Trích xuất mọi đoạn dùng được")}</Button>
+        {note && <span className="text-tally">{note}</span>}
       </div>
+      {(taken?.extracts.length ?? 0) > 0 && <ul className="mt-2 grid gap-1">{taken!.extracts.map((e) => (
+        <li key={e.name} className="flex flex-wrap items-center gap-2 text-faint"><span className="mono text-ink">{`${timecode(e.card.source.t_in)}–${timecode(e.card.source.t_out)}`}</span>
+          {Object.entries(e.urls).map(([k, url]) => <a key={k} className="text-accent underline" href={url} download>{KIND[k] ?? k}</a>)}</li>))}</ul>}
       <ol className="mt-2 grid gap-2">
         {data.beats.map((b) => (
           <li key={b.index} className="rounded-md border border-line/60 p-2">
@@ -39,6 +55,7 @@ export function AssetDossier({ assetId, seek }: { assetId: string; seek?: (t: nu
               <span title={b.picture.why.join("; ")}><Tag tone={TONE[b.picture.grade] ?? "mute"}>{tv`hình: ${b.picture.grade}`}</Tag></span>
               <span title={b.sound.why.join("; ")}><Tag tone={TONE[b.sound.grade] ?? "mute"}>{tv`tiếng: ${b.sound.grade}`}</Tag></span>
               {v.best_beat === b.index && <Tag tone="accent">{tr("đẹp nhất")}</Tag>}
+              <Button size="sm" kind="quiet" disabled={busy !== null} onClick={() => take(`b${b.index}`, { t_in: b.t_start, t_out: b.t_end })}>{busy === `b${b.index}` ? tr("Đang trích xuất…") : tr("Trích xuất")}</Button>
             </div>
             {b.description && <p className="mt-1">{b.description}</p>}
             <p className="mt-1 text-faint">{tv`Dùng làm: ${b.uses.join(", ")}`}</p>

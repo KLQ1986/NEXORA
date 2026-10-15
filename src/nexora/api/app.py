@@ -1588,6 +1588,41 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             return PlainTextResponse(dossier.markdown(made), media_type="text/markdown; charset=utf-8")
         return made
 
+    @app.get("/api/v1/assets/{asset_id}/extracts")
+    def extracts(asset_id: str):
+        """What has been taken out of a recording: clips, stills and sound, each with its card."""
+        if system.assets.asset(asset_id) is None:
+            raise HTTPException(404, "no such asset")
+        return {"extracts": [{**e, "urls": {k: f"/api/v1/assets/{asset_id}/extracts/{e['name']}/{f}" for k, f in e["files"].items()}}
+                             for e in system.extractor.taken(asset_id)]}
+
+    @app.post("/api/v1/assets/{asset_id}/extract", status_code=201)
+    def extract(asset_id: str, body: dict):
+        """Take pieces out of a recording (design 2026-10-15, section 9 F): `t_in` and `t_out` for one stretch, or `usable: true`
+        for every beat whose picture was measured good; `kinds` among clip, still, audio."""
+        from nexora.modules.library.extract import KINDS
+        if system.assets.asset(asset_id) is None:
+            raise HTTPException(404, "no such asset")
+        kinds = tuple(k for k in body.get("kinds", KINDS) if k in KINDS) or KINDS
+        try:
+            if body.get("usable"):
+                made = system.extractor.extract_usable(asset_id, kinds=kinds)
+            else:
+                made = [system.extractor.extract(asset_id, float(body["t_in"]), float(body["t_out"]), kinds=kinds, name=body.get("name"))]
+        except (KeyError, ValueError):
+            raise HTTPException(422, "Cần một đoạn có thật, dài không quá 120 giây")
+        except FileNotFoundError:
+            raise HTTPException(409, "File gốc không có trên máy (ổ đĩa chưa cắm?)")
+        return {"extracts": [{"name": m["name"], "files": {k: Path(p).name for k, p in m["files"].items()}, "card": m["card"]} for m in made]}
+
+    @app.get("/api/v1/assets/{asset_id}/extracts/{name}/{file}")
+    def extract_file(asset_id: str, name: str, file: str):
+        root = (system.data_dir / "exports" / "assets").resolve()
+        path = (root / asset_id / name / file).resolve()
+        if root not in path.parents or not path.is_file():
+            raise HTTPException(404, "no such file")
+        return FileResponse(path, filename=f"{name}_{file}")
+
     @app.post("/api/v1/assets/{asset_id}/follow")
     def follow(asset_id: str):
         """Follow what a recording shows into things, subjects and sound sources of the library again, from what is kept."""

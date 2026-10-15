@@ -7,7 +7,7 @@ ANALYZERS = (
     Analyzer("structure", "2", ("file",), ("shot", "beat", "camera", "shake", "sharpness", "exposure", "speech", "speed", "still", "direction", "position")),
     Analyzer("telemetry", "1", ("file",), ("angle", "tilt", "turning", "exposure_settings")),
     Analyzer("look", "4", ("file", "structure"), ("people", "shot_size", "posture", "place", "scene_tags", "horizon", "aesthetic", "subject_place", "speaker",
-                                                  "light", "backlit", "colour", "noise", "composition", "depth", "text", "holding", "span")),
+                                                  "light", "backlit", "colour", "noise", "composition", "depth", "text", "holding", "span", "best_frame")),
     Analyzer("listen", "1", ("file",), ("sound", "music", "loudness", "clipping", "wind")),
     Analyzer("speech", "2", ("file", "listen"), ("sentence", "speaker_id")),
     Analyzer("describe", "v4", ("look", "structure", "speech"), ("description", "model.shot_size", "model.people", "model.place", "model.angle")),
