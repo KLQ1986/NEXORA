@@ -159,6 +159,10 @@ OPENING = __import__("re").compile(r"^\s*(các |những )?(hình ảnh|khung hì
 ABSENT = __import__("re").compile(r"\b(không có|không thấy|không xuất hiện|chẳng có)\b", __import__("re").IGNORECASE)
 # How the camera moves is measured; said by the model, it took the place of the subject ("Chủ thể: máy quay di chuyển").
 CAMERA_TALK = __import__("re").compile(r"\bmáy quay\b|\bcamera\b", __import__("re").IGNORECASE)
+# The camera's movement named as a thing seen ("Thấy: …, máy đẩy vào" on 0059). A camera in the picture is a thing and stays.
+CAMERA_MOVE = __import__("re").compile(r"\b(máy|góc máy|khung hình)\s+(đứng yên|lia|đẩy|kéo|cầm tay|di chuyển|nghiêng|rung|chuyển động|quay sang|xoay)", __import__("re").IGNORECASE)
+# Words that only say where: a subject made of them alone ("Chủ thể: phía trái." on 0059) names nothing.
+WHERE_WORDS = frozenset("ở nằm tại phía bên góc trái phải giữa trên dưới trước sau chính trung tâm khung hình ảnh của và hơi lệch về".split())
 LAYERS = (("chu_the_chinh", "Chủ thể"), ("tien_canh", "Gần máy"), ("trung_canh", "Giữa"), ("hau_canh", "Xa"))
 
 
@@ -167,7 +171,7 @@ def plain(text: str) -> str:
     kept = []
     for sentence in __import__("re").split(r"(?<=[.!?])\s+", text.strip()):
         sentence = FEELING.sub("", OPENING.sub("", sentence)).strip()
-        if sentence and not ABSENT.search(sentence) and not CAMERA_TALK.search(sentence):
+        if sentence and not ABSENT.search(sentence) and not CAMERA_TALK.search(sentence) and not CAMERA_MOVE.search(sentence):
             kept.append(sentence[0].upper() + sentence[1:])
     return " ".join(s if s.endswith((".", "!", "?")) else s + "." for s in kept)
 
@@ -183,7 +187,8 @@ def tidy(out: dict) -> dict:
     for key, _ in LAYERS:
         if isinstance(out.get(key), str):
             value = FEELING.sub("", vocab.mend(out[key])).strip().rstrip(".")
-            out[key] = "" if vocab.norm(value) in UNKNOWN or ABSENT.search(value) or CAMERA_TALK.search(value) else value
+            only_where = not set(__import__("re").findall(r"\w+", vocab.norm(value))) - WHERE_WORDS
+            out[key] = "" if vocab.norm(value) in UNKNOWN or ABSENT.search(value) or CAMERA_TALK.search(value) or CAMERA_MOVE.search(value) or only_where else value
     if isinstance(out.get("chu_the"), list):
         things = []
         for v in out["chu_the"]:
@@ -191,7 +196,8 @@ def tidy(out: dict) -> dict:
                 v = " ".join(str(x) for x in v.values() if x and vocab.norm(str(x)) not in UNKNOWN)
             v = vocab.mend(str(v)).strip()
             low = vocab.norm(v)
-            if v and low not in UNKNOWN and not low.startswith("không ") and not FEELING_THING.search(low) and low not in (vocab.norm(t) for t in things):
+            if (v and low not in UNKNOWN and not low.startswith("không ") and not FEELING_THING.search(low) and not CAMERA_MOVE.search(low)
+                    and not vocab.foreign_words(v) and low not in (vocab.norm(t) for t in things)):
                 things.append(v)
         out["chu_the"] = things
     for key in ("chu_tren_hinh", "boi_canh"):
@@ -219,8 +225,8 @@ def text_of(out: dict, profile: dict, labels: dict) -> str:
     new = str(out.get("khac_truoc") or "").strip()
     things = out.get("chu_the") or []
     # What is new, when it is not everything: the things of two beats are often named differently, and every one then looks new.
-    everything = {vocab.norm(str(t)) for t in things} if isinstance(things, list) else set()
-    if new and vocab.norm(new) not in ("tiếp diễn", "không", "không có gì khác") and {vocab.norm(x) for x in new.split(", ")} != everything:
+    everything = {vocab.canonical(str(t)) for t in things} if isinstance(things, list) else set()
+    if new and vocab.norm(new) not in ("tiếp diễn", "không", "không có gì khác") and {vocab.canonical(x) for x in new.split(", ")} != everything:
         parts.append(f"Điểm mới: {new}.")
     if isinstance(things, list) and things:
         parts.append(f"Thấy: {', '.join(str(v) for v in things)}.")
@@ -324,6 +330,33 @@ class Understanding:
             for moment, vector in zip(batch, vectors):
                 self._index.set_vector(moment.moment_id, vector)
         return len(pending)
+
+    def retell(self, asset_id: str) -> int:
+        """Build the beats' texts again from what the model already said, after a change to how answers are cleaned or put into
+        words. No model is asked to look again; the texts are embedded afresh. A beat the operator corrected is left alone."""
+        told, before = 0, []
+        for moment in self._index.moments(asset_id, level="segment"):
+            detail = moment.data.get("detail")
+            if moment.source == "human" or not isinstance(detail, dict) or (moment.data.get("provenance") or {}).get("prompt") != BEAT_PROMPT_VERSION:
+                before = vocab.canonical_list((detail or {}).get("chu_the") or []) or before
+                continue
+            out, profile = tidy(detail), moment.data.get("profile") or {}
+            named = vocab.canonical_list(out.get("chu_the") or [])
+            out["khac_truoc"] = ", ".join(t for t in named if t not in before) if before else ""
+            data = {**moment.data, "detail": out, "model_labels": model_labels(out, profile),
+                    "new_things": [t for t in named if t not in before] if before else named}
+            data["continues"] = bool(before) and not data["new_things"]
+            self._index.upsert(asset_id, "segment", moment.t_start, moment.t_end, text_of(out, profile, moment.data.get("labels") or {}),
+                               data=data, analyzer=moment.analyzer)
+            before = named or before
+            told += 1
+        if told:
+            self.embed_pending(asset_id)
+            if self.store is not None:
+                from nexora.modules.intelligence import publish
+                from nexora.modules.intelligence.analyzers import BY_NAME
+                publish.descriptions(self.store, asset_id, self._index.moments(asset_id, level="segment"), BY_NAME["describe"])
+        return told
 
     def _segments(self, ctx):
         versions = {v.role: v for v in self._assets.versions(ctx.subject_ref)}

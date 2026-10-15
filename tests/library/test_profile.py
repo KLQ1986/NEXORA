@@ -178,9 +178,22 @@ def test_a_description_keeps_what_is_seen_and_says_where_it_is_and_drops_formula
     assert tidy({"mo_ta": "Các khung hình liên tiếp cho thấy hai người đi trên lối đi."})["mo_ta"] == "Hai người đi trên lối đi."
     assert tidy({"mo_ta": "Đoạn video ghi lại một gian bếp. Trong hình không có chữ."})["mo_ta"] == "Một gian bếp."
     assert "Điểm mới" not in text_of({"mo_ta": "Bãi cát.", "chu_the": ["cát", "thuyền thúng"], "khac_truoc": "cát, thuyền thúng"}, {}, {})
+    assert "Điểm mới" not in text_of({"mo_ta": "Bãi cát.", "chu_the": ["cát", "một chiếc thuyền ở xa"], "khac_truoc": "cát, chiếc thuyền ở xa"}, {}, {})
     assert "Điểm mới: thuyền thúng." in text_of({"mo_ta": "Bãi cát.", "chu_the": ["cát", "thuyền thúng"], "khac_truoc": "thuyền thúng"}, {}, {})
     moved = tidy({"mo_ta": "Bãi cát trắng. Máy quay di chuyển từ phải sang trái.", "chu_the_chinh": "máy quay di chuyển từ phải sang trái"})
     assert moved["mo_ta"] == "Bãi cát trắng." and moved["chu_the_chinh"] == ""        # the camera's movement is measured, not told
+
+
+def test_a_room_is_named_in_vietnamese_without_the_cameras_movement_or_a_subject_that_is_only_a_place_in_the_frame():
+    # What qwen3-vl answered for 0059, a bathroom: English for the towels, the push-in among the things, a subject that is a side.
+    out = tidy({"mo_ta": "Một phòng tắm với bồn cầu trắng. Máy đẩy vào phía gương.", "chu_the_chinh": "phía trái",
+                "trung_canh": "ở giữa khung hình", "hau_canh": "cửa sổ gỗ, phía sau",
+                "chu_the": ["gương", "towel rack", "towel", "bình xà phòng", "máy đẩy vào", "máy quay", "shampoo dispenser"]})
+    assert out["mo_ta"] == "Một phòng tắm với bồn cầu trắng."
+    assert out["chu_the"] == ["gương", "giá treo khăn", "khăn tắm", "bình xà phòng", "máy quay"]     # a camera in the picture is a thing
+    assert out["chu_the_chinh"] == "" and out["trung_canh"] == "" and out["hau_canh"] == "cửa sổ gỗ, phía sau"
+    assert tidy({"chu_the_chinh": "người đàn ông, ở giữa"})["chu_the_chinh"] == "người đàn ông, ở giữa"
+    assert vocab.mend("towel rack bên bình xà phòng") == "giá treo khăn bên bình xà phòng"      # a phrase is one thing; "bình" is not "bin"
 
 
 # ------------------------------------------------------------------------------------------------------- the whole file
@@ -211,6 +224,23 @@ def test_footage_is_profiled_after_ingest_and_the_profile_reaches_the_beats_and_
     assert found and found[0].moment.asset_id == asset and found[0].moment.data["span"]["kind"] == "phụ đề"
     assert system.assets.original(asset).metadata["profile"]["platforms"]["YouTube"]["fits"]
     assert system.intelligence.profiler.prints(asset) is not None
+
+
+def test_the_beats_are_put_into_words_again_from_what_was_said_without_asking_the_model_again(tmp_path):
+    model = FakeModel()
+    system = build(tmp_path / "data", model=model, segment_seconds=2.0, recognisers=[FakeVision(), FakeSound()])
+    asset, _ = system.library.ingest(make_video(tmp_path / "f.mp4", picture=4))
+    drain(system)
+    beat = system.index.moments(asset, level="segment")[0]
+    said = {**beat.data["detail"], "chu_the": ["gương", "towel", "máy đẩy vào"], "chu_the_chinh": "phía trái"}      # cleaned the old way
+    system.index.upsert(asset, "segment", beat.t_start, beat.t_end, "Thấy: gương, towel, máy đẩy vào.", data={**beat.data, "detail": said},
+                        analyzer=beat.analyzer)
+    described = model.calls["describe"]
+    assert system.intelligence.retell(asset) >= 1
+    again = system.index.get(asset, "segment", beat.t_start, beat.t_end)
+    assert "Thấy: gương, khăn tắm." in again.text and "máy đẩy vào" not in again.text and "Chủ thể" not in again.text
+    assert again.analyzer == beat.analyzer and not system.index.without_vectors(asset)       # still current, and found by meaning
+    assert model.calls["describe"] == described                                               # nothing was looked at again
 
 
 def test_without_recognisers_the_measured_fields_are_still_there(tmp_path):

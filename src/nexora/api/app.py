@@ -1563,6 +1563,13 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             raise HTTPException(409, "Đây là bản trùng của một footage đã có")
         return {"run_id": run_id}
 
+    @app.post("/api/v1/assets/{asset_id}/retell")
+    def retell(asset_id: str):
+        """Build the beats' texts again from what the model already said, after the way answers are cleaned has changed."""
+        if system.assets.asset(asset_id) is None:
+            raise HTTPException(404, "no such asset")
+        return {"retold": system.intelligence.retell(asset_id)}
+
     @app.get("/api/v1/moments/{moment_id}/alike")
     def alike(moment_id: str, limit: int = 8):
         """Stretches anywhere in the library whose pictures look like this one (Apple's feature print, design group 15)."""

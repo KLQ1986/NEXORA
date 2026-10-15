@@ -139,6 +139,14 @@ ENGLISH = {
     "forest": "rừng", "mountain": "núi", "river": "sông", "lake": "hồ", "sea": "biển", "ocean": "biển", "restaurant": "nhà hàng", "cafe": "quán cà phê",
     "coffee": "cà phê", "food": "đồ ăn", "people": "người", "person": "người", "man": "đàn ông", "woman": "phụ nữ", "child": "trẻ em", "walking": "đi bộ",
     "suburb": "ngoại ô", "suburban": "ngoại ô", "pathway": "lối đi", "path": "lối đi", "villa": "biệt thự", "pool": "hồ bơi", "hotel": "khách sạn",
+    # Things in a room, where a model reached for English on 0059 ("towel rack, towel").
+    "towel rack": "giá treo khăn", "towel": "khăn tắm", "towels": "khăn tắm", "sink": "bồn rửa", "mirror": "gương", "toilet": "bồn cầu",
+    "shower": "vòi sen", "shower head": "vòi sen", "faucet": "vòi nước", "soap": "xà phòng", "bottle": "chai", "bottles": "chai",
+    "drinking glass": "cốc thuỷ tinh", "glass": "kính", "cup": "cốc", "trash can": "thùng rác", "bin": "thùng rác", "toilet paper": "giấy vệ sinh",
+    "window": "cửa sổ", "door": "cửa", "lamp": "đèn", "light": "đèn", "ceiling light": "đèn trần", "shelf": "kệ", "wall": "tường", "floor": "sàn",
+    "ceiling": "trần nhà", "bed": "giường", "pillow": "gối", "curtain": "rèm", "chair": "ghế", "table": "bàn", "bathroom": "phòng tắm",
+    "bedroom": "phòng ngủ", "boat": "thuyền", "boats": "thuyền", "car": "ô tô", "motorbike": "xe máy", "flower": "hoa", "flowers": "hoa",
+    "grass": "cỏ", "sand": "cát", "rock": "đá", "rocks": "đá", "dog": "chó", "cat": "mèo", "bird": "chim", "birds": "chim",
 }
 # Words of Vietnamese spelled without marks and short loanwords that are not foreign in a Vietnamese answer.
 NOT_FOREIGN = frozenset({"ok", "camera", "video", "selfie", "vlog", "pizza", "sushi", "yoga", "cocktail", "sofa", "laptop", "tivi", "flycam", "gimbal",
@@ -193,12 +201,13 @@ def _looks_vietnamese(word: str) -> bool:
     return bool(_VI_SYLLABLE.match(word))
 
 
+# Phrases first, so that "towel rack" becomes one thing and not "khăn tắm rack".
+_ENGLISH_PHRASE = re.compile(r"\b(" + "|".join(re.escape(k) for k in sorted(ENGLISH, key=len, reverse=True)) + r")\b", re.IGNORECASE)
+
+
 def mend(text: str) -> str:
-    """Replace known English words in a Vietnamese text with their Vietnamese names."""
-    def swap(match):
-        word = match.group(0)
-        return ENGLISH.get(word.lower(), word)
-    return _WORD.sub(swap, text or "")
+    """Replace known English words and phrases in a Vietnamese text with their Vietnamese names."""
+    return _ENGLISH_PHRASE.sub(lambda match: ENGLISH[match.group(0).lower()], text or "")
 
 
 def vision_tags(classes: list, *, at_least: float = 0.3) -> tuple[list[str], list[str]]:

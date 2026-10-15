@@ -144,6 +144,10 @@ class Intelligence:
             self._orch.supersede(UNDERSTAND.pipeline_id, asset_id)       # an earlier run still waiting would only do the same work again
         return self._orch.submit_run(UNDERSTAND, subject_ref=asset_id, idempotency_key=None if force else f"understand:{asset_id}")
 
+    def retell(self, asset_id: str) -> int:
+        """Put the beats of a recording into words again from what the model already said, without asking it to look again."""
+        return self._understanding.retell(asset_id) if self._understanding is not None else 0
+
     def profile(self, asset_id: str) -> str | None:
         """Measure and recognise what is in a recording, beat by beat, then describe it. Without a profiler, describe at once."""
         from nexora.modules.intelligence.profiler import PROFILE

@@ -116,3 +116,15 @@ Prompt v4: mô hình không còn đặt cỡ cảnh và góc máy, vì máy đo 
 Mới đo trên 3 nhịp, nên chênh lệch giữa 960 px và 1280 px phần lớn là ngẫu nhiên: hai cỡ nêu đúng cùng 18 vật. Cần đo thêm trên một clip có người và chữ. Lần chạy thật ở dưới dùng 960 px; từ commit sau, nhịp được mô tả ở 1280 px.
 
 Sau khi chạy thật cho 0038, đo qua tìm kiếm của cả kho với 8 câu của 0038: chỉ dùng mô tả, đúng vị trí đầu giảm từ 5/8 xuống 4/8 (MRR 0,71 xuống 0,68). Kết hợp với hình thì đúng vị trí đầu tăng từ 5/8 lên 6/8, đúng trong 3 kết quả đầu 8/8, MRR từ 0,76 lên 0,83. Mô tả mới nêu đúng nhiều vật hơn, nhưng trên cả kho, mô tả một mình chưa tìm tốt hơn. Câu "đường chân trời trên mặt biển" tụt từ #8 xuống #9, vì v4 không còn nhắc đường chân trời.
+
+### 8.1 Thử v4 ở 1280 px trên 0059 (phòng tắm, có người), 2026-10-15
+
+So với đáp án 18 vật đặt từ khung của file gốc: bản cũ nêu đúng khoảng 5 vật và sai "quay từ trên cao", "tủ", "cảnh cực toàn". Bản v4 ở 1280 px nêu đúng 13 vật bằng tiếng Việt, thêm 2 vật đúng nhưng ghi bằng tiếng Anh, và không bịa vật nào. Vẫn sót cốc thuỷ tinh, kệ, thùng rác, vòi xịt, và không nhận ra người chỉ hiện trong gương. Tìm kiếm trên cả kho: 6/8 câu ra 0059 ở vị trí đầu; "thùng rác" và "cốc thuỷ tinh" trượt vì mô tả không nhắc và vật quá nhỏ để hình cứu được.
+
+Clip này để lộ ba lỗi của bước dọn mô tả, nay đã sửa:
+- Từ tiếng Anh ("towel rack", "towel") được dịch theo cụm, trước khi dịch từng từ. Mục nào còn tiếng Anh thì bị bỏ khỏi danh sách vật.
+- Chuyển động máy ("máy đẩy vào") bị bỏ khỏi danh sách vật, câu mô tả và các lớp cảnh. Máy quay xuất hiện trong hình vẫn là một vật.
+- Chủ thể hay lớp cảnh chỉ nêu vị trí ("phía trái") bị bỏ.
+- "Điểm mới" so theo tên chuẩn hoá, nên không lặp lại danh sách "Thấy" khi hai bên chỉ khác "một chiếc".
+
+`retell` (POST `/api/v1/assets/{id}/retell`) dựng lại văn bản của các nhịp từ câu trả lời đã lưu, không gọi lại mô hình mô tả, rồi nhúng lại văn bản. Đã chạy cho 0059 và 0038.
