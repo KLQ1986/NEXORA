@@ -44,6 +44,7 @@ def main() -> None:
     p.add_argument("--no-sharpen", action="store_true")
     p.add_argument("--no-stabilise", action="store_true")
     p.add_argument("--no-exposure", action="store_true")
+    p.add_argument("--allow-cloud", action="store_true", help="let this recording go to the restoration endpoint on RunPod (VRT deblur); never in privacy mode")
     p.add_argument("--master", action="store_true", help="ProRes 422 HQ instead of HEVC 10-bit")
     p.add_argument("--json", action="store_true", help="print the whole profile and recipe as JSON")
     p.add_argument("--bench", action="store_true", help="also measure the engine on a clean frame of this file, damaged on purpose")
@@ -194,7 +195,8 @@ def _vq(system, args) -> None:
     except FileNotFoundError:
         raise SystemExit(f"no such file: {args.file}")
     options = {"target_height": args.target_height, "target_fps": args.target_fps, "denoise": not args.no_denoise, "sharpen": not args.no_sharpen,
-               "stabilise": not args.no_stabilise, "exposure": not args.no_exposure, "approve": bool(args.out)}
+               "stabilise": not args.no_stabilise, "exposure": not args.no_exposure, "approve": bool(args.out),
+               "allow_cloud": bool(args.allow_cloud)}
     wait(system.vq.analyse(subject, **{k: v for k, v in options.items() if v is not None}))
     profile = system.vq_reader.profile(subject)
     recipe = system.vq_reader.recipe(subject)

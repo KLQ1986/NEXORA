@@ -551,7 +551,9 @@ class FFmpegAdapter(Adapter):
         seek = ["-ss", str(params["t_in"])] if float(params.get("t_in") or 0.0) > 0 else []
         if kind == "still":
             out.unlink(missing_ok=True)
-            self._run(["-y", *seek, "-i", str(src), "-frames:v", "1", "-update", "1", *vf, str(out)], timeout, "vq still")
+            # An intermediate between steps keeps 16 bits a channel: written at 8, a 10-bit or RAW shade lifted later posterises.
+            deep = ["-pix_fmt", "rgb48be" if out.suffix.lower() == ".png" else "rgb48le"] if params.get("deep") and out.suffix.lower() in (".png", ".tif", ".tiff") else []
+            self._run(["-y", *seek, "-i", str(src), "-frames:v", "1", "-update", "1", *vf, *deep, str(out)], timeout, "vq still")
             if not out.is_file() or out.stat().st_size == 0:
                 raise AdapterError(ErrorCode.OUTPUT_INVALID, f"no frame came out of {src.name} at {params.get('t_in', 0.0)}s", retryable=False)
             return Result(outputs={"kind": "still"}, files=(str(out),))

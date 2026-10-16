@@ -16,7 +16,7 @@ VERSION = "1"
 # Where a measure starts to be a defect (moderate) and where it is severe; on the display picture at about 960 wide.
 THRESHOLDS = {
     "noise": (2.5, 6.0),               # sigma, 0..255
-    "soft": (30.0, 8.0),               # Laplacian variance: below is soft (reversed)
+    "soft": (0.33, 0.6),               # Crete's re-blur measure (0 sharp .. 1 all blur); clean frames read 0.17–0.29
     "blocking": (1.35, 1.9),           # block edge ratio
     "banding": (0.12, 0.3),
     "underexposed": (0.28, 0.15),      # median luma: below is dark (reversed)
@@ -61,7 +61,7 @@ def defects_of(shot: ShotScore, *, content: str, frame: np.ndarray | None = None
     # Dark is a low middle, or a picture whose brightest part never gets bright (a stop or more under, measured on the
     # benchmark: the middle alone missed it).
     dark = min(lk.luma_p50, lk.luma_p99 * 0.4)
-    raw = {"noise": lk.noise, "soft": lk.sharpness, "blocking": lk.blockiness, "banding": lk.banding, "underexposed": dark,
+    raw = {"noise": lk.noise, "soft": lk.blur, "blocking": lk.blockiness, "banding": lk.banding, "underexposed": dark,
            "overexposed": lk.clipped_high, "crushed": lk.clipped_low, "flicker": shot.flicker, "shake": shot.shake,
            "cast": max(abs(lk.cast_r - 1.0), abs(lk.cast_b - 1.0)), "dull": lk.saturation, "flat": lk.contrast}
     if content in ("screen", "graphics"):
@@ -77,7 +77,7 @@ def defects_of(shot: ShotScore, *, content: str, frame: np.ndarray | None = None
             d = {"t_start": shot.t_start, "t_end": shot.t_end, "kind": kind, "severity": round(s, 3), "value": round(float(value), 4)}
             if frame is not None and kind in ("noise", "underexposed", "overexposed", "soft", "blocking"):
                 measure = {"noise": lambda p: M.noise_sigma(M.luma(p)), "underexposed": lambda p: float(np.median(M.luma(p))),
-                           "overexposed": lambda p: float((M.luma(p) > 0.985).mean()), "soft": lambda p: M.laplacian_variance(M.luma(p)),
+                           "overexposed": lambda p: float((M.luma(p) > 0.985).mean()), "soft": lambda p: M.reblur(M.luma(p)),
                            "blocking": lambda p: M.blockiness(M.luma(p))}[kind]
                 d["region"] = M.grid_map(frame, measure)
             out.append(d)

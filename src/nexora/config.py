@@ -33,6 +33,7 @@ class Config:
     runpod_price_per_second: float = 0.0
     runpod_lipsync_endpoint: str = ""
     runpod_upscale_endpoint: str = ""
+    runpod_restore_endpoint: str = ""
     runpod_train_endpoint: str = ""
     runpod_image_endpoint: str = ""
     youtube_client_id: str = ""
@@ -86,6 +87,7 @@ runpod_lipsync_endpoint = ""      # an endpoint running a lip-sync model: gets v
 runpod_image_endpoint = ""        # an endpoint running an image model: gets prompt, seed, aspect, references, loras; returns image_url or image
 runpod_train_endpoint = ""        # an endpoint that trains a character model: gets images (base64), name, trigger; returns model_url or model
 runpod_upscale_endpoint = ""      # an endpoint running an upscaling model: gets video (base64) and scale, returns video_url or video
+runpod_restore_endpoint = ""      # an endpoint running VRT/RVRT for Visual Quality: gets video (base64) and task "deblur", returns video_url or video
 runpod_price_per_second = 0.0     # USD per second of GPU time on that endpoint, for the cost record
 ffmpeg_binary = ""                # empty: a fuller build (brew install ffmpeg-full) if installed, else the ffmpeg on the path. HDR footage needs the fuller build
 youtube_client_id = ""            # an OAuth client of your own Google Cloud project, with the YouTube Data API enabled

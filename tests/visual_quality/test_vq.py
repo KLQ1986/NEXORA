@@ -610,3 +610,133 @@ def test_propainter_fills_a_square_from_the_frames_around_and_leaves_the_rest(tm
 def system_frames(path: Path) -> list[np.ndarray]:
     raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(path), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], capture_output=True).stdout
     return list(np.frombuffer(raw, np.uint8).reshape(-1, 180, 320, 3).astype(np.float32) / 255.0)
+
+
+DEBLUR_MODEL = FACES / "models" / "nafnet_deblur.onnx"
+
+
+def _pan(seconds_frames: int = 8) -> list[np.ndarray]:
+    tex = np.asarray(Image.open(texture(Path(__import__("tempfile").mkdtemp()) / "t.png", size=(800, 480), seed=3)).convert("RGB"), np.float32) / 255.0
+    return [tex[40:400, 20 + 3 * i:660 + 3 * i] for i in range(seconds_frames)]
+
+
+def test_optical_flow_qa_lets_a_grade_through_and_stops_a_picture_that_shimmers_on_its_own():
+    from nexora.modules.visual_quality import qa as Q
+    frames = _pan()
+    u, v = Q.flow(Q._small_luma(frames[1]), Q._small_luma(frames[0]))
+    assert abs(float(np.median(u)) - 3 * Q._small_luma(frames[0]).shape[1] / 640) < 0.5 and abs(float(np.median(v))) < 0.3
+    graded = [np.clip(f * 1.1, 0, 1) for f in frames]
+    rng = np.random.default_rng(0)
+    shimmer = [np.clip(f + rng.normal(0, 0.02, f.shape).astype(np.float32), 0, 1) for f in frames]
+    assert Q.compare(frames, graded, colour_changed=True, ops=["levels"])["verdict"] == "pass"
+    bad = Q.compare(frames, shimmer, colour_changed=False, ops=["deblur"])
+    assert bad["verdict"] == "fail" and any("optical flow" in r for r in bad["reasons"])
+    wb, wa = bad["metrics"]["warp_error"]
+    assert wa > 3 * wb
+
+
+def test_blur_is_read_by_reblurring_so_busy_texture_is_not_taken_for_sharp():
+    frame = np.asarray(Image.open(texture(Path(__import__("tempfile").mkdtemp()) / "t.png", size=(640, 360), seed=4)).convert("RGB"), np.float32) / 255.0
+    clean, moved = M.look(frame), M.look(D.motion_blur(frame, 11, 30).astype(np.float32))
+    assert clean.blur < 0.33 <= moved.blur
+
+
+def test_deblur_goes_to_a_model_beside_sharpening_and_to_the_cloud_only_when_the_operator_allows_it():
+    shot = {"t_start": 0.0, "t_end": 2.0, "scores": {"blockiness": 1.0, "noise": 1.0, "sharpness": 150, "flicker": 0, "shake": 0},
+            "defects": [{"kind": "soft", "severity": 0.6}], "display": {"flat_blocks": 0.0}}
+    plan = lambda tech, have, **o: {s["op"]: s for s in P.plan_shot(shot, profile={"content": "still" if tech.get("kind") == "still" else "camera", "technical": tech},
+                                                                        colour=[], have=have | {"ffmpeg:cas"}, options={"exposure": False, **o})}
+    still = plan({"kind": "still", "width": 1200, "height": 800}, {"nafnet"})
+    assert still["deblur"]["tier"] == "nafnet" and still["deblur"]["classic"]["op"] == "sharpen" and "sharpen" not in still
+    small = plan({"width": 1280, "height": 720}, {"nafnet"})
+    assert small["deblur"]["tier"] == "nafnet"
+    big = plan({"width": 3840, "height": 2160}, {"nafnet", "vrt_remote"})
+    assert "deblur" not in big and big["sharpen"]["tier"] == "ffmpeg"           # 4K: too slow here, and the footage may not leave
+    allowed = plan({"width": 3840, "height": 2160}, {"nafnet", "vrt_remote"}, allow_cloud=True)
+    assert allowed["deblur"]["tier"] == "vrt_remote" and allowed["deblur"]["remote"]
+
+
+def test_a_remote_deblur_goes_out_marked_as_allowed_and_privacy_mode_still_stops_it(tmp_path):
+    from nexora.core.adapter import AdapterError, Capability, PrivacyClass, Result
+    seen = []
+
+    class Remote:
+        def describe(self):
+            return Capability(name="restore_remote.runpod", operations=("deblur",), runs="cloud")
+
+        def available(self):
+            return True
+
+        def environment(self):
+            return {"available": True}
+
+        def submit(self, request):
+            seen.append(request.privacy_class)
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", request.inputs["video"], "-c", "copy", request.params["out"]], check=True)
+            return Result(outputs={}, files=(request.params["out"],))
+
+    system = vq_system(tmp_path)
+    system.adapters.register(Remote())
+    src = shaky(tmp_path / "in" / "walk.mp4")
+    out = system.vq._process({"op": "deblur", "tier": "vrt_remote", "params": {}}, src, tmp_path / "work" / "d.mov", t_in=0.5, seconds=1.0)
+    assert out.is_file() and seen == [PrivacyClass.CLOUD_ALLOWED]
+    system.orch.set_setting("privacy_local_only", "1") if hasattr(system.orch, "set_setting") else system.adapters.__setattr__("local_only", lambda: True)
+    system.adapters.local_only = lambda: True
+    with pytest.raises(AdapterError):
+        system.vq._process({"op": "deblur", "tier": "vrt_remote", "params": {}}, src, tmp_path / "work" / "e.mov", t_in=0.5, seconds=1.0)
+    assert len(seen) == 1
+
+
+@pytest.mark.skipif(not DEBLUR_MODEL.is_file(), reason="the deblur model is not set up")
+def test_a_motion_blurred_still_is_deblurred_by_nafnet_only_because_it_beats_sharpening(tmp_path):
+    from nexora.adapters.deblur import Deblur
+    system = vq_system(tmp_path)
+    system.adapters.register(Deblur(FACES))
+    frame = np.asarray(Image.open(texture(tmp_path / "t.png", size=(480, 320), seed=6)).convert("RGB"), np.float32) / 255.0
+    src = tmp_path / "in" / "blur.png"
+    src.parent.mkdir(parents=True)
+    Image.fromarray((np.clip(D.motion_blur(frame, 11, 30), 0, 1) * 255).round().astype(np.uint8)).save(src)
+    subject = system.vq.subject_for_file(src)
+    system.vq.analyse(subject, exposure=False)
+    drain(system)
+    shot = system.vq_reader.recipe(subject).shots[0]
+    ops = {s["op"]: s for s in shot["steps"]}
+    if "deblur" in ops:
+        assert ops["deblur"]["checked"]["niqe_ai"] < ops["deblur"]["checked"]["niqe_classic"] - 0.5
+    else:
+        assert any(d["op"] == "deblur" for d in shot["dropped"]) and ops["sharpen"]["tier"] == "ffmpeg"
+    out = tmp_path / "out" / "fixed.png"
+    done = Deblur(FACES).submit(__import__("nexora.core.adapter", fromlist=["Request"]).Request("deblur", inputs={"path": str(src)}, params={"out": str(out), "kind": "still"}))
+    assert out.is_file() and done.outputs["pictures"] == 1
+
+
+def test_a_backlit_picture_has_its_shadows_lifted_where_they_are_and_kept_by_what_it_shows(tmp_path):
+    system = vq_system(tmp_path)
+    rng = np.random.default_rng(8)                                            # a 1/f scene made in floating point, not from 8 bits
+    fy, fx = np.fft.fftfreq(400)[:, None], np.fft.fftfreq(640)[None, :]
+    amp = 1.0 / np.maximum(np.hypot(fy, fx), 1.0 / 640)
+    chans = [np.real(np.fft.ifft2(amp * np.exp(2j * np.pi * rng.random((400, 640))))) for _ in range(3)]
+    frame = np.stack([(c - c.min()) / (c.max() - c.min()) for c in chans], -1) * np.array([0.7, 0.85, 0.6]) + np.array([0.1, 0.05, 0.12])
+    yy = np.linspace(0, 1, frame.shape[0])[:, None, None]
+    backlit = np.where(yy < 0.35, np.clip(frame * 1.4 + 0.25, 0, 1), frame * 0.2)
+    src = tmp_path / "in" / "backlit.png"
+    src.parent.mkdir(parents=True)
+    # At 16 bits, as a camera's file has the levels in its shade: lifted from 8 bits, a shade at a fifth of white posterises,
+    # and the check rightly refuses it (NIQE 4.5 → 5.1, measured).
+    h, w = backlit.shape[:2]
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgb48le", "-s", f"{w}x{h}", "-i", "-", "-frames:v", "1", str(src)],
+                   input=(backlit * 65535).round().astype("<u2").tobytes(), check=True)
+    subject = system.vq.subject_for_file(src)
+    system.vq.analyse(subject, denoise=False, sharpen=False)
+    drain(system)
+    shot = system.vq_reader.recipe(subject).shots[0]
+    relight = next(s for s in shot["steps"] if s["op"] == "relight")
+    c = relight["checked"]
+    assert c["dark_with"] <= c["dark_without"] * 0.75 and c["clipped_with"] <= c["clipped_without"] + 0.005
+    system.vq.approve(system.vq_reader.recipe(subject).recipe_id)
+    out = tmp_path / "out" / "lit.png"
+    system.vq.apply(subject, out=str(out))
+    drain(system)
+    lit = np.asarray(Image.open(out).convert("RGB"), np.float32) / 255.0
+    assert M.luma(lit)[300:].mean() > M.luma(backlit)[300:].mean() * 1.5       # the shade is brighter
+    assert abs(M.luma(lit)[:100].mean() - M.luma(backlit)[:100].mean()) < 0.15 # the bright part is about where it was

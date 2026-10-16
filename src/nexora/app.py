@@ -523,6 +523,10 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     adapters.register(RestoreLocal(data_dir / "tools" / "realesrgan", ffmpeg_binary or "ffmpeg"))
     from nexora.adapters.faces import Faces
     adapters.register(Faces(data_dir / "tools" / "faces", data_dir / "tools" / "apple_frames" / "apple_frames"))
+    from nexora.adapters.local_tone import LocalTone
+    adapters.register(LocalTone(ffmpeg_binary or "ffmpeg"))
+    from nexora.adapters.deblur import Deblur
+    adapters.register(Deblur(data_dir / "tools" / "faces", ffmpeg_binary or "ffmpeg"))
     from nexora.adapters.propainter import ProPainter
     adapters.register(ProPainter(data_dir / "tools" / "propainter", ffmpeg_binary or "ffmpeg"))
     from nexora.adapters.stills import Stills
@@ -611,7 +615,7 @@ def build_from_config(config, **overrides) -> System:
     from nexora.adapters.motion import StillMotion
     from nexora.adapters.outbox import FolderPublisher
     from nexora.adapters.pollinations import PollinationsImage
-    from nexora.adapters.runpod import RunPodImage, RunPodLipSync, RunPodTrainer, RunPodUpscale, RunPodVideo
+    from nexora.adapters.runpod import RunPodImage, RunPodLipSync, RunPodRestore, RunPodTrainer, RunPodUpscale, RunPodVideo
     runpod_key = _os.environ.get("RUNPOD_API_KEY") or config.runpod_api_key
     rented_image = [RunPodImage(runpod_key, config.runpod_image_endpoint, price_per_second=config.runpod_price_per_second)] if runpod_key and config.runpod_image_endpoint else []
     rented = [RunPodVideo(runpod_key, config.runpod_video_endpoint, price_per_second=config.runpod_price_per_second)] if runpod_key and config.runpod_video_endpoint else []
@@ -630,7 +634,8 @@ def build_from_config(config, **overrides) -> System:
                  speech=WhisperCpp(config.speech_model, language=config.speech_language, vad_model=config.speech_vad_model or None) if config.speech_model else None,
                  generators=[*rented_image, *([PollinationsImage(token=config.pollinations_token)] if config.pollinations else []), *rented, StillMotion()],
                  shot_models=[cls(runpod_key, endpoint, price_per_second=config.runpod_price_per_second) for cls, endpoint in
-                              ((RunPodLipSync, config.runpod_lipsync_endpoint), (RunPodUpscale, config.runpod_upscale_endpoint), (RunPodTrainer, config.runpod_train_endpoint)) if runpod_key and endpoint],
+                              ((RunPodLipSync, config.runpod_lipsync_endpoint), (RunPodUpscale, config.runpod_upscale_endpoint), (RunPodTrainer, config.runpod_train_endpoint),
+                               (RunPodRestore, config.runpod_restore_endpoint)) if runpod_key and endpoint],
                  publishers=[*([FolderPublisher(config.publish_folder)] if config.publish_folder else []),
                              *([YouTubePublisher(config.youtube_client_id, config.youtube_client_secret, config.youtube_refresh_token, privacy=config.youtube_privacy)]
                                if config.youtube_client_id and config.youtube_client_secret and config.youtube_refresh_token else [])],

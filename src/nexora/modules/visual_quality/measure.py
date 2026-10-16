@@ -30,6 +30,7 @@ class Look:
     flat_blocks: float        # share of 8×8 blocks with no variation at all (screens, graphics)
     cast_r: float             # white balance: red / green of near-neutral pixels
     cast_b: float             # blue / green
+    blur: float = 0.0         # Crete's re-blur measure, 0 sharp .. 1 all blur: how little blurring the picture again changes it
 
 
 def luma(rgb: np.ndarray) -> np.ndarray:
@@ -56,6 +57,21 @@ def noise_sigma(y: np.ndarray) -> float:
         return float(scale * r.mean())
     blocks = r[:h, :w].reshape(h // b, b, w // b, b).mean((1, 3)) * scale
     return float(min(scale * r.mean(), np.percentile(blocks, NOISE_PERCENTILE) * NOISE_BIAS))
+
+
+def reblur(y: np.ndarray, k: int = 9) -> float:
+    """Crete et al.'s no-reference blur measure (2007): the picture is blurred again along each axis, and what share of its
+    steps between neighbours survive is read; a picture already blurred loses little. Unlike the Laplacian's variance it does
+    not read busy texture as sharp: measured (2026-10-17) clean frames read 0.17–0.29 and each blurred version of them
+    (Gaussian σ 1.4, motion of 11 pixels) 0.39 or more, where the Laplacian still called motion-blurred foliage sharp (183)."""
+    from scipy.ndimage import uniform_filter1d
+
+    def along(axis: int) -> float:
+        d = np.abs(np.diff(y, axis=axis))
+        survive = np.maximum(0.0, d - np.abs(np.diff(uniform_filter1d(y, k, axis=axis), axis=axis)))
+        total = float(d.sum())
+        return (total - float(survive.sum())) / max(total, 1e-9)
+    return float(max(along(0), along(1)))
 
 
 def laplacian_variance(y: np.ndarray) -> float:
@@ -143,7 +159,7 @@ def look(rgb: np.ndarray, *, depth: int = 8) -> Look:
     cr, cb = cast(rgb)
     return Look(luma_mean=float(y.mean()), luma_p01=float(p[0]), luma_p50=float(p[2]), luma_p99=float(p[4]), contrast=float(p[3] - p[1]),
                 saturation=float((rgb.max(-1) - rgb.min(-1)).mean()), clipped_high=float((y > 0.985).mean()), clipped_low=float((y < 0.015).mean()),
-                noise=noise_sigma(y), sharpness=laplacian_variance(y), detail=detail_share(y), blockiness=blockiness(y), banding=banding(y, depth=depth),
+                noise=noise_sigma(y), sharpness=laplacian_variance(y), blur=reblur(y), detail=detail_share(y), blockiness=blockiness(y), banding=banding(y, depth=depth),
                 flat_blocks=flat_blocks(rgb), cast_r=cr, cast_b=cb)
 
 

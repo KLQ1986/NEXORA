@@ -18,12 +18,17 @@ from nexora.modules.visual_quality import measure as M
 # Steps that can cost a picture more than they give; each must show on the shot's own frame that it does not make it less
 # natural (NIQE) before it stays in a recipe.
 RISKY = frozenset({"deblock", "deband", "denoise", "sharpen"})
-ORDER = ("deinterlace", "ivtc", "constant_rate", "deblock", "restore", "remove", "deband", "denoise", "tonemap", "color_transform", "levels",
-         "deflicker", "stabilise", "sharpen", "upscale", "faces", "interpolate")
+ORDER = ("deinterlace", "ivtc", "constant_rate", "deblock", "restore", "remove", "deband", "denoise", "tonemap", "color_transform", "levels", "relight",
+         "deflicker", "stabilise", "deblur", "sharpen", "upscale", "faces", "interpolate")
 VERSION = "1"
 # Real-ESRGAN works ×4: above this many pixels in the source its intermediate is too big to be worth it.
 AI_PIXELS = 4_000_000
 AI_MODEL = "realesrgan-x4plus"
+RELIGHT_MIDDLE = 0.3       # a median luma below this ...
+RELIGHT_TOP = 0.85         # ... under a 99th percentile above this calls for light where it is
+DEBLUR_SEVERITY = 0.15     # less blurred than this, sharpening is enough (a model is still checked against sharpening)
+DEBLUR_STILL_PIXELS = 24_000_000
+DEBLUR_VIDEO_PIXELS = 1280 * 720   # NAFNet takes about 5 s a 720p frame here; a 4K frame about a minute
 FACE_SIDES = (48, 400)     # pixels: smaller has too little to align on, larger is already detailed enough to lose by a redraw
 TARGET_MIDTONE = 0.45
 
@@ -159,6 +164,14 @@ def plan_shot(shot: dict, *, profile: dict, colour: list[dict], have: set[str], 
         if options.get("lut_dir"):
             lv["params"]["lut"] = levels_lut(lv["params"], options["lut_dir"])
         steps.append(lv)
+    # A dark middle under bright parts (backlight, a window, a sunlit sky over shade): no single curve lifts the one without
+    # clipping the other, so the shadows are lifted where they are. Checked by the service against leaving it to levels.
+    disp = shot.get("display") or {}
+    if camera_like and "local_tone" in have and options.get("relight", True) and disp.get("luma_p50", 1.0) < RELIGHT_MIDDLE and disp.get("luma_p99", 0.0) > RELIGHT_TOP:
+        shadows = round(float(min(1.0, max(0.3, (RELIGHT_MIDDLE + 0.05 - disp["luma_p50"]) / 0.25))), 2)
+        highlights = 0.5 if disp.get("clipped_high", 0.0) > 0.005 else 0.2
+        steps.append({"op": "relight", "tier": "local_tone", "params": {"shadows": shadows, "highlights": highlights}, "classic": None,
+                      "why": f"giữa tối ({disp['luma_p50']:.2f}) dưới phần sáng ({disp['luma_p99']:.2f}): nâng vùng tối tại chỗ"})
     if not still and sev.get("flicker", 0) > 0 and "ffmpeg:deflicker" in have:
         steps.append({"op": "deflicker", "tier": "ffmpeg", "params": {"size": 5}, "why": f"nhấp nháy {shot['scores']['flicker']}"})
     if not still and camera_like and sev.get("shake", 0) > 0.3 and options.get("stabilise", True):
@@ -167,7 +180,20 @@ def plan_shot(shot: dict, *, profile: dict, colour: list[dict], have: set[str], 
         elif "vidstab" in have:
             steps.append({"op": "stabilise", "tier": "vidstab", "params": {"smoothing": 15, "zoom": 0}, "why": f"rung {shot['scores']['shake']}px"})
     if camera_like and sev.get("soft", 0) > 0 and options.get("sharpen", True) and "ffmpeg:cas" in have:
-        steps.append({"op": "sharpen", "tier": "ffmpeg", "params": {"strength": round(0.15 + 0.2 * sev["soft"], 2)}, "why": f"mềm (độ nét {shot['scores']['sharpness']})"})
+        classic = {"op": "sharpen", "tier": "ffmpeg", "params": {"strength": round(0.15 + 0.2 * sev["soft"], 2)}, "why": f"mềm (độ nét {shot['scores']['sharpness']})"}
+        # Blur that sharpening cannot undo is taken to a model, beside the sharpening it must beat: NAFNet here for stills and
+        # video up to 720p; VRT on a rented GPU for larger video, only when the operator has let this recording leave the machine.
+        if sev["soft"] >= DEBLUR_SEVERITY and options.get("deblur", True):
+            if not still and options.get("allow_cloud") and "vrt_remote" in have:
+                steps.append({"op": "deblur", "tier": "vrt_remote", "params": {}, "generative": True, "remote": True,
+                              "why": f"mờ ({shot['scores']['sharpness']}): VRT trên GPU thuê, đã được phép gửi footage"})
+            elif "nafnet" in have and (pixels <= (DEBLUR_STILL_PIXELS if still else DEBLUR_VIDEO_PIXELS)):
+                steps.append({"op": "deblur", "tier": "nafnet", "params": {}, "generative": True, "classic": classic,
+                              "why": f"mờ ({shot['scores']['sharpness']}): khử mờ bằng NAFNet (AI)"})
+            else:
+                steps.append({**classic, "why": classic["why"] + ("; khử mờ AI cho video lớn cần GPU thuê và sự cho phép gửi footage" if not still else "")})
+        else:
+            steps.append(classic)
     target_h = options.get("target_height")
     height = int(tech.get("display_height") or tech.get("height") or 0)
     if target_h and height and target_h > height * 1.2:

@@ -170,6 +170,18 @@ class RunPodUpscale(RunPodVideo):
         return self._start({"input": {"video": _b64(request.inputs["video"]), "scale": int(request.params.get("scale", 2))}}, Path(request.params["out"]), request.deadline_seconds)
 
 
+class RunPodRestore(RunPodVideo):
+    """A short span of footage sent to a video restoration model on the operator's endpoint (VRT or RVRT, which align the
+    frames around each one by their motion and merge them, for blur a single frame cannot undo). The handler gets `video` as
+    base64 and `task` ("deblur"), and returns `video_url` or `video`. It is the operator's own footage, so Visual Quality
+    asks for it only when the operator has allowed that recording to leave this machine, and never in privacy mode."""
+    KIND, OPERATION = "restore_remote", "deblur"
+
+    def submit(self, request: Request) -> Result:
+        return self._start({"input": {"video": _b64(request.inputs["video"]), "task": request.params.get("task", "deblur")}}, Path(request.params["out"]),
+                           request.deadline_seconds)
+
+
 class RunPodTrainer(RunPodVideo):
     """Pictures of one character sent to a training endpoint; a small model of that character (a LoRA) comes back as a file.
     The handler gets `images` (base64), `name` and `trigger`, and returns `model_url` or `model` (base64). Training runs for

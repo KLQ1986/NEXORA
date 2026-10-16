@@ -178,7 +178,7 @@ Mọi thứ đưa về phải qua bộ đo lỗi giả lập trước khi thành
   - ảnh tĩnh của xem trước từng lọc nhiễu từ t tới hết file; nay chỉ chuẩn bị 1 giây quanh khung đó;
   - khung đo từng bị phóng to lên 960 px với nguồn nhỏ, làm mất nhiễu khi đo; nay không bao giờ đo trên khung phóng to.
 
-### Đợt 3 (commit 87ec0c6, 2eb3825, 389035a và commit xoá vật)
+### Đợt 3 (commit 87ec0c6, 2eb3825, 389035a, 66e446e)
 
 - **Ảnh HEIC và RAW:**
   - HEIC qua `sips` của macOS, giữ EXIF và ICC;
@@ -207,8 +207,30 @@ Mọi thứ đưa về phải qua bộ đo lỗi giả lập trước khi thành
   - Cường độ khử nhiễu chọn theo "method noise": phần bộ lọc bỏ đi không được vượt mức nhiễu đo được. Thử lần lượt 1,0 / 0,85 / 0,7, không xuống dưới 0,7.
   - Kết quả: 0059 vẫn 7/7. Trên 0042 (lá dày, vốn là JPEG), nhiễu mạnh nay lợi 2,9 dB thay vì mất 1,2 dB, nhưng SSIM vẫn giảm. Khử nhiễu trên vân lá dày vẫn là giới hạn đã biết của `nlmeans`.
 
-### Chưa làm
+### Phần cuối đợt 3 (2026-10-17)
 
-- Deblur bằng VRT/RVRT trên RunPod: cần một endpoint RunPod và chi phí, nên chờ người dùng quyết.
-- Relight / HDR cục bộ (P2).
-- TemporalQA bằng optical flow: các phép đo hiện có (nhấp nháy, trôi màu, crawl, cấu trúc) vẫn dùng.
+- **Khử mờ:**
+  - Trên máy: NAFNet (bản ONNX của OpenCV, MIT), chia ô 512 có chồng mép. Bản export này cần mỗi cạnh ít nhất 384 px nên ô được đệm thêm. Chạy khoảng 1,3 giây mỗi ô trên CPU; CoreML không nhanh hơn.
+  - Dùng cho ảnh tĩnh và cho video tới 720p (khoảng 5 giây mỗi khung).
+  - Video lớn hơn đi VRT/RVRT trên RunPod (`runpod_restore_endpoint`), chỉ khi người dùng cho phép gửi recording đó (`allow_cloud`, `nexora vq --allow-cloud`). Chế độ riêng tư vẫn chặn trong registry.
+  - Bước khử mờ luôn được so với làm nét cổ điển trên khung giữa của shot. Mờ chuyển động 11 px trên ảnh lá: NAFNet thắng (PSNR 21,4 → 22,0, NIQE 7,0 → 5,4).
+  - Trên clip 0002 làm mờ kiểu lệch nét (Gaussian σ 2): NAFNet thua (NIQE 6,28 so với 4,62), giữ làm nét. NAFNet học trên mờ chuyển động, không phải mờ lệch nét.
+- **Đo mờ:** thước đo re-blur của Crete và cộng sự thay cho phương sai Laplacian.
+  - Khung sạch đọc 0,17–0,29; mờ Gaussian σ 1,4 hay mờ chuyển động 11 px đọc từ 0,39.
+  - Laplacian cũ gọi tán lá bị mờ chuyển động là nét (183).
+  - Giới hạn đã biết: vệt mờ nhẹ do trộn 5 khung (đi bộ, cửa trập dài) chỉ làm thước đo nhích 0,22 → 0,25. Không có thước đo không-tham-chiếu nào bắt được nó mà không báo nhầm trên 0059.
+- **Nâng sáng cục bộ:**
+  - Bản đồ gain từ nền log-luma qua fast guided filter (He & Sun). Nền giữ được cạnh cứng: bản làm mượt bằng box từng tạo quầng sáng (NIQE 4,5 → 5,1).
+  - Đề xuất khi trung vị dưới 0,3 và phân vị 99 trên 0,85.
+  - Chỉ giữ khi làm lộ ít nhất 1/4 vùng gần đen, không cháy thêm, NIQE không xấu hơn 0,5.
+  - Trên khung 0059 làm ngược sáng: vùng gần đen 16,9 % → 1,3 %, vùng cháy 2,8 % → 0, NIQE 5,75 → 5,46.
+- **Lỗi tìm ra khi làm phần này:**
+  - Ảnh trung gian giữa các bước của ảnh tĩnh từng bị ghi 8 bit, làm vùng tối được nâng bị vỡ dải. Nay ghi 16 bit.
+  - Một bước AI không chạy được từng bị ghi là "AI không hơn". Nay ghi đúng là chạy hỏng, kèm lỗi.
+- **Kiểm tra theo thời gian bằng optical flow:**
+  - Lucas–Kanade nhiều tầng viết bằng numpy/scipy, ở khổ 480, nội suy bậc ba.
+  - Đo chuyển động trên nguồn, rồi dự đoán khung sau từ khung trước ở cả nguồn lẫn kết quả.
+  - Đo trên cảnh lia: nguồn tự dự đoán sai 0,70, chỉnh màu ×1,1 sai 0,77, hình nhấp nháy từng khung 4,33, vân sôi 3,37.
+  - Ngưỡng: hỏng khi gấp 2 lần nguồn cộng 2, cảnh báo khi gấp 1,3 lần cộng 0,5. Trên footage thật (0002 4K, clip 720p) đều đạt, không báo hỏng nhầm.
+
+Cả ba phần của đợt 3 nay đã xong. Phần làm trên GPU thuê có sẵn, chờ người dùng thuê endpoint và cho phép gửi footage.

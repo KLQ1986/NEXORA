@@ -11,7 +11,7 @@ from nexora.modules.visual_quality import measure as M
 from nexora.modules.visual_quality.assess import niqe_of
 from nexora.third_party.basicsr.metrics import psnr, ssim
 
-VERSION = "1"
+VERSION = "2"
 
 
 def _chroma_series(frames: list[np.ndarray]) -> np.ndarray:
@@ -44,6 +44,82 @@ def _structure(a: np.ndarray, b: np.ndarray) -> float:
 
 
 POINTWISE = frozenset({"color_transform", "tonemap", "levels"})
+# Frames are compared for motion at this width, sampled cubically. Measured (2026-10-17) on a pan over texture: the source
+# predicts itself to 0.70 (0..255), a grade ×1.1 to 0.77; shimmer added each frame reads 4.33, texture that boils from frame to
+# frame 3.37, a stain that does not follow the pan 2.25. At 240 wide the source alone read 2.4, too close to them.
+FLOW_WIDTH = 480
+FLOW_LEVELS = 3
+FLOW_WINDOW = 9
+
+
+def _down(y: np.ndarray) -> np.ndarray:
+    h, w = (y.shape[0] // 2) * 2, (y.shape[1] // 2) * 2
+    return y[:h, :w].reshape(h // 2, 2, w // 2, 2).mean((1, 3))
+
+
+def _warp(y: np.ndarray, u: np.ndarray, v: np.ndarray) -> np.ndarray:
+    """`y` sampled at each pixel moved by (u, v): the picture as the motion says it is one frame on."""
+    from scipy.ndimage import map_coordinates
+    h, w = y.shape
+    gy, gx = np.mgrid[0:h, 0:w].astype(np.float32)
+    return map_coordinates(y, [gy + v, gx + u], order=3, mode="nearest")
+
+
+def flow(a: np.ndarray, b: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Dense motion from luma `a` to luma `b` (pixels): pyramidal Lucas–Kanade, coarse to fine, two refinements a level."""
+    from scipy.ndimage import uniform_filter, zoom
+    pa, pb = [a * 255.0], [b * 255.0]                       # in code values, where gradients are large enough to solve on
+    for _ in range(FLOW_LEVELS - 1):
+        if min(pa[-1].shape) < 24:
+            break
+        pa.append(_down(pa[-1]))
+        pb.append(_down(pb[-1]))
+    u = np.zeros_like(pa[-1])
+    v = np.zeros_like(pa[-1])
+    for level in range(len(pa) - 1, -1, -1):
+        A, B = pa[level], pb[level]
+        if u.shape != A.shape:
+            u = zoom(u, (A.shape[0] / u.shape[0], A.shape[1] / u.shape[1]), order=1) * 2.0
+            v = zoom(v, (A.shape[0] / v.shape[0], A.shape[1] / v.shape[1]), order=1) * 2.0
+            u, v = u[:A.shape[0], :A.shape[1]], v[:A.shape[0], :A.shape[1]]
+        iy, ix = np.gradient(A)
+        sxx, syy, sxy = (uniform_filter(q, FLOW_WINDOW) for q in (ix * ix, iy * iy, ix * iy))
+        det = sxx * syy - sxy * sxy
+        ok = det > 1e-6
+        for _ in range(2):
+            it = _warp(B, u, v) - A
+            sxt, syt = uniform_filter(ix * it, FLOW_WINDOW), uniform_filter(iy * it, FLOW_WINDOW)
+            du = np.where(ok, (-syy * sxt + sxy * syt) / np.where(ok, det, 1), 0.0)
+            dv = np.where(ok, (sxy * sxt - sxx * syt) / np.where(ok, det, 1), 0.0)
+            u, v = u + np.clip(du, -2, 2), v + np.clip(dv, -2, 2)
+    return u.astype(np.float32), v.astype(np.float32)
+
+
+def _small_luma(f: np.ndarray) -> np.ndarray:
+    y = M.luma(f)
+    k = max(1, y.shape[1] // FLOW_WIDTH)
+    h, w = (y.shape[0] // k) * k, (y.shape[1] // k) * k
+    return y[:h, :w].reshape(h // k, k, w // k, k).mean((1, 3)).astype(np.float32)
+
+
+def warp_error(before: list[np.ndarray], after: list[np.ndarray]) -> tuple[float, float]:
+    """How far each picture strays from where the source's own motion says it should be, before and after (luma, 0..255).
+
+    The motion is measured once, on the source; each next frame is predicted from the one before by it, in both the source
+    and the result. A recipe that is steady from frame to frame (a grade, a temporal denoise) keeps the result as predictable
+    as the source; one that redraws each frame on its own (an AI working frame by frame, a texture that shimmers) does not.
+    The worst tenth of pixels, where things come into view or the motion is unclear, is left out of both."""
+    eb, ea = [], []
+    for (b0, b1), (a0, a1) in zip(zip(before, before[1:]), zip(after, after[1:])):
+        yb0, yb1, ya0, ya1 = (_small_luma(f) for f in (b0, b1, a0, a1))
+        if ya0.shape != yb0.shape:
+            continue
+        u, v = flow(yb1, yb0)
+        rb, ra = np.abs(_warp(yb0, u, v) - yb1), np.abs(_warp(ya0, u, v) - ya1)
+        keep = rb <= np.quantile(rb, 0.9)
+        eb.append(float(rb[keep].mean() * 255.0))
+        ea.append(float(ra[keep].mean() * 255.0))
+    return (float(np.mean(eb)), float(np.mean(ea))) if eb else (0.0, 0.0)
 
 
 def compare(before: list[np.ndarray], after: list[np.ndarray], *, colour_changed: bool, ops: list[str] | None = None) -> dict:
@@ -79,6 +155,8 @@ def compare(before: list[np.ndarray], after: list[np.ndarray], *, colour_changed
                "noise": (round(lb.noise, 3), round(la.noise, 3)), "sharpness": (round(lb.sharpness, 1), round(la.sharpness, 1))}
     if not colour_changed:
         metrics["psnr"] = (None, round(psnr(before[mid] * 255, after[mid] * 255), 2))
+    wb, wa = warp_error(before, after) if n > 2 else (0.0, 0.0)
+    metrics["warp_error"] = (round(wb, 3), round(wa, 3))
     reasons_fail, reasons_warn = [], []
     metrics["gain"] = (1.0, round(gain_l, 3)) if pointwise else (None, None)
     if fa > fb * gain_l * 1.3 + 0.3:
@@ -87,6 +165,11 @@ def compare(before: list[np.ndarray], after: list[np.ndarray], *, colour_changed
         reasons_fail.append(f"màu trôi theo thời gian ({drift_b:.2f} → {drift_a:.2f})")
     if crawl_a > crawl_b * gain_l * 1.25 + 0.3:
         reasons_warn.append(f"texture chuyển động nhiều hơn giữa các khung ({crawl_b:.2f} → {crawl_a:.2f})")
+    # Against the source's own predictability, scaled by the contrast a grade adds (a brighter picture strays further in units).
+    if n > 2 and wa > wb * max(gain_l, 1.0) * 2.0 + 2.0:
+        reasons_fail.append(f"hình không theo chuyển động của nguồn, từng khung tự vẽ lại (lệch theo optical flow {wb:.2f} → {wa:.2f})")
+    elif n > 2 and wa > wb * max(gain_l, 1.0) * 1.3 + 0.5:
+        reasons_warn.append(f"hình kém ổn định theo chuyển động (lệch theo optical flow {wb:.2f} → {wa:.2f})")
     if struct < 0.80:
         reasons_fail.append(f"hình bị thay đổi cấu trúc (SSIM chuẩn hoá {struct:.2f})")
     elif struct < 0.9:
