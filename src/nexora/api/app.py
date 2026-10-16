@@ -1588,6 +1588,96 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             return PlainTextResponse(dossier.markdown(made), media_type="text/markdown; charset=utf-8")
         return made
 
+    # --------------------------------------------------------------------------------- Visual Quality (design 2026-10-16)
+    def vq_view(subject: str) -> dict:
+        shown = system.vq_reader.summary(subject)
+        for preview in shown.get("previews", []):
+            preview["urls"] = {k: f"/api/v1/vq/files/{subject}/{Path(v).parent.name}/{Path(v).name}" for k, v in preview.get("files", {}).items()}
+        return shown
+
+    @app.get("/api/v1/assets/{asset_id}/vq")
+    def asset_vq(asset_id: str):
+        """What Visual Quality knows of an asset: its source profile, defects, the current recipe, previews and measures."""
+        if system.assets.asset(asset_id) is None:
+            raise HTTPException(404, "no such asset")
+        return vq_view(asset_id)
+
+    @app.post("/api/v1/assets/{asset_id}/vq/plan", status_code=202)
+    def asset_vq_plan(asset_id: str, body: dict | None = None):
+        """Profile, assess and propose a recipe. `body`: target_height, target_fps, denoise, sharpen, stabilise, exposure, approve."""
+        if system.assets.asset(asset_id) is None:
+            raise HTTPException(404, "no such asset")
+        subject = system.vq.subject_for_asset(asset_id)
+        return {"subject": subject, "run_id": system.vq.analyse(subject, **(body or {}))}
+
+    @app.post("/api/v1/assets/{asset_id}/vq/preview", status_code=202)
+    def asset_vq_preview(asset_id: str, body: dict | None = None):
+        b = body or {}
+        return {"run_id": system.vq.preview(asset_id, t=b.get("t"), seconds=float(b.get("seconds", 3.0)), recipe_id=b.get("recipe_id"))}
+
+    @app.post("/api/v1/assets/{asset_id}/vq/apply", status_code=202)
+    def asset_vq_apply(asset_id: str, body: dict | None = None):
+        b = body or {}
+        if system.vq_reader.recipe(asset_id, status="approved") is None:
+            raise HTTPException(409, "Chưa có công thức nào được duyệt")
+        return {"run_id": system.vq.apply(asset_id, out=b.get("out"), master=bool(b.get("master")))}
+
+    @app.post("/api/v1/vq/recipes/{recipe_id}/approve")
+    def vq_approve(recipe_id: str):
+        if system.vq_reader.by_id(recipe_id) is None:
+            raise HTTPException(404, "no such recipe")
+        system.vq.approve(recipe_id)
+        return {"ok": True}
+
+    @app.post("/api/v1/vq/recipes/{recipe_id}/reject")
+    def vq_reject(recipe_id: str):
+        if system.vq_reader.by_id(recipe_id) is None:
+            raise HTTPException(404, "no such recipe")
+        system.vq.reject(recipe_id)
+        return {"ok": True}
+
+    @app.patch("/api/v1/vq/recipes/{recipe_id}/shots/{shot}/steps/{step}")
+    def vq_edit_step(recipe_id: str, shot: int, step: int, body: dict):
+        """The operator changes a step's parameters or turns it off: a new proposed version of the recipe."""
+        try:
+            return {"recipe_id": system.vq.edit_step(recipe_id, shot, step, params=body.get("params"), off=body.get("off"))}
+        except (LookupError, IndexError):
+            raise HTTPException(404, "no such step")
+
+    @app.post("/api/v1/vq/jobs", status_code=201)
+    def vq_job(body: dict):
+        """Any file, not taken into the library: profiled, assessed and given a recipe. `options` as for an asset."""
+        try:
+            subject = system.vq.subject_for_file(str(body.get("path", "")))
+        except FileNotFoundError:
+            raise HTTPException(404, "Không tìm thấy file")
+        return {"subject": subject, "run_id": system.vq.analyse(subject, **(body.get("options") or {}))}
+
+    @app.get("/api/v1/vq/jobs/{subject}")
+    def vq_job_view(subject: str):
+        if system.vq_reader.subject(subject) is None:
+            raise HTTPException(404, "no such job")
+        return vq_view(subject)
+
+    @app.post("/api/v1/vq/jobs/{subject}/preview", status_code=202)
+    def vq_job_preview(subject: str, body: dict | None = None):
+        b = body or {}
+        return {"run_id": system.vq.preview(subject, t=b.get("t"), seconds=float(b.get("seconds", 3.0)), recipe_id=b.get("recipe_id"))}
+
+    @app.post("/api/v1/vq/jobs/{subject}/apply", status_code=202)
+    def vq_job_apply(subject: str, body: dict):
+        if system.vq_reader.recipe(subject, status="approved") is None:
+            raise HTTPException(409, "Chưa có công thức nào được duyệt")
+        return {"run_id": system.vq.apply(subject, out=body["out"], master=bool(body.get("master")))}
+
+    @app.get("/api/v1/vq/files/{subject}/{folder}/{name}")
+    def vq_file(subject: str, folder: str, name: str):
+        root = (system.data_dir / "vq").resolve()
+        path = (root / subject / "previews" / folder / name).resolve()
+        if root not in path.parents or not path.is_file():
+            raise HTTPException(404, "no such file")
+        return FileResponse(path)
+
     @app.get("/api/v1/assets/{asset_id}/extracts")
     def extracts(asset_id: str):
         """What has been taken out of a recording: clips, stills and sound, each with its card."""

@@ -113,6 +113,7 @@ def technical(info: dict, video: dict) -> dict:
         "variable_frame_rate": bool(nominal and average and abs(nominal - average) / nominal > 0.01),
         "frames_declared": _int(video.get("nb_frames")),
         "field_order": video.get("field_order"),
+        "dolby_vision": any("dovi" in str(sd.get("side_data_type", "")).lower() for sd in video.get("side_data_list") or []),
         "audio_streams": audio,
         "data_streams": [d for d in data if d],
         "timecode": timecode,
@@ -149,7 +150,10 @@ def ffmpeg_capabilities(binary: str = "ffmpeg") -> dict:
     enc = {line.split()[1] for line in encoders.splitlines() if len(line.split()) > 2}
     return {
         "binary": binary,
-        "filters": {name: name in have for name in ("blackdetect", "scale", "fps", "zscale", "tonemap", "subtitles", "drawtext", "loudnorm", "blurdetect")},
+        "filters": {name: name in have for name in ("blackdetect", "scale", "fps", "zscale", "tonemap", "subtitles", "drawtext", "loudnorm", "blurdetect",
+                                                     # what Visual Quality's steps are made of
+                                                     "lut3d", "colorlevels", "eq", "hqdn3d", "nlmeans", "bm3d", "cas", "deflicker", "deband", "deblock",
+                                                     "bwdif", "fieldmatch", "decimate", "minterpolate", "vidstabdetect", "vidstabtransform", "libvmaf")},
         "encoders": {name: name in enc for name in ("h264_videotoolbox", "hevc_videotoolbox", "libx264")},
     }
 
@@ -177,7 +181,7 @@ class FFmpegAdapter(Adapter):
         return [HDR_TO_SDR]
 
     def describe(self) -> Capability:
-        return Capability(name="ffmpeg", operations=("blackdetect", "freezedetect", "proxy", "thumbnail", "frames", "segment", "concat", "loudness", "envelope", "enhance", "silencedetect", "scenecuts", "analysis", "unusable", "r128", "pcm", "telemetry", "extract"), runs="local", supports_cancel=True)
+        return Capability(name="ffmpeg", operations=("blackdetect", "freezedetect", "proxy", "thumbnail", "frames", "segment", "concat", "loudness", "envelope", "enhance", "silencedetect", "scenecuts", "analysis", "unusable", "r128", "pcm", "telemetry", "extract", "vq_render"), runs="local", supports_cancel=True)
 
     def submit(self, request: Request) -> Result:
         timeout = request.deadline_seconds or 3600
@@ -308,7 +312,10 @@ class FFmpegAdapter(Adapter):
         out_dir.mkdir(parents=True, exist_ok=True)
         for old in out_dir.glob("f_*.jpg"):
             old.unlink()
-        self._decode(["-y", "-i", str(src), "-vf", ",".join([*self._sdr(params), f"fps={fps},scale={int(params.get('width', 448))}:-2"]), "-q:v", str(int(params.get("quality", 4))), str(out_dir / "f_%05d.jpg")],
+        # A stretch only (`t_in`, `seconds`), for a burst of frames in a row; `filters` go before the rate and the size.
+        span = (["-ss", str(params["t_in"])] if params.get("t_in") else []) + ["-i", str(src)] + (["-t", str(params["seconds"])] if params.get("seconds") else [])
+        chain = [*self._sdr(params), *(params.get("filters") or []), f"fps={fps},scale={int(params.get('width', 448))}:-2"]
+        self._decode(["-y", *span, "-vf", ",".join(chain), "-q:v", str(int(params.get("quality", 4))), str(out_dir / "f_%05d.jpg")],
                   timeout, "frames")
         return Result(outputs={"frames": [str(p) for p in sorted(out_dir.glob("f_*.jpg"))], "fps": fps})
 
@@ -393,6 +400,11 @@ class FFmpegAdapter(Adapter):
         listing.write_text("".join(f"file '{Path(p).resolve()}'\n" for p in paths), encoding="utf-8")
         partial = out.with_name(out.stem + ".partial" + out.suffix)
         tail = ["-c:a", "aac", "-ar", "48000", "-b:a", "160k", "-movflags", "+faststart", str(partial)]
+        if params.get("plain"):
+            # Parts of one recording put back together (Visual Quality): picture and sound as they are, nothing re-encoded.
+            self._run(["-y", "-f", "concat", "-safe", "0", "-i", str(listing), "-c", "copy", "-movflags", "+faststart", str(partial)], timeout, "concat")
+            partial.replace(out); listing.unlink(missing_ok=True)
+            return Result(files=(str(out),))
         if params.get("music"):
             # The music loops under the narration and is pushed down whenever the narration speaks (ducking).
             gain = float(params.get("music_gain", 0.35))
@@ -518,6 +530,44 @@ class FFmpegAdapter(Adapter):
             else:
                 raise AdapterError(ErrorCode.INVALID_REQUEST, f"unknown kind {kind}")
         return Result(outputs={"kind": kind, "size": out.stat().st_size}, files=(str(out),))
+
+    def _vq_render(self, src: Path, params: dict, timeout: float) -> Result:
+        """A stretch of a source through a Visual Quality filter chain (design 2026-10-16): `kind` "still" (one frame at `t_in`,
+        PNG, at `width` or full size) or "video" (`t_in` for `seconds`, HEVC 10-bit with its sound, or ProRes 422 HQ with
+        `master`). `filters` is the chain; `colour` the description the result carries (after a transform, Rec.709)."""
+        out, kind = Path(params["out"]), params.get("kind", "video")
+        out.parent.mkdir(parents=True, exist_ok=True)
+        chain = list(params.get("filters") or [])
+        if params.get("width"):
+            chain.append(f"scale={int(params['width'])}:-2:flags=lanczos")
+        vf = ["-vf", ",".join(chain)] if chain else []
+        # A seek of 0 goes past the only frame of a still, and FFmpeg then writes nothing yet ends well: seek only when there is
+        # somewhere to go, and never take an ended run for a written file.
+        seek = ["-ss", str(params["t_in"])] if float(params.get("t_in") or 0.0) > 0 else []
+        if kind == "still":
+            out.unlink(missing_ok=True)
+            self._run(["-y", *seek, "-i", str(src), "-frames:v", "1", "-update", "1", *vf, str(out)], timeout, "vq still")
+            if not out.is_file() or out.stat().st_size == 0:
+                raise AdapterError(ErrorCode.OUTPUT_INVALID, f"no frame came out of {src.name} at {params.get('t_in', 0.0)}s", retryable=False)
+            return Result(outputs={"kind": "still"}, files=(str(out),))
+        colour = params.get("colour") or {}
+        codes = [f"{name}={H273[key][colour[key]]}" for key, name in (("color_primaries", "colour_primaries"), ("color_transfer", "transfer_characteristics"),
+                 ("color_space", "matrix_coefficients")) if colour.get(key) in H273[key]]
+        tags = ["-bsf:v", "hevc_metadata=" + ":".join(codes)] if codes and not params.get("master") else []
+        if params.get("master"):
+            video = ["-c:v", "prores_ks", "-profile:v", "3", "-pix_fmt", "yuv422p10le"]
+        elif params.get("codec") == "h264":                   # a preview any browser plays
+            video = ["-c:v", "libx264", "-crf", str(int(params.get("crf", 20))), "-preset", "veryfast", "-pix_fmt", "yuv420p", "-movflags", "+faststart"]
+            tags = [x for k, flag in (("color_primaries", "-color_primaries"), ("color_transfer", "-color_trc"), ("color_space", "-colorspace"))
+                    if colour.get(k) for x in (flag, colour[k])]
+        else:
+            video = ["-c:v", "libx265", "-crf", str(int(params.get("crf", 16))), "-preset", params.get("preset", "fast"), "-pix_fmt", "yuv420p10le", "-tag:v", "hvc1"]
+        span = [*seek, "-i", str(src)] + (["-t", str(params["seconds"])] if params.get("seconds") else [])
+        out.unlink(missing_ok=True)
+        self._run(["-y", *span, "-map", "0:v:0", "-map", "0:a:0?", *vf, *video, *tags, "-c:a", "aac", "-b:a", "256k", str(out)], timeout, "vq video")
+        if not out.is_file() or out.stat().st_size == 0:
+            raise AdapterError(ErrorCode.OUTPUT_INVALID, f"nothing came out of {src.name}", retryable=False)
+        return Result(outputs={"kind": "video", "size": out.stat().st_size}, files=(str(out),))
 
     def _thumbnail(self, src: Path, params: dict, timeout: float) -> Result:
         out = Path(params["out"])

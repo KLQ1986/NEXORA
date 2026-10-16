@@ -71,6 +71,8 @@ class System:
     intelligence: "Intelligence" = None          # the analysis domain: the only writer of the canonical model
     vi: "VideoIntelligence" = None               # the canonical model, read by every other module
     extractor: "Extractor" = None                # pieces of a recording taken out to be used elsewhere
+    vq: "VisualQualityService" = None            # Visual Quality: profiles, recipes, previews (the only writer of vq_*)
+    vq_reader: "VisualQuality" = None            # what every other module reads of Visual Quality
     publishing: Publishing = None
     autonomy: Autonomy = None
 
@@ -507,6 +509,16 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
                                                                                                                exclude=exclude, exclude_assets=exclude_assets),
                            picture_text=(lambda query: adapters.submit("picture_text", Request("texts", inputs={"texts": [query]})).outputs["vectors"][0]) if pictures is not None else None,
                            alike=lambda asset_id, a, b, limit: profiler.alike(asset_id, a, b, among=[x["asset_id"] for x in assets.assets() if x["kind"] == "video"], limit=limit))
+    # Visual Quality: how a picture looks and the recipes that put it right, for any source (design 2026-10-16).
+    from nexora.adapters.color import ColorTransforms
+    from nexora.core.visual_quality import VisualQuality
+    from nexora.core.visual_quality_store import VisualQualityStore
+    from nexora.modules.visual_quality.service import VisualQualityService
+    adapters.register(ColorTransforms(data_dir / "luts"))
+    vq_reader = VisualQuality(db_path)
+    vq = VisualQualityService(orch, assets, adapters, VisualQualityStore(db_path), vq_reader, data_dir / "vq", data_dir / "luts",
+                              shots_of=lambda asset_id: [(s.t_start, s.t_end) for s in vi.segments(asset_id, "shot")])
+    vq.register(registry)
     projects = ProjectStore(db_path)
     planning = Planning(projects, assets, index, adapters)
     sourcing = Sourcing(orch, projects, index, threshold=match_threshold, adapters=adapters, judge=judge and model is not None, rejected=assets.rejected,
@@ -544,6 +556,7 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
                Worker(orch, registry, worker_id=f"background-{os.getpid()}", lanes=frozenset({"background"}), log=log, allowed=night_only)]
     system = System(data_dir, orch, assets, adapters, registry, worker, library, index, projects, planning, sourcing, edit, distribution, generation, workers)
     system.intelligence, system.vi = intelligence, vi
+    system.vq, system.vq_reader = vq, vq_reader
     from nexora.modules.library.extract import Extractor
     system.extractor = Extractor(assets, adapters, vi, data_dir / "exports" / "assets")
     system.roughcut = RoughCut(projects, assets, index)

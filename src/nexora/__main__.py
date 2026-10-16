@@ -33,6 +33,19 @@ def main() -> None:
     p = sub.add_parser("restore", help="put a backup in place of the database (stop the server first)")
     p.add_argument("file")
     sub.add_parser("init-config", help="write a nexora.toml with every setting and its default")
+    p = sub.add_parser("vq", help="Visual Quality on any file: profile, recipe, preview, and with --out the result")
+    p.add_argument("file")
+    p.add_argument("--out", help="write the result here (approves the recipe)")
+    p.add_argument("--preview", type=float, default=None, metavar="T", help="preview at T seconds, with temporal QA")
+    p.add_argument("--seconds", type=float, default=3.0, help="length of the preview")
+    p.add_argument("--target-height", type=int, default=None, help="upscale to this height")
+    p.add_argument("--target-fps", type=int, default=None, help="interpolate to this frame rate")
+    p.add_argument("--no-denoise", action="store_true")
+    p.add_argument("--no-sharpen", action="store_true")
+    p.add_argument("--no-stabilise", action="store_true")
+    p.add_argument("--no-exposure", action="store_true")
+    p.add_argument("--master", action="store_true", help="ProRes 422 HQ instead of HEVC 10-bit")
+    p.add_argument("--json", action="store_true", help="print the whole profile and recipe as JSON")
     args = parser.parse_args()
     if args.command == "init-config":
         target = Path(args.config)
@@ -57,6 +70,10 @@ def main() -> None:
         raise SystemExit(1 if problems else 0)
     if args.command == "backup":
         print(backups.backup(system.data_dir / "nexora.db", system.data_dir / "backups", keep=config.backups_kept))
+        return
+
+    if args.command == "vq":
+        _vq(system, args)
         return
 
     if args.command == "ingest":
@@ -155,6 +172,53 @@ def main() -> None:
         from nexora.app import TRASH_DAYS, purge_trash
         purge_trash(system, older_than_days=TRASH_DAYS)  # what has been in the Trash a month is deleted for good
         uvicorn.run(create_app(system, web_dir=web, config=config), host="127.0.0.1", port=port, log_level="warning", timeout_graceful_shutdown=2)
+
+
+
+
+def _vq(system, args) -> None:
+    """Visual Quality on one file, outside the library, run to the end before returning."""
+    import time
+
+    def wait(run_id: str) -> None:
+        system.worker.recover()
+        while system.orch.run_status(run_id).value not in ("succeeded", "failed", "cancelled", "blocked", "waiting_review"):
+            if not system.worker.run_once():
+                time.sleep(0.5)
+        if system.orch.run_status(run_id).value != "succeeded":
+            raise SystemExit(f"{run_id}: {system.orch.run_status(run_id).value}")
+
+    try:
+        subject = system.vq.subject_for_file(args.file)
+    except FileNotFoundError:
+        raise SystemExit(f"no such file: {args.file}")
+    options = {"target_height": args.target_height, "target_fps": args.target_fps, "denoise": not args.no_denoise, "sharpen": not args.no_sharpen,
+               "stabilise": not args.no_stabilise, "exposure": not args.no_exposure, "approve": bool(args.out)}
+    wait(system.vq.analyse(subject, **{k: v for k, v in options.items() if v is not None}))
+    profile = system.vq_reader.profile(subject)
+    recipe = system.vq_reader.recipe(subject)
+    if args.json:
+        print(json.dumps({"subject": subject, "profile": profile, "recipe": recipe.data}, ensure_ascii=False, indent=2))
+    else:
+        t = profile["technical"]
+        print(f"{subject}  {Path(args.file).name}")
+        print(f"  nguồn: {t.get('codec') or t.get('container')} {t.get('display_width')}x{t.get('display_height')} {t.get('bit_depth')}-bit"
+              f" {t.get('frame_rate') or ''} · {profile['content']} · màu: {profile.get('encoding_name') or 'không nhận ra'} ({profile['encoding_confidence']})")
+        for w in profile.get("warnings", []):
+            print(f"  ! {w}")
+        for k, shot in enumerate(recipe.shots):
+            print(f"  shot {k + 1} {shot['t_start']:.2f}-{shot['t_end']:.2f}s: " + (", ".join(f"{s['op']}[{s.get('tier', 'ffmpeg')}]" for s in shot["steps"]) or "không cần xử lý"))
+            for s in shot["steps"]:
+                print(f"      {s['op']}: {s.get('why', '')}")
+    if args.preview is not None:
+        wait(system.vq.preview(subject, t=args.preview, seconds=args.seconds))
+        shown = system.vq_reader.previews(recipe.recipe_id)[0]
+        print(f"  xem trước: {shown['qa']['verdict']}" + (f" ({'; '.join(shown['qa']['reasons'])})" if shown["qa"]["reasons"] else ""))
+        for name, path in shown["files"].items():
+            print(f"      {name}: {path}")
+    if args.out:
+        wait(system.vq.apply(subject, out=args.out, master=args.master))
+        print(f"  đã ghi: {args.out}")
 
 
 if __name__ == "__main__":

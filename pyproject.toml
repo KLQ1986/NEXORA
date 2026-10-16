@@ -6,7 +6,9 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "fastapi>=0.143.0",
     "numpy>=2.5.4",
+    "opencolorio>=2.4",
     "pillow>=12.3.0",
+    "scipy>=1.16",
     "uvicorn>=0.54.0",
 ]
 
@@ -43,6 +45,7 @@ modules = [
     "nexora.modules.planning",
     "nexora.modules.library",
     "nexora.modules.intelligence",
+    "nexora.modules.visual_quality",
     "nexora.modules.sourcing",
     "nexora.modules.edit",
     "nexora.modules.quality",
@@ -62,3 +65,18 @@ source_modules = [
     "nexora.agents",
 ]
 forbidden_modules = ["nexora.core.intelligence_store"]
+
+[[tool.importlinter.contracts]]
+name = "Only the Visual Quality domain writes its records; every other module reads them"
+type = "forbidden"
+source_modules = [
+    "nexora.modules.planning",
+    "nexora.modules.library",
+    "nexora.modules.intelligence",
+    "nexora.modules.sourcing",
+    "nexora.modules.edit",
+    "nexora.modules.quality",
+    "nexora.modules.distribution",
+    "nexora.agents",
+]
+forbidden_modules = ["nexora.core.visual_quality_store"]
