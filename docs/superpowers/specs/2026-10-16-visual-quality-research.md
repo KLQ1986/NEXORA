@@ -61,3 +61,26 @@ Bộ công cụ đề xuất sau khi đánh giá lại:
 - **Mặc định, chạy trên máy:** LUT DJI + bộ lọc FFmpeg + Apple VTFrameProcessor + Gyroflow, đo bằng NIQE/PSNR/SSIM và bộ tạo lỗi giả lập của BasicSR.
 - **AI chạy trên máy, có điều kiện:** ProPainter (mục 16); RIFE/SPAN từ REAL Video Enhancer, nếu thắng bản của Apple.
 - **AI trên RunPod:** VRT/RVRT cho deblur và phục hồi shot quan trọng; VEnhancer và Enhance-A-Video cho dây chuyền A.
+
+## Không chỉ DJI: Quality Engine nhận mọi nguồn (2026-10-16)
+
+Người dùng xác nhận engine không chỉ xử lý video và ảnh gốc của Osmo Action 6, mà cả từ nhiều nguồn khác. Mỗi loại nguồn có cách mã hoá màu, mức nén, tốc độ khung và kiểu lỗi riêng, nên engine phải nhận ra loại nguồn trước khi chọn cách xử lý.
+
+| Loại nguồn | Đặc điểm | Engine cần |
+|---|---|---|
+| Máy quay quay log / HDR | DJI D-Log M, Apple Log, Sony S-Log3, Canon C-Log2/3, Panasonic V-Log, ARRI LogC, RED; HLG/PQ, Dolby Vision từ iPhone | **Sổ đăng ký máy quay và profile màu**. OpenColorIO 2.6 có sẵn chuyển đổi cho Apple Log, ARRI LogC3/4, Canon C-Log2/3, Panasonic V-Log, RED Log3G10/RedLogFilm, Sony S-Log3 (các gamut), HLG, PQ. Không có: DJI D-Log/D-Log M, GoPro, Fuji, Nikon, nên dùng LUT của hãng. HDR → SDR cần `zscale`/`libplacebo` (gói `ffmpeg-full`) hoặc tone mapping của Apple |
+| Điện thoại | Tốc độ khung thay đổi (VFR), HDR HLG/Dolby Vision, xoay khung, HEVC | Đổi về tốc độ khung cố định (`fps`), tone mapping, sửa xoay |
+| Stock, video tải từ mạng, mạng xã hội | 8-bit, nén nặng, thường 720p–1080p, bị nén nhiều lần nên có khối và dải màu, có khi là "4K giả" (phóng to từ nguồn nhỏ) | Phát hiện độ phân giải thật bằng phân tích tần số; deblock/deband; siêu phân giải cho nguồn ≤1080p (Apple ×4, SPAN/Real-ESRGAN) |
+| Video do AI sinh | Nhấp nháy, texture "bơi", vật biến dạng, thường 720p/24 khung/s | Temporal QA nặng tay hơn; nội suy khung; siêu phân giải; Enhance-A-Video ngay khi sinh |
+| Footage cũ, lưu trữ | Xen kẽ dòng (interlaced), telecine, SD 4:3, hạt, phai màu | Deinterlace (`bwdif`, `nnedi`), IVTC (`fieldmatch` + `decimate`), giữ đúng tỉ lệ khung, khử hạt |
+| Quay màn hình, đồ hoạ | Chữ sắc nét, mảng màu phẳng, VFR | **Không** khử nhiễu, **không** làm nét; chỉ đổi định dạng và tốc độ khung |
+| Ảnh tĩnh | HEIC, JPEG, RAW/DNG, hướng xoay EXIF, ICC (Display P3) | Giải mã RAW bằng CoreImage/libraw, quản lý màu theo ICC; khử artifact JPEG (SwinIR/FBCNN); phóng to (Real-ESRGAN hợp với ảnh); phục hồi mặt cho ảnh (GFPGAN/CodeFormer) |
+
+Những khả năng làm engine vượt trội, áp dụng cho mọi nguồn:
+1. **Hồ sơ nguồn có độ tin cậy:** đọc metadata (thẻ màu, `encoder`, EXIF, tag riêng của từng hãng) và đo trên hình (độ phẳng log, phân bố sáng, phổ tần số, nhịp khung). Báo khi thẻ mâu thuẫn với hình (DJI D-Log M gắn thẻ `bt709`). Không nhận ra profile thì nói không nhận ra.
+2. **Phân loại nội dung:** footage máy quay, quay màn hình, hoạt hình/đồ hoạ, video AI sinh, ảnh. Mỗi loại có một công thức khác nhau; làm nét quay màn hình hay khử nhiễu hoạt hình sẽ làm hỏng hình.
+3. **Thước đo khách quan:** VMAF (`libvmaf` đã có trong FFmpeg trên máy), NIQE, PSNR/SSIM, và thước đo theo thời gian (chỉ số nhấp nháy, sai số khi dời khung theo optical flow của Apple).
+4. **Định tuyến theo tầng:** bộ lọc cổ điển → bộ xử lý của Apple → AI trên máy → AI trên RunPod. Mỗi tầng chỉ dùng khi tầng trước không đủ, và kết quả phải qua thước đo.
+5. **Bộ đo chuẩn bằng lỗi giả lập** cho từng loại nguồn, để biết bộ lọc nào hợp nguồn nào trước khi áp lên file thật.
+
+Công cụ cần thêm vào máy: `ffmpeg-full` (Homebrew) cho `zscale`, `libplacebo` và `vidstab`.
