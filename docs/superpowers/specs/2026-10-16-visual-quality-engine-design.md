@@ -1,4 +1,4 @@
-# Visual Quality Engine: thiết kế (2026-10-16)
+# Visual Quality (VQ): thiết kế (2026-10-16)
 
 Nghiên cứu nền: `2026-10-16-visual-quality-research.md`. Danh sách 18 tính năng (A–F) là của người dùng.
 
@@ -23,7 +23,14 @@ Thành công nghĩa là:
 
 ## 3. Kiến trúc
 
-Một domain mới `nexora.modules.visual`, ngang hàng với `intelligence`. Nó chỉ *đọc* mô hình chuẩn qua `VideoIntelligence`, và ghi kết quả của mình (hồ sơ nguồn, bản đồ lỗi, công thức, thước đo) vào bảng riêng `vq_*`. Các module khác (`edit`, `library`) đọc công thức qua một bộ đọc ở `core` (`core/visual.py`), không import `modules.visual`, đúng luật phân lớp hiện có.
+**Tên:** domain **Visual Quality (VQ)**. Code ở `nexora.modules.visual_quality`, bộ đọc chung ở `nexora.core.visual_quality`, bảng `vq_*`, lệnh `nexora vq <file>`, API `/api/v1/vq/...` (file bất kỳ) và `/api/v1/assets/{id}/vq` (asset trong thư viện). Mục "Chất lượng hình" trên giao diện.
+
+**Độc lập hoàn toàn** (người dùng duyệt 2026-10-16):
+- Không import module nào khác, và không module nào import nó (luật phân lớp).
+- Dữ liệu riêng (`vq_*`).
+- **Video Intelligence là tuỳ chọn.** Có kết quả đo sẵn thì dùng cho nhanh, không có thì VQ tự đo phần cần thiết (shot, chuyển động, nhiễu, phơi sáng, rung).
+- **Chạy trên mọi file, không cần nhập vào thư viện**, qua CLI hoặc API. Đầu vào là một file hoặc một asset; đầu ra là hồ sơ nguồn, công thức, và file đã xử lý hoặc bản xem trước.
+- Thư viện, khâu dựng (`edit`), khâu trích xuất (`library/extract.py`) và sau này dây chuyền A chỉ là bên gọi. Chúng đọc công thức đã duyệt qua `core/visual_quality.py`.
 
 ```
 nguồn ─▶ SourceProfiler ─▶ ContentClassifier ─▶ Assessor + DefectMapper
@@ -61,7 +68,7 @@ nguồn ─▶ SourceProfiler ─▶ ContentClassifier ─▶ Assessor + DefectM
 ```
 
 - Kết quả của tầng không phải FFmpeg (Apple, Gyroflow, AI) được lưu đệm thành file trung gian, khoá bằng `(checksum nguồn, đoạn, công thức của bước)`. Đổi một bước thì chỉ bước đó và các bước sau chạy lại.
-- `edit/render.py` và `library/extract.py` hỏi `core/visual.py` công thức đã duyệt của đoạn cần dùng, rồi áp: bước FFmpeg ghép vào chuỗi bộ lọc của segment, bước khác dùng file trung gian.
+- `edit/render.py` và `library/extract.py` hỏi `core/visual_quality.py` công thức đã duyệt của đoạn cần dùng, rồi áp: bước FFmpeg ghép vào chuỗi bộ lọc của segment, bước khác dùng file trung gian.
 
 ### 3.3 Dữ liệu
 
@@ -73,9 +80,8 @@ nguồn ─▶ SourceProfiler ─▶ ContentClassifier ─▶ Assessor + DefectM
 
 ### 3.4 API và màn hình
 
-- `GET /api/v1/assets/{id}/quality`: hồ sơ nguồn, điểm từng chiều, bản đồ lỗi, công thức hiện hành.
-- `POST /api/v1/assets/{id}/quality/plan`: lập công thức. `POST …/quality/preview {t, seconds}`: xem trước vài giây, trả ảnh và video trước/sau kèm thước đo.
-- `POST …/quality/recipe/approve`, `…/reject`; sửa tham số từng bước.
+- Asset trong thư viện: `GET /api/v1/assets/{id}/vq` (hồ sơ nguồn, điểm từng chiều, bản đồ lỗi, công thức hiện hành); `POST …/vq/plan`; `POST …/vq/preview {t, seconds}` (ảnh và video trước/sau, kèm thước đo); `POST …/vq/recipe/approve`, `…/reject`; sửa tham số từng bước.
+- File bất kỳ: `POST /api/v1/vq/jobs {path}` cùng các bước như trên, kết quả để ở `data/vq/<job>/`. CLI: `nexora vq <file> [--plan] [--preview T] [--apply] [--out file]`.
 - Thư viện có thêm mục **"Chất lượng hình"**: hồ sơ nguồn, cảnh báo, công thức đề xuất, thanh kéo trước/sau và các thước đo.
 
 ## 4. Các đợt
