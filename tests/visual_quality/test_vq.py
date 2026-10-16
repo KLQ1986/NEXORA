@@ -331,3 +331,92 @@ def test_a_shaky_clip_is_steadied_and_measures_steadier(tmp_path):
     before = system.vq.profiler.sample(src, duration=3, subject=subject, width=480, fps=12, tag="b")
     after = system.vq.profiler.sample(out, duration=3, subject=subject, width=480, fps=12, tag="a")
     assert M.shake(after) < M.shake(before) * 0.6
+
+
+GYROFLOW = Path("/Applications/Gyroflow.app/Contents/MacOS/gyroflow")
+
+
+class _Recorder:
+    """A stand-in for a frame tool: copies the span it is given to ProRes, and records what it was given."""
+    def __init__(self, name, ops, calls, gyro=False):
+        self.name, self.ops, self.calls, self.gyro = name, ops, calls, gyro
+
+    def describe(self):
+        from nexora.core.adapter import Capability
+        return Capability(name=self.name, operations=self.ops, runs="local")
+
+    def available(self):
+        return True
+
+    def environment(self):
+        return {"available": True, "denoise": True}
+
+    def submit(self, request):
+        from nexora.core.adapter import Result
+        if request.operation == "probe":
+            return Result(outputs={"gyro": self.gyro})
+        p = request.params
+        self.calls.append((self.name, request.inputs["path"], float(p.get("t_in", 0.0))))
+        Path(p["out"]).parent.mkdir(parents=True, exist_ok=True)
+        span = (["-ss", f"{p['t_in']}"] if p.get("t_in") else []) + (["-t", f"{p['seconds']}"] if p.get("seconds") else [])
+        subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", *span, "-i", request.inputs["path"], "-an", "-c:v", "prores_ks", p["out"]], check=True)
+        return Result(outputs={}, files=(p["out"],))
+
+
+def test_gyro_stabilising_is_chosen_only_with_gyro_data_and_runs_first_on_the_original(tmp_path):
+    system = vq_system(tmp_path)
+    calls: list = []
+    system.adapters.register(_Recorder("gyroflow", ("probe", "stabilise"), calls, gyro=True))
+    src = shaky(tmp_path / "in" / "gyro.mp4")
+    subject = system.vq.subject_for_file(src)
+    system.vq.analyse(subject, denoise=False)
+    drain(system)
+    assert system.vq_reader.profile(subject)["technical"]["gyro"] is True
+    stab = [s for shot in system.vq_reader.recipe(subject).shots for s in shot["steps"] if s["op"] == "stabilise"]
+    assert stab and stab[0]["tier"] == "gyroflow"                              # the gyro beats guessing motion from the picture
+    # Placed after a denoise by the order of steps, it is still run first, on the original and at the shot's own time.
+    system.adapters.register(_Recorder("apple_frames", ("denoise",), calls))
+    steps = [{"op": "denoise", "tier": "apple_vt", "params": {"strength": 0.5}}, stab[0], {"op": "sharpen", "tier": "ffmpeg", "params": {"strength": 0.2}}]
+    out, rest = system.vq._prepare(src, steps, t_in=1.0, seconds=1.0, work=tmp_path / "work")
+    assert [c[0] for c in calls] == ["gyroflow", "apple_frames"]
+    assert calls[0][1] == str(src) and calls[0][2] == 1.0 and calls[1][1] != str(src)
+    assert [s["op"] for s in rest] == ["sharpen"] and out.is_file()
+
+
+@pytest.mark.skipif(not GYROFLOW.is_file(), reason="Gyroflow is not installed")
+def test_gyroflow_says_a_file_without_gyro_has_none_and_renders_the_span_asked(tmp_path):
+    from nexora.adapters.gyroflow import Gyroflow
+    from nexora.core.adapter import Request
+    src = shaky(tmp_path / "in" / "plain.mp4", audio=False)
+    tool = Gyroflow(GYROFLOW)
+    assert tool.submit(Request("probe", inputs={"path": str(src)})).outputs["gyro"] is False
+    out = tmp_path / "out" / "span.mov"
+    tool.submit(Request("stabilise", inputs={"path": str(src)}, params={"out": str(out), "t_in": 1.0, "seconds": 1.0, "smoothness": 0.6}))
+    probe = json.loads(subprocess.run(["ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0", "-show_entries", "stream=codec_name,nb_read_frames",
+                                       "-of", "json", str(out)], capture_output=True, text=True).stdout)["streams"][0]
+    assert probe["codec_name"] == "prores" and int(probe["nb_read_frames"]) == 25        # the span asked, to the frame
+
+
+def test_a_step_across_frames_is_applied_shot_by_shot_so_it_never_blends_across_a_cut(tmp_path):
+    system = vq_system(tmp_path)
+    a, b = texture(tmp_path / "a.png", seed=1), texture(tmp_path / "b.png", seed=2)
+    src = tmp_path / "in" / "cut.mp4"
+    src.parent.mkdir(parents=True)
+    subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-loop", "1", "-framerate", "25", "-t", "2", "-i", str(a),
+                    "-loop", "1", "-framerate", "25", "-t", "2", "-i", str(b), "-filter_complex",
+                    "[0]crop=640:360:'40+n*2':60[x];[1]hflip,hue=h=180,eq=brightness=0.25,crop=640:360:'40+n*2':60[y];[x][y]concat=n=2:v=1",
+                    "-c:v", "libx264", "-crf", "16", "-pix_fmt", "yuv420p", str(src)], check=True)
+    subject = system.vq.subject_for_file(src)
+    system.vq.analyse(subject, target_fps=50, denoise=False, sharpen=False, stabilise=False, exposure=False)
+    drain(system)
+    recipe = system.vq_reader.recipe(subject)
+    assert len(recipe.shots) == 2 and all(any(s["op"] == "interpolate" for s in shot["steps"]) for shot in recipe.shots)
+    system.vq.approve(recipe.recipe_id)
+    out = tmp_path / "out" / "smooth.mp4"
+    system.vq.apply(subject, out=str(out))
+    drain(system)
+    parts = sorted((system.data_dir / "vq" / subject / "apply" / recipe.recipe_id).glob("part_*"))
+    assert len(parts) == 2                                                     # one render per shot, joined after
+    frames = subprocess.run(["ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0", "-show_entries", "stream=nb_read_frames",
+                             "-of", "csv=p=0", str(out)], capture_output=True, text=True).stdout.strip()
+    assert 196 <= int(frames) <= 204

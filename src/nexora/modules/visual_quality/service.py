@@ -37,6 +37,9 @@ APPLY = PipelineDefinition("vq.apply", "1", [StageDef("apply", timeout_seconds=1
 MAX_SHOTS = 48
 VERIFY_SHOTS = 12          # shots whose risky steps are checked on their own frame (the longest first would be better; in order is simpler)
 NIQE_SLACK = 0.3           # how much less natural a step may make a frame before it is dropped
+STILL_WINDOW = 1.0                                       # seconds prepared around one frame of a video
+# Steps that take more than one frame to make one: run on a stretch that crosses a cut, they blend the two shots.
+ACROSS_FRAMES = frozenset({"interpolate", "stabilise", "deflicker", "denoise"})
 ANALYZER = f"vq@{PROFILE_VERSION}.{A.VERSION}.{P.VERSION}"
 
 
@@ -204,6 +207,11 @@ class VisualQualityService:
         if not path.is_file():
             raise AdapterError(ErrorCode.MISSING_INPUT, f"{path} is not at hand")
         made = self.profiler.profile(path, subject=ctx.subject_ref)
+        if made["technical"].get("kind") != "still" and "gyroflow" in self._have():
+            try:
+                made["technical"]["gyro"] = bool(self._adapters.submit("gyroflow", Request("probe", inputs={"path": str(path)})).outputs.get("gyro"))
+            except AdapterError:
+                made["technical"]["gyro"] = False
         self.store.profile(ctx.subject_ref, made, analyzer=ANALYZER)
         return {"encoding": made["encoding"], "content": made["content"], "warnings": len(made["warnings"])}
 
@@ -306,10 +314,14 @@ class VisualQualityService:
         one run first, in their order, and the FFmpeg steps after it finish the job."""
         chain = filters_of(steps)
         if chain is None:
-            source, rest = self._prepare(path, steps, t_in=t_in, seconds=seconds, work=out.parent)
-            chain, path, t_in = filters_of(rest) or [], source, 0.0
-            if kind == "still":
-                t_in = (seconds or 0.0) / 2 if seconds else 0.0
+            if kind == "still" and path.suffix.lower() not in STILL_EXT:
+                # One frame of a video: the tools that look across frames get a second around it, not the rest of the file.
+                start = max(0.0, t_in - STILL_WINDOW / 2)
+                source, rest = self._prepare(path, steps, t_in=start, seconds=STILL_WINDOW, work=out.parent)
+                chain, path, t_in = filters_of(rest) or [], source, t_in - start
+            else:
+                source, rest = self._prepare(path, steps, t_in=t_in, seconds=seconds, work=out.parent)
+                chain, path, t_in = filters_of(rest) or [], source, 0.0
         params = {"kind": kind, "out": str(out), "t_in": t_in, "filters": chain, "colour": colour or {}, "master": master}
         if seconds and kind != "still":
             params["seconds"] = seconds
@@ -345,6 +357,8 @@ class VisualQualityService:
         """Run the steps in their order up to the last that needs a processor: FFmpeg steps between processors are rendered in
         between, so that each step sees what the steps before it made. Returns the intermediate (with the source's sound
         put back) and the FFmpeg steps left after the last processor."""
+        # Gyroflow reads the gyro by the original's timeline and corrects its lens: it goes first, on the original.
+        steps = sorted(steps, key=lambda s: s.get("tier") != "gyroflow")
         last = max(i for i, s in enumerate(steps) if s.get("tier", "ffmpeg") != "ffmpeg")
         stamp = int(time.time() * 1000)
         current, offset, pending = path, t_in, []
@@ -432,15 +446,17 @@ class VisualQualityService:
         result: dict = {"prepared": prepared}
         if p.get("out"):
             out = Path(p["out"])
+            out.parent.mkdir(parents=True, exist_ok=True)
             still = technical.get("kind") == "still"
             if still:
                 steps = [s for s in recipe.shots[0]["steps"] if not s.get("off")]
                 self._render(path, steps, out=out, kind="still", colour=colour)
-            elif len(recipe.shots) == 1 or len({str(s["steps"]) for s in recipe.shots}) == 1:
+            elif len(recipe.shots) == 1 or (len({str(s["steps"]) for s in recipe.shots}) == 1 and not self._across_frames(recipe.shots[0]["steps"])):
                 steps = [s for s in recipe.shots[0]["steps"] if not s.get("off")]
                 self._render(path, steps, out=out, kind="video", colour=colour, master=bool(p.get("master")))
             else:
-                # Shot by shot, each with its own steps, in the codec of the result, then joined without re-encoding.
+                # Shot by shot, each with its own steps, in the codec of the result, then joined without re-encoding. Steps that
+                # look across frames (interpolation, stabilising, deflicker, temporal denoise) never see across a cut this way.
                 master = bool(p.get("master"))
                 parts = []
                 for k, shot in enumerate(recipe.shots):
@@ -453,6 +469,10 @@ class VisualQualityService:
         if request["request_id"]:
             self.store.finish_request(request["request_id"], "done", result)
         return result
+
+    @staticmethod
+    def _across_frames(steps: list[dict]) -> bool:
+        return any(s["op"] in ACROSS_FRAMES for s in steps if not s.get("off"))
 
     def benchmark(self, subject: str, *, t: float | None = None) -> dict:
         """The engine measured on one clean frame of a subject (its graded look), damaged on purpose; kept with the subject."""
