@@ -42,3 +42,22 @@ Dữ liệu giấy phép và hoạt động lấy từ GitHub API ngày 2026-10-
 - Mô hình AI phục hồi (Real-ESRGAN, SwinIR…) chỉ dùng có điều kiện: cho ảnh tĩnh và nguồn nhỏ, không cho 4K, và sau khi kiểm tra mô hình không "vẽ lại" hình.
 - Ba repo có giấy phép phi thương mại (VRT, RVRT, ProPainter) và hai repo AGPL hoặc không có giấy phép, không có bản Mac (Video2X, VEnhancer) bị loại khỏi phần chạy thật.
 - Mọi bộ lọc làm thay đổi texture (khử nhiễu, làm nét) cần cường độ theo từng shot và phép kiểm temporal QA (mục 17) trước khi áp vào cả clip.
+
+## Đánh giá lại khi không xét giấy phép (2026-10-16)
+
+NEXORA chỉ dùng cá nhân, nên giấy phép không còn là lý do loại một repo. Những repo trước bị loại vì giấy phép được xét lại chỉ theo kỹ thuật:
+
+| Repo | Chạy trên máy này | Kết luận mới |
+|---|---|---|
+| **ProPainter** | Có: `get_device()` chọn **MPS** của Apple. Có sẵn `resize_ratio` và `subvideo_length` để chạy clip dài ở độ phân giải thấp hơn | **Dùng cho mục 16** (xoá vật, inpainting) ngay trên máy, ở 720p–1080p. 4K quá nặng |
+| **VRT / RVRT** | Kém: phép deformable convolution/attention viết cho CUDA (`deform_attn_cuda_kernel.cu`), trên MPS phải chạy bằng CPU; mô hình rất tốn bộ nhớ | **Dùng trên RunPod** cho vài shot quan trọng: deblur do chuyển động (mục 8, VRT có mô hình huấn luyện trên DVD/GoPro), siêu phân giải video, khử nhiễu theo thời gian. Không chạy trên máy |
+| **REAL Video Enhancer** | Có bản arm64; backend Python (NCNN qua Vulkan, PyTorch) | **Lấy backend** (RIFE 4.x, các mô hình phóng to gọn như SPAN, phát hiện điểm cắt, đọc ghi khung qua FFmpeg). Đo RIFE với bộ nội suy của Apple, rồi chọn cái tốt hơn cho mục 13 |
+| **Gyroflow** | Có bản macOS và CLI | **Dùng cho mục 11**: gọi CLI, hoặc nhúng `gyroflow-core` (Rust) |
+| **VEnhancer** | Cần GPU rất lớn | Dây chuyền A trên RunPod |
+| **Video2X** | Không có bản Mac; các engine bên trong (Real-ESRGAN, RIFE bản ncnn) thì có | Dùng thẳng các engine đó, không cần Video2X |
+| **Vapourkit** | Chỉ Windows/Linux | Không dùng. Bản thân VapourSynth vẫn cài được trên Mac bằng Homebrew |
+
+Bộ công cụ đề xuất sau khi đánh giá lại:
+- **Mặc định, chạy trên máy:** LUT DJI + bộ lọc FFmpeg + Apple VTFrameProcessor + Gyroflow, đo bằng NIQE/PSNR/SSIM và bộ tạo lỗi giả lập của BasicSR.
+- **AI chạy trên máy, có điều kiện:** ProPainter (mục 16); RIFE/SPAN từ REAL Video Enhancer, nếu thắng bản của Apple.
+- **AI trên RunPod:** VRT/RVRT cho deblur và phục hồi shot quan trọng; VEnhancer và Enhance-A-Video cho dây chuyền A.
