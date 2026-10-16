@@ -130,6 +130,32 @@ class VisualQualityService:
         data["from"] = recipe_id
         return self.store.recipe(recipe.subject, data, status="proposed", decided_by="operator")
 
+    def add_removal(self, recipe_id: str, shot: int, regions: list[list[float]]) -> str:
+        """The operator marks what to take out of a shot (rectangles in the source's pixels, held for the whole shot): a new
+        proposed version of the recipe with a `remove` step, filled by ProPainter from what the other frames show there."""
+        recipe = self.reader.by_id(recipe_id)
+        if recipe is None:
+            raise LookupError(recipe_id)
+        if "propainter" not in self._have():
+            raise AdapterError(ErrorCode.UNAVAILABLE, "object removal is not set up (sh scripts/setup-propainter.sh)", retryable=False)
+        technical = (self.reader.profile(recipe.subject) or {}).get("technical", {})
+        if technical.get("kind") == "still":
+            raise AdapterError(ErrorCode.INVALID_REQUEST, "object removal works on video, from the frames around", retryable=False)
+        W, H = int(technical.get("width") or 0), int(technical.get("height") or 0)
+        boxes = []
+        for r in regions:
+            x, y, w, h = (float(v) for v in r)
+            if w < 4 or h < 4 or x < 0 or y < 0 or (W and x + w > W) or (H and y + h > H):
+                raise AdapterError(ErrorCode.INVALID_REQUEST, f"region {r} is not inside the {W}×{H} picture", retryable=False)
+            boxes.append([round(x, 1), round(y, 1), round(w, 1), round(h, 1)])
+        data = __import__("copy").deepcopy(recipe.data)
+        steps = [s for s in data["shots"][shot]["steps"] if s["op"] != "remove"]
+        steps.append({"op": "remove", "tier": "propainter", "params": {"regions": boxes}, "generative": True, "edited": True,
+                      "why": f"xoá {len(boxes)} vùng người dùng chọn (ProPainter, AI lấp từ các khung lân cận)"})
+        data["shots"][shot]["steps"] = sorted(steps, key=lambda s: P.ORDER.index(s["op"]) if s["op"] in P.ORDER else 99)
+        data["from"] = recipe_id
+        return self.store.recipe(recipe.subject, data, status="proposed", decided_by="operator")
+
     # ------------------------------------------------------------------------------------------------------------ helpers
     def _have(self) -> set[str]:
         have: set[str] = set()
@@ -165,6 +191,12 @@ class VisualQualityService:
                 have.add("faces_find")
             if env.get("available") and env.get("restore"):
                 have.add("faces")
+        if "inpaint" in names:
+            try:
+                if (self._adapters.environment().get("inpaint") or {}).get("remove"):
+                    have.add("propainter")
+            except Exception:
+                pass
         if "gyroflow" in names:
             try:
                 if (self._adapters.environment().get("gyroflow") or {}).get("available"):
@@ -455,6 +487,8 @@ class VisualQualityService:
                 self._adapters.submit("apple_frames", Request("superres", inputs={"path": str(source)}, params=span))
             else:
                 raise AdapterError(ErrorCode.INVALID_REQUEST, f"Apple's processors do not do {op}", retryable=False)
+        elif tier == "propainter":
+            self._adapters.submit("inpaint", Request("remove", inputs={"path": str(source)}, params={**span, "regions": p["regions"]}))
         elif tier == "vidstab":
             self._adapters.submit("ffmpeg", Request("vq_stabilise", inputs={"path": str(source)}, params={**span, "smoothing": p.get("smoothing", 15), "zoom": p.get("zoom", 0)}))
         elif tier == "gyroflow":

@@ -523,6 +523,8 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     adapters.register(RestoreLocal(data_dir / "tools" / "realesrgan", ffmpeg_binary or "ffmpeg"))
     from nexora.adapters.faces import Faces
     adapters.register(Faces(data_dir / "tools" / "faces", data_dir / "tools" / "apple_frames" / "apple_frames"))
+    from nexora.adapters.propainter import ProPainter
+    adapters.register(ProPainter(data_dir / "tools" / "propainter", ffmpeg_binary or "ffmpeg"))
     from nexora.adapters.stills import Stills
     adapters.register(Stills(ffmpeg_binary or "ffmpeg"))
     vq_reader = VisualQuality(db_path)

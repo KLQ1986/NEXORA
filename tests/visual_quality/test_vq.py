@@ -349,14 +349,14 @@ class _Recorder:
         return True
 
     def environment(self):
-        return {"available": True, "denoise": True}
+        return {"available": True, "denoise": True, "remove": True}
 
     def submit(self, request):
         from nexora.core.adapter import Result
         if request.operation == "probe":
             return Result(outputs={"gyro": self.gyro})
         p = request.params
-        self.calls.append((self.name, request.inputs["path"], float(p.get("t_in", 0.0))))
+        self.calls.append((self.name, request.inputs["path"], float(p.get("t_in", 0.0)), p.get("regions")))
         Path(p["out"]).parent.mkdir(parents=True, exist_ok=True)
         span = (["-ss", f"{p['t_in']}"] if p.get("t_in") else []) + (["-t", f"{p['seconds']}"] if p.get("seconds") else [])
         subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", *span, "-i", request.inputs["path"], "-an", "-c:v", "prores_ks", p["out"]], check=True)
@@ -557,3 +557,56 @@ def test_a_crushed_face_is_found_restored_and_kept_only_because_it_measures_more
     assert after.shape == before.shape
     x, y, w, h = 278, 68, 112, 112                                             # where Vision finds the face in this picture
     assert np.abs(after[y:y + h, x:x + w] - before[y:y + h, x:x + w]).mean() > 3
+
+
+PROPAINTER = Path("data/tools/propainter").resolve()
+
+
+def test_an_object_is_removed_only_where_the_operator_marks_it_and_through_the_api(tmp_path):
+    system = vq_system(tmp_path)
+    client = TestClient(create_app(system))
+    src = shaky(tmp_path / "in" / "walk.mp4")
+    subject = system.vq.subject_for_file(src)
+    system.vq.analyse(subject, denoise=False, stabilise=False)
+    drain(system)
+    recipe = system.vq_reader.recipe(subject)
+    answer = client.post(f"/api/v1/vq/recipes/{recipe.recipe_id}/shots/0/remove", json={"regions": [[100, 80, 60, 40]]})
+    assert answer.status_code == 409                                           # no ProPainter here: said, not half done
+    calls: list = []
+    system.adapters.register(_Recorder("inpaint", ("remove",), calls))
+    assert client.post(f"/api/v1/vq/recipes/{recipe.recipe_id}/shots/0/remove", json={"regions": [[600, 300, 90, 90]]}).status_code == 422
+    made = client.post(f"/api/v1/vq/recipes/{recipe.recipe_id}/shots/0/remove", json={"regions": [[100, 80, 60, 40]]}).json()["recipe_id"]
+    new = system.vq_reader.by_id(made)
+    steps = new.shots[0]["steps"]
+    remove = next(s for s in steps if s["op"] == "remove")
+    assert remove["generative"] and remove["params"]["regions"] == [[100.0, 80.0, 60.0, 40.0]] and new.status == "proposed"
+    assert [s["op"] for s in steps] == sorted((s["op"] for s in steps), key=P.ORDER.index)
+    out, rest = system.vq._prepare(src, steps, t_in=1.0, seconds=1.0, work=tmp_path / "work")
+    assert calls[0][0] == "inpaint" and calls[0][1] == str(src) and calls[0][2] == 1.0 and calls[0][3] == [[100.0, 80.0, 60.0, 40.0]]
+    assert out.is_file()
+
+
+@pytest.mark.skipif(not (PROPAINTER / "repo" / "weights" / "ProPainter.pth").is_file(), reason="ProPainter is not set up")
+def test_propainter_fills_a_square_from_the_frames_around_and_leaves_the_rest(tmp_path):
+    from nexora.adapters.propainter import ProPainter
+    from nexora.core.adapter import Request
+    tex = texture(tmp_path / "t.png", size=(480, 270), seed=9)
+    src = tmp_path / "in" / "square.mp4"
+    src.parent.mkdir(parents=True)
+    # A pan over a texture with a black square held still on top: ProPainter has the texture behind it from other frames.
+    subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-loop", "1", "-framerate", "25", "-t", "0.6", "-i", str(tex), "-vf",
+                    "crop=320:180:'20+n*3':40,drawbox=x=140:y=70:w=40:h=40:color=black:t=fill", "-c:v", "libx264", "-crf", "12", "-pix_fmt", "yuv420p", str(src)], check=True)
+    out = tmp_path / "out" / "clean.mov"
+    done = ProPainter(PROPAINTER).submit(Request("remove", inputs={"path": str(src)}, params={"out": str(out), "region": [136, 66, 48, 48]}))
+    assert done.outputs["frames"] == 15
+    frames = system_frames(out)
+    before = system_frames(src)
+    inside = np.stack([f[70:110, 140:180] for f in frames])
+    assert inside.mean() > 0.15                                                # the black square is gone, filled with texture
+    outside = np.abs(np.stack(frames)[:, :50] - np.stack(before)[:, :50]).mean()
+    assert outside < 0.02                                                      # and far from it, the picture is the source's
+
+
+def system_frames(path: Path) -> list[np.ndarray]:
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(path), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"], capture_output=True).stdout
+    return list(np.frombuffer(raw, np.uint8).reshape(-1, 180, 320, 3).astype(np.float32) / 255.0)

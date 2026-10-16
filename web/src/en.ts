@@ -1931,6 +1931,10 @@ const en: Record<string, string> = {
   "AI sinh chi tiết": "AI, makes up detail",
   " · NIQE cổ điển {0}, AI {1}": " · NIQE classic {0}, AI {1}",
   "phục hồi khuôn mặt": "restore faces",
+  "xoá vật": "remove an object",
+  "Kéo một khung trên ảnh để chọn vật cần xoá khỏi shot này.": "Drag a box on the picture to choose what to remove from this shot.",
+  "Xoá vật trong khung này": "Remove what is in this box",
+  "Đã thêm bước xoá vật; xem trước rồi duyệt.": "Removal added; preview it, then approve.",
 };
 
 export default en;

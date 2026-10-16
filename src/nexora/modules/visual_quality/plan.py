@@ -18,7 +18,7 @@ from nexora.modules.visual_quality import measure as M
 # Steps that can cost a picture more than they give; each must show on the shot's own frame that it does not make it less
 # natural (NIQE) before it stays in a recipe.
 RISKY = frozenset({"deblock", "deband", "denoise", "sharpen"})
-ORDER = ("deinterlace", "ivtc", "constant_rate", "deblock", "restore", "deband", "denoise", "tonemap", "color_transform", "levels",
+ORDER = ("deinterlace", "ivtc", "constant_rate", "deblock", "restore", "remove", "deband", "denoise", "tonemap", "color_transform", "levels",
          "deflicker", "stabilise", "sharpen", "upscale", "faces", "interpolate")
 VERSION = "1"
 # Real-ESRGAN works ×4: above this many pixels in the source its intermediate is too big to be worth it.

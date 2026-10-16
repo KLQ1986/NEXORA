@@ -1644,6 +1644,20 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         except (LookupError, IndexError):
             raise HTTPException(404, "no such step")
 
+    @app.post("/api/v1/vq/recipes/{recipe_id}/shots/{shot}/remove")
+    def vq_remove(recipe_id: str, shot: int, body: dict):
+        """The operator marks what to take out of a shot: `regions`, rectangles [x, y, w, h] in the source's pixels. A new
+        proposed version of the recipe, with the removal by ProPainter, to preview and approve like any other step."""
+        regions = body.get("regions") or ([body["region"]] if body.get("region") else [])
+        if not regions:
+            raise HTTPException(422, "regions are needed")
+        try:
+            return {"recipe_id": system.vq.add_removal(recipe_id, shot, regions)}
+        except (LookupError, IndexError):
+            raise HTTPException(404, "no such shot")
+        except AdapterError as e:
+            raise HTTPException(409 if e.code == ErrorCode.UNAVAILABLE else 422, str(e))
+
     @app.post("/api/v1/vq/jobs", status_code=201)
     def vq_job(body: dict):
         """Any file, not taken into the library: profiled, assessed and given a recipe. `options` as for an asset."""

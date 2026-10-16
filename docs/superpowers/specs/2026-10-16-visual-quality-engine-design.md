@@ -153,3 +153,62 @@ Lý do không chép thẳng mọi thứ vào môi trường chính:
 - đi qua adapter thì thay được khi bộ đo cho thấy có cái tốt hơn.
 
 Mọi thứ đưa về phải qua bộ đo lỗi giả lập trước khi thành mặc định.
+
+## 10. Đã làm và số đo (2026-10-17)
+
+### Đợt 1 (commit f435523, fc2b0f4)
+
+- Hồ sơ nguồn, nhận diện màu (LUT DJI chính thức, OCIO, HDR), đánh giá theo shot, công thức theo shot có phiên bản, xem trước có kiểm tra theo thời gian, áp vào dựng, trích xuất và bản nâng cấp.
+- 0059 (D-Log M): nhận ra Osmo Action 6 D-Log M, độ tin cao; xem trước pass.
+- Bộ đo lỗi giả lập trên một khung sạch của 0059: phát hiện 7/7, sửa có ích 7/7.
+
+### Đợt 2 (commit 0a0d3d8, 2ae2945)
+
+- Bộ xử lý khung của Apple (VTFrameProcessor, helper Swift), đo trên M4:
+  - lọc nhiễu theo thời gian: 4K, 61 khung trong 1,7 giây;
+  - nội suy 30 → 60: 4K, 61 khung trong 3,8 giây;
+  - siêu phân giải ×4: 960×540 → 3840×2160, 30 khung trong 10,9 giây.
+- Ổn định hình:
+  - `vidstab` hai lượt;
+  - Gyroflow khi file có dữ liệu con quay. Gyroflow chạy đầu tiên, trên file gốc, rồi cắt đúng số khung, vì nó render dư khoảng 3 khung sau điểm cắt.
+  - Cả 13 clip DJI trong thư viện **không** có dữ liệu con quay (quay với RockSteady bật), nên với footage này vidstab là tầng dùng được.
+- Các bước nhìn qua nhiều khung (nội suy, ổn định, deflicker, khử nhiễu) luôn chạy theo từng shot, không trộn qua điểm cắt.
+- Chạy thật trên 0002 (xem trước 3 giây, 2 phút 13 giây cả phân tích): lọc nhiễu Apple, levels, deflicker; kiểm tra theo thời gian pass.
+- Sửa lỗi phát hiện khi chạy thật:
+  - ảnh tĩnh của xem trước từng lọc nhiễu từ t tới hết file; nay chỉ chuẩn bị 1 giây quanh khung đó;
+  - khung đo từng bị phóng to lên 960 px với nguồn nhỏ, làm mất nhiễu khi đo; nay không bao giờ đo trên khung phóng to.
+
+### Đợt 3 (commit 87ec0c6, 2eb3825, 389035a và commit xoá vật)
+
+- **Ảnh HEIC và RAW:**
+  - HEIC qua `sips` của macOS, giữ EXIF và ICC;
+  - RAW qua LibRaw (`rawpy`), 16 bit, cân bằng trắng của máy. Core Image của Apple không mở được DNG của Osmo Action, LibRaw thì được: 4000×3000 trong 0,4 giây;
+  - hồ sơ ghi định dạng, số bit và máy của file gốc.
+- **Real-ESRGAN** (bản ncnn, GPU Apple qua MoltenVK), cho ảnh tĩnh:
+  - phục hồi ảnh nén nặng (×4 rồi về cỡ cũ);
+  - phóng to ảnh nhỏ tới chiều cao cần.
+  - Chỉ giữ khi NIQE tốt hơn bước cổ điển ít nhất 0,5. Khi giữ, nó thay luôn deblock, deband và khử nhiễu.
+  - Trên ảnh JPEG chất lượng 12 từ 0042: NIQE 2,68 so với 4,64 của bước cổ điển → giữ.
+  - Trên vân giả 1/f: NIQE 14,4 so với 9,3 → không giữ, dùng deblock. Đúng như thiết kế: AI không phải mặc định.
+  - Bộ đo, so AI với cổ điển: AI luôn tự nhiên hơn (NIQE) nhưng kém sát gốc hơn (PSNR, SSIM thấp hơn 0,1–2 dB), vì nó vẽ lại chi tiết. Vì thế bước này luôn gắn nhãn "AI sinh chi tiết".
+- **Phục hồi khuôn mặt (ảnh tĩnh):**
+  - Apple Vision tìm khuôn mặt và 5 điểm;
+  - CodeFormer (ONNX, môi trường riêng) vẽ lại, trộn về qua mặt nạ mềm;
+  - chỉ đề xuất cho mặt nhỏ (dưới 160 px) hoặc ảnh có nhiễu, mềm hay khối nén; chỉ giữ khi NIQE vùng mặt tốt hơn 0,5;
+  - trên khung VOA bị thu nhỏ 3 lần và nén chất lượng 25: NIQE vùng mặt 7,76 → 7,09, giữ.
+- **Xoá vật trong video (ProPainter, MPS):**
+  - người dùng kéo khung trên ảnh xem trước; không bao giờ tự đề xuất;
+  - xử lý một vùng quanh vật, gấp đôi cỡ vật, giới hạn 640×360 điểm ảnh; dán lại chỉ vùng đó lên khung gốc 10 bit;
+  - ngoài vùng xoá, sai khác với nguồn bằng đúng sai khác của riêng ProRes (trung bình 2,2 mã 10 bit).
+  - Đo trên M4 24 GB: 30 khung 640×360 mất 36–74 giây (RAFT 10 vòng, fp16). Lớn hơn diện tích đó, GPU treo quá 10 phút, nên diện tích bị giới hạn.
+  - Chất lượng: vật nhỏ trong shot ổn định thì được. Vật lớn sát ống kính trong shot cầm tay (ngón tay ở 0002) thì xoá được nhưng vùng lấp mờ thấy rõ ở 4K.
+- **Đo nhiễu và khử nhiễu, sửa sau khi bộ đo chạy trên ảnh lá cây 0042:**
+  - Cách đo cũ đọc vân lá thành nhiễu (σ 10,8 trên ảnh sạch). Nay đo theo khối 16×16 và lấy 10% khối yên nhất, nhân 1,1: cùng ảnh đọc 3,2. Footage phẳng (0059) vẫn đọc gần đúng nhiễu thật.
+  - Cường độ khử nhiễu chọn theo "method noise": phần bộ lọc bỏ đi không được vượt mức nhiễu đo được. Thử lần lượt 1,0 / 0,85 / 0,7, không xuống dưới 0,7.
+  - Kết quả: 0059 vẫn 7/7. Trên 0042 (lá dày, vốn là JPEG), nhiễu mạnh nay lợi 2,9 dB thay vì mất 1,2 dB, nhưng SSIM vẫn giảm. Khử nhiễu trên vân lá dày vẫn là giới hạn đã biết của `nlmeans`.
+
+### Chưa làm
+
+- Deblur bằng VRT/RVRT trên RunPod: cần một endpoint RunPod và chi phí, nên chờ người dùng quyết.
+- Relight / HDR cục bộ (P2).
+- TemporalQA bằng optical flow: các phép đo hiện có (nhấp nháy, trôi màu, crawl, cấu trúc) vẫn dùng.

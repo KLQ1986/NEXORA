@@ -1,5 +1,5 @@
 import { t as tr, tv } from "./i18n";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { call, post, timecode, usePoll } from "./api";
 import { Button, Tag } from "./parts";
 
@@ -10,6 +10,7 @@ import { Button, Tag } from "./parts";
 type Step = { op: string; tier?: string; params: Record<string, unknown>; why?: string; off?: boolean; generative?: boolean;
   checked?: { niqe_without?: number; niqe_with?: number; niqe_classic?: number; niqe_ai?: number } };
 type Shot = { t_start: number; t_end: number; steps: Step[]; defects: { kind: string; severity: number }[]; dropped?: { op: string; why: string }[] };
+type Box = [number, number, number, number];
 type Preview = { preview_id: string; t: number; seconds: number; qa: { verdict: string; reasons: string[]; metrics: Record<string, [number | null, number | null]> }; urls: Record<string, string> };
 type View = {
   profile: { encoding_name: string | null; encoding_confidence: string; content: string; warnings: string[]; technical: Record<string, unknown> } | null;
@@ -20,7 +21,7 @@ type View = {
 const OP: Record<string, string> = {
   color_transform: tr("chuyển màu"), tonemap: tr("HDR về SDR"), levels: tr("phơi sáng, cân bằng trắng"), denoise: tr("khử nhiễu"), sharpen: tr("làm nét"),
   deblock: tr("giảm khối nén"), deband: tr("giảm dải màu"), deflicker: tr("giảm nhấp nháy"), stabilise: tr("ổn định hình"), deinterlace: tr("khử xen kẽ dòng"),
-  constant_rate: tr("tốc độ khung cố định"), upscale: tr("phóng to"), interpolate: tr("nội suy khung"), ivtc: tr("bỏ telecine"), restore: tr("phục hồi ảnh nén"), faces: tr("phục hồi khuôn mặt"),
+  constant_rate: tr("tốc độ khung cố định"), upscale: tr("phóng to"), interpolate: tr("nội suy khung"), ivtc: tr("bỏ telecine"), restore: tr("phục hồi ảnh nén"), faces: tr("phục hồi khuôn mặt"), remove: tr("xoá vật"),
 };
 const DEFECT: Record<string, string> = {
   noise: tr("nhiễu"), soft: tr("mềm"), blocking: tr("khối nén"), banding: tr("dải màu"), underexposed: tr("thiếu sáng"), overexposed: tr("cháy sáng"),
@@ -32,6 +33,15 @@ const CONTENT: Record<string, string> = { camera: tr("footage máy quay"), scree
 export function AssetVQ({ assetId, seek }: { assetId: string; seek?: (t: number) => void }) {
   const { data, reload } = usePoll<View>(`/api/v1/assets/${assetId}/vq`, 5000);
   const [note, setNote] = useState<string | null>(null);
+  // A rectangle dragged on the "before" still, in the source's pixels: what to take out of the shot previewed.
+  const [box, setBox] = useState<Box | null>(null);
+  const drag = useRef<{ x: number; y: number } | null>(null);
+  const toSource = (e: React.MouseEvent<HTMLImageElement>): [number, number] => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const width = Number(data?.profile?.technical.width) || e.currentTarget.naturalWidth;
+    const k = width / r.width;
+    return [Math.max(0, (e.clientX - r.left) * k), Math.max(0, (e.clientY - r.top) * k)];
+  };
   const act = async (url: string, body?: object, done?: string) => {
     setNote(null);
     try { await post(url, body ?? {}); if (done) setNote(done); reload?.(); } catch (e) { setNote((e as Error).message); }
@@ -86,6 +96,24 @@ export function AssetVQ({ assetId, seek }: { assetId: string; seek?: (t: number)
             <span className="text-center text-faint">{tr("trước")}</span><span className="text-center text-faint">{tr("sau")}</span>
           </div>
           <p className="text-faint">{Object.entries(shown.qa.metrics).filter(([, v]) => v[1] != null).map(([k, [b, a]]) => `${k} ${b ?? "–"}→${a}`).join(" · ")}</p>
+          {r && shown.urls.before_video && shown.urls.before_still && (
+            <div className="grid gap-1">
+              <span className="text-faint">{tr("Kéo một khung trên ảnh để chọn vật cần xoá khỏi shot này.")}</span>
+              <div className="relative">
+                <img src={shown.urls.before_still} alt="" draggable={false} className="w-full cursor-crosshair rounded"
+                  onMouseDown={(e) => { const [x, y] = toSource(e); drag.current = { x, y }; setBox([x, y, 0, 0]); }}
+                  onMouseMove={(e) => { if (!drag.current) return; const [x, y] = toSource(e); const o = drag.current;
+                    setBox([Math.min(o.x, x), Math.min(o.y, y), Math.abs(x - o.x), Math.abs(y - o.y)]); }}
+                  onMouseUp={() => { drag.current = null; }} />
+                {box && box[2] > 0 && (() => { const width = Number(p?.technical.width) || 1, height = Number(p?.technical.height) || 1;
+                  return <div className="pointer-events-none absolute border-2 border-tally" style={{ left: `${box[0] / width * 100}%`, top: `${box[1] / height * 100}%`,
+                    width: `${box[2] / width * 100}%`, height: `${box[3] / height * 100}%` }} />; })()}
+              </div>
+              {box && box[2] > 8 && box[3] > 8 && (
+                <Button size="sm" onClick={() => { const k = r.shots.findIndex((s) => s.t_start <= shown.t && shown.t <= Math.max(s.t_end, s.t_start));
+                  act(`/api/v1/vq/recipes/${r.recipe_id}/shots/${Math.max(0, k)}/remove`, { regions: [box.map(Math.round)] }, tr("Đã thêm bước xoá vật; xem trước rồi duyệt."));
+                  setBox(null); }}>{tr("Xoá vật trong khung này")}</Button>)}
+            </div>)}
         </div>
       )}
     </details>
