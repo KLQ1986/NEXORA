@@ -116,3 +116,19 @@ Mỗi đợt: test tự động, chạy thật trên **một** nguồn mỗi lo�
 - Khi tới đợt 1: một video iPhone (HLG) hoặc một clip stock, để thử nguồn thứ hai.
 
 Đã sẵn sàng: `ffmpeg-full` (`zscale`, `libplacebo`, `vidstab`, `libvmaf`) được NEXORA dùng qua `ffmpeg_binary`.
+
+## 8. Khớp với kiến trúc NEXORA (đối chiếu với code, 2026-10-16)
+
+1. **Công cụ ngoài là adapter.** Helper Swift cho Apple `VTFrameProcessor` (giống `adapters/apple_see.swift`), Gyroflow (CLI), OpenColorIO, về sau ProPainter/RIFE/SPAN và RunPod (adapter `RunPodUpscale` đã có) đều nằm ở lớp `adapters`, đăng ký trong `AdapterRegistry` với tên năng lực: `ffmpeg`, `apple_frames`, `gyroflow`, `color`, `restore_local`, `restore_remote`. `modules/visual_quality` chỉ gọi theo tên năng lực; adapter nào vắng thì bước đó báo không làm được, không làm hỏng cả công thức.
+2. **Việc dài chạy bằng pipeline của orchestrator**: `vq.profile` (hồ sơ nguồn, phân loại, đánh giá, bản đồ lỗi), `vq.plan`, `vq.preview`, `vq.apply`, có stage, lane nền, thử lại, huỷ, và hiện trên màn hình Tiến trình. CLI `nexora vq` và API chỉ gửi việc. Asset trong thư viện dùng `asset_id` làm `subject_ref`; file ngoài thư viện dùng mã job `vqj_…`.
+3. **Đọc và ghi tách nhau, như Video Intelligence**:
+   - `core/visual_quality.py` là bộ đọc: các module khác (`edit`, `library`) đọc công thức đã duyệt từ đây.
+   - `core/visual_quality_store.py` là bộ ghi.
+   - Import-linter: thêm `nexora.modules.visual_quality` vào luật "module domain không import nhau"; thêm luật cấm mọi module khác import `core.visual_quality_store`.
+4. **Một mối cho chất lượng hình.** Hai chỗ đang làm việc này sẽ chuyển về VQ:
+   - Pipeline `library.enhance` (phóng to lanczos, làm mượt khung bằng `minterpolate`) thành công thức của VQ. Nút trên giao diện giữ nguyên, chỉ gọi sang VQ.
+   - Trong "treat" của khâu dựng, phần chuyển HDR → SDR (`color_transfer`) và ổn định (`stabilise`) được thay bằng công thức đã duyệt của VQ cho đoạn đó. Khi chưa có công thức, khâu dựng giữ cách cũ, để không có gì hỏng trong lúc chuyển.
+5. **Bổ sung cho thiết kế v4.0.**
+   - v4.0 đặt "enhancement" (LUT, khử nhiễu, phóng to, ổn định) trong nhóm công cụ dựng, gọi qua OpenMontage.
+   - Nay đó là một domain riêng, vì nó nhận mọi nguồn, chạy cả ngoài thư viện, và có thước đo riêng.
+   - Ranh giới với `modules/quality`: `quality` kiểm tra **bản dựng** (QC, review, quyền, độ đúng của các trường), còn `visual_quality` lo **chất lượng hình của nguồn**.
