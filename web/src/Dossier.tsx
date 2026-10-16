@@ -2,6 +2,7 @@ import { t as tr, tv } from "./i18n";
 import { useState } from "react";
 import { post, timecode, usePoll } from "./api";
 import { Button, Tag } from "./parts";
+import { AssetVQ } from "./VisualQuality";
 
 /* The dossier of a recording (design 2026-10-15, section 9 B): everything learnt about it, and a word on every beat, can its
    picture and its sound be used, and what it could serve as in a cut. The grades come from what was measured. */
@@ -35,6 +36,7 @@ export function AssetDossier({ assetId, seek }: { assetId: string; seek?: (t: nu
   if (!data) return null;
   const v = data.verdict;
   return (
+    <>
     <details className="rounded-lg border border-line bg-raised/30 p-2.5 text-[12.5px]">
       <summary className="cursor-pointer list-none"><span className="eyebrow">{tr("Hồ sơ nguyên liệu")}</span>
         <span className="ml-2 text-faint">{tv`dùng được ${v.usable_seconds}s, dùng tạm ${v.careful_seconds}s, lỗi ${v.unusable_seconds}s`}</span></summary>
@@ -66,5 +68,7 @@ export function AssetDossier({ assetId, seek }: { assetId: string; seek?: (t: nu
         ))}
       </ol>
     </details>
+    <AssetVQ assetId={assetId} seek={seek} />
+    </>
   );
 }

@@ -22,7 +22,7 @@ VERSION = "1"
 TARGET_MIDTONE = 0.45
 
 
-def exposure_balance(look: dict, *, content: str) -> dict | None:
+def exposure_balance(look: dict, *, content: str, parts: frozenset[str] = frozenset({"black", "white", "wb", "gamma", "saturation"})) -> dict | None:
     """Levels for a shot from its display measures: black and white points, white balance (half the cast, at most 7%),
     a midtone gamma towards a mid grey, a little colour for a dull picture. None when nothing is worth changing.
     A dark picture with bright highlights is taken for a low-key scene (night, a lamp) and only lifted a little."""
@@ -32,13 +32,13 @@ def exposure_balance(look: dict, *, content: str) -> dict | None:
     black = 0.0
     # Lifted blacks are a dark end that never reaches black (log, haze, a flat grade), not a bright picture: a white card or
     # a high-key scene has a high darkest tone because it has no dark tones at all.
-    if 0.06 < p01 < 0.25 and p50 < 0.65:
+    if "black" in parts and 0.06 < p01 < 0.25 and p50 < 0.65:
         black = round(p01 * 0.7, 4); why.append(f"đen bị nâng ({p01:.2f})")
     white = 1.0
-    if p99 < 0.88 and clip_hi < 0.002:
+    if "white" in parts and p99 < 0.88 and clip_hi < 0.002:
         white = round(max(p99 + 0.03, 0.75), 4); why.append(f"sáng nhất chỉ tới {p99:.2f}")
     gains = [1.0, 1.0, 1.0]
-    if content not in ("screen", "graphics"):
+    if "wb" in parts and content not in ("screen", "graphics"):
         cr, cb = look.get("cast_r", 1.0), look.get("cast_b", 1.0)
         if abs(cr - 1) > 0.06 or abs(cb - 1) > 0.06:
             gains = [min(1.07, max(0.93, (1.0 / cr) ** 0.5)), 1.0, min(1.07, max(0.93, (1.0 / cb) ** 0.5))]
@@ -46,13 +46,13 @@ def exposure_balance(look: dict, *, content: str) -> dict | None:
     # Midtones after the new black and white points.
     mid = (p50 - black) / max(white - black, 1e-3)
     gamma = 1.0
-    if abs(mid - TARGET_MIDTONE) > 0.08 and 0.02 < mid < 0.98:
+    if "gamma" in parts and abs(mid - TARGET_MIDTONE) > 0.08 and 0.02 < mid < 0.98:
         gamma = math.log(mid) / math.log(TARGET_MIDTONE)
         low_key = mid < 0.25 and p99 > 0.9
         gamma = min(gamma, 1.15) if low_key else gamma
         gamma = round(min(1.4, max(0.75, gamma)), 3)
         why.append(("cảnh tối có vùng sáng: chỉ nâng nhẹ" if low_key else "trung tông lệch") + f" ({mid:.2f} → gamma {gamma})")
-    saturation = 1.12 if sat < 0.11 and content not in ("screen", "graphics") else 1.0
+    saturation = 1.12 if "saturation" in parts and sat < 0.06 and content not in ("screen", "graphics") else 1.0
     if saturation != 1.0:
         why.append(f"màu nhạt ({sat:.2f})")
     if not why:
@@ -109,15 +109,16 @@ def plan_shot(shot: dict, *, profile: dict, colour: list[dict], have: set[str], 
     if sev.get("blocking", 0) > 0 and "ffmpeg:deblock" in have:
         steps.append({"op": "deblock", "tier": "ffmpeg", "params": {}, "why": f"khối nén ({shot['scores']['blockiness']})"})
     if sev.get("banding", 0) > 0 and "ffmpeg:deband" in have:
-        steps.append({"op": "deband", "tier": "ffmpeg", "params": {"threshold": round(0.008 + 0.012 * sev["banding"], 4)}, "why": "dải màu"})
+        steps.append({"op": "deband", "tier": "ffmpeg", "params": {"threshold": round(0.02 + 0.02 * sev["banding"], 4), "range": 24}, "why": "dải màu"})
     if camera_like and sev.get("noise", 0) > 0 and options.get("denoise", True):
-        strength = round(min(0.6, max(0.15, 0.15 + 0.45 * sev["noise"])), 2)
+        sigma = float(shot["scores"]["noise"])
         if "apple_vt" in have and not still:
-            steps.append({"op": "denoise", "tier": "apple_vt", "params": {"strength": strength}, "why": f"nhiễu {shot['scores']['noise']} (lọc theo thời gian)"})
+            strength = round(min(1.0, max(0.2, sigma / 12.0)), 2)
+            steps.append({"op": "denoise", "tier": "apple_vt", "params": {"strength": strength, "sigma": sigma}, "why": f"nhiễu {sigma} (lọc theo thời gian)"})
         elif "ffmpeg:nlmeans" in have and still:
-            steps.append({"op": "denoise", "tier": "ffmpeg", "params": {"strength": strength, "method": "nlmeans"}, "why": f"nhiễu {shot['scores']['noise']}"})
+            steps.append({"op": "denoise", "tier": "ffmpeg", "params": {"sigma": sigma, "method": "nlmeans"}, "why": f"nhiễu {sigma}"})
         elif "ffmpeg:hqdn3d" in have:
-            steps.append({"op": "denoise", "tier": "ffmpeg", "params": {"strength": strength}, "why": f"nhiễu {shot['scores']['noise']}"})
+            steps.append({"op": "denoise", "tier": "ffmpeg", "params": {"sigma": sigma}, "why": f"nhiễu {sigma} (lọc theo không gian và thời gian)"})
     steps += [dict(s) for s in colour]
     lv = exposure_balance(shot["display"], content=content) if options.get("exposure", True) else None
     if lv and "ffmpeg:lut3d" in have:
@@ -132,7 +133,7 @@ def plan_shot(shot: dict, *, profile: dict, colour: list[dict], have: set[str], 
         elif "ffmpeg:vidstabdetect" in have:
             steps.append({"op": "stabilise", "tier": "vidstab", "params": {"smoothing": 15, "zoom": 0}, "why": f"rung {shot['scores']['shake']}px"})
     if camera_like and sev.get("soft", 0) > 0 and options.get("sharpen", True) and "ffmpeg:cas" in have:
-        steps.append({"op": "sharpen", "tier": "ffmpeg", "params": {"strength": round(0.2 + 0.3 * sev["soft"], 2)}, "why": f"mềm (độ nét {shot['scores']['sharpness']})"})
+        steps.append({"op": "sharpen", "tier": "ffmpeg", "params": {"strength": round(0.15 + 0.2 * sev["soft"], 2)}, "why": f"mềm (độ nét {shot['scores']['sharpness']})"})
     target_h = options.get("target_height")
     height = int(tech.get("display_height") or tech.get("height") or 0)
     if target_h and height and target_h > height * 1.2:

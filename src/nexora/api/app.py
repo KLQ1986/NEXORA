@@ -1670,6 +1670,13 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             raise HTTPException(409, "Chưa có công thức nào được duyệt")
         return {"run_id": system.vq.apply(subject, out=body["out"], master=bool(body.get("master")))}
 
+    @app.post("/api/v1/vq/subjects/{subject}/bench")
+    def vq_bench(subject: str, body: dict | None = None):
+        """The engine measured on a clean frame of this subject, damaged on purpose: is each damage found, and undone?"""
+        if system.vq_reader.profile(subject) is None:
+            raise HTTPException(404, "Chưa có hồ sơ nguồn của mục này")
+        return system.vq.benchmark(subject, t=(body or {}).get("t"))
+
     @app.get("/api/v1/vq/files/{subject}/{folder}/{name}")
     def vq_file(subject: str, folder: str, name: str):
         root = (system.data_dir / "vq").resolve()

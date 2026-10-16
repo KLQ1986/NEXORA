@@ -25,8 +25,9 @@ def _slug(text: str) -> str:
 
 
 class Extractor:
-    def __init__(self, assets: AssetStore, adapters: AdapterRegistry, vi: VideoIntelligence, out_dir: str | Path):
+    def __init__(self, assets: AssetStore, adapters: AdapterRegistry, vi: VideoIntelligence, out_dir: str | Path, *, vq=None):
         self._assets, self._adapters, self._vi, self._out = assets, adapters, vi, Path(out_dir)
+        self._vq = vq                                 # Visual Quality's reader: a piece is taken out with its approved recipe
 
     def card(self, asset_id: str, t_in: float, t_out: float) -> dict:
         """What is known about a stretch, from the canonical model: what it shows, how it was graded, where it comes from."""
@@ -58,19 +59,34 @@ class Extractor:
         folder = self._out / asset_id / _slug(label)
         folder.mkdir(parents=True, exist_ok=True)
         card = self.card(asset_id, t_in, t_out)
+        source, offset, vq_filters = path, 0.0, []
+        if self._vq is not None:
+            found = self._vq.filters_for(asset_id, t_in, t_out)
+            recipe = self._vq.recipe(asset_id, status="approved")
+            if found is None:
+                prepared = self._vq.prepared_for(asset_id, t_in, t_out)
+                if prepared is not None:
+                    source, offset = Path(prepared[0]), prepared[1] - t_in
+            else:
+                vq_filters = found
+            if recipe is not None and (vq_filters or source != path):
+                card["visual_quality"] = {"recipe_id": recipe.recipe_id, "version": recipe.version, "colour": recipe.data.get("output", {}).get("colour")}
         files = {}
         for kind in kinds:
             if kind not in KINDS or (kind == "audio" and not probe.get("has_audio")):
                 continue
             out = folder / f"{kind}{SUFFIX[kind]}"
-            params = {"kind": kind, "out": str(out), "t_in": t_in, "t_out": t_out, "bit_depth": probe.get("bit_depth"),
-                      **{k: probe.get(k) for k in ("color_transfer", "color_primaries", "color_space", "color_range")}}
+            colour = (card.get("visual_quality") or {}).get("colour") or {k: probe.get(k) for k in ("color_transfer", "color_primaries", "color_space")}
+            params = {"kind": kind, "out": str(out), "t_in": t_in + offset, "t_out": t_out + offset, "bit_depth": probe.get("bit_depth"),
+                      "color_range": probe.get("color_range"), **colour, "filters": vq_filters}
             if kind == "still":
                 best = self._vi.value(asset_id, (t_in, t_out), "best_frame")
                 at = best.value if best is not None and t_in <= float(best.value) < t_out else (t_in + t_out) / 2
                 params["at"] = at
                 card["still_at"] = at
-            self._adapters.submit("ffmpeg", Request("extract", inputs={"path": str(path)}, params=params))
+            if kind == "still":
+                params["at"] = params["at"] + offset
+            self._adapters.submit("ffmpeg", Request("extract", inputs={"path": str(source)}, params=params))
             files[kind] = str(out)
         card["files"] = {k: Path(p).name for k, p in files.items()}
         (folder / "card.json").write_text(json.dumps(card, ensure_ascii=False, indent=2))

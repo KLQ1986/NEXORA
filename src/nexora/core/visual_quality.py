@@ -88,8 +88,8 @@ def step_filters(step: dict) -> list[str] | None:
     if op == "deband":
         # Gentle and without blur: on a frame with little real banding, blur=1 and a high threshold cost more naturalness
         # than they give (measured on a web interview, NIQE 7.5 → 9.7 at 0.02 with blur).
-        t = _num(p.get("threshold", 0.01), 0.003, 0.05)
-        return [f"deband=1thr={t:.3f}:2thr={t:.3f}:3thr={t:.3f}:range={int(p.get('range', 16))}:blur={1 if p.get('blur') else 0}"]
+        t = _num(p.get("threshold", 0.02), 0.003, 0.06)
+        return [f"deband=1thr={t:.3f}:2thr={t:.3f}:3thr={t:.3f}:range={int(p.get('range', 24))}:blur={1 if p.get('blur') else 0}"]
     if op == "tonemap":
         # HDR to SDR: linear light, the BT.709 primaries, a tone curve, then the BT.709 transfer.
         return [f"zscale=t=linear:npl={int(p.get('peak', 100))}", "format=gbrpf32le", "zscale=p=bt709",
@@ -115,10 +115,13 @@ def step_filters(step: dict) -> list[str] | None:
             eq.append(f"contrast={_num(p['contrast'], 0.7, 1.4):.3f}")
         return f + ([f"eq={':'.join(eq)}"] if eq else [])
     if op == "denoise":
-        s = _num(p.get("strength", 0.3), 0.0, 1.0)
+        # Set by the noise measured (`sigma`, 0..255), not by a fixed strength: measured on a clean frame of the library with
+        # noise added, nlmeans at s ≈ 1.1 × sigma took PSNR from 26.6 to 36.2 (sigma 12) and from 20.3 to 32.0 (sigma 25),
+        # where a fixed small s did nothing (Visual Quality benchmark, 2026-10-17). `strength` scales it (0..2).
+        sigma = _num(p.get("sigma", 4.0), 0.5, 40.0) * _num(p.get("strength", 1.0), 0.0, 2.0)
         if p.get("method") == "nlmeans":
-            return [f"nlmeans=s={1.0 + 5.0 * s:.2f}:p=7:r=15"]
-        return [f"hqdn3d={2 + 6 * s:.2f}:{1.5 + 4.5 * s:.2f}:{3 + 9 * s:.2f}:{2.25 + 6.75 * s:.2f}"]
+            return [f"nlmeans=s={_num(1.1 * sigma, 1.0, 30.0):.2f}:p=7:r=15"]
+        return [f"hqdn3d={1.2 * sigma:.2f}:{0.9 * sigma:.2f}:{1.8 * sigma:.2f}:{1.35 * sigma:.2f}"]
     if op == "sharpen":
         return [f"cas=strength={_num(p.get('strength', 0.3), 0.0, 1.0):.3f}"]
     if op == "deflicker":
@@ -219,6 +222,21 @@ class VisualQuality:
         if recipe is None:
             return []
         return filters_of(steps)
+
+    def whole_filters(self, subject: str) -> tuple[Recipe | None, list[str]]:
+        """Filters an approved recipe puts on a whole file at once: every step when all shots share the same FFmpeg-only steps,
+        else the colour steps they all share (a camera's transform is the same in every shot; exposure is not)."""
+        recipe = self.recipe(subject, status="approved")
+        if recipe is None or not recipe.shots:
+            return None, []
+        per_shot = [[s for s in shot.get("steps", []) if not s.get("off")] for shot in recipe.shots]
+        if all(json.dumps(x, sort_keys=True) == json.dumps(per_shot[0], sort_keys=True) for x in per_shot):
+            whole = filters_of(per_shot[0])
+            if whole is not None:
+                return recipe, whole
+        shared = [s for s in per_shot[0] if s.get("op") in ("tonemap", "color_transform")
+                  and all(any(json.dumps(s, sort_keys=True) == json.dumps(t, sort_keys=True) for t in x) for x in per_shot)]
+        return recipe, filters_of(shared) or []
 
     def prepared_for(self, subject: str, t_in: float, t_out: float) -> tuple[str, float] | None:
         """A file the engine rendered with the approved recipe that covers a stretch, and where the stretch starts in it."""

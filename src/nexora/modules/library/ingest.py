@@ -54,6 +54,7 @@ class Library:
     def __init__(self, orch: Orchestrator, assets: AssetStore, adapters: AdapterRegistry, media_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3):
         self._orch, self._assets, self._adapters = orch, assets, adapters
         self._min_free = min_free_bytes
+        self.vq = None                   # Visual Quality's reader, handed over by the composition root: an enhanced copy carries the approved recipe
         self.on_taken_in = []                        # called with an asset id once a file has been taken in
         self.on_note = []                            # called with an asset id and the operator's note when it changes
         self._media = Path(media_dir)
@@ -110,10 +111,26 @@ class Library:
         wanted = original.metadata.get("enhance") or {}
         if shutil.disk_usage(self._media).free < self._min_free:
             raise AdapterError(ErrorCode.INSUFFICIENT_STORAGE, f"less than {self._min_free} bytes free for derived media")
-        out = self._derived_path(original, f"_enhanced_{wanted.get('upscale', 1)}x_{wanted.get('smooth_fps') or 0}.mp4")
-        self._adapters.submit("ffmpeg", Request("enhance", inputs={"path": str(path)}, params={"out": str(out), **wanted, "color_transfer": original.metadata.get("probe", {}).get("color_transfer")}, attempt_id=ctx.claim.attempt_id))
-        version_id = self._assets.add_version(ctx.subject_ref, out, role="enhanced", parents=[original.version_id], attempt_id=ctx.claim.attempt_id, metadata=wanted)
-        return {"enhanced_version_id": version_id, **wanted}
+        # Visual Quality's steps and the recording's approved recipe (design 2026-10-16 §8): one definition of each step, one
+        # recipe for a recording, whatever makes the copy.
+        from nexora.core.visual_quality import step_filters
+        recipe, graded = self.vq.whole_filters(ctx.subject_ref) if self.vq is not None else (None, [])
+        steps = ([{"op": "upscale", "params": {"factor": int(wanted["upscale"])}}] if int(wanted.get("upscale") or 1) > 1 else []) + \
+                ([{"op": "interpolate", "params": {"fps": int(wanted["smooth_fps"])}}] if wanted.get("smooth_fps") else [])
+        chain = graded + [f for st in steps for f in (step_filters(st) or [])]
+        tag = f"_v{recipe.version}" if recipe and graded else ""
+        out = self._derived_path(original, f"_enhanced_{wanted.get('upscale', 1)}x_{wanted.get('smooth_fps') or 0}{tag}.mp4")
+        probe = original.metadata.get("probe", {})
+        if graded:
+            colour = (recipe.data.get("output") or {}).get("colour") or {}
+            self._adapters.submit("ffmpeg", Request("vq_render", inputs={"path": str(path)}, params={"kind": "video", "out": str(out), "filters": chain, "colour": colour},
+                                                   attempt_id=ctx.claim.attempt_id))
+        else:
+            self._adapters.submit("ffmpeg", Request("enhance", inputs={"path": str(path)}, params={"out": str(out), **wanted, "color_transfer": probe.get("color_transfer")},
+                                                   attempt_id=ctx.claim.attempt_id))
+        meta = {**wanted, **({"visual_quality": recipe.recipe_id} if recipe and graded else {})}
+        version_id = self._assets.add_version(ctx.subject_ref, out, role="enhanced", parents=[original.version_id], attempt_id=ctx.claim.attempt_id, metadata=meta)
+        return {"enhanced_version_id": version_id, **meta}
 
     def find_missing_cuts(self) -> list[str]:
         """Look for scene cuts in every video that was taken in before cuts were looked for. Runs with the background work,

@@ -348,7 +348,9 @@ class FFmpegAdapter(Adapter):
                      f"zoompan=z='1+0.08*on/{frames}':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d={frames}:s={w}x{h}:fps={fps}")
         before = []
         if not still and src is not None:
-            before += self._sdr(params)
+            # An approved Visual Quality recipe for the stretch comes first and does the colour (its tone map included); without
+            # one, HDR is brought to SDR here as before.
+            before += list(params.get("vq_filters") or []) or self._sdr(params)
             if speed != 1.0:
                 before.append(f"setpts=PTS/{speed}")
             if params.get("stabilise"):
@@ -361,7 +363,8 @@ class FFmpegAdapter(Adapter):
         for k, ins in enumerate(params.get("inserts") or []):
             at, ipath = float(ins["at"]), Path(ins["path"])
             args += (["-loop", "1"] if ipath.suffix.lower() in IMAGE_EXT else ["-ss", str(ins.get("t_in", 0.0))]) + ["-t", str(round(d - at, 2)), "-i", str(ipath)]
-            chain += (f";[{n}:v]{cover(0.5) if filling else fitted},setsar=1,fps={fps},setpts=PTS-STARTPTS+{at}/TB[i{k}]"
+            own = ",".join(ins.get("vq_filters") or [])
+            chain += (f";[{n}:v]{own + ',' if own else ''}{cover(0.5) if filling else fitted},setsar=1,fps={fps},setpts=PTS-STARTPTS+{at}/TB[i{k}]"
                       f";[{last}][i{k}]overlay=enable='gte(t,{at})':eof_action=pass[b{k}]")
             n, last = n + 1, f"b{k}"
         if params.get("overlay"):
@@ -502,8 +505,9 @@ class FFmpegAdapter(Adapter):
         a still of HDR footage is brought to SDR, since a JPEG cannot hold it."""
         out, kind = Path(params["out"]), params["kind"]
         out.parent.mkdir(parents=True, exist_ok=True)
+        given = list(params.get("filters") or [])               # an approved Visual Quality recipe for the stretch
         if kind == "still":
-            vf = self._sdr(params)
+            vf = given or self._sdr(params)
             self._run(["-y", "-ss", str(params["at"]), "-i", str(src), "-frames:v", "1", *(["-vf", ",".join(vf)] if vf else []), "-q:v", "2", str(out)], timeout, "still")
         else:
             t_in, t_out = float(params["t_in"]), float(params["t_out"])
@@ -520,7 +524,8 @@ class FFmpegAdapter(Adapter):
                 codes = [f"{name}={H273[key].get(str(params.get(key)))}" for key, name in (("color_primaries", "colour_primaries"),
                          ("color_transfer", "transfer_characteristics"), ("color_space", "matrix_coefficients")) if H273[key].get(str(params.get(key)))]
                 colour = ["-bsf:v", "hevc_metadata=" + ":".join(codes)] if codes else []
-                args = [*span, "-map", "0:v:0", "-map", "0:a:0?", *video, *colour, "-c:a", "aac", "-b:a", "256k", "-map_metadata", "0", "-movflags", "+faststart", str(out)]
+                args = [*span, "-map", "0:v:0", "-map", "0:a:0?", *(["-vf", ",".join(given)] if given else []), *video, *colour, "-c:a", "aac", "-b:a", "256k",
+                        "-map_metadata", "0", "-movflags", "+faststart", str(out)]
                 try:
                     self._run(args, timeout, "clip")
                 except AdapterError:

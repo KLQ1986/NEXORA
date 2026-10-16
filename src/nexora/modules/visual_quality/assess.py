@@ -25,7 +25,7 @@ THRESHOLDS = {
     "flicker": (1.2, 3.0),             # luma jitter, 0..255
     "shake": (1.5, 4.0),               # px of jitter at 480 wide
     "cast": (0.06, 0.14),              # departure of red/green or blue/green from 1
-    "dull": (0.11, 0.06),              # saturation: below is dull (reversed)
+    "dull": (0.06, 0.03),              # saturation: below is dull (reversed); a grey room is low in colour and not at fault
     "flat": (0.32, 0.22),              # contrast: below is flat (reversed)
 }
 
@@ -58,7 +58,10 @@ class ShotScore:
 def defects_of(shot: ShotScore, *, content: str, frame: np.ndarray | None = None) -> list[dict]:
     """What is wrong with a shot, worst first. Screens and graphics are not held to camera measures (no noise, no softness)."""
     lk = shot.look
-    raw = {"noise": lk.noise, "soft": lk.sharpness, "blocking": lk.blockiness, "banding": lk.banding, "underexposed": lk.luma_p50,
+    # Dark is a low middle, or a picture whose brightest part never gets bright (a stop or more under, measured on the
+    # benchmark: the middle alone missed it).
+    dark = min(lk.luma_p50, lk.luma_p99 * 0.4)
+    raw = {"noise": lk.noise, "soft": lk.sharpness, "blocking": lk.blockiness, "banding": lk.banding, "underexposed": dark,
            "overexposed": lk.clipped_high, "crushed": lk.clipped_low, "flicker": shot.flicker, "shake": shot.shake,
            "cast": max(abs(lk.cast_r - 1.0), abs(lk.cast_b - 1.0)), "dull": lk.saturation, "flat": lk.contrast}
     if content in ("screen", "graphics"):

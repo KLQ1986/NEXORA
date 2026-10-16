@@ -46,6 +46,7 @@ def main() -> None:
     p.add_argument("--no-exposure", action="store_true")
     p.add_argument("--master", action="store_true", help="ProRes 422 HQ instead of HEVC 10-bit")
     p.add_argument("--json", action="store_true", help="print the whole profile and recipe as JSON")
+    p.add_argument("--bench", action="store_true", help="also measure the engine on a clean frame of this file, damaged on purpose")
     args = parser.parse_args()
     if args.command == "init-config":
         target = Path(args.config)
@@ -216,6 +217,9 @@ def _vq(system, args) -> None:
         print(f"  xem trước: {shown['qa']['verdict']}" + (f" ({'; '.join(shown['qa']['reasons'])})" if shown["qa"]["reasons"] else ""))
         for name, path in shown["files"].items():
             print(f"      {name}: {path}")
+    if args.bench:
+        from nexora.modules.visual_quality.benchmark import table
+        print("  " + table(system.vq.benchmark(subject)).replace("\n", "\n  "))
     if args.out:
         wait(system.vq.apply(subject, out=args.out, master=args.master))
         print(f"  đã ghi: {args.out}")

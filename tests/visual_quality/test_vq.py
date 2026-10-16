@@ -210,3 +210,55 @@ def test_an_asset_of_the_library_uses_video_intelligence_shots_and_the_api_shows
     drain(system)
     assert client.get(f"/api/v1/vq/jobs/{job['subject']}").json()["profile"]["encoding"] == "dji_osmo_action6_dlogm"
     assert client.post("/api/v1/vq/jobs", json={"path": "/no/such/file.mov"}).status_code == 404
+
+
+def test_an_extract_and_a_cut_take_the_approved_recipe_and_only_that(tmp_path):
+    system = vq_system(tmp_path)
+    asset, _ = system.library.ingest(fake_dlogm(tmp_path / "in" / "lib.mov"))
+    drain(system)
+    plain = system.extractor.extract(asset, 0.5, 1.5, kinds=("still",))
+    assert "visual_quality" not in plain["card"]                          # no recipe yet: as it was
+    system.vq.analyse(system.vq.subject_for_asset(asset))
+    drain(system)
+    recipe = system.vq_reader.recipe(asset)
+    assert "visual_quality" not in system.extractor.extract(asset, 0.5, 1.5, kinds=("still",))["card"]   # proposed is not approved
+    system.vq.approve(recipe.recipe_id)
+    graded = system.extractor.extract(asset, 0.5, 1.5, kinds=("clip",), name="graded")
+    assert graded["card"]["visual_quality"]["recipe_id"] == recipe.recipe_id
+    tags = json.loads(subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=color_transfer", "-of", "json",
+                                      graded["files"]["clip"]], capture_output=True, text=True).stdout)["streams"][0]
+    assert tags["color_transfer"] == "bt709"
+    treat: dict = {"color_transfer": "arib-std-b67"}
+    path = str(system.assets.path_of(system.assets.original(asset)))
+    _, _, key = system.edit._apply_vq(asset, path, 0.5, 1.0, "sum", treat)
+    assert any(f.startswith("lut3d") for f in treat["vq_filters"]) and treat["color_transfer"] is None and key == "sum"
+
+
+def test_an_enhanced_copy_carries_the_approved_recipe_with_the_same_steps(tmp_path):
+    system = vq_system(tmp_path)
+    asset, _ = system.library.ingest(fake_dlogm(tmp_path / "in" / "lib.mov", 2))
+    drain(system)
+    system.vq.analyse(system.vq.subject_for_asset(asset), approve=True)
+    drain(system)
+    recipe, whole = system.vq_reader.whole_filters(asset)
+    assert recipe is not None and any(f.startswith("lut3d") for f in whole)
+    system.library.enhance(asset, upscale=2)
+    drain(system)
+    enhanced = next(v for v in system.assets.versions(asset) if v.role == "enhanced")
+    assert enhanced.metadata["visual_quality"] == recipe.recipe_id and f"_v{recipe.version}" in enhanced.relative_path
+    size = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0",
+                           str(system.assets.path_of(enhanced))], capture_output=True, text=True).stdout.strip()
+    assert size == "1280,720"
+
+
+def test_the_benchmark_finds_each_damage_and_its_step_undoes_it(tmp_path):
+    from nexora.modules.visual_quality import benchmark as B
+    system = vq_system(tmp_path)
+    clean = np.asarray(Image.open(texture(tmp_path / "clean.png", size=(640, 400), seed=5)).convert("RGB"), np.float32) / 255
+    clean = D.blur(clean, 0.8)
+    made = B.run(system.adapters, clean, cases=["noise", "jpeg", "dark", "cast"], lut_dir=tmp_path / "luts")
+    by = {r["case"]: r for r in made["rows"]}
+    assert by["noise"]["found"] and by["noise"]["psnr_fixed"] > by["noise"]["psnr_bad"] + 3
+    assert by["jpeg"]["found"] and by["jpeg"]["helps"]
+    assert by["dark"]["helps"] and by["cast"]["helps"]
+    assert "Phát hiện đúng" in B.table(made)

@@ -519,6 +519,7 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     vq = VisualQualityService(orch, assets, adapters, VisualQualityStore(db_path), vq_reader, data_dir / "vq", data_dir / "luts",
                               shots_of=lambda asset_id: [(s.t_start, s.t_end) for s in vi.segments(asset_id, "shot")])
     vq.register(registry)
+    library.vq = vq_reader
     projects = ProjectStore(db_path)
     planning = Planning(projects, assets, index, adapters)
     sourcing = Sourcing(orch, projects, index, threshold=match_threshold, adapters=adapters, judge=judge and model is not None, rejected=assets.rejected,
@@ -528,7 +529,7 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     sourcing.register(registry)
     intelligence.on_understood.append(lambda asset_id: [sourcing.refine_from_asset(shot_id, asset_id) for shot_id in sourcing.pending_for(asset_id)])
     edit = Edit(orch, projects, assets, adapters, data_dir / "media", voice=voice is not None, voice_name=voice_name, reviewer=review_cut, model=model is not None,
-                inspector={"file": picture_and_sound, "captions": caption_findings})
+                inspector={"file": picture_and_sound, "captions": caption_findings}, vq=vq_reader)
     edit.register(registry)
     if stock is not None:
         adapters.register(stock)
@@ -558,7 +559,7 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     system.intelligence, system.vi = intelligence, vi
     system.vq, system.vq_reader = vq, vq_reader
     from nexora.modules.library.extract import Extractor
-    system.extractor = Extractor(assets, adapters, vi, data_dir / "exports" / "assets")
+    system.extractor = Extractor(assets, adapters, vi, data_dir / "exports" / "assets", vq=vq_reader)
     system.roughcut = RoughCut(projects, assets, index)
     system.commands = Commands(adapters, projects, sourcing, edit)
     system.viewer = Viewer(projects, adapters, data_dir / "media") if model is not None else None

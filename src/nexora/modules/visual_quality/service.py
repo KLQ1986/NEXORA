@@ -415,6 +415,25 @@ class VisualQualityService:
             self.store.finish_request(request["request_id"], "done", result)
         return result
 
+    def benchmark(self, subject: str, *, t: float | None = None) -> dict:
+        """The engine measured on one clean frame of a subject (its graded look), damaged on purpose; kept with the subject."""
+        from nexora.modules.visual_quality import benchmark as B
+        profile = self.reader.profile(subject)
+        if profile is None:
+            raise LookupError(subject)
+        path = self.path_of(subject)
+        colour, _ = self.colour_steps(profile)
+        when = t if t is not None else float(profile["technical"].get("duration") or 0.0) / 2
+        frame = self.profiler._still(path, t=when, subject=subject, filters=filters_of(colour) or [], width=1280)
+        if frame is None:
+            raise AdapterError(ErrorCode.INVALID_REQUEST, "no frame to measure on", retryable=False)
+        h, w = frame.shape[:2]
+        crop = frame[max(0, h // 2 - 300):h // 2 + 300, max(0, w // 2 - 450):w // 2 + 450]
+        made = B.run(self._adapters, crop, lut_dir=self._work / "luts")
+        made["subject"], made["t"] = subject, when
+        B.save(made, self._work / subject / "bench")
+        return made
+
     def forget(self, subject: str) -> None:
         self.store.forget(subject)
         shutil.rmtree(self._work / subject, ignore_errors=True)

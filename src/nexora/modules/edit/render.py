@@ -67,12 +67,13 @@ def _key(*parts) -> str:
 
 class Edit:
     def __init__(self, orch: Orchestrator, projects: ProjectStore, assets: AssetStore, adapters: AdapterRegistry, media_dir: str | Path,
-                 *, voice: bool = False, voice_name: str = "Linh", reviewer=None, model: bool = False, inspector=None):
+                 *, voice: bool = False, voice_name: str = "Linh", reviewer=None, model: bool = False, inspector=None, vq=None):
         self._orch, self._projects, self._assets, self._adapters = orch, projects, assets, adapters
         self._media, self._voice, self._voice_name = Path(media_dir), voice, voice_name
         self._reviewer = reviewer                    # the whole-cut review of the Quality module, injected by the composition root
         self._inspector = inspector                  # the Quality module's measured checks on the finished file and its captions
         self._model = model                          # a vision model is available to find the subject when a frame must be cropped
+        self._vq = vq                                # Visual Quality's reader: the approved recipe of a stretch, applied when it is cut
         for sub in ("narration", "captions", "segments", "renders", "focus"):
             (self._media / sub).mkdir(parents=True, exist_ok=True)
 
@@ -277,13 +278,20 @@ class Edit:
                 draft = draft or not self._assets.path_of(source_original).is_file()      # cut from the proxy: good to judge, not to publish
                 # Only the camera file can still be HDR: the proxy and an enhanced copy were brought to SDR when they were made.
                 treat["color_transfer"] = source_original.metadata.get("probe", {}).get("color_transfer") if path == str(self._assets.path_of(source_original)) else None
+                treat.pop("vq_filters", None)
+                if self._vq is not None and path == str(self._assets.path_of(source_original)):
+                    path, t_in, checksum = self._apply_vq(sel.asset_id, path, t_in, duration * speed, checksum, treat)
                 focus = self._focus(sel, path, checksum, t_in, duration) if fill == "cover" else 0.5
                 for ins in sel.extras.get("inserts", []):
                     at = round(ins["at"] * line["duration"], 2)
                     if at < MIN_BEFORE_INSERT or duration - at < MIN_INSERT:
                         continue
                     ipath, isum, iin = self._source(ins["asset_id"], ins["t_in"], duration - at, proxy=preview)
-                    inserts.append({"path": ipath, "t_in": iin, "at": at, "checksum": isum, "keyword": ins["keyword"]})
+                    own: list[str] = []
+                    if self._vq is not None and ipath == str(self._assets.path_of(self._assets.original(ins["asset_id"]))):
+                        found = self._vq.filters_for(ins["asset_id"], iin, iin + duration - at)
+                        own = found or []                  # an insert that needs a prepared file is cut as it is, for now
+                    inserts.append({"path": ipath, "t_in": iin, "at": at, "checksum": isum, "keyword": ins["keyword"], "vq_filters": own})
                 # Lip-sync and model upscaling work on the shot's own clip: it is cut clean first, sent, and what comes back takes its place.
                 wanted = [("upscale", "upscale", "upscale_ml", {"scale": 2}), ("lipsync", "sync", "lipsync", {"inputs": {"audio": line["audio"]}})]
                 for kind, operation, flag, extra in wanted:
@@ -321,6 +329,21 @@ class Edit:
             fill = shot_fill
             ctx.heartbeat()
         return {"segments": out, "draft": draft, "notes": remote_notes}
+
+    def _apply_vq(self, asset_id: str, path: str, t_in: float, seconds: float, checksum: str, treat: dict) -> tuple[str, float, str]:
+        """The approved Visual Quality recipe of a stretch, if there is one: its filters go into the shot's treatment (and its
+        key, so that a changed recipe cuts the shot again), or, when it needs another tool, the file it was prepared in."""
+        found = self._vq.filters_for(asset_id, t_in, t_in + seconds)
+        if found is None:
+            prepared = self._vq.prepared_for(asset_id, t_in, t_in + seconds)
+            if prepared is None:
+                return path, t_in, checksum                     # approved but not applied yet: cut as it is
+            treat["color_transfer"] = None
+            return prepared[0], prepared[1], f"{checksum}:vq:{Path(prepared[0]).stem}"
+        if found:
+            treat["vq_filters"] = found
+            treat["color_transfer"] = None
+        return path, t_in, checksum
 
     def _assemble(self, ctx, preview: bool = False):
         script = self._projects.script(ctx.subject_ref)
