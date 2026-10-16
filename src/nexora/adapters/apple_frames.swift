@@ -5,10 +5,13 @@
 //   apple_frames denoise     <in> <out> <t_in> <seconds> <strength 0..1>
 //   apple_frames interpolate <in> <out> <t_in> <seconds> <fps>
 //   apple_frames superres    <in> <out> <t_in> <seconds>            (×4, sources up to 1920×1080)
+//   apple_frames faces       <image>                                 (faces with the five points face models align on)
 //
 // The result is picture only, ProRes 422 HQ in a .mov, with the source's colour description; the caller puts the sound back.
 // One JSON line on stdout says what was done, or {"error": ...}.
 import AVFoundation
+import ImageIO
+import Vision
 import CoreMedia
 import Foundation
 import VideoToolbox
@@ -245,6 +248,36 @@ func superres(_ inURL: URL, _ outURL: URL, tIn: Double, seconds: Double) async t
     return ["op": "superres", "frames": frames, "width": ow, "height": oh, "seconds": Date().timeIntervalSince(t0)]
 }
 
+// Faces in a picture, by Vision: each with its box and the five points GFPGAN and CodeFormer align on (the two eyes, the nose,
+// the two corners of the mouth), in pixels from the top left, and Vision's own measure of how good a capture of a face it is.
+func faces(_ url: URL) throws -> [String: Any] {
+    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil), let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
+        throw Fail(message: "cannot read \(url.path)")
+    }
+    let w = Double(image.width), h = Double(image.height)
+    let landmarks = VNDetectFaceLandmarksRequest()
+    let quality = VNDetectFaceCaptureQualityRequest()
+    try VNImageRequestHandler(cgImage: image, options: [:]).perform([landmarks, quality])
+    let size = CGSize(width: w, height: h)
+    func flip(_ p: CGPoint) -> [Double] { [Double(p.x), h - Double(p.y)] }
+    var found: [[String: Any]] = []
+    for f in landmarks.results ?? [] {
+        guard let lm = f.landmarks, let lp = lm.leftPupil, let rp = lm.rightPupil, let nose = lm.nose, let lips = lm.outerLips else { continue }
+        let eyes = (lp.pointsInImage(imageSize: size) + rp.pointsInImage(imageSize: size)).map(flip).sorted { $0[0] < $1[0] }
+        let nosePoints = nose.pointsInImage(imageSize: size).map(flip)
+        let mouth = lips.pointsInImage(imageSize: size).map(flip).sorted { $0[0] < $1[0] }
+        guard eyes.count >= 2, let tip = nosePoints.max(by: { $0[1] < $1[1] }), let ml = mouth.first, let mr = mouth.last else { continue }
+        let b = f.boundingBox
+        let box = [Double(b.minX) * w, (1 - Double(b.maxY)) * h, Double(b.width) * w, Double(b.height) * h]
+        var face: [String: Any] = ["box": box, "points": [eyes.first!, eyes.last!, tip, ml, mr], "confidence": Double(f.confidence)]
+        if let q = (quality.results ?? []).first(where: { abs($0.boundingBox.midX - b.midX) < 0.02 && abs($0.boundingBox.midY - b.midY) < 0.02 })?.faceCaptureQuality {
+            face["quality"] = Double(q)
+        }
+        found.append(face)
+    }
+    return ["op": "faces", "width": w, "height": h, "faces": found]
+}
+
 let a = CommandLine.arguments
 do {
     guard a.count >= 2 else { throw Fail(message: "usage: apple_frames probe|denoise|interpolate|superres ...") }
@@ -256,6 +289,8 @@ do {
         say(try await denoise(URL(fileURLWithPath: a[2]), URL(fileURLWithPath: a[3]), tIn: Double(a[4])!, seconds: Double(a[5])!, strength: Float(a[6])!))
     case "interpolate":
         say(try await interpolate(URL(fileURLWithPath: a[2]), URL(fileURLWithPath: a[3]), tIn: Double(a[4])!, seconds: Double(a[5])!, fps: Double(a[6])!))
+    case "faces":
+        say(try faces(URL(fileURLWithPath: a[2])))
     case "superres":
         say(try await superres(URL(fileURLWithPath: a[2]), URL(fileURLWithPath: a[3]), tIn: Double(a[4])!, seconds: Double(a[5])!))
     default:

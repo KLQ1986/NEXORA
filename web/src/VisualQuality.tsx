@@ -20,7 +20,7 @@ type View = {
 const OP: Record<string, string> = {
   color_transform: tr("chuyển màu"), tonemap: tr("HDR về SDR"), levels: tr("phơi sáng, cân bằng trắng"), denoise: tr("khử nhiễu"), sharpen: tr("làm nét"),
   deblock: tr("giảm khối nén"), deband: tr("giảm dải màu"), deflicker: tr("giảm nhấp nháy"), stabilise: tr("ổn định hình"), deinterlace: tr("khử xen kẽ dòng"),
-  constant_rate: tr("tốc độ khung cố định"), upscale: tr("phóng to"), interpolate: tr("nội suy khung"), ivtc: tr("bỏ telecine"), restore: tr("phục hồi ảnh nén"),
+  constant_rate: tr("tốc độ khung cố định"), upscale: tr("phóng to"), interpolate: tr("nội suy khung"), ivtc: tr("bỏ telecine"), restore: tr("phục hồi ảnh nén"), faces: tr("phục hồi khuôn mặt"),
 };
 const DEFECT: Record<string, string> = {
   noise: tr("nhiễu"), soft: tr("mềm"), blocking: tr("khối nén"), banding: tr("dải màu"), underexposed: tr("thiếu sáng"), overexposed: tr("cháy sáng"),

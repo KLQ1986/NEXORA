@@ -1930,6 +1930,7 @@ const en: Record<string, string> = {
   "phục hồi ảnh nén": "restore a compressed picture",
   "AI sinh chi tiết": "AI, makes up detail",
   " · NIQE cổ điển {0}, AI {1}": " · NIQE classic {0}, AI {1}",
+  "phục hồi khuôn mặt": "restore faces",
 };
 
 export default en;

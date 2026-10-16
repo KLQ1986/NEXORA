@@ -515,3 +515,45 @@ def test_a_crushed_jpeg_is_restored_by_ai_only_because_it_measures_more_natural_
     drain(system)
     with Image.open(out) as im:
         assert im.size[1] == 1080 or im.size[1] == 360 * 4
+
+
+FACES = Path("data/tools/faces").resolve()
+CRUSHED_FACE = Path(__file__).with_name("data") / "voa_face_crushed.jpg"   # a VOA interview (public domain), a third of its size, JPEG quality 25
+
+
+def test_faces_are_offered_only_where_codeformer_has_something_to_give():
+    def shot(side, defects):
+        return {"t_start": 0.0, "t_end": 0.0, "scores": {"blockiness": 1.0, "noise": 1.0, "sharpness": 50, "flicker": 0, "shake": 0},
+                "defects": defects, "display": {"flat_blocks": 0.0}, "faces": [{"box": [10, 10, side, side], "quality": 0.3}]}
+    profile = {"content": "still", "technical": {"kind": "still", "width": 1920, "height": 1080}}
+    plan = lambda s, have={"faces"}: [x["op"] for x in P.plan_shot(s, profile=profile, colour=[], have=have, options={"exposure": False})]
+    assert "faces" in plan(shot(112, []))                                       # small: little to lose, much to gain
+    assert "faces" in plan(shot(300, [{"kind": "noise", "severity": 0.5}]))     # larger, but the picture is damaged
+    assert "faces" not in plan(shot(300, []))                                   # a clean face of good size is left alone
+    assert "faces" not in plan(shot(600, [{"kind": "noise", "severity": 0.5}])) # too large: a redraw would lose its detail
+    assert "faces" not in plan(shot(112, []), have=set())                       # not set up here
+    step = next(x for x in P.plan_shot(shot(112, []), profile=profile, colour=[], have={"faces"}, options={"exposure": False}) if x["op"] == "faces")
+    assert step["generative"] and step["classic"] is None and step["tier"] == "codeformer"
+
+
+@pytest.mark.skipif(not (FACES / "models" / "codeformer.onnx").is_file() or not APPLE.is_file(), reason="face recovery is not set up")
+def test_a_crushed_face_is_found_restored_and_kept_only_because_it_measures_more_natural(tmp_path):
+    from nexora.adapters.faces import Faces
+    system = vq_system(tmp_path)
+    system.adapters.register(Faces(FACES, APPLE))
+    subject = system.vq.subject_for_file(CRUSHED_FACE)
+    system.vq.analyse(subject)
+    drain(system)
+    shot = system.vq_reader.recipe(subject).shots[0]
+    face = next((s for s in shot["steps"] if s["op"] == "faces"), None)
+    assert face is not None, shot.get("dropped")
+    assert face["checked"]["niqe_ai"] < face["checked"]["niqe_classic"] - 0.5 and "classic" not in face
+    system.vq.approve(system.vq_reader.recipe(subject).recipe_id)
+    out = tmp_path / "out" / "face.png"
+    system.vq.apply(subject, out=str(out))
+    drain(system)
+    before = np.asarray(Image.open(CRUSHED_FACE).convert("RGB"), np.float32)
+    after = np.asarray(Image.open(out).convert("RGB"), np.float32)
+    assert after.shape == before.shape
+    x, y, w, h = 278, 68, 112, 112                                             # where Vision finds the face in this picture
+    assert np.abs(after[y:y + h, x:x + w] - before[y:y + h, x:x + w]).mean() > 3

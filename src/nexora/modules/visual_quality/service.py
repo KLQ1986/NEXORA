@@ -156,6 +156,15 @@ class VisualQualityService:
                     have.add("realesrgan")
             except Exception:
                 pass
+        if "restore_faces" in names:
+            try:
+                env = self._adapters.environment().get("restore_faces") or {}
+            except Exception:
+                env = {}
+            if env.get("available") and env.get("find"):
+                have.add("faces_find")
+            if env.get("available") and env.get("restore"):
+                have.add("faces")
         if "gyroflow" in names:
             try:
                 if (self._adapters.environment().get("gyroflow") or {}).get("available"):
@@ -256,6 +265,7 @@ class VisualQualityService:
         still = technical.get("kind") == "still"
         rate = float(technical.get("frame_rate") or 25.0)
         shots, defects = [], []
+        faces = self._faces(path) if still and "faces_find" in self._have() else []
         for k, (t0, t1) in enumerate(self._shots(ctx.subject_ref, path, technical)):
             mid = (t0 + t1) / 2
             if still:
@@ -276,7 +286,8 @@ class VisualQualityService:
             score = A.ShotScore(t0, t1, lk, flick, shake, A.niqe_of(frame))
             shot_defects = A.defects_of(score, content=profile["content"], frame=frame)
             defects += shot_defects
-            shots.append({"t_start": t0, "t_end": t1, "scores": score.scores(), "display": M.as_dict(lk), "defects": shot_defects})
+            shots.append({"t_start": t0, "t_end": t1, "scores": score.scores(), "display": M.as_dict(lk), "defects": shot_defects,
+                          **({"faces": faces, "size": [frame.shape[1], frame.shape[0]]} if faces else {})})
             ctx.heartbeat()
         self.store.defects(ctx.subject_ref, defects, analyzer=ANALYZER)
         work = self._work / ctx.subject_ref
@@ -301,7 +312,7 @@ class VisualQualityService:
                 steps = self._verify(path, shot, steps, subject=ctx.subject_ref, still=still)
                 verified += 1
                 ctx.heartbeat()
-            if any(s.get("classic") for s in steps):
+            if any("classic" in s for s in steps):
                 steps = self._choose_ai(path, shot, steps, subject=ctx.subject_ref)
                 ctx.heartbeat()
             shots.append({"t_start": shot["t_start"], "t_end": shot["t_end"], "steps": steps, "scores": shot["scores"], "dropped": shot.get("dropped", []),
@@ -365,15 +376,22 @@ class VisualQualityService:
                 step["checked"] = {"niqe_without": round(b, 3), "niqe_with": round(a, 3)}
         return kept
 
+    def _faces(self, path: Path) -> list[dict]:
+        try:
+            found = self._adapters.submit("restore_faces", Request("find", inputs={"path": str(path)})).outputs.get("faces", [])
+        except AdapterError:
+            return []
+        return [{"box": [round(v, 1) for v in f["box"]], "quality": round(float(f.get("quality") or 0.0), 3)} for f in found]
+
     def _choose_ai(self, path: Path, shot: dict, steps: list[dict], *, subject: str) -> list[dict]:
         """Each step by AI that makes detail up against the classic step it stands for, on the picture itself at full size: the
         AI is kept only when it is clearly more natural (NIQE lower by `AI_MARGIN`), else the classic step takes its place."""
         work = self._work / subject / "verify"
         work.mkdir(parents=True, exist_ok=True)
         kept = list(steps)
-        for step in [s for s in steps if s.get("classic")]:
+        for step in [s for s in steps if "classic" in s]:
             classic = step["classic"]
-            other = [classic if s is step else s for s in kept]
+            other = [classic if s is step else s for s in kept if s is not step or classic]
             # A restore by AI takes away noise, banding and blocks at once: with it, the classic steps for those are left out.
             absorbed = AI_ABSORBS.get(step["op"], frozenset())
             mine = [{k: v for k, v in s.items() if k != "classic"} for s in kept if s is step or s["op"] not in absorbed]
@@ -381,7 +399,10 @@ class VisualQualityService:
             for name, chain in (("ai", mine), ("classic", [{k: v for k, v in s.items() if k != "classic"} for s in other])):
                 try:
                     file = self._render(path, chain, out=work / f"{step['op']}_{name}.png", kind="still")
-                    scores[name] = A.niqe_of(_centre(_load_rgb(file)))
+                    picture = _load_rgb(file)
+                    regions = _regions(picture, shot) if step["op"] == "faces" else [_centre(picture)]
+                    values = [v for v in (A.niqe_of(r) for r in regions) if v is not None]
+                    scores[name] = float(np.mean(values)) if values else None
                 except AdapterError as e:
                     scores[name] = None
                     shot.setdefault("notes", []).append(f"{step['op']} ({name}): {e}")
@@ -391,7 +412,7 @@ class VisualQualityService:
                 kept = [{k: v for k, v in s.items() if k != "classic"} if s is step else s for s in kept if s is step or s["op"] not in absorbed]
             else:
                 kept = other
-                shot.setdefault("dropped", []).append({"op": step["op"], "why": "AI không hơn cách cổ điển" + (f" (NIQE {base:.2f} so với {ai:.2f})" if ai is not None and base is not None else "")})
+                shot.setdefault("dropped", []).append({"op": step["op"], "why": ("AI không hơn khi để nguyên" if classic is None else "AI không hơn cách cổ điển") + (f" (NIQE {base:.2f} so với {ai:.2f})" if ai is not None and base is not None else "")})
         return kept
 
     def _render(self, path: Path, steps: list[dict], *, out: Path, kind: str, t_in: float = 0.0, seconds: float | None = None,
@@ -461,6 +482,10 @@ class VisualQualityService:
 
     def _process_still(self, step: dict, source: Path, out: Path) -> Path:
         tier, op, p = step.get("tier"), step["op"], step.get("params") or {}
+        if tier == "codeformer":
+            self._adapters.submit("restore_faces", Request("restore", inputs={"path": str(source)}, params={"out": str(out), "weight": p.get("weight", 0.7),
+                                                                                                         "blend": p.get("blend", 0.8)}))
+            return out
         if tier != "realesrgan":
             raise AdapterError(ErrorCode.UNAVAILABLE, f"no tool for {tier} on a still", retryable=False)
         with Image.open(source) as im:
@@ -643,3 +668,21 @@ def _measure_width(technical: dict, most: int = 960) -> int:
     640-wide clip with σ 9 read 2.5 at 960, 2026-10-17), so measures are never taken on an enlarged picture."""
     width = int(technical.get("display_width") or technical.get("width") or most)
     return max(16, min(most, width - width % 2))
+
+
+def _regions(picture: np.ndarray, shot: dict, side: int = 384) -> list[np.ndarray]:
+    """The faces of a picture, each cut out (with a margin) and brought to one size, to be measured where a face step works:
+    boxes are in the assessed picture's pixels and are scaled to this one's, which an enlargement may have made larger."""
+    w0 = float((shot.get("size") or [picture.shape[1]])[0])
+    k = picture.shape[1] / max(w0, 1.0)
+    out = []
+    for face in shot.get("faces", []):
+        x, y, w, h = (v * k for v in face["box"])
+        m = 0.15 * max(w, h)
+        x0, y0 = int(max(0, x - m)), int(max(0, y - m))
+        x1, y1 = int(min(picture.shape[1], x + w + m)), int(min(picture.shape[0], y + h + m))
+        if x1 - x0 < 16 or y1 - y0 < 16:
+            continue
+        crop = Image.fromarray((np.clip(picture[y0:y1, x0:x1], 0, 1) * 255).round().astype(np.uint8)).resize((side, side), Image.LANCZOS)
+        out.append(np.asarray(crop, np.float32) / 255.0)
+    return out

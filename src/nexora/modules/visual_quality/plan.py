@@ -19,11 +19,12 @@ from nexora.modules.visual_quality import measure as M
 # natural (NIQE) before it stays in a recipe.
 RISKY = frozenset({"deblock", "deband", "denoise", "sharpen"})
 ORDER = ("deinterlace", "ivtc", "constant_rate", "deblock", "restore", "deband", "denoise", "tonemap", "color_transform", "levels",
-         "deflicker", "stabilise", "sharpen", "upscale", "interpolate")
+         "deflicker", "stabilise", "sharpen", "upscale", "faces", "interpolate")
 VERSION = "1"
 # Real-ESRGAN works ×4: above this many pixels in the source its intermediate is too big to be worth it.
 AI_PIXELS = 4_000_000
 AI_MODEL = "realesrgan-x4plus"
+FACE_SIDES = (48, 400)     # pixels: smaller has too little to align on, larger is already detailed enough to lose by a redraw
 TARGET_MIDTONE = 0.45
 
 
@@ -179,6 +180,13 @@ def plan_shot(shot: dict, *, profile: dict, colour: list[dict], have: set[str], 
                           "why": f"phóng tới {int(target_h)}p bằng Real-ESRGAN (AI, sinh chi tiết)"})
         else:
             steps.append(classic)
+    # Faces of a still: offered where CodeFormer has something to give (a face small, or a picture noisy, soft or blocked), and
+    # never where it would only redraw a large clean face; the service keeps it only if the faces measure more natural.
+    faces = [f for f in shot.get("faces", []) if FACE_SIDES[0] <= min(f["box"][2], f["box"][3]) <= FACE_SIDES[1]]
+    damaged = any(sev.get(k, 0) > 0 for k in ("noise", "soft", "blocking"))
+    if still and faces and "faces" in have and options.get("faces", True) and (damaged or min(min(f["box"][2:]) for f in faces) < 160):
+        steps.append({"op": "faces", "tier": "codeformer", "params": {"weight": 0.7}, "generative": True, "classic": None,
+                      "why": f"{len(faces)} khuôn mặt: phục hồi bằng CodeFormer (AI, vẽ lại khuôn mặt)"})
     target_fps = options.get("target_fps")
     rate = float(tech.get("frame_rate") or 0)
     if not still and target_fps and rate and target_fps > rate * 1.2:
