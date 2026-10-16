@@ -95,3 +95,12 @@ def test_what_the_beats_show_is_followed_into_things_of_the_library_and_every_so
     assert any("seen" in a["evidence"] for t in things for a in t["appearances"])           # checked against the pictures
     heard = vi.segments(asset, "sound_source")
     assert all(s.data["where"] in ("trong khung", "ngoài khung", "chưa rõ") for s in heard)
+
+
+def test_footage_without_sound_owes_no_listening(tmp_path):
+    from tests.conftest import make_video
+    system = build(tmp_path / "data", model=FakeModel(), segment_seconds=2.0, recognisers=[FakeVision(), FakeSound()], speech=FakeSpeech(), pictures=FakePictures())
+    asset, _ = system.library.ingest(make_video(tmp_path / "silent.mp4", picture=4))
+    drain(system)
+    assert not system.assets.original(asset).metadata["probe"].get("has_audio")
+    assert system.vi.analysed(asset).get("speech") and not {"speech", "describe"} & set(system.vi.stale(asset))

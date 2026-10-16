@@ -196,6 +196,10 @@ class Intelligence:
         """Listen to a recording for speech. Footage without sound is left alone."""
         from nexora.modules.intelligence.transcribe import TRANSCRIBE
         if self._transcription is None or not self._transcription.wanted(asset_id):
+            if not self._assets.original(asset_id).metadata.get("probe", {}).get("has_audio"):
+                # Footage without sound has been listened to as far as it can be: there is nothing to hear, nothing owed (0189).
+                from nexora.modules.intelligence.analyzers import BY_NAME
+                self.store.ran(asset_id, BY_NAME["speech"])
             return None
         return self._orch.submit_run(TRANSCRIBE, subject_ref=asset_id, idempotency_key=None if force else f"transcribe:{asset_id}")
 

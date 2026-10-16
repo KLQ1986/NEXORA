@@ -27,3 +27,9 @@ def test_a_note_needs_a_subject_words_and_a_number_for_its_second(tmp_path):
     c = client(tmp_path)
     assert c.post("/api/v1/notes", json={"subject": "a1", "text": "  "}).status_code == 422
     assert c.post("/api/v1/notes", json={"subject": "a1", "text": "x", "t": "abc"}).status_code == 422
+
+
+def test_a_note_may_cover_a_stretch(tmp_path):
+    c = client(tmp_path)
+    assert c.post("/api/v1/notes", json={"subject": "a1", "t": 4, "t_end": 5.5, "text": "tông màu lạnh hơn"}).json()["t_end"] == 5.5
+    assert c.post("/api/v1/notes", json={"subject": "a1", "t": 4, "t_end": 2, "text": "ngược"}).json()["t_end"] is None

@@ -1,7 +1,7 @@
 """Notes pinned to a moment of a recording or a cut: a remark, or a fault to be put right.
 
 Kept beside the database as one small JSON file. A note names its subject (an asset or a render id), the second it is
-about, what it says, whether it is a remark or a fault, and whether the fault has since been put right.
+about (or the stretch from one second to another), what it says, whether it is a remark or a fault, and whether the fault has since been put right.
 """
 import json
 import threading
@@ -47,7 +47,8 @@ def add_notes(app: FastAPI, data_dir: Path) -> None:
         subject, text = str(body.get("subject", "")).strip(), str(body.get("text", "")).strip()
         if not subject or not text:
             raise HTTPException(422, "Ghi chú cần nói về cái gì và ghi điều gì")
-        note = {"note_id": uuid.uuid4().hex[:12], "subject": subject, "t": second(body.get("t")), "text": text[:2000],
+        t, end = second(body.get("t")), second(body.get("t_end"))
+        note = {"note_id": uuid.uuid4().hex[:12], "subject": subject, "t": t, "t_end": end if t is not None and end is not None and end > t else None, "text": text[:2000],
                 "kind": body.get("kind") if body.get("kind") in KINDS else "note", "resolved": False, "at": time.time()}
         with lock:
             notes = load()

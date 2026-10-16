@@ -1794,6 +1794,8 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
 
     from nexora.api.notes import add_notes
     add_notes(app, system.data_dir)                  # notes pinned to a moment of a recording or a cut
+    from nexora.api.catalog import add_catalog
+    add_catalog(app, system)                         # one code and one name for every item in the library
 
     if web_dir and Path(web_dir).is_dir():
         app.mount("/assets", StaticFiles(directory=Path(web_dir) / "assets"), name="web-assets")
