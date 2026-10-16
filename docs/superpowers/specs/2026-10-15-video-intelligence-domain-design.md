@@ -349,3 +349,5 @@ Kết quả:
 - Prompt mới: đúng > vừa đủ 6/6, vừa đủ > sai 3/6, điểm TB 10 / 2,7 / 0.
 
 Các ca hoà trước đây đến từ đáp án lỏng. Prompt mới được giữ vì nó mở rộng khoảng cách giữa "đúng" và "vừa đủ"; đó là điều quyết định một câu là "tốt" hay "tạm".
+
+**Chốt A–G (2026-10-16).** Người dùng chấp nhận bộ số đo hiện có: A, B, C, F, G đo trên footage của người dùng (0059, 0050, 0038, 0034, 0090, 0026, 0040); D và E đo trên hai video phỏng vấn công cộng, vì kho không có clip người nói trước máy. Khi có một clip như vậy, sẽ đo lại D và E trên clip đó.
