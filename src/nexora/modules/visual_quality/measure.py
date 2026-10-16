@@ -36,12 +36,26 @@ def luma(rgb: np.ndarray) -> np.ndarray:
     return rgb[..., :3] @ LUMA
 
 
+NOISE_BLOCK = 16           # side of the blocks the noise is estimated in
+NOISE_PERCENTILE = 10      # the quietest blocks decide: there only the noise answers the mask
+NOISE_BIAS = 1.1           # a low percentile of estimates reads about a tenth under the noise itself (measured on pure noise)
+
+
 def noise_sigma(y: np.ndarray) -> float:
-    """Immerkær's fast noise estimate: the response to a mask that cancels edges and smooth slopes, on 0..255 luma."""
+    """Immerkær's fast noise estimate, on 0..255 luma: the response to a mask that cancels edges and smooth slopes.
+
+    Texture answers the mask too (foliage, gravel, fabric): over a whole frame of leaves it reads a clean photo as σ 10.8
+    (2026-10-17, frame 0042). It is therefore taken in blocks and from the quietest of them, where only the noise is left:
+    the same photo reads 3.2, and noise added to it is read within a tenth of what was added on flat footage (0059)."""
     m = np.array([[1, -2, 1], [-2, 4, -2], [1, -2, 1]], np.float32)
-    r = np.abs(convolve(y * 255.0, m, mode="reflect"))
-    h, w = y.shape
-    return float(np.sqrt(np.pi / 2) * r[1:-1, 1:-1].sum() / (6.0 * (w - 2) * (h - 2)))
+    r = np.abs(convolve(y * 255.0, m, mode="reflect"))[1:-1, 1:-1]
+    scale = np.sqrt(np.pi / 2) / 6.0
+    b = NOISE_BLOCK
+    h, w = (r.shape[0] // b) * b, (r.shape[1] // b) * b
+    if h // b * (w // b) < 16:
+        return float(scale * r.mean())
+    blocks = r[:h, :w].reshape(h // b, b, w // b, b).mean((1, 3)) * scale
+    return float(min(scale * r.mean(), np.percentile(blocks, NOISE_PERCENTILE) * NOISE_BIAS))
 
 
 def laplacian_variance(y: np.ndarray) -> float:

@@ -519,6 +519,8 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     adapters.register(AppleFrames(data_dir / "tools" / "apple_frames" / "apple_frames"))
     from nexora.adapters.gyroflow import Gyroflow
     adapters.register(Gyroflow())
+    from nexora.adapters.restore_local import RestoreLocal
+    adapters.register(RestoreLocal(data_dir / "tools" / "realesrgan", ffmpeg_binary or "ffmpeg"))
     from nexora.adapters.stills import Stills
     adapters.register(Stills(ffmpeg_binary or "ffmpeg"))
     vq_reader = VisualQuality(db_path)

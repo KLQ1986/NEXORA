@@ -13,12 +13,17 @@ from pathlib import Path
 
 import numpy as np
 
+from nexora.modules.visual_quality import measure as M
+
 # Steps that can cost a picture more than they give; each must show on the shot's own frame that it does not make it less
 # natural (NIQE) before it stays in a recipe.
 RISKY = frozenset({"deblock", "deband", "denoise", "sharpen"})
-ORDER = ("deinterlace", "ivtc", "constant_rate", "deblock", "deband", "denoise", "tonemap", "color_transform", "levels",
+ORDER = ("deinterlace", "ivtc", "constant_rate", "deblock", "restore", "deband", "denoise", "tonemap", "color_transform", "levels",
          "deflicker", "stabilise", "sharpen", "upscale", "interpolate")
 VERSION = "1"
+# Real-ESRGAN works ×4: above this many pixels in the source its intermediate is too big to be worth it.
+AI_PIXELS = 4_000_000
+AI_MODEL = "realesrgan-x4plus"
 TARGET_MIDTONE = 0.45
 
 
@@ -89,6 +94,26 @@ def levels_lut(params: dict, lut_dir: str | Path, *, size: int = 33) -> str:
     return str(out)
 
 
+DENOISE_STRENGTHS = (1.0, 0.85, 0.7)
+METHOD_NOISE_LIMIT = 1.0
+
+
+def tune_denoise(render, sigma: float) -> tuple[float, float]:
+    """The strength of a denoise for this picture, from its method noise: what the filter takes away (luma, 0..255) against
+    the noise measured. Taking away more than the noise is taking texture: on a frame of foliage (0042) full strength took
+    1.06–1.22 times the noise and cost SSIM 0.92 → 0.79; on flat footage (0059) it took 1.01. The first of
+    `DENOISE_STRENGTHS` within `METHOD_NOISE_LIMIT` is kept, never under 0.7 (at 0.5 flat footage keeps most of its noise).
+    Measured 2026-10-17 with noise σ 6, 12 and 25 added: every case comes out better than the noisy frame, foliage at σ 25
+    by 3.6 dB instead of 2.4. `render(strength)` gives the frame (RGB, 0..1) with the denoise at that strength, None without."""
+    base = M.luma(render(None))
+    ratio = 0.0
+    for strength in DENOISE_STRENGTHS:
+        ratio = float((base - M.luma(render(strength))).std() * 255.0 / max(sigma, 0.1))
+        if ratio <= METHOD_NOISE_LIMIT:
+            return strength, round(ratio, 3)
+    return DENOISE_STRENGTHS[-1], round(ratio, 3)
+
+
 def plan_shot(shot: dict, *, profile: dict, colour: list[dict], have: set[str], options: dict) -> list[dict]:
     """The steps of one shot. `shot`: t_start, t_end, scores (display measures), defects (kinds with severity).
     `colour`: the colour steps of the source. `have`: the step tools at hand ("ffmpeg:hqdn3d", "apple_vt", "gyroflow")."""
@@ -106,8 +131,16 @@ def plan_shot(shot: dict, *, profile: dict, colour: list[dict], have: set[str], 
     if not still and tech.get("variable_frame_rate") and "ffmpeg:fps" in have:
         fps = options.get("fps") or round(float(tech.get("nominal_frame_rate") or tech.get("frame_rate") or 30))
         steps.append({"op": "constant_rate", "tier": "ffmpeg", "params": {"fps": fps}, "why": "tốc độ khung thay đổi"})
+    pixels = int(tech.get("width") or 0) * int(tech.get("height") or 0)
+    # AI that makes detail up is offered for stills only, small enough, beside the classic step it must beat (the service checks).
+    ai = still and "realesrgan" in have and 0 < pixels <= AI_PIXELS and options.get("ai", True)
     if sev.get("blocking", 0) > 0 and "ffmpeg:deblock" in have:
-        steps.append({"op": "deblock", "tier": "ffmpeg", "params": {}, "why": f"khối nén ({shot['scores']['blockiness']})"})
+        classic = {"op": "deblock", "tier": "ffmpeg", "params": {}, "why": f"khối nén ({shot['scores']['blockiness']})"}
+        if ai and sev["blocking"] >= 0.3:
+            steps.append({"op": "restore", "tier": "realesrgan", "params": {"model": AI_MODEL}, "generative": True, "classic": classic,
+                          "why": f"khối nén nặng ({shot['scores']['blockiness']}): phục hồi bằng Real-ESRGAN (AI, sinh chi tiết)"})
+        else:
+            steps.append(classic)
     if sev.get("banding", 0) > 0 and "ffmpeg:deband" in have:
         steps.append({"op": "deband", "tier": "ffmpeg", "params": {"threshold": round(0.02 + 0.02 * sev["banding"], 4), "range": 24}, "why": "dải màu"})
     if camera_like and sev.get("noise", 0) > 0 and options.get("denoise", True):
@@ -138,10 +171,14 @@ def plan_shot(shot: dict, *, profile: dict, colour: list[dict], have: set[str], 
     height = int(tech.get("display_height") or tech.get("height") or 0)
     if target_h and height and target_h > height * 1.2:
         factor = 2 if target_h <= height * 2.2 else 4
-        if "apple_sr" in have and height <= 1080 and target_h >= height * 3:
+        classic = {"op": "upscale", "tier": "ffmpeg", "params": {"factor": factor}, "why": f"phóng ×{factor} tới {height * factor}p"}
+        if "apple_sr" in have and not still and height <= 1080 and target_h >= height * 3:
             steps.append({"op": "upscale", "tier": "apple_vt", "params": {"factor": 4}, "why": f"phóng ×4 tới {height * 4}p"})
+        elif ai and target_h <= height * 4:
+            steps.append({"op": "upscale", "tier": "realesrgan", "params": {"height": int(target_h), "model": AI_MODEL}, "generative": True, "classic": classic,
+                          "why": f"phóng tới {int(target_h)}p bằng Real-ESRGAN (AI, sinh chi tiết)"})
         else:
-            steps.append({"op": "upscale", "tier": "ffmpeg", "params": {"factor": factor}, "why": f"phóng ×{factor} tới {height * factor}p"})
+            steps.append(classic)
     target_fps = options.get("target_fps")
     rate = float(tech.get("frame_rate") or 0)
     if not still and target_fps and rate and target_fps > rate * 1.2:

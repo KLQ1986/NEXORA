@@ -462,3 +462,56 @@ def _exif(make: str, model: str):
     exif = Image.Exif()
     exif[271], exif[272] = make, model
     return exif
+
+
+ESRGAN = Path("data/tools/realesrgan").resolve()
+
+
+def test_ai_is_offered_for_a_small_still_only_beside_the_classic_step_it_must_beat():
+    shot = {"t_start": 0.0, "t_end": 0.0, "scores": {"blockiness": 1.9, "noise": 1.0, "sharpness": 50, "flicker": 0, "shake": 0},
+            "defects": [{"kind": "blocking", "severity": 0.9}], "display": {"flat_blocks": 0.0}}
+    profile = {"content": "still", "technical": {"kind": "still", "width": 1200, "height": 675}}
+    have = {"ffmpeg:deblock", "ffmpeg:lut3d", "realesrgan"}
+    steps = P.plan_shot(shot, profile=profile, colour=[], have=have, options={"exposure": False, "target_height": 2700})
+    by = {s["op"]: s for s in steps}
+    assert by["restore"]["tier"] == "realesrgan" and by["restore"]["generative"] and by["restore"]["classic"]["op"] == "deblock"
+    assert by["upscale"]["tier"] == "realesrgan" and by["upscale"]["classic"]["tier"] == "ffmpeg"
+    without = P.plan_shot(shot, profile=profile, colour=[], have=have - {"realesrgan"}, options={"exposure": False})
+    assert [s["op"] for s in without] == ["deblock"]
+    big = P.plan_shot(shot, profile={**profile, "technical": {"kind": "still", "width": 4000, "height": 3000}}, colour=[], have=have, options={"exposure": False})
+    assert [s["op"] for s in big] == ["deblock"]                              # too large for ×4: the classic step
+
+
+@pytest.mark.skipif(not (ESRGAN / "realesrgan-ncnn-vulkan").is_file(), reason="Real-ESRGAN is not set up")
+def test_a_crushed_jpeg_is_restored_by_ai_only_because_it_measures_more_natural_and_upscaled_to_the_height_asked(tmp_path):
+    from nexora.adapters.restore_local import RestoreLocal
+    system = vq_system(tmp_path)
+    system.adapters.register(RestoreLocal(ESRGAN))
+    bad = tmp_path / "in" / "bad.jpg"
+    bad.parent.mkdir(parents=True)
+    with Image.open(texture(tmp_path / "t.png", size=(640, 360), seed=5)) as im:
+        im.save(bad, quality=8)
+    subject = system.vq.subject_for_file(bad)
+    system.vq.analyse(subject, exposure=False, target_height=1080)
+    drain(system)
+    shot = system.vq_reader.recipe(subject).shots[0]
+    ops = {s["op"]: s for s in shot["steps"]}
+    dropped = {d["op"] for d in shot["dropped"]}
+    stands_for = {"restore": "deblock", "upscale": "upscale"}
+    decided = 0
+    for op, classic in stands_for.items():
+        ai = ops.get(op) if ops.get(op, {}).get("tier") == "realesrgan" else None
+        if ai:                                                                 # kept: with the measure that earned it
+            assert ai["checked"]["niqe_ai"] < ai["checked"]["niqe_classic"] - 0.5 and "classic" not in ai
+        else:                                                                  # refused: its classic step instead, and why
+            assert op in dropped and ops[classic]["tier"] == "ffmpeg"
+        decided += 1
+    assert decided == 2
+    if ops.get("restore"):
+        assert not {"deblock", "deband", "denoise"} & set(ops)                 # the restore stands for them
+    system.vq.approve(system.vq_reader.recipe(subject).recipe_id)
+    out = tmp_path / "out" / "good.png"
+    system.vq.apply(subject, out=str(out))
+    drain(system)
+    with Image.open(out) as im:
+        assert im.size[1] == 1080 or im.size[1] == 360 * 4

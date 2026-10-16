@@ -67,6 +67,16 @@ def run(adapters: AdapterRegistry, clean: np.ndarray, *, cases: list[str] | None
                "psnr_bad": round(psnr(clean * 255, bad * 255), 2), "ssim_bad": round(ssim(clean * 255, bad * 255), 4),
                "niqe_clean": _n(clean), "niqe_bad": _n(bad)}
         if step:
+            if step["op"] == "denoise":
+                # The strength a recipe would get: tuned on the picture by its method noise (plan.tune_denoise).
+                def frame(strength, step=step, name=name, bad=bad):
+                    if strength is None:
+                        return bad
+                    trial = {**step, "params": {**step["params"], "strength": strength}}
+                    src, out = _png(bad, work / f"{name}_bad.png"), work / f"{name}_tune.png"
+                    adapters.submit("ffmpeg", Request("vq_render", inputs={"path": str(src)}, params={"kind": "still", "out": str(out), "filters": filters_of([trial]) or []}))
+                    return _load(out)
+                step["params"]["strength"], _ = P.tune_denoise(frame, float(step["params"]["sigma"]))
             if step["op"] == "levels" and lut_dir:
                 step["params"]["lut"] = P.levels_lut(step["params"], lut_dir)
             chain = filters_of([step]) or []
@@ -86,7 +96,39 @@ def run(adapters: AdapterRegistry, clean: np.ndarray, *, cases: list[str] | None
         rows.append(row)
     found = sum(r["found"] for r in rows)
     helped = sum(r["helps"] for r in rows)
-    return {"version": VERSION, "at": round(time.time()), "size": list(clean.shape[:2]), "found": f"{found}/{len(rows)}", "helped": f"{helped}/{len(rows)}", "rows": rows}
+    result = {"version": VERSION, "at": round(time.time()), "size": list(clean.shape[:2]), "found": f"{found}/{len(rows)}", "helped": f"{helped}/{len(rows)}", "rows": rows}
+    try:
+        ai_here = bool((adapters.environment().get("restore_local") or {}).get("available"))
+    except Exception:
+        ai_here = False
+    if ai_here:
+        result["ai"] = run_ai(adapters, clean, work)
+    return result
+
+
+def run_ai(adapters: AdapterRegistry, clean: np.ndarray, work: Path) -> list[dict]:
+    """The AI steps against the classic ones they stand beside, on the same damage: a crushed JPEG (Real-ESRGAN ×4 and back
+    against `deblock`) and a picture made four times smaller (Real-ESRGAN ×4 against lanczos). Fidelity (PSNR, SSIM against
+    the clean frame) and naturalness (NIQE) are both kept: an AI that makes detail up may win the one and lose the other."""
+    h, w = clean.shape[:2]
+    small = D.downscale(clean, 4.0, back=False)
+    cases = {"jpeg": (D.jpeg(clean, 12), [{"op": "deblock", "tier": "ffmpeg", "params": {}}], (w, h)),
+             "small_x4": (small, [{"op": "upscale", "tier": "ffmpeg", "params": {"factor": 4}}], (w, h))}
+    rows = []
+    for name, (bad, classic, size) in cases.items():
+        src = _png(bad, work / f"ai_{name}_bad.png")
+        out_c, out_a = work / f"ai_{name}_classic.png", work / f"ai_{name}_ai.png"
+        adapters.submit("ffmpeg", Request("vq_render", inputs={"path": str(src)}, params={"kind": "still", "out": str(out_c), "filters": [*(filters_of(classic) or []), f"scale={size[0]}:{size[1]}:flags=lanczos"]}))
+        adapters.submit("restore_local", Request("esrgan", inputs={"path": str(src)}, params={"out": str(out_a), "model": P.AI_MODEL, "size": list(size)}))
+        row = {"case": name}
+        for tag, file in (("classic", out_c), ("ai", out_a)):
+            img = _load(file)[:h, :w]
+            row[tag] = {"psnr": round(psnr(clean * 255, img * 255), 2), "ssim": round(ssim(clean * 255, img * 255), 4), "niqe": _n(img)}
+        c, a = row["classic"], row["ai"]
+        row["ai_more_natural"] = bool(a["niqe"] is not None and c["niqe"] is not None and a["niqe"] < c["niqe"] - 0.5)
+        row["ai_more_faithful"] = bool(a["psnr"] > c["psnr"] and a["ssim"] >= c["ssim"])
+        rows.append(row)
+    return rows
 
 
 def _n(img: np.ndarray) -> float | None:
@@ -101,6 +143,11 @@ def table(result: dict) -> str:
         lines.append(f"{r['case']:14s} {'✓' if r['found'] else '✗':5s} {str(r['step']):10s} "
                      f"{r['psnr_bad']:6.2f}→{r.get('psnr_fixed', float('nan')):6.2f} {r['ssim_bad']:.4f}→{r.get('ssim_fixed', float('nan')):.4f} "
                      f"{r['niqe_bad'] or 0:6.2f}→{(r.get('niqe_fixed') or 0):6.2f} {'có ích' if r['helps'] else 'KHÔNG'}")
+    for r in result.get("ai", []):
+        c, a = r["classic"], r["ai"]
+        lines.append(f"AI {r['case']:11s} cổ điển PSNR {c['psnr']:.2f} SSIM {c['ssim']:.4f} NIQE {c['niqe'] or 0:.2f} | "
+                     f"Real-ESRGAN PSNR {a['psnr']:.2f} SSIM {a['ssim']:.4f} NIQE {a['niqe'] or 0:.2f}"
+                     f"{' · tự nhiên hơn' if r['ai_more_natural'] else ''}{' · sát gốc hơn' if r['ai_more_faithful'] else ''}")
     return "\n".join(lines)
 
 

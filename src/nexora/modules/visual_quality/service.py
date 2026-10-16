@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 
 import numpy as np
+from PIL import Image
 
 from nexora.core.adapter import AdapterError, AdapterRegistry, ErrorCode, Request
 from nexora.core.assets import AssetStore
@@ -37,6 +38,8 @@ PREVIEW = PipelineDefinition("vq.preview", "1", [StageDef("preview", timeout_sec
 APPLY = PipelineDefinition("vq.apply", "1", [StageDef("apply", timeout_seconds=12 * 3600, lane="background", requires=("ffmpeg",))])
 MAX_SHOTS = 48
 VERIFY_SHOTS = 12          # shots whose risky steps are checked on their own frame (the longest first would be better; in order is simpler)
+AI_ABSORBS = {"restore": frozenset({"deblock", "deband", "denoise"})}
+AI_MARGIN = 0.5            # how much more natural (NIQE) an AI step must make a picture than the classic step to be kept
 NIQE_SLACK = 0.3           # how much less natural a step may make a frame before it is dropped
 STILL_WINDOW = 1.0                                       # seconds prepared around one frame of a video
 # Steps that take more than one frame to make one: run on a stretch that crosses a cut, they blend the two shots.
@@ -147,6 +150,12 @@ class VisualQualityService:
                 have.add("apple_frc")
             if env.get("available") and env.get("superres"):
                 have.add("apple_sr")
+        if "restore_local" in names:
+            try:
+                if "realesrgan-x4plus" in ((self._adapters.environment().get("restore_local") or {}).get("esrgan") or []):
+                    have.add("realesrgan")
+            except Exception:
+                pass
         if "gyroflow" in names:
             try:
                 if (self._adapters.environment().get("gyroflow") or {}).get("available"):
@@ -253,7 +262,7 @@ class VisualQualityService:
                 from nexora.modules.visual_quality.profiler import _rgb
                 frame = _rgb(path) if not chain else self.profiler._still(path, t=0.0, subject=ctx.subject_ref, filters=chain)
             else:
-                frame = self.profiler._still(path, t=mid, subject=ctx.subject_ref, filters=chain, width=960)
+                frame = self.profiler._still(path, t=mid, subject=ctx.subject_ref, filters=chain, width=_measure_width(technical))
             if frame is None:
                 continue
             depth = int(technical.get("bit_depth") or 8)
@@ -292,6 +301,9 @@ class VisualQualityService:
                 steps = self._verify(path, shot, steps, subject=ctx.subject_ref, still=still)
                 verified += 1
                 ctx.heartbeat()
+            if any(s.get("classic") for s in steps):
+                steps = self._choose_ai(path, shot, steps, subject=ctx.subject_ref)
+                ctx.heartbeat()
             shots.append({"t_start": shot["t_start"], "t_end": shot["t_end"], "steps": steps, "scores": shot["scores"], "dropped": shot.get("dropped", []),
                           "defects": [{"kind": d["kind"], "severity": d["severity"]} for d in shot["defects"]]})
         data = {"version": P.VERSION, "encoding": profile.get("encoding"), "encoding_name": profile.get("encoding_name"),
@@ -308,6 +320,7 @@ class VisualQualityService:
         """Each risky step of a shot shows on the shot's middle frame that it does not make the picture less natural: NIQE with
         the step against without it (all the other steps kept). One that costs more than `NIQE_SLACK` is dropped, and said."""
         t = 0.0 if still else (shot["t_start"] + shot["t_end"]) / 2
+        technical = (self.reader.profile(subject) or {}).get("technical", {})
         cache: dict[str, float | None] = {}
 
         def niqe(chain: list[str]) -> float | None:
@@ -318,6 +331,27 @@ class VisualQualityService:
             return cache[key]
 
         kept = list(steps)
+        # A denoise first gets its strength from its method noise, on the frame at the size its noise was measured at.
+        for step in [s for s in steps if s["op"] == "denoise" and s.get("tier", "ffmpeg") == "ffmpeg"]:
+            sigma = float(step["params"].get("sigma") or 0.0)
+            chain = filters_of(kept)
+            if chain is None or sigma <= 0:
+                continue
+
+            def frame(strength, step=step):
+                trial = [s for s in kept if s is not step] if strength is None else \
+                        [{**s, "params": {**s["params"], "strength": strength}} if s is step else s for s in kept]
+                got = self.profiler._still(path, t=t, subject=subject, filters=filters_of(trial), width=None if still else _measure_width(technical))
+                if got is None:
+                    raise AdapterError(ErrorCode.OUTPUT_INVALID, "no frame to tune the denoise on", retryable=False)
+                return got
+
+            try:
+                strength, ratio = P.tune_denoise(frame, sigma)
+            except AdapterError:
+                continue
+            step["params"]["strength"] = strength
+            step["method_noise"] = ratio
         for step in [s for s in steps if s["op"] in P.RISKY and s.get("tier", "ffmpeg") == "ffmpeg"]:
             with_it = filters_of(kept)
             without = filters_of([s for s in kept if s is not step])
@@ -331,13 +365,45 @@ class VisualQualityService:
                 step["checked"] = {"niqe_without": round(b, 3), "niqe_with": round(a, 3)}
         return kept
 
+    def _choose_ai(self, path: Path, shot: dict, steps: list[dict], *, subject: str) -> list[dict]:
+        """Each step by AI that makes detail up against the classic step it stands for, on the picture itself at full size: the
+        AI is kept only when it is clearly more natural (NIQE lower by `AI_MARGIN`), else the classic step takes its place."""
+        work = self._work / subject / "verify"
+        work.mkdir(parents=True, exist_ok=True)
+        kept = list(steps)
+        for step in [s for s in steps if s.get("classic")]:
+            classic = step["classic"]
+            other = [classic if s is step else s for s in kept]
+            # A restore by AI takes away noise, banding and blocks at once: with it, the classic steps for those are left out.
+            absorbed = AI_ABSORBS.get(step["op"], frozenset())
+            mine = [{k: v for k, v in s.items() if k != "classic"} for s in kept if s is step or s["op"] not in absorbed]
+            scores = {}
+            for name, chain in (("ai", mine), ("classic", [{k: v for k, v in s.items() if k != "classic"} for s in other])):
+                try:
+                    file = self._render(path, chain, out=work / f"{step['op']}_{name}.png", kind="still")
+                    scores[name] = A.niqe_of(_centre(_load_rgb(file)))
+                except AdapterError as e:
+                    scores[name] = None
+                    shot.setdefault("notes", []).append(f"{step['op']} ({name}): {e}")
+            ai, base = scores.get("ai"), scores.get("classic")
+            if ai is not None and base is not None and ai < base - AI_MARGIN:
+                step["checked"] = {"niqe_classic": round(base, 3), "niqe_ai": round(ai, 3)}
+                kept = [{k: v for k, v in s.items() if k != "classic"} if s is step else s for s in kept if s is step or s["op"] not in absorbed]
+            else:
+                kept = other
+                shot.setdefault("dropped", []).append({"op": step["op"], "why": "AI không hơn cách cổ điển" + (f" (NIQE {base:.2f} so với {ai:.2f})" if ai is not None and base is not None else "")})
+        return kept
+
     def _render(self, path: Path, steps: list[dict], *, out: Path, kind: str, t_in: float = 0.0, seconds: float | None = None,
                 width: int | None = None, colour: dict | None = None, codec: str | None = None, master: bool = False) -> Path:
         """A stretch through the steps: FFmpeg filters in one go; when a step needs another tool, the steps up to the last such
         one run first, in their order, and the FFmpeg steps after it finish the job."""
         chain = filters_of(steps)
         if chain is None:
-            if kind == "still" and path.suffix.lower() not in STILL_EXT:
+            if kind == "still" and path.suffix.lower() in STILL_EXT:
+                source, rest = self._prepare_still(path, steps, work=out.parent)
+                chain, path, t_in = filters_of(rest) or [], source, 0.0
+            elif kind == "still":
                 # One frame of a video: the tools that look across frames get a second around it, not the rest of the file.
                 start = max(0.0, t_in - STILL_WINDOW / 2)
                 source, rest = self._prepare(path, steps, t_in=start, seconds=STILL_WINDOW, work=out.parent)
@@ -374,6 +440,39 @@ class VisualQualityService:
             self._adapters.submit("gyroflow", Request("stabilise", inputs={"path": str(source)}, params={**span, "smoothness": p.get("smoothness", 0.5)}))
         else:
             raise AdapterError(ErrorCode.UNAVAILABLE, f"no tool for {tier} on this machine", retryable=False)
+        return out
+
+    def _prepare_still(self, path: Path, steps: list[dict], *, work: Path) -> tuple[Path, list[dict]]:
+        """`_prepare` for a picture: the steps in their order up to the last that needs a processor, FFmpeg steps between them
+        written to 16-bit PNG; returns the picture and the FFmpeg steps left."""
+        last = max(i for i, s in enumerate(steps) if s.get("tier", "ffmpeg") != "ffmpeg")
+        stamp = int(time.time() * 1000)
+        current, pending = path, []
+        for k, step in enumerate(steps[:last + 1]):
+            if step.get("tier", "ffmpeg") == "ffmpeg":
+                pending.append(step)
+                continue
+            if pending:
+                baked = work / f"prep_{stamp}_{k}_ffmpeg.png"
+                self._adapters.submit("ffmpeg", Request("vq_render", inputs={"path": str(current)}, params={"kind": "still", "out": str(baked), "filters": filters_of(pending) or []}))
+                current, pending = baked, []
+            current = self._process_still(step, current, work / f"prep_{stamp}_{k}_{step['op']}.png")
+        return current, steps[last + 1:]
+
+    def _process_still(self, step: dict, source: Path, out: Path) -> Path:
+        tier, op, p = step.get("tier"), step["op"], step.get("params") or {}
+        if tier != "realesrgan":
+            raise AdapterError(ErrorCode.UNAVAILABLE, f"no tool for {tier} on a still", retryable=False)
+        with Image.open(source) as im:
+            w, h = im.size
+        if op == "restore":
+            size = (w, h)
+        elif op == "upscale":
+            height = int(p.get("height") or h * 4)
+            size = (round(w * height / h / 2) * 2, height)
+        else:
+            raise AdapterError(ErrorCode.INVALID_REQUEST, f"Real-ESRGAN does not do {op}", retryable=False)
+        self._adapters.submit("restore_local", Request("esrgan", inputs={"path": str(source)}, params={"out": str(out), "model": p.get("model", P.AI_MODEL), "size": list(size)}))
         return out
 
     def _prepare(self, path: Path, steps: list[dict], *, t_in: float, seconds: float | None, work: Path) -> tuple[Path, list[dict]]:
@@ -456,13 +555,17 @@ class VisualQualityService:
         work = self._work / ctx.subject_ref / "apply" / recipe.recipe_id
         work.mkdir(parents=True, exist_ok=True)
         prepared = 0
-        # Shots whose steps need another tool are rendered ahead, so that a cut can take them from a file.
+        still = technical.get("kind") == "still"
+        # Shots whose steps need another tool are rendered ahead, so that a cut (or, for a still, an extract) takes them from a file.
         for shot in recipe.shots:
             steps = [s for s in shot["steps"] if not s.get("off")]
             if filters_of(steps) is None:
                 seconds = shot["t_end"] - shot["t_start"]
-                file = self._render(path, steps, out=work / f"shot_{shot['t_start']:.2f}.mov", kind="video", t_in=shot["t_start"], seconds=seconds,
-                                    colour=colour, master=True)
+                if still:
+                    file = self._render(path, steps, out=work / "still.png", kind="still", colour=colour)
+                else:
+                    file = self._render(path, steps, out=work / f"shot_{shot['t_start']:.2f}.mov", kind="video", t_in=shot["t_start"], seconds=seconds,
+                                        colour=colour, master=True)
                 self.store.prepared(recipe.recipe_id, shot["t_start"], shot["t_end"], file)
                 prepared += 1
                 ctx.heartbeat()
@@ -470,8 +573,10 @@ class VisualQualityService:
         if p.get("out"):
             out = Path(p["out"])
             out.parent.mkdir(parents=True, exist_ok=True)
-            still = technical.get("kind") == "still"
-            if still:
+            if still and prepared:
+                # Already made above: written in the format asked, without running the AI a second time.
+                self._adapters.submit("ffmpeg", Request("vq_render", inputs={"path": str(work / "still.png")}, params={"kind": "still", "out": str(out), "filters": [], "colour": colour}))
+            elif still:
                 steps = [s for s in recipe.shots[0]["steps"] if not s.get("off")]
                 self._render(path, steps, out=out, kind="still", colour=colour)
             elif len(recipe.shots) == 1 or (len({str(s["steps"]) for s in recipe.shots}) == 1 and not self._across_frames(recipe.shots[0]["steps"])):
@@ -519,3 +624,22 @@ class VisualQualityService:
     def forget(self, subject: str) -> None:
         self.store.forget(subject)
         shutil.rmtree(self._work / subject, ignore_errors=True)
+
+
+def _load_rgb(path: Path) -> np.ndarray:
+    with Image.open(path) as im:
+        return np.asarray(im.convert("RGB"), np.float32) / 255.0
+
+
+def _centre(img: np.ndarray, side: int = 1024) -> np.ndarray:
+    """The middle of a picture at its own size: where detail made up or lost shows, without measuring all of a large one."""
+    h, w = img.shape[:2]
+    y, x = max(0, (h - side) // 2), max(0, (w - side) // 2)
+    return img[y:y + side, x:x + side]
+
+
+def _measure_width(technical: dict, most: int = 960) -> int:
+    """The width frames are measured at: 960, or the source's own when smaller. Enlarging a frame smooths its noise away (a
+    640-wide clip with σ 9 read 2.5 at 960, 2026-10-17), so measures are never taken on an enlarged picture."""
+    width = int(technical.get("display_width") or technical.get("width") or most)
+    return max(16, min(most, width - width % 2))

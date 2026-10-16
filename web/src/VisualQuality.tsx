@@ -7,7 +7,8 @@ import { Button, Tag } from "./parts";
    it right (each step with why, and a switch), a preview before and after with its temporal checks, and approval. Nothing
    is applied to a cut or an extract until the recipe is approved. */
 
-type Step = { op: string; tier?: string; params: Record<string, unknown>; why?: string; off?: boolean; checked?: { niqe_without: number; niqe_with: number } };
+type Step = { op: string; tier?: string; params: Record<string, unknown>; why?: string; off?: boolean; generative?: boolean;
+  checked?: { niqe_without?: number; niqe_with?: number; niqe_classic?: number; niqe_ai?: number } };
 type Shot = { t_start: number; t_end: number; steps: Step[]; defects: { kind: string; severity: number }[]; dropped?: { op: string; why: string }[] };
 type Preview = { preview_id: string; t: number; seconds: number; qa: { verdict: string; reasons: string[]; metrics: Record<string, [number | null, number | null]> }; urls: Record<string, string> };
 type View = {
@@ -19,7 +20,7 @@ type View = {
 const OP: Record<string, string> = {
   color_transform: tr("chuyển màu"), tonemap: tr("HDR về SDR"), levels: tr("phơi sáng, cân bằng trắng"), denoise: tr("khử nhiễu"), sharpen: tr("làm nét"),
   deblock: tr("giảm khối nén"), deband: tr("giảm dải màu"), deflicker: tr("giảm nhấp nháy"), stabilise: tr("ổn định hình"), deinterlace: tr("khử xen kẽ dòng"),
-  constant_rate: tr("tốc độ khung cố định"), upscale: tr("phóng to"), interpolate: tr("nội suy khung"), ivtc: tr("bỏ telecine"),
+  constant_rate: tr("tốc độ khung cố định"), upscale: tr("phóng to"), interpolate: tr("nội suy khung"), ivtc: tr("bỏ telecine"), restore: tr("phục hồi ảnh nén"),
 };
 const DEFECT: Record<string, string> = {
   noise: tr("nhiễu"), soft: tr("mềm"), blocking: tr("khối nén"), banding: tr("dải màu"), underexposed: tr("thiếu sáng"), overexposed: tr("cháy sáng"),
@@ -68,7 +69,10 @@ export function AssetVQ({ assetId, seek }: { assetId: string; seek?: (t: number)
             <li key={j} className="flex flex-wrap items-baseline gap-2">
               <label className="flex items-center gap-1"><input type="checkbox" checked={!st.off} onChange={(e) => toggle(k, j, !e.target.checked)} />
                 <span className={st.off ? "text-faint line-through" : "text-ink"}>{OP[st.op] ?? st.op}</span></label>
-              <span className="text-faint">{st.why}{st.checked ? tv` · NIQE ${st.checked.niqe_without} → ${st.checked.niqe_with}` : ""}</span>
+              {st.generative && <Tag tone="cue">{tr("AI sinh chi tiết")}</Tag>}
+              <span className="text-faint">{st.why}
+                {st.checked?.niqe_with != null ? tv` · NIQE ${st.checked.niqe_without} → ${st.checked.niqe_with}` : ""}
+                {st.checked?.niqe_ai != null ? tv` · NIQE cổ điển ${st.checked.niqe_classic}, AI ${st.checked.niqe_ai}` : ""}</span>
             </li>))}</ul>
           {(s.dropped ?? []).map((d) => <p key={d.op} className="text-faint">{tv`Đã bỏ ${OP[d.op] ?? d.op}: ${d.why}`}</p>)}
         </li>))}</ol>}

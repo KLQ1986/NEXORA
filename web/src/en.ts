@@ -1927,6 +1927,9 @@ const en: Record<string, string> = {
   "đã duyệt": "approved",
   "đồ hoạ": "graphics",
   "ổn định hình": "stabilise",
+  "phục hồi ảnh nén": "restore a compressed picture",
+  "AI sinh chi tiết": "AI, makes up detail",
+  " · NIQE cổ điển {0}, AI {1}": " · NIQE classic {0}, AI {1}",
 };
 
 export default en;
