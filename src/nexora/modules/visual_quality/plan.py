@@ -130,7 +130,7 @@ def plan_shot(shot: dict, *, profile: dict, colour: list[dict], have: set[str], 
     if not still and camera_like and sev.get("shake", 0) > 0.3 and options.get("stabilise", True):
         if "gyroflow" in have and tech.get("gyro"):
             steps.append({"op": "stabilise", "tier": "gyroflow", "params": {"smoothness": 0.5}, "why": f"rung {shot['scores']['shake']}px, có dữ liệu con quay"})
-        elif "ffmpeg:vidstabdetect" in have:
+        elif "vidstab" in have:
             steps.append({"op": "stabilise", "tier": "vidstab", "params": {"smoothing": 15, "zoom": 0}, "why": f"rung {shot['scores']['shake']}px"})
     if camera_like and sev.get("soft", 0) > 0 and options.get("sharpen", True) and "ffmpeg:cas" in have:
         steps.append({"op": "sharpen", "tier": "ffmpeg", "params": {"strength": round(0.15 + 0.2 * sev["soft"], 2)}, "why": f"mềm (độ nét {shot['scores']['sharpness']})"})
@@ -138,14 +138,14 @@ def plan_shot(shot: dict, *, profile: dict, colour: list[dict], have: set[str], 
     height = int(tech.get("display_height") or tech.get("height") or 0)
     if target_h and height and target_h > height * 1.2:
         factor = 2 if target_h <= height * 2.2 else 4
-        if "apple_sr" in have and factor == 4 and height <= 1080:
+        if "apple_sr" in have and height <= 1080 and target_h >= height * 3:
             steps.append({"op": "upscale", "tier": "apple_vt", "params": {"factor": 4}, "why": f"phóng ×4 tới {height * 4}p"})
         else:
             steps.append({"op": "upscale", "tier": "ffmpeg", "params": {"factor": factor}, "why": f"phóng ×{factor} tới {height * factor}p"})
     target_fps = options.get("target_fps")
     rate = float(tech.get("frame_rate") or 0)
     if not still and target_fps and rate and target_fps > rate * 1.2:
-        tier = "apple_vt" if "apple_frc" in have else "ffmpeg"
+        tier = "apple_vt" if "apple_frc" in have else "ffmpeg"          # Apple's conversion, else motion-compensated minterpolate
         steps.append({"op": "interpolate", "tier": tier, "params": {"fps": target_fps}, "why": f"nội suy {rate:g} → {target_fps} khung/s"})
     return sorted(steps, key=lambda s: ORDER.index(s["op"]) if s["op"] in ORDER else 99)
 

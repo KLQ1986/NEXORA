@@ -48,7 +48,6 @@ class VisualQualityService:
         self._work, self._luts = Path(work_dir), Path(lut_dir)
         self._shots_of = shots_of                     # Video Intelligence's shots of an asset, when it has them
         self.profiler = SourceProfiler(adapters, self._work / "tmp")
-        self.processors: dict[str, object] = {}       # tier name -> processor for steps that are not FFmpeg filters
 
     def register(self, registry: PipelineRegistry) -> None:
         registry.register(ANALYSE, {"profile": self._profile_stage, "assess": self._assess_stage, "plan": self._plan_stage})
@@ -120,10 +119,26 @@ class VisualQualityService:
             have |= {f"ffmpeg:{k}" for k, v in (env.get("filters") or {}).items() if v}
         except Exception:
             have |= {"ffmpeg:fps", "ffmpeg:colorlevels", "ffmpeg:eq", "ffmpeg:lut3d"}
-        for tier, processor in self.processors.items():
-            if getattr(processor, "available", lambda: True)():
-                have.add(tier)
-                have |= set(getattr(processor, "provides", ()))
+        names = {c.name for c in self._adapters.describe()}
+        if "apple_frames" in names:
+            try:
+                env = self._adapters.environment().get("apple_frames") or {}
+            except Exception:
+                env = {}
+            if env.get("available") and env.get("denoise"):
+                have.add("apple_vt")
+            if env.get("available") and env.get("interpolate"):
+                have.add("apple_frc")
+            if env.get("available") and env.get("superres"):
+                have.add("apple_sr")
+        if "gyroflow" in names:
+            try:
+                if (self._adapters.environment().get("gyroflow") or {}).get("available"):
+                    have.add("gyroflow")
+            except Exception:
+                pass
+        if "ffmpeg:vidstabdetect" in have:
+            have.add("vidstab")
         return have
 
     def _request(self, subject: str, kind: str) -> dict:
@@ -287,14 +302,16 @@ class VisualQualityService:
 
     def _render(self, path: Path, steps: list[dict], *, out: Path, kind: str, t_in: float = 0.0, seconds: float | None = None,
                 width: int | None = None, colour: dict | None = None, codec: str | None = None, master: bool = False) -> Path:
-        """A stretch through the steps: FFmpeg filters in one go; steps of other tools through their processor first."""
+        """A stretch through the steps: FFmpeg filters in one go; when a step needs another tool, the steps up to the last such
+        one run first, in their order, and the FFmpeg steps after it finish the job."""
         chain = filters_of(steps)
         if chain is None:
-            source, offset = self._prepare(path, steps, t_in=t_in, seconds=seconds, work=out.parent)
-            rest = [s for s in steps if s.get("tier", "ffmpeg") == "ffmpeg" and P.ORDER.index(s["op"]) > max(P.ORDER.index(x["op"]) for x in steps if x.get("tier", "ffmpeg") != "ffmpeg")]
-            chain, path, t_in = filters_of(rest) or [], source, offset
+            source, rest = self._prepare(path, steps, t_in=t_in, seconds=seconds, work=out.parent)
+            chain, path, t_in = filters_of(rest) or [], source, 0.0
+            if kind == "still":
+                t_in = (seconds or 0.0) / 2 if seconds else 0.0
         params = {"kind": kind, "out": str(out), "t_in": t_in, "filters": chain, "colour": colour or {}, "master": master}
-        if seconds:
+        if seconds and kind != "still":
             params["seconds"] = seconds
         if width:
             params["width"] = width
@@ -303,28 +320,50 @@ class VisualQualityService:
         self._adapters.submit("ffmpeg", Request("vq_render", inputs={"path": str(path)}, params=params))
         return out
 
-    def _prepare(self, path: Path, steps: list[dict], *, t_in: float, seconds: float | None, work: Path) -> tuple[Path, float]:
-        """Run the steps up to the last one that needs a processor (FFmpeg filters before it baked into its input), and
-        return the file that holds the result and where the stretch begins in it."""
+    def _process(self, step: dict, source: Path, out: Path, *, t_in: float, seconds: float | None) -> Path:
+        """One step that is not an FFmpeg filter, by the tool its tier names; the result is a picture-only intermediate."""
+        tier, op, p = step.get("tier"), step["op"], step.get("params") or {}
+        span = {"out": str(out), "t_in": t_in, **({"seconds": seconds} if seconds else {})}
+        if tier == "apple_vt":
+            if op == "denoise":
+                self._adapters.submit("apple_frames", Request("denoise", inputs={"path": str(source)}, params={**span, "strength": p.get("strength", 0.5)}))
+            elif op == "interpolate":
+                self._adapters.submit("apple_frames", Request("interpolate", inputs={"path": str(source)}, params={**span, "fps": p["fps"]}))
+            elif op == "upscale":
+                self._adapters.submit("apple_frames", Request("superres", inputs={"path": str(source)}, params=span))
+            else:
+                raise AdapterError(ErrorCode.INVALID_REQUEST, f"Apple's processors do not do {op}", retryable=False)
+        elif tier == "vidstab":
+            self._adapters.submit("ffmpeg", Request("vq_stabilise", inputs={"path": str(source)}, params={**span, "smoothing": p.get("smoothing", 15), "zoom": p.get("zoom", 0)}))
+        elif tier == "gyroflow":
+            self._adapters.submit("gyroflow", Request("stabilise", inputs={"path": str(source)}, params={**span, "smoothness": p.get("smoothness", 0.5)}))
+        else:
+            raise AdapterError(ErrorCode.UNAVAILABLE, f"no tool for {tier} on this machine", retryable=False)
+        return out
+
+    def _prepare(self, path: Path, steps: list[dict], *, t_in: float, seconds: float | None, work: Path) -> tuple[Path, list[dict]]:
+        """Run the steps in their order up to the last that needs a processor: FFmpeg steps between processors are rendered in
+        between, so that each step sees what the steps before it made. Returns the intermediate (with the source's sound
+        put back) and the FFmpeg steps left after the last processor."""
         last = max(i for i, s in enumerate(steps) if s.get("tier", "ffmpeg") != "ffmpeg")
-        before = filters_of([s for s in steps[:last] if s.get("tier", "ffmpeg") == "ffmpeg"]) or []
-        current, offset = path, t_in
-        if before:
-            current = work / f"prep_{int(time.time() * 1000)}.mov"
-            self._adapters.submit("ffmpeg", Request("vq_render", inputs={"path": str(path)}, params={
-                "kind": "video", "out": str(current), "t_in": t_in, "filters": before, "master": True, **({"seconds": seconds} if seconds else {})}))
-            offset = 0.0
-        for s in steps[:last + 1]:
-            tier = s.get("tier", "ffmpeg")
-            if tier == "ffmpeg":
+        stamp = int(time.time() * 1000)
+        current, offset, pending = path, t_in, []
+        for k, step in enumerate(steps[:last + 1]):
+            if step.get("tier", "ffmpeg") == "ffmpeg":
+                pending.append(step)
                 continue
-            processor = self.processors.get(tier)
-            if processor is None:
-                raise AdapterError(ErrorCode.UNAVAILABLE, f"no processor for {tier} on this machine", retryable=False)
-            nxt = work / f"prep_{s['op']}_{int(time.time() * 1000)}.mov"
-            processor.run(s, source=current, out=nxt, t_in=offset, seconds=seconds)
-            current, offset = nxt, 0.0
-        return current, offset
+            if pending:
+                baked = work / f"prep_{stamp}_{k}_ffmpeg.mov"
+                self._adapters.submit("ffmpeg", Request("vq_render", inputs={"path": str(current)}, params={
+                    "kind": "video", "out": str(baked), "t_in": offset, "filters": filters_of(pending) or [], "master": True,
+                    **({"seconds": seconds} if seconds else {})}))
+                current, offset, pending = baked, 0.0, []
+            current = self._process(step, current, work / f"prep_{stamp}_{k}_{step['op']}.mov", t_in=offset, seconds=seconds if offset or current == path else None)
+            offset = 0.0
+        sounded = work / f"prep_{stamp}_sound.mov"
+        self._adapters.submit("ffmpeg", Request("vq_mux", inputs={"path": str(current)}, params={"out": str(sounded), "sound_from": str(path), "t_in": t_in,
+                                                                                               **({"seconds": seconds} if seconds else {})}))
+        return sounded, steps[last + 1:]
 
     def _preview_stage(self, ctx):
         request = self._request(ctx.subject_ref, "preview")

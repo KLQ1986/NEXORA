@@ -181,7 +181,7 @@ class FFmpegAdapter(Adapter):
         return [HDR_TO_SDR]
 
     def describe(self) -> Capability:
-        return Capability(name="ffmpeg", operations=("blackdetect", "freezedetect", "proxy", "thumbnail", "frames", "segment", "concat", "loudness", "envelope", "enhance", "silencedetect", "scenecuts", "analysis", "unusable", "r128", "pcm", "telemetry", "extract", "vq_render"), runs="local", supports_cancel=True)
+        return Capability(name="ffmpeg", operations=("blackdetect", "freezedetect", "proxy", "thumbnail", "frames", "segment", "concat", "loudness", "envelope", "enhance", "silencedetect", "scenecuts", "analysis", "unusable", "r128", "pcm", "telemetry", "extract", "vq_render", "vq_stabilise", "vq_mux"), runs="local", supports_cancel=True)
 
     def submit(self, request: Request) -> Result:
         timeout = request.deadline_seconds or 3600
@@ -573,6 +573,33 @@ class FFmpegAdapter(Adapter):
         if not out.is_file() or out.stat().st_size == 0:
             raise AdapterError(ErrorCode.OUTPUT_INVALID, f"nothing came out of {src.name}", retryable=False)
         return Result(outputs={"kind": "video", "size": out.stat().st_size}, files=(str(out),))
+
+    def _vq_stabilise(self, src: Path, params: dict, timeout: float) -> Result:
+        """Steadies a stretch from its picture alone, in two passes (vidstab): the camera's path is measured, then smoothed, and
+        the frame moved against the jitter. For a source without the camera's own motion data (Gyroflow takes that)."""
+        out = Path(params["out"])
+        out.parent.mkdir(parents=True, exist_ok=True)
+        motions = out.with_suffix(".trf")
+        seek = ["-ss", str(params["t_in"])] if float(params.get("t_in") or 0) > 0 else []
+        span = [*seek, "-i", str(src)] + (["-t", str(params["seconds"])] if params.get("seconds") else [])
+        self._run(["-y", *span, "-vf", f"vidstabdetect=shakiness={int(params.get('shakiness', 6))}:accuracy=15:result={motions}", "-f", "null", "-"], timeout, "vidstab detect")
+        smoothing, zoom = int(params.get("smoothing", 15)), float(params.get("zoom", 0))
+        self._run(["-y", *span, "-vf", f"vidstabtransform=input={motions}:smoothing={smoothing}:zoom={zoom}:optzoom={1 if zoom == 0 else 0}:interpol=bicubic",
+                   "-an", "-c:v", "prores_ks", "-profile:v", "3", "-pix_fmt", "yuv422p10le", str(out)], timeout, "vidstab transform")
+        motions.unlink(missing_ok=True)
+        if not out.is_file() or out.stat().st_size == 0:
+            raise AdapterError(ErrorCode.OUTPUT_INVALID, "stabilisation wrote nothing", retryable=False)
+        return Result(outputs={"stabilised": True}, files=(str(out),))
+
+    def _vq_mux(self, src: Path, params: dict, timeout: float) -> Result:
+        """The picture of a processed stretch with the sound of the same stretch of the source: processors work on pictures."""
+        out = Path(params["out"])
+        seek = ["-ss", str(params["t_in"])] if float(params.get("t_in") or 0) > 0 else []
+        sound = [*seek, "-i", str(params["sound_from"])] + (["-t", str(params["seconds"])] if params.get("seconds") else [])
+        self._run(["-y", "-i", str(src), *sound, "-map", "0:v:0", "-map", "1:a:0?", "-c:v", "copy", "-c:a", "pcm_s24le", "-shortest", str(out)], timeout, "vq mux")
+        if not out.is_file() or out.stat().st_size == 0:
+            raise AdapterError(ErrorCode.OUTPUT_INVALID, "nothing came out of the mux", retryable=False)
+        return Result(files=(str(out),))
 
     def _thumbnail(self, src: Path, params: dict, timeout: float) -> Result:
         out = Path(params["out"])

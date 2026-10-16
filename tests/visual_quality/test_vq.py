@@ -262,3 +262,72 @@ def test_the_benchmark_finds_each_damage_and_its_step_undoes_it(tmp_path):
     assert by["jpeg"]["found"] and by["jpeg"]["helps"]
     assert by["dark"]["helps"] and by["cast"]["helps"]
     assert "Phát hiện đúng" in B.table(made)
+
+
+APPLE = Path("data/tools/apple_frames/apple_frames").resolve()
+FULL = Path("/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg")
+
+
+def shaky(path: Path, *, audio: bool = True, seconds: int = 3) -> Path:
+    """A textured clip whose frame jumps a few pixels at random each frame, with sensor noise and a tone: handheld footage."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tex = texture(path.with_suffix(".png"), size=(800, 480), seed=7)
+    # Things with edges and corners, as a real scene has, for a tracker to hold on to.
+    from PIL import ImageDraw
+    rng = np.random.default_rng(11)
+    with Image.open(tex) as im:
+        im = im.convert("RGB")
+        draw = ImageDraw.Draw(im)
+        for _ in range(140):
+            x, y = int(rng.integers(0, 780)), int(rng.integers(0, 460))
+            draw.rectangle([x, y, x + int(rng.integers(6, 40)), y + int(rng.integers(6, 40))], fill=tuple(int(v) for v in rng.integers(0, 255, 3)))
+        im.save(tex)
+    jitter = "crop=640:360:'80+12*sin(n*1.7)+9*sin(n*3.1)':'60+10*cos(n*2.3)+7*sin(n*4.7)'"
+    cmd = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-loop", "1", "-framerate", "25", "-t", str(seconds), "-i", str(tex)]
+    if audio:
+        cmd += ["-f", "lavfi", "-t", str(seconds), "-i", "sine=frequency=440:sample_rate=48000"]
+    cmd += ["-vf", f"{jitter},noise=alls=14:allf=t", "-c:v", "libx264", "-crf", "14", "-pix_fmt", "yuv420p"] + (["-c:a", "aac", "-shortest"] if audio else []) + [str(path)]
+    subprocess.run(cmd, check=True)
+    return path
+
+
+@pytest.mark.skipif(not APPLE.is_file(), reason="Apple's frame processors are not built on this machine")
+def test_a_temporal_denoise_by_apple_is_prepared_with_its_sound_and_taken_by_a_cut(tmp_path):
+    from nexora.adapters.apple_frames import AppleFrames
+    system = vq_system(tmp_path)
+    system.adapters.register(AppleFrames(APPLE))
+    asset, _ = system.library.ingest(shaky(tmp_path / "in" / "noisy.mp4"))
+    drain(system)
+    subject = system.vq.subject_for_asset(asset)
+    system.vq.analyse(subject, stabilise=False)
+    drain(system)
+    recipe = system.vq_reader.recipe(subject)
+    tiers = {s["op"]: s.get("tier") for shot in recipe.shots for s in shot["steps"]}
+    assert tiers.get("denoise") == "apple_vt"                              # the measured noise calls for it, and Apple's filter is here
+    system.vq.approve(recipe.recipe_id)
+    system.vq.apply(subject)
+    drain(system)
+    shot = recipe.shots[0]
+    prepared = system.vq_reader.prepared_for(subject, shot["t_start"], shot["t_end"])
+    assert prepared is not None and Path(prepared[0]).is_file()
+    streams = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type", "-of", "csv=p=0", prepared[0]], capture_output=True, text=True).stdout.split()
+    assert "video" in streams and "audio" in streams
+    path, t_in, key = system.edit._apply_vq(asset, str(system.assets.path_of(system.assets.original(asset))), shot["t_start"], 1.0, "sum", {})
+    assert path == prepared[0] and key.startswith("sum:vq:")
+
+
+@pytest.mark.skipif(not FULL.is_file(), reason="an FFmpeg with vidstab is not installed")
+def test_a_shaky_clip_is_steadied_and_measures_steadier(tmp_path):
+    system = build(tmp_path / "data", ffmpeg_binary=str(FULL))
+    src = shaky(tmp_path / "in" / "shaky.mp4", audio=False)
+    subject = system.vq.subject_for_file(src)
+    system.vq.analyse(subject, denoise=False)
+    drain(system)
+    recipe = system.vq_reader.recipe(subject)
+    steps = [s for shot in recipe.shots for s in shot["steps"]]
+    stab = [s for s in steps if s["op"] == "stabilise"]
+    assert stab and stab[0]["tier"] == "vidstab"
+    out = system.vq._render(src, stab, out=tmp_path / "out" / "steady.mov", kind="video", t_in=0.0, seconds=3.0, master=True)
+    before = system.vq.profiler.sample(src, duration=3, subject=subject, width=480, fps=12, tag="b")
+    after = system.vq.profiler.sample(out, duration=3, subject=subject, width=480, fps=12, tag="a")
+    assert M.shake(after) < M.shake(before) * 0.6

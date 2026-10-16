@@ -515,6 +515,8 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     from nexora.core.visual_quality_store import VisualQualityStore
     from nexora.modules.visual_quality.service import VisualQualityService
     adapters.register(ColorTransforms(data_dir / "luts"))
+    from nexora.adapters.apple_frames import AppleFrames
+    adapters.register(AppleFrames(data_dir / "tools" / "apple_frames" / "apple_frames"))
     vq_reader = VisualQuality(db_path)
     vq = VisualQualityService(orch, assets, adapters, VisualQualityStore(db_path), vq_reader, data_dir / "vq", data_dir / "luts",
                               shots_of=lambda asset_id: [(s.t_start, s.t_end) for s in vi.segments(asset_id, "shot")])
