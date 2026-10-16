@@ -420,3 +420,45 @@ def test_a_step_across_frames_is_applied_shot_by_shot_so_it_never_blends_across_
     frames = subprocess.run(["ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0", "-show_entries", "stream=nb_read_frames",
                              "-of", "csv=p=0", str(out)], capture_output=True, text=True).stdout.strip()
     assert 196 <= int(frames) <= 204
+
+
+DNG = Path("data/samples/raw/DJI_0254.DNG").resolve()                      # raw.pixls.us, CC0: a DJI Osmo Action RAW
+
+
+@pytest.mark.skipif(not Path("/usr/bin/sips").is_file(), reason="HEIC is decoded by macOS")
+def test_a_heic_is_decoded_keeping_its_camera_and_given_a_recipe(tmp_path):
+    system = vq_system(tmp_path)
+    jpg = tmp_path / "in" / "p.jpg"
+    jpg.parent.mkdir(parents=True)
+    Image.open(texture(tmp_path / "t.png", size=(800, 600))).save(jpg, exif=_exif("Apple", "iPhone 16 Pro"))
+    heic = tmp_path / "in" / "p.heic"
+    subprocess.run(["sips", "-s", "format", "heic", str(jpg), "--out", str(heic)], check=True, capture_output=True)
+    subject = system.vq.subject_for_file(heic)
+    system.vq.analyse(subject)
+    drain(system)
+    tech = system.vq_reader.profile(subject)["technical"]
+    assert tech["kind"] == "still" and tech["container"] == "heic" and tech["decoded"] and tech["device"] == "Apple iPhone 16 Pro"
+    out = tmp_path / "out" / "p.jpg"
+    system.vq.approve(system.vq_reader.recipe(subject).recipe_id)
+    system.vq.apply(subject, out=str(out))
+    drain(system)
+    with Image.open(out) as im:
+        assert im.size == (800, 600)
+
+
+@pytest.mark.skipif(not DNG.is_file(), reason="the RAW sample is not downloaded")
+def test_a_raw_is_decoded_by_libraw_at_16_bits_and_named_by_its_camera(tmp_path):
+    system = vq_system(tmp_path)
+    subject = system.vq.subject_for_file(DNG)
+    system.vq.analyse(subject)
+    drain(system)
+    tech = system.vq_reader.profile(subject)["technical"]
+    assert tech["raw"] and tech["container"] == "dng" and tech["device"] == "DJI Osmo Action" and (tech["width"], tech["height"]) == (4000, 3000)
+    bits = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=pix_fmt", "-of", "csv=p=0", str(system.vq.path_of(subject))], capture_output=True, text=True).stdout
+    assert "48" in bits                                                        # the working copy keeps 16 bits a channel
+
+
+def _exif(make: str, model: str):
+    exif = Image.Exif()
+    exif[271], exif[272] = make, model
+    return exif

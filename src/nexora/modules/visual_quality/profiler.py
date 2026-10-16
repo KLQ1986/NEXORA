@@ -17,7 +17,10 @@ from nexora.modules.visual_quality import measure as M
 from nexora.modules.visual_quality.registry import identify
 
 VERSION = "1"
-STILL_EXT = frozenset({".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff", ".bmp", ".heic", ".heif", ".dng"})
+# Stills that are first decoded to a 16-bit TIFF by the `stills` adapter (HEIF by macOS, RAW by LibRaw), then read as any other.
+DECODE_EXT = frozenset({".heic", ".heif", ".hif", ".avif", ".dng", ".cr2", ".cr3", ".crw", ".nef", ".nrw", ".arw", ".srf", ".sr2", ".raf", ".orf",
+                        ".rw2", ".pef", ".srw", ".x3f", ".3fr", ".iiq", ".erf", ".mos", ".gpr"})
+STILL_EXT = frozenset({".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff", ".bmp"}) | DECODE_EXT
 AI_HINTS = re.compile(r"runway|pika|kling|sora|luma|dream ?machine|hailuo|minimax|veo|wan2|hunyuan|cogvideo|ltx|stable video|gen-?\d|svd", re.I)
 SCREEN_HINTS = re.compile(r"screen|obs|quicktime player|xsplit|shadowplay|bandicam|camtasia", re.I)
 

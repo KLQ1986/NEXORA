@@ -8,6 +8,7 @@ since a run carries only its subject.
 Video Intelligence is optional: when the subject is an asset it has analysed, its shot boundaries are used; otherwise the
 engine finds them itself.
 """
+import json
 import shutil
 import time
 from pathlib import Path
@@ -24,7 +25,7 @@ from nexora.modules.visual_quality import assess as A
 from nexora.modules.visual_quality import measure as M
 from nexora.modules.visual_quality import plan as P
 from nexora.modules.visual_quality import qa as Q
-from nexora.modules.visual_quality.profiler import STILL_EXT, VERSION as PROFILE_VERSION, SourceProfiler
+from nexora.modules.visual_quality.profiler import DECODE_EXT, STILL_EXT, VERSION as PROFILE_VERSION, SourceProfiler
 from nexora.modules.visual_quality.registry import BY_KEY
 
 ANALYSE = PipelineDefinition("vq.analyse", "1", [
@@ -70,10 +71,22 @@ class VisualQualityService:
         return self.store.new_job(path)
 
     def path_of(self, subject: str) -> Path:
+        """The file the tools read: the subject's own, or, for a HEIC or a RAW, its 16-bit TIFF made once by the `stills` adapter."""
         known = self.reader.subject(subject)
         if known is None:
             raise LookupError(subject)
-        return Path(known["path"])
+        path = Path(known["path"])
+        if path.suffix.lower() not in DECODE_EXT or not path.is_file():
+            return path
+        return self._decoded(subject, path)[0]
+
+    def _decoded(self, subject: str, original: Path) -> tuple[Path, dict]:
+        out = self._work / subject / "source.tiff"
+        info_file = out.with_suffix(".json")
+        if not (out.is_file() and info_file.is_file() and out.stat().st_mtime >= original.stat().st_mtime):
+            done = self._adapters.submit("stills", Request("decode", inputs={"path": str(original)}, params={"out": str(out)}))
+            info_file.write_text(json.dumps(done.outputs))
+        return out, json.loads(info_file.read_text())
 
     # ------------------------------------------------------------------------------------------------------- what is asked
     def analyse(self, subject: str, **options) -> str:
@@ -207,6 +220,16 @@ class VisualQualityService:
         if not path.is_file():
             raise AdapterError(ErrorCode.MISSING_INPUT, f"{path} is not at hand")
         made = self.profiler.profile(path, subject=ctx.subject_ref)
+        original = Path(self.reader.subject(ctx.subject_ref)["path"])
+        if original.suffix.lower() in DECODE_EXT:
+            # What the original is, not what its working copy is: the format, the bits of the sensor, the camera.
+            info = self._decoded(ctx.subject_ref, original)[1]
+            tech = made["technical"]
+            tech.update({"container": info.get("from"), "decoded": True, "raw": bool(info.get("raw")), "bit_depth": info.get("bit_depth") or tech.get("bit_depth")})
+            for key in ("make", "model", "software"):
+                tech[key] = tech.get(key) or info.get(key)
+            make, model = str(tech.get("make") or ""), str(tech.get("model") or "")
+            tech["device"] = tech.get("device") or (model if model.lower().startswith(make.lower()) else f"{make} {model}").strip() or None
         if made["technical"].get("kind") != "still" and "gyroflow" in self._have():
             try:
                 made["technical"]["gyro"] = bool(self._adapters.submit("gyroflow", Request("probe", inputs={"path": str(path)})).outputs.get("gyro"))
