@@ -132,3 +132,24 @@ Mỗi đợt: test tự động, chạy thật trên **một** nguồn mỗi lo�
    - v4.0 đặt "enhancement" (LUT, khử nhiễu, phóng to, ổn định) trong nhóm công cụ dựng, gọi qua OpenMontage.
    - Nay đó là một domain riêng, vì nó nhận mọi nguồn, chạy cả ngoài thư viện, và có thước đo riêng.
    - Ranh giới với `modules/quality`: `quality` kiểm tra **bản dựng** (QC, review, quyền, độ đúng của các trường), còn `visual_quality` lo **chất lượng hình của nguồn**.
+
+## 9. Đưa code từ các repo nghiên cứu về (2026-10-16)
+
+Bốn cách, tuỳ bản chất của thứ cần lấy:
+
+1. **Chép code (vendor)** vào `src/nexora/third_party/<repo>/`, ghi repo và commit gốc ở đầu mỗi file. Chỉ cho code nhỏ chạy được trong môi trường chính (numpy, scipy, OpenCV). Gồm: NIQE, PSNR/SSIM và `degradations.py` của BasicSR; `tile_process` và DNI của Real-ESRGAN. Đợt 1.
+2. **Clone repo vào `data/tools/<tên>/`, môi trường Python riêng**, dựng bằng `scripts/setup-<tên>.sh`, gọi qua helper JSON-lines và một adapter, giống SigLIP. Cho code nặng (PyTorch, mô hình lớn): backend của REAL Video Enhancer (RIFE 4.x, SPAN, phát hiện điểm cắt) ở đợt 2; ProPainter, SwinIR ở đợt 3; VRT/RVRT chạy trên RunPod ở đợt 3; VEnhancer, Enhance-A-Video cho dây chuyền A.
+3. **Gọi chương trình có sẵn qua adapter**: Gyroflow (CLI), Real-ESRGAN và RIFE bản ncnn cho Mac, VapourSynth nếu cần. Đợt 2.
+4. **Học ý tưởng, tự viết lại**:
+   - phát hiện điểm cắt trước khi nội suy (REAL Video Enhancer);
+   - chép thông tin màu từ bộ giải mã sang bộ mã hoá, và processor factory (Video2X);
+   - frame server lười có bộ đệm (VapourSynth);
+   - lấy điểm ảnh thật từ khung lân cận trước khi sinh (ProPainter);
+   - căn chỉnh theo chuyển động rồi gộp khung (EDVR/VRT/RVRT/BasicVSR).
+
+Lý do không chép thẳng mọi thứ vào môi trường chính:
+- mỗi repo nặng cần phiên bản PyTorch và thư viện riêng, để chung sẽ làm hỏng nhau;
+- ghi commit gốc thì cập nhật được từng phần;
+- đi qua adapter thì thay được khi bộ đo cho thấy có cái tốt hơn.
+
+Mọi thứ đưa về phải qua bộ đo lỗi giả lập trước khi thành mặc định.
