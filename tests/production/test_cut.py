@@ -62,8 +62,17 @@ def test_the_storyboard_becomes_a_sequence_and_a_saved_cut_is_rendered_for_revie
     placed = [c["params"] for c in plan["commands"] if c["id"] == "timeline.place"]
     shots = client.get(f"/api/v1/projects/{project}/storyboard").json()["shots"]
     pictured = [s for s in shots if s["assignment"] and s["assignment"].get("asset_id")]
-    assert len(placed) == len(pictured) and placed[0]["sourceIn"] == round(pictured[0]["assignment"]["t_in"] * TICKS)
-    assert placed[0]["item"].startswith("$item:ver_") and plan["media"][0]["url"].startswith("/media/ver_")
+    # Each SC is a subclip of its stretch, placed on V1; the project panel mirrors the storyboard.
+    subs = {c["as"]: c["params"] for c in plan["commands"] if c["id"] == "clip.makeSubclip" and c["as"].startswith("sub:")}
+    assert len(placed) == len(pictured) and placed[0]["item"] == "$ref:sub:SC1" and plan["media"][0]["url"].startswith("/media/ver_")
+    assert subs["sub:SC1"]["start"] == round(pictured[0]["assignment"]["t_in"] * TICKS) and subs["sub:SC1"]["name"].startswith("SC1 · ")
+    bins = [c["params"]["name"] for c in plan["commands"] if c["id"] == "file.newBin"]
+    assert bins == ["Storyboard", "Phương án khác", "Media", "Âm thanh"]
+    moved = {c["params"]["bin"]: c["params"]["items"] for c in plan["commands"] if c["id"] == "project.moveToBin"}
+    assert moved["$ref:bin:sb"] == [f"$ref:{k}" for k in subs] and "$ref:bin:media" in moved
+    assert all(c["params"]["name"].endswith(".mp4") for c in plan["commands"] if c["id"] == "clip.rename" and c["params"]["item"].startswith("$item:ver_"))
+    alts = [c["params"]["name"] for c in plan["commands"] if c["id"] == "clip.makeSubclip" and c["as"].startswith("alt:SC1")]
+    assert not alts or alts[0].startswith("SC1 · phương án 1:")                      # each SC counts its own options
     assert {m["code"] for m in plan["missing"]} | {f"SC{k}" for k, s in enumerate(shots, 1) if s in pictured} == {f"SC{k}" for k in range(1, len(shots) + 1)}
     assert ids[-1] == "captions.setTrack" and plan["commands"][-1]["params"]["syncLock"]          # captions follow ripples
     caps = [c["params"] for c in plan["commands"] if c["id"] == "captions.add"]

@@ -7,7 +7,7 @@ import { Button, Icon, toast } from "./parts";
    (window.filmcraft, same origin). The storyboard is built into a sequence once; the operator edits; every save is a
    version of the project's cut kept by NEXORA; the final render runs on this Mac with FilmCraft's engine. */
 
-type Cmd = { id: string; params: Record<string, unknown>; tag?: string };
+type Cmd = { id: string; params: Record<string, unknown>; tag?: string; as?: string };
 type Plan = { media: { version: string | null; name: string; url: string }[]; commands: Cmd[]; missing: { code: string; reason: string }[]; notes: string[];
   seconds: number; shots: number; sound: { voice: number; music: boolean; sfx: number } };
 type CutVersion = { cut_id: string; version: number; made_by: string; note: string | null; source: string | null; created_at: number;
@@ -82,6 +82,19 @@ export default function EditStep({ projectId, approved, onChanged }: { projectId
     }
   };
 
+  /** The Source monitor shows the media of a timeline clip, its In and Out at the stretch the shot uses, the playhead at
+      its In: never "No clips", and the stretch around the shot is there to slip, re-cut or insert from. */
+  const showInSource = useCallback(async (api: FilmCraftApi, clip?: number) => {
+    const s = await api.execute("sequence.inspect", {});
+    const items = (s?.video ?? []).flatMap((t: { items: { clip: number; sourceIn: number; sourceOut: number }[] }) => t.items);
+    const c = clip == null ? items[0] : items.find((i: { clip: number }) => i.clip === clip);
+    if (!c) { if (clip != null) shown.current = clip; return; }       // a sound clip: the Source stays as it is
+    await api.execute("source.open", { clip: c.clip });
+    await api.execute("source.setPlayhead", { time: c.sourceIn });     // no marks set: looking at a shot changes nothing in the cut
+    shown.current = c.clip;
+  }, []);
+  const shown = useRef<number | null>(null);
+
   const save = async (note: string, source = "operator") => {
     const api = await fc();
     await realign(api);
@@ -101,10 +114,13 @@ export default function EditStep({ projectId, approved, onChanged }: { projectId
     const items = await bring(api, plan.media);
     let clips: number[] = [];
     const tags: Record<string, number[]> = {};
+    const refs: Record<string, unknown> = {};
     const resolve = (v: unknown): unknown => {
       if (typeof v === "string" && v.startsWith("$item:")) return items[v.slice(6)];
+      if (typeof v === "string" && v.startsWith("$ref:")) return refs[v.slice(5)];
       if (typeof v === "string" && v.startsWith("$tag:")) return tags[v.slice(5)] ?? [];
       if (v === "$clip" || (Array.isArray(v) && v.length === 1 && v[0] === "$clip")) return clips;
+      if (Array.isArray(v)) return v.map(resolve);
       return v;
     };
     for (const c of plan.commands) {
@@ -112,8 +128,10 @@ export default function EditStep({ projectId, approved, onChanged }: { projectId
       const r = await api.execute(c.id, params);
       if (c.id === "timeline.place") clips = (r?.clips ?? []) as number[];
       if (c.tag) tags[c.tag] = [...(tags[c.tag] ?? []), ...clips];
+      if (c.as) refs[c.as] = r?.bin ?? r?.item ?? r;                  // what this command made, for later commands to name
     }
     await save(tr("lắp từ storyboard"), "storyboard");
+    await showInSource(api).catch(() => undefined);
     if (plan.missing.length) toast(tv`${plan.missing.length} shot chưa có hình: để trống trên timeline.`, { tone: "tally" });
     if (plan.notes.length) toast(plan.notes.slice(0, 3).join(" · "), { tone: "tally" });
   };
@@ -126,6 +144,7 @@ export default function EditStep({ projectId, approved, onChanged }: { projectId
     const held = new Set((await api.files()).map((f) => f.path));
     for (const m of new Map(media.map((m) => [m.name, m])).values()) if (!held.has(`/files/${m.name}`)) await api.importUrl(m.url, m.name);
     await api.openProject(v.document_url);
+    await showInSource(api).catch(() => undefined);
     setOpen(v.version);
     setDirty(false);
   };
@@ -138,6 +157,19 @@ export default function EditStep({ projectId, approved, onChanged }: { projectId
     if (newest) act("open", () => openVersion(newest));
     else if (data.storyboard && approved) act("build", build, tr("Đã lắp storyboard thành timeline (phiên bản 1)."));
   }, [data, ready]);
+
+  // A clip chosen on the timeline is shown in the Source monitor, at its stretch.
+  useEffect(() => {
+    if (!ready) return;
+    const id = window.setInterval(async () => {
+      try {
+        const api = await fc();
+        const sel = ((await api.execute("state.inspect", {}))?.selection ?? []) as number[];
+        if (sel.length === 1 && sel[0] !== shown.current) await showInSource(api, sel[0]);
+      } catch { /* not ready, or a sound clip */ }
+    }, 900);
+    return () => window.clearInterval(id);
+  }, [ready, fc, showInSource]);
 
   // Edits mark the open version as changed, so leaving or exporting asks to save first.
   useEffect(() => {

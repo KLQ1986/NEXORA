@@ -91,15 +91,19 @@ class FilmCraft(Adapter):
                 if made.get("errors"):
                     raise AdapterError(ErrorCode.MISSING_INPUT, f"FilmCraft could not import {m['name']}: {made['errors']}", retryable=False)
                 items[m["name"]] = items[m["name"].split(".")[0]] = made["items"][0]
-            clips, tags = [], {}
+            clips, tags, refs = [], {}, {}
 
             def resolve(v):
                 if isinstance(v, str) and v.startswith("$item:"):
                     return items[v[6:]]
+                if isinstance(v, str) and v.startswith("$ref:"):
+                    return refs[v[5:]]
                 if isinstance(v, str) and v.startswith("$tag:"):
                     return tags.get(v[5:], [])
                 if v == "$clip" or v == ["$clip"]:
                     return clips
+                if isinstance(v, list):
+                    return [resolve(x) for x in v]
                 return v
 
             for c in commands:
@@ -108,6 +112,8 @@ class FilmCraft(Adapter):
                     clips = list((out or {}).get("clips") or [])
                 if c.get("tag"):
                     tags[c["tag"]] = tags.get(c["tag"], []) + clips
+                if c.get("as"):                                      # what this command made, for later commands to name
+                    refs[c["as"]] = (out or {}).get("bin") or (out or {}).get("item") or out
             with tempfile.TemporaryDirectory(prefix="nexora_cut_") as tmp:
                 path = Path(tmp) / "cut.fcproj"
                 run("file.saveAs", {"path": str(path)})

@@ -48,6 +48,13 @@ class Cut:
     def register(self, registry: PipelineRegistry) -> None:
         registry.register(EXPORT, {"export": self._export})
 
+    def _file_name(self, asset_id: str) -> str:
+        """A recording as the operator knows it: its original file's name."""
+        try:
+            return self._assets.path_of(self._assets.original(asset_id)).name
+        except Exception:
+            return asset_id
+
     def _transcript(self, asset_id: str) -> dict | None:
         """A recording's words as a FilmCraft transcript, in media ticks. A word Whisper stretched over a silence (longer than
         a second) keeps only its last 0.6 s, so the editor does not select a silence as a word."""
@@ -106,7 +113,13 @@ class Cut:
         media, commands, missing = {}, [], []
         commands.append({"id": "file.newSequence", "params": {"name": f"{project['title']} · từ Storyboard", "width": width, "height": height,
                                                            "fps": round(FPS, 3), "video": 3, "audio": 4}})
+        # The project panel mirrors the storyboard: each SC a subclip (its stretch of the recording) in "Storyboard", in
+        # order; each SC's other options as subclips in "Phương án khác"; the recordings under their own file names in
+        # "Media"; the sounds in "Âm thanh". The timeline holds the SC subclips, so a clip chosen there opens its SC.
+        for key, name in (("sb", "Storyboard"), ("alt", "Phương án khác"), ("media", "Media"), ("sound", "Âm thanh")):
+            commands.append({"id": "file.newBin", "params": {"name": name}, "as": f"bin:{key}"})
         at, lines, said, sfx, notes, spoken = 0.0, [], [], [], [], {}
+        subclips, others = [], []
         for k, s in enumerate(shots, 1):
             code, line = f"SC{k}", s.spec["line"] or s.spec["intent"]
             a = s.assignment or {}
@@ -119,10 +132,26 @@ class Cut:
                 name = f"{version.version_id}{Path(self._assets.path_of(version)).suffix.lower() or '.mp4'}"
                 media[version.version_id] = {"version": version.version_id, "name": name, "url": f"/media/{version.version_id}"}
                 treat = a.get("treat") or {}
+                t_in = float(a.get("t_in") or 0.0)
+                commands.append({"id": "clip.makeSubclip", "params": {"item": f"$item:{version.version_id}", "name": f"{code} · {line[:48]}",
+                                                                    "start": ticks(t_in), "end": ticks(t_in + length), "restrictTrims": False}, "as": f"sub:{code}"})
+                subclips.append(f"$ref:sub:{code}")
                 # The clip's own sound only where the shot asks for it (an interview, a sound worth hearing); elsewhere the line speaks.
-                commands.append({"id": "timeline.place", "params": {"item": f"$item:{version.version_id}", "track": "V1", "seconds": round(at, 4),
-                                                                  "sourceIn": ticks(float(a.get("t_in") or 0.0)), "duration": ticks(length),
+                commands.append({"id": "timeline.place", "params": {"item": f"$ref:sub:{code}", "track": "V1", "seconds": round(at, 4),
                                                                   "audio": bool(treat.get("live_sound"))}})
+                n_alt = 0
+                for j, o in enumerate((a.get("candidates") or [])[:6]):
+                    if (o["asset_id"], o["t_in"]) == (a["asset_id"], a.get("t_in")):
+                        continue
+                    alt = self._proxy(o["asset_id"])
+                    if alt is None:
+                        continue
+                    alt_name = f"{alt.version_id}{Path(self._assets.path_of(alt)).suffix.lower() or '.mp4'}"
+                    media[alt.version_id] = {"version": alt.version_id, "name": alt_name, "url": f"/media/{alt.version_id}"}
+                    n_alt += 1
+                    others.append({"id": "clip.makeSubclip", "params": {"item": f"$item:{alt.version_id}", "name": f"{code} · phương án {n_alt}: {self._file_name(o['asset_id'])}",
+                                                                       "start": ticks(float(o["t_in"])), "end": ticks(float(o["t_out"])), "restrictTrims": False},
+                                   "as": f"alt:{code}:{j}"})
                 if treat.get("sfx"):
                     sfx.append((code, at, treat["sfx"]))
                 if treat.get("live_sound"):
@@ -146,6 +175,7 @@ class Cut:
             media[name] = {"version": None, "name": name, "url": f"/api/v1/projects/{project_id}/cut/sound/{name}"}
             begin = max(start, voice_end + 0.1 if voice_end else start)
             commands.append({"id": "timeline.place", "params": {"item": f"$item:{name}", "track": "A1", "seconds": round(begin, 4)}, "tag": "voice"})
+            commands.append({"id": "clip.rename", "params": {"item": f"$item:{name}", "name": f"{code} · lời dẫn"}})
             voice_end = begin + float(got["duration"])
             if voice_end > start + length + 0.3:
                 notes.append(f"{code}: lời dài hơn hình {voice_end - start - length:.1f}s")
@@ -154,6 +184,7 @@ class Cut:
         if music and at > 0:
             media[music] = {"version": None, "name": music, "url": f"/api/v1/projects/{project_id}/cut/sound/{music}"}
             commands.append({"id": "timeline.place", "params": {"item": f"$item:{music}", "track": "A2", "seconds": 0, "duration": ticks(at)}, "tag": "music"})
+            commands.append({"id": "clip.rename", "params": {"item": f"$item:{music}", "name": f"Nhạc nền · {Path(project['music_path']).name}"}})
             gain = float(project.get("music_gain") or 0.35)
             commands.append({"id": "clip.audioGain", "params": {"clips": "$tag:music", "mode": "set", "db": round(20 * math.log10(max(gain, 0.01)), 2)}})
         # A3, each shot's sound effect from the start of the shot.
@@ -165,6 +196,7 @@ class Cut:
             name = f"{version.version_id}{Path(self._assets.path_of(version)).suffix.lower() or '.wav'}"
             media[version.version_id] = {"version": version.version_id, "name": name, "url": f"/media/{version.version_id}"}
             commands.append({"id": "timeline.place", "params": {"item": f"$item:{version.version_id}", "track": "A3", "seconds": round(start, 4)}, "tag": "sfx"})
+            commands.append({"id": "clip.rename", "params": {"item": f"$item:{version.version_id}", "name": f"{code} · tiếng động · {self._file_name(asset_id)}"}})
             commands.append({"id": "clip.audioGain", "params": {"clips": "$clip", "mode": "set", "db": round(20 * math.log10(0.6), 2)}})
         if said and any(c.get("tag") == "voice" for c in commands):
             commands.append({"id": "essentialSound.setType", "params": {"clips": "$tag:voice", "type": "dialogue"}})
@@ -178,6 +210,22 @@ class Cut:
             words = self._transcript(asset_id)
             if words:
                 commands.append({"id": "transcript.set", "params": {"item": f"$item:{version_id}", "transcript": words}})
+        # The bins filled: the SCs in order, their options, the recordings under their file names, the sounds.
+        commands.extend(others)
+        if subclips:
+            commands.append({"id": "project.moveToBin", "params": {"items": subclips, "bin": "$ref:bin:sb"}})
+        if others:
+            commands.append({"id": "project.moveToBin", "params": {"items": [f"$ref:{c['as']}" for c in others], "bin": "$ref:bin:alt"}})
+        pictures = [m["version"] for m in media.values() if m["version"] and not m["name"].endswith((".wav", ".mp3", ".m4a", ".aiff"))]
+        for version_id in pictures:
+            version = self._assets.version(version_id)
+            if version:
+                commands.append({"id": "clip.rename", "params": {"item": f"$item:{version_id}", "name": self._file_name(version.asset_id)}})
+        if pictures:
+            commands.append({"id": "project.moveToBin", "params": {"items": [f"$item:{v}" for v in pictures], "bin": "$ref:bin:media"}})
+        sounds = [m["name"] for m in media.values() if m["name"] not in {f"{v}{Path(m['name']).suffix}" for v in pictures} and (not m["version"] or m["name"].endswith((".wav", ".mp3", ".m4a", ".aiff")))]
+        if sounds:
+            commands.append({"id": "project.moveToBin", "params": {"items": [f"$item:{n}" for n in sounds], "bin": "$ref:bin:sound"}})
         commands.append({"id": "captions.newTrack", "params": {"format": "Subtitle", "name": "Lời dẫn", "language": "vi"}})
         frame = 1 / FPS
         for start, length, line in lines:
