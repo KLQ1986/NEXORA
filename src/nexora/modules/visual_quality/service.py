@@ -138,6 +138,32 @@ class VisualQualityService:
         data["from"] = recipe_id
         return self.store.recipe(recipe.subject, data, status="proposed", decided_by="operator")
 
+    def frame(self, subject: str, t: float, *, graded: bool = False, width: int = 1280) -> Path:
+        """One frame of a subject for the screen, at `t` (a still: its picture), as the source is or with its colour steps
+        (the encoding's transform, so a log file is seen as it will look). Kept, since the screen asks for the same ones."""
+        profile = self.reader.profile(subject) or {}
+        still = (profile.get("technical") or {}).get("kind") == "still"
+        t = 0.0 if still else max(0.0, float(t))
+        out = self._work / subject / "frames" / f"{t:.2f}_{'g' if graded else 's'}_{width}.jpg"
+        if out.is_file():
+            return out
+        out.parent.mkdir(parents=True, exist_ok=True)
+        chain = (filters_of(self.colour_steps(profile)[0]) or []) if graded and profile else []
+        self._adapters.submit("ffmpeg", Request("vq_render", inputs={"path": str(self.path_of(subject))},
+                                                params={"kind": "still", "out": str(out), "t_in": t, "filters": chain, "width": width}))
+        return out
+
+    def export_path(self, subject: str, *, master: bool = False) -> Path:
+        """Where the result of the approved recipe is written when the screen asks for it: beside the engine's work, named
+        after the source and the recipe's version."""
+        recipe = self.reader.recipe(subject, status="approved")
+        if recipe is None:
+            raise LookupError("no approved recipe")
+        source = Path((self.reader.subject(subject) or {}).get("path") or subject)
+        still = ((self.reader.profile(subject) or {}).get("technical") or {}).get("kind") == "still"
+        ext = ".png" if still else ".mov" if master else ".mp4"
+        return self._work / subject / "exports" / f"{source.stem}_vq_v{recipe.version}{ext}"
+
     def add_removal(self, recipe_id: str, shot: int, regions: list[list[float]]) -> str:
         """The operator marks what to take out of a shot (rectangles in the source's pixels, held for the whole shot): a new
         proposed version of the recipe with a `remove` step, filled by ProPainter from what the other frames show there."""

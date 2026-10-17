@@ -1699,6 +1699,140 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             raise HTTPException(404, "no such file")
         return FileResponse(path)
 
+    # The Visual Quality screen: every source, library or not, in one list, and one set of actions for either.
+    def vq_run(subject: str) -> dict | None:
+        runs = [r for r in system.orch.runs_for_subject(subject) if system.orch.pipeline_of(r).startswith("vq.")]
+        return run_view(system, runs[0]) if runs else None
+
+    def vq_state(subject: str, recipe: dict | None) -> str:
+        run = vq_run(subject)
+        if run and run["status"] in ("queued", "running"):
+            return "running"
+        if run and run["status"] == "failed" and not run["cleared"]:
+            return "failed"
+        return (recipe or {}).get("status") or "none"
+
+    def vq_ensure(subject: str) -> str:
+        if system.vq_reader.subject(subject) is not None:
+            return subject
+        if system.assets.asset(subject) is not None:
+            return system.vq.subject_for_asset(subject)
+        raise HTTPException(404, "no such subject")
+
+    @app.get("/api/v1/vq/subjects")
+    def vq_subjects():
+        """Every source the screen can work on: each asset of the library (analysed or not) and each file job, with its state."""
+        known = {row["subject"]: row for row in system.vq_reader.subjects()}
+        items = []
+        for asset in system.assets.assets():
+            if asset.get("trashed_at") or asset.get("kind") not in ("video", "image"):
+                continue
+            row = known.pop(asset["asset_id"], None)
+            card = asset_view(system, asset)
+            items.append({**(row or {"subject": asset["asset_id"], "recipe": None, "defects": 0, "worst": None, "steps": 0, "generative": 0, "verdict": None,
+                                     "encoding_name": None, "content": None, "warnings": 0}),
+                          "subject": asset["asset_id"], "in_library": True, "name": card.get("name") or asset["asset_id"], "file_name": card.get("file_name"), "still": bool(card.get("still")) or asset.get("kind") == "image", "thumbnail_url": card.get("thumbnail_url"),
+                          "duration": card.get("duration"), "width": card.get("width"), "height": card.get("height")})
+        for subject, row in known.items():
+            items.append({**row, "in_library": False, "name": Path(row["path"]).name, "file_name": Path(row["path"]).name, "thumbnail_url": f"/api/v1/vq/subjects/{subject}/frame?t=0"})
+        for item in items:
+            item["state"] = vq_state(item["subject"], item.get("recipe"))
+        return {"subjects": items}
+
+    @app.get("/api/v1/vq/subjects/{subject}")
+    def vq_subject(subject: str):
+        """All the screen shows of one source: what it is, its profile and defects, every version of its recipe, previews
+        with their checks, what is running, and what has been written out."""
+        if system.vq_reader.subject(subject) is None and system.assets.asset(subject) is None:
+            raise HTTPException(404, "no such subject")
+        shown = vq_view(subject)
+        known = system.vq_reader.subject(subject)
+        if system.assets.asset(subject) is not None:
+            card = asset_view(system, system.assets.asset(subject))
+            info = {"name": card.get("name"), "file_name": card.get("file_name"), "in_library": True, "path": card.get("path"),
+                    "still": bool(card.get("still")), "duration": card.get("duration"), "width": card.get("width"), "height": card.get("height"),
+                    "frame_rate": card.get("frame_rate"), "thumbnail_url": card.get("thumbnail_url"), "proxy_url": card.get("proxy_url")}
+        else:
+            tech = (shown.get("profile") or {}).get("technical", {})
+            info = {"name": Path(known["path"]).name, "file_name": Path(known["path"]).name, "in_library": False, "path": known["path"], "still": tech.get("kind") == "still",
+                    "duration": tech.get("duration"), "width": tech.get("display_width") or tech.get("width"), "height": tech.get("display_height") or tech.get("height"),
+                    "frame_rate": tech.get("frame_rate"), "thumbnail_url": f"/api/v1/vq/subjects/{subject}/frame?t=0", "proxy_url": None}
+        exports = sorted((system.data_dir / "vq" / subject / "exports").glob("*")) if (system.data_dir / "vq" / subject / "exports").is_dir() else []
+        return {**shown, "info": info, "run": vq_run(subject), "state": vq_state(subject, shown.get("recipe")),
+                "exports": [{"name": f.name, "size": f.stat().st_size, "at": f.stat().st_mtime, "url": f"/api/v1/vq/exports/{subject}/{f.name}"} for f in exports]}
+
+    @app.post("/api/v1/vq/subjects/{subject}/plan", status_code=202)
+    def vq_subject_plan(subject: str, body: dict | None = None):
+        """Analyse (again) with options: target_height, target_fps, denoise, sharpen, stabilise, exposure, deblur, relight, faces,
+        ai, allow_cloud."""
+        subject = vq_ensure(subject)
+        allowed = {"target_height", "target_fps", "denoise", "sharpen", "stabilise", "exposure", "deblur", "relight", "faces", "ai", "allow_cloud"}
+        return {"subject": subject, "run_id": system.vq.analyse(subject, **{k: v for k, v in (body or {}).items() if k in allowed and v is not None})}
+
+    @app.post("/api/v1/vq/subjects/{subject}/preview", status_code=202)
+    def vq_subject_preview(subject: str, body: dict | None = None):
+        b = body or {}
+        if system.vq_reader.recipe(subject) is None:
+            raise HTTPException(409, "Chưa có công thức để xem trước")
+        return {"run_id": system.vq.preview(subject, t=b.get("t"), seconds=float(b.get("seconds", 3.0)), recipe_id=b.get("recipe_id"))}
+
+    @app.post("/api/v1/vq/subjects/{subject}/apply", status_code=202)
+    def vq_subject_apply(subject: str, body: dict | None = None):
+        """Render the approved recipe: the prepared files cuts use, and with `export` the whole result as a file to download."""
+        b = body or {}
+        if system.vq_reader.recipe(subject, status="approved") is None:
+            raise HTTPException(409, "Chưa có công thức nào được duyệt")
+        out = b.get("out") or (str(system.vq.export_path(subject, master=bool(b.get("master")))) if b.get("export") else None)
+        return {"run_id": system.vq.apply(subject, out=out, master=bool(b.get("master"))), "out": out}
+
+    @app.post("/api/v1/vq/subjects/{subject}/cancel")
+    def vq_subject_cancel(subject: str):
+        run = vq_run(subject)
+        if not run or run["status"] not in ("queued", "running"):
+            raise HTTPException(409, "Không có việc nào đang chạy")
+        system.orch.cancel_run(run["run_id"])
+        return {"ok": True}
+
+    @app.get("/api/v1/vq/subjects/{subject}/frame")
+    def vq_subject_frame(subject: str, t: float = 0.0, graded: int = 0):
+        """A frame of the source at `t`, as it is or with its colour transform, for the viewer and for marking a region."""
+        if system.vq_reader.subject(subject) is None:
+            raise HTTPException(404, "no such subject")
+        try:
+            return FileResponse(system.vq.frame(subject, t, graded=bool(graded)))
+        except AdapterError as e:
+            raise HTTPException(422, str(e))
+
+    @app.get("/api/v1/vq/exports/{subject}/{name}")
+    def vq_export_file(subject: str, name: str):
+        root = (system.data_dir / "vq").resolve()
+        path = (root / subject / "exports" / name).resolve()
+        if root not in path.parents or not path.is_file():
+            raise HTTPException(404, "no such file")
+        return FileResponse(path, filename=name)
+
+    tools_seen: dict = {}
+
+    @app.get("/api/v1/vq/tools")
+    def vq_tools():
+        """What this machine can do for Visual Quality, and what to run to set up what is missing. Asking every tool takes a few
+        seconds, so the answer is kept for a minute."""
+        if tools_seen.get("at", 0) > time.time() - 60:
+            return tools_seen["answer"]
+        have = sorted(system.vq._have())
+        env = system.adapters.environment()
+        names = {"apple_frames": "Apple (khử nhiễu, nội suy, siêu phân giải)", "gyroflow": "Gyroflow", "restore_local": "Real-ESRGAN", "restore_faces": "CodeFormer + Vision",
+                 "deblur": "NAFNet (MLX)", "inpaint": "ProPainter", "stills": "HEIC / RAW", "local_tone": "Nâng sáng cục bộ", "color": "OpenColorIO / LUT", "model": "Qwen3-VL (giám khảo)"}
+        def up(k: str) -> bool:
+            e = env.get(k) or {}
+            if k == "model":                                  # Ollama says whether it runs and which models it has
+                return bool(e.get("running")) and all((e.get("models") or {}).values())
+            return bool(e.get("available"))
+        tools = [{"name": k, "label": label, "available": up(k), "fix": (env.get(k) or {}).get("fix") or ("ollama serve" if k == "model" else None)}
+                 for k, label in names.items() if k in env]
+        tools_seen.update(at=time.time(), answer={"have": have, "tools": tools})
+        return tools_seen["answer"]
+
     @app.get("/api/v1/assets/{asset_id}/extracts")
     def extracts(asset_id: str):
         """What has been taken out of a recording: clips, stills and sound, each with its card."""

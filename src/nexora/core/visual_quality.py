@@ -258,12 +258,40 @@ class VisualQuality:
         return [{**dict(r), "params": json.loads(r["params"]), "result": json.loads(r["result"]) if r["result"] else None}
                 for r in self._conn.execute(q + " ORDER BY at", args)]
 
+    def subjects(self) -> list[dict]:
+        """Every subject the engine knows, with what the screens list it by: its newest recipe, its worst defect, its newest
+        preview's verdict."""
+        out = []
+        for row in self._conn.execute("SELECT * FROM vq_subjects ORDER BY created_at DESC"):
+            subject = row["subject"]
+            recipe = self.recipe(subject)
+            prof = self._conn.execute("SELECT data FROM vq_profiles WHERE subject = ?", (subject,)).fetchone()
+            prof = json.loads(prof["data"]) if prof else None
+            worst = self._conn.execute("SELECT kind, MAX(severity) AS s, COUNT(*) AS n FROM vq_defects WHERE subject = ?", (subject,)).fetchone()
+            preview = self._conn.execute("SELECT data FROM vq_previews WHERE recipe_id = ? ORDER BY at DESC LIMIT 1",
+                                         (recipe.recipe_id,)).fetchone() if recipe else None
+            steps = [s for shot in (recipe.shots if recipe else []) for s in shot.get("steps", []) if not s.get("off")]
+            out.append({"subject": subject, "kind": row["kind"], "path": row["path"], "created_at": row["created_at"],
+                        "recipe": {"recipe_id": recipe.recipe_id, "version": recipe.version, "status": recipe.status, "at": recipe.at} if recipe else None,
+                        "encoding_name": (prof or {}).get("encoding_name"), "content": (prof or {}).get("content"),
+                        "still": ((prof or {}).get("technical") or {}).get("kind") == "still" if prof else None,
+                        "warnings": len((prof or {}).get("warnings", [])),
+                        "defects": worst["n"] if worst else 0, "worst": {"kind": worst["kind"], "severity": round(worst["s"], 3)} if worst and worst["n"] else None,
+                        "steps": len(steps), "generative": sum(1 for s in steps if s.get("generative")),
+                        "verdict": json.loads(preview["data"]).get("qa", {}).get("verdict") if preview else None})
+        return out
+
     def summary(self, subject: str) -> dict:
         """What the screens show at a glance."""
         recipe = self.recipe(subject)
         approved = self.recipe(subject, status="approved")
         return {"subject": subject, "profile": self.profile(subject), "defects": self.defects(subject),
-                "recipe": {"recipe_id": recipe.recipe_id, "version": recipe.version, "status": recipe.status, "decided_by": recipe.decided_by, **recipe.data} if recipe else None,
+                # The recipe's own data carries the planner's version under the same key: the version of the recipe comes last.
+                "recipe": {**recipe.data, "planner_version": recipe.data.get("version"), "recipe_id": recipe.recipe_id, "version": recipe.version,
+                           "status": recipe.status, "decided_by": recipe.decided_by} if recipe else None,
                 "approved": approved.recipe_id if approved else None,
                 "metrics": self.metrics(recipe.recipe_id) if recipe else [], "previews": self.previews(recipe.recipe_id) if recipe else [],
-                "requests": self.requests(subject)[-10:], "at": time.time()}
+                "requests": self.requests(subject)[-10:], "at": time.time(),
+                "versions": [{"recipe_id": r.recipe_id, "version": r.version, "status": r.status, "decided_by": r.decided_by, "at": r.at,
+                              "from": r.data.get("from"), "edited": any(s.get("edited") for shot in r.shots for s in shot.get("steps", []))}
+                             for r in self.recipes(subject)]}

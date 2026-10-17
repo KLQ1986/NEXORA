@@ -807,3 +807,22 @@ def test_a_tool_file_runs_only_if_it_is_the_one_that_was_checked(tmp_path, monke
         pinned.verify(good, fix="setup")                                       # never fetched again on its own
     env = pinned.offline_env()
     assert env["HF_HUB_OFFLINE"] == "1" and env["HF_HUB_DISABLE_TELEMETRY"] == "1"
+
+
+def test_a_file_a_camera_wrote_is_footage_however_flat_its_picture():
+    from nexora.modules.visual_quality.profiler import content_type
+    flat = M.Look(**{**M.as_dict(M.look(np.full((64, 64, 3), 0.5, np.float32))), "flat_blocks": 0.6, "noise": 0.2})
+    assert content_type({"device": "DJI OsmoAction6"}, [flat], path=Path("beach.mp4"))[0] == "camera"   # a sea and sky in log
+    assert content_type({}, [flat], path=Path("clip.mp4"))[0] == "screen"                                 # nothing says camera
+    assert content_type({"device": "DJI OsmoAction6", "encoder": "OBS Studio"}, [flat], path=Path("x.mp4"))[0] == "screen"
+
+
+def test_the_summary_shows_the_recipe_version_not_the_planner_version(tmp_path):
+    system = vq_system(tmp_path)
+    src = shaky(tmp_path / "in" / "v.mp4", audio=False, seconds=2)
+    subject = system.vq.subject_for_file(src)
+    for _ in range(2):
+        system.vq.analyse(subject, denoise=False, stabilise=False)
+        drain(system)
+    shown = system.vq_reader.summary(subject)
+    assert shown["recipe"]["version"] == 2 and [v["version"] for v in shown["versions"]] == [2, 1]

@@ -22,6 +22,8 @@ DECODE_EXT = frozenset({".heic", ".heif", ".hif", ".avif", ".dng", ".cr2", ".cr3
                         ".rw2", ".pef", ".srw", ".x3f", ".3fr", ".iiq", ".erf", ".mos", ".gpr"})
 STILL_EXT = frozenset({".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff", ".bmp"}) | DECODE_EXT
 AI_HINTS = re.compile(r"runway|pika|kling|sora|luma|dream ?machine|hailuo|minimax|veo|wan2|hunyuan|cogvideo|ltx|stable video|gen-?\d|svd", re.I)
+CAMERA_MAKERS = re.compile(r"\b(DJI|Apple|iPhone|Sony|Canon|Nikon|Panasonic|Fujifilm|FUJIFILM|GoPro|Insta360|Blackmagic|RED|ARRI|Samsung|Google|Pixel|Xiaomi|"
+                           r"Huawei|OnePlus|OPPO|vivo|Olympus|OM Digital|Leica|Hasselblad|Sigma|Z CAM|Kinefinity)\b", re.I)
 SCREEN_HINTS = re.compile(r"screen|obs|quicktime player|xsplit|shadowplay|bandicam|camtasia", re.I)
 
 
@@ -61,6 +63,11 @@ def content_type(technical: dict, looks: list[M.Look], *, path: Path) -> tuple[s
         return "ai", [f"metadata/tên file gợi ý video sinh bằng AI ({AI_HINTS.search(words).group(0)})"]
     flat = float(np.median([lk.flat_blocks for lk in looks])) if looks else 0.0
     noise = float(np.median([lk.noise for lk in looks])) if looks else 0.0
+    # A file a camera wrote is footage, however flat its picture: a sky over the sea in log, or a white wall, has flat blocks
+    # and little noise, and was taken for graphics (FT-260523-002, 2026-10-17), which then may never be denoised or sharpened.
+    maker = CAMERA_MAKERS.search(" ".join(str(technical.get(k) or "") for k in ("device", "make", "model", "encoder")))
+    if maker and not SCREEN_HINTS.search(words):
+        return "camera", [f"ghi bởi máy quay ({maker.group(0)}); nhiễu {noise:.2f}, {flat:.0%} khối phẳng"]
     if SCREEN_HINTS.search(words) or (flat > 0.35 and noise < 0.4):
         return "screen", [f"{flat:.0%} khối 8×8 phẳng tuyệt đối, nhiễu {noise:.2f}: quay màn hình hoặc đồ hoạ"]
     if flat > 0.12 and noise < 0.6:
@@ -121,9 +128,10 @@ class SourceProfiler:
             if full is not None:
                 h, w = full.shape[:2]
                 crop = full[h // 2 - 384:h // 2 + 384, w // 2 - 384:w // 2 + 384]
+                # Kept as a measure only. As a warning ("upscaled from smaller?") it fired on true 4K of sea and sky and could not tell
+                # a frame enlarged from half or two thirds of its size from the camera's own: DJI footage is sharpened, denoised and
+                # compressed in the camera, and its detail share, re-blur and high/mid band energy all overlap (2026-10-17).
                 apparent = round(M.detail_share(M.luma(crop)), 5)
-                if apparent < 0.0006:
-                    warnings.append(f"độ chi tiết ở độ phân giải gốc rất thấp ({apparent}): có thể là bản phóng to từ nguồn nhỏ hơn")
         return {"version": VERSION, "path": str(path), "technical": technical, "content": kind, "content_why": kind_why,
                 "measured": {k: round(v, 5) for k, v in med.items()}, "apparent_detail": apparent,
                 "encoding": match.encoding.key if match.encoding else None, "encoding_name": match.encoding.name if match.encoding else None,

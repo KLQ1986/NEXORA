@@ -8,6 +8,7 @@ import Control from "./Control";
 import Costs from "./Costs";
 import Home from "./Home";
 import Library from "./Library";
+import Quality from "./Quality";
 import Notices, { ICON as NOTICE_ICON, KIND as NOTICE_KIND, PIPE as NOTICE_PIPE, noticeTone } from "./Notices";
 import Plan from "./Plan";
 import Projects from "./Projects";
@@ -22,6 +23,7 @@ const PAGES = [
   { path: "/du-an", label: tr("Dự án"), icon: "clapper", view: null, group: 0 },
   { path: "/phong-chieu", label: tr("Phòng chiếu"), icon: "screen", view: Review, group: 0 },
   { path: "/thu-vien", label: tr("Thư viện"), icon: "film", view: Library, group: 0 },
+  { path: "/chat-luong-hinh", label: tr("Chất lượng hình"), icon: "eye", view: Quality, group: 0 },
   { path: "/ke-hoach", label: tr("Kế hoạch"), icon: "calendar", view: Plan, group: 0 },
   { path: "/phong-may", label: tr("Phòng máy"), icon: "gauge", view: Control, group: 1 },
   { path: "/tien-trinh", label: tr("Tiến trình"), icon: "pulse", view: Runs, group: 1 },
@@ -167,6 +169,7 @@ const SECTIONS = [
   { key: "projects", label: tr("Dự án"), icon: "clapper", to: "/du-an", paths: ["/du-an"] },
   { key: "review", label: tr("Phòng chiếu"), icon: "screen", to: "/phong-chieu", paths: ["/phong-chieu"] },
   { key: "library", label: tr("Thư viện"), icon: "film", to: "/thu-vien", paths: ["/thu-vien"] },
+  { key: "quality", label: tr("Chất lượng hình"), icon: "eye", to: "/chat-luong-hinh", paths: ["/chat-luong-hinh"] },
   { key: "plan", label: tr("Kế hoạch"), icon: "calendar", to: "/ke-hoach", paths: ["/ke-hoach"] },
 ];
 

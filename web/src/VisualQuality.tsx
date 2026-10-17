@@ -1,7 +1,7 @@
 import { t as tr, tv } from "./i18n";
 import { useRef, useState } from "react";
 import { call, post, timecode, usePoll } from "./api";
-import { Button, Tag } from "./parts";
+import { Button, goTo, Tag } from "./parts";
 
 /* Visual Quality on screen (design 2026-10-16): what the source is, what is wrong with it shot by shot, the recipe that puts
    it right (each step with why, and a switch), a preview before and after with its temporal checks, and approval. Nothing
@@ -18,17 +18,23 @@ type View = {
   approved: string | null; previews: Preview[];
 };
 
-const OP: Record<string, string> = {
+export const OP: Record<string, string> = {
   color_transform: tr("chuyển màu"), tonemap: tr("HDR về SDR"), levels: tr("phơi sáng, cân bằng trắng"), denoise: tr("khử nhiễu"), sharpen: tr("làm nét"),
   deblock: tr("giảm khối nén"), deband: tr("giảm dải màu"), deflicker: tr("giảm nhấp nháy"), stabilise: tr("ổn định hình"), deinterlace: tr("khử xen kẽ dòng"),
-  constant_rate: tr("tốc độ khung cố định"), upscale: tr("phóng to"), interpolate: tr("nội suy khung"), ivtc: tr("bỏ telecine"), restore: tr("phục hồi ảnh nén"), faces: tr("phục hồi khuôn mặt"), remove: tr("xoá vật"),
+  constant_rate: tr("tốc độ khung cố định"), upscale: tr("phóng to"), interpolate: tr("nội suy khung"), ivtc: tr("bỏ telecine"), restore: tr("phục hồi ảnh nén"), faces: tr("phục hồi khuôn mặt"), remove: tr("xoá vật"), deblur: tr("khử mờ"), relight: tr("nâng sáng cục bộ"), tonemap_hdr: tr("HDR về SDR"),
 };
-const DEFECT: Record<string, string> = {
+export const DEFECT: Record<string, string> = {
   noise: tr("nhiễu"), soft: tr("mềm"), blocking: tr("khối nén"), banding: tr("dải màu"), underexposed: tr("thiếu sáng"), overexposed: tr("cháy sáng"),
   crushed: tr("mất chi tiết tối"), flicker: tr("nhấp nháy"), shake: tr("rung"), cast: tr("ám màu"), dull: tr("màu nhạt"), flat: tr("phẳng"),
 };
-const VERDICT: Record<string, "proof" | "cue" | "tally"> = { pass: "proof", warn: "cue", fail: "tally" };
-const CONTENT: Record<string, string> = { camera: tr("footage máy quay"), screen: tr("quay màn hình"), graphics: tr("đồ hoạ"), ai: tr("video AI sinh"), still: tr("ảnh tĩnh") };
+export const VERDICT: Record<string, "proof" | "cue" | "tally"> = { pass: "proof", warn: "cue", fail: "tally" };
+export const CONTENT: Record<string, string> = { camera: tr("footage máy quay"), screen: tr("quay màn hình"), graphics: tr("đồ hoạ"), ai: tr("video AI sinh"), still: tr("ảnh tĩnh") };
+
+/** The tool a step runs on, as the operator knows it. */
+export const TIER: Record<string, string> = {
+  ffmpeg: "FFmpeg", apple_vt: "Apple", vidstab: "vidstab", gyroflow: "Gyroflow", realesrgan: "Real-ESRGAN", codeformer: "CodeFormer",
+  nafnet: "NAFNet", vrt_remote: tr("VRT (GPU thuê)"), propainter: "ProPainter", local_tone: tr("bản đồ gain"),
+};
 
 export function AssetVQ({ assetId, seek }: { assetId: string; seek?: (t: number) => void }) {
   const { data, reload } = usePoll<View>(`/api/v1/assets/${assetId}/vq`, 5000);
@@ -65,6 +71,7 @@ export function AssetVQ({ assetId, seek }: { assetId: string; seek?: (t: number)
         {r && <Button size="sm" kind="quiet" onClick={() => act(`/api/v1/assets/${assetId}/vq/preview`, { recipe_id: r.recipe_id }, tr("Đã xếp việc xem trước."))}>{tr("Xem trước")}</Button>}
         {r && r.status !== "approved" && <Button size="sm" kind="primary" onClick={() => act(`/api/v1/vq/recipes/${r.recipe_id}/approve`)}>{tr("Duyệt công thức")}</Button>}
         {r && r.status !== "rejected" && <Button size="sm" kind="quiet" onClick={() => act(`/api/v1/vq/recipes/${r.recipe_id}/reject`)}>{tr("Bỏ")}</Button>}
+        <Button size="sm" kind="quiet" onClick={() => goTo(`/chat-luong-hinh?s=${encodeURIComponent(assetId)}`)}>{tr("Mở màn hình Chất lượng hình")}</Button>
         {note && <span className="text-faint">{note}</span>}
       </div>
       {p && p.warnings.length > 0 && <ul className="mt-2 grid gap-0.5">{p.warnings.map((w) => <li key={w} className="text-cue">{w}</li>)}</ul>}
