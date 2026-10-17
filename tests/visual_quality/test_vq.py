@@ -922,3 +922,39 @@ def test_tidying_removes_only_what_nothing_will_use_again(tmp_path):
     done = system.vq.tidy()
     assert done["freed_bytes"] > 0 and not frame.exists()
     assert out.is_file() and system.vq_reader.recipe(subject, status="approved") is not None   # exports and recipes stay
+
+
+def _with_removal(tmp_path, calls):
+    system = vq_system(tmp_path)
+    system.adapters.register(_Recorder("inpaint", ("remove",), calls))
+    src = shaky(tmp_path / "in" / "k.mp4", seconds=2)
+    subject = system.vq.subject_for_file(src)
+    system.vq.analyse(subject, denoise=False, stabilise=False)
+    drain(system)
+    rid = system.vq.add_removal(system.vq_reader.recipe(subject).recipe_id, 0, [[10, 10, 60, 40]])
+    return system, subject, rid
+
+
+def test_a_prepared_shot_is_kept_as_hevc_with_its_sound_and_no_intermediate_stays(tmp_path):
+    calls: list = []
+    system, subject, rid = _with_removal(tmp_path, calls)
+    system.vq.approve(rid)
+    drain(system)
+    shot = system.vq_reader.by_id(rid).shots[0]
+    path, _ = system.vq_reader.prepared_for(subject, shot["t_start"], shot["t_end"])
+    streams = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "stream=codec_type,codec_name", "-of", "csv=p=0", path], capture_output=True, text=True).stdout
+    assert "hevc,video" in streams and "audio" in streams                     # a quarter of ProRes, with the source's sound
+    assert not list((system.data_dir / "vq" / subject).rglob("prep_*"))         # every intermediate went once it was read
+
+
+def test_work_that_will_not_fit_on_the_disk_is_refused_before_it_starts(tmp_path, monkeypatch):
+    import shutil as sh
+    from nexora.core.adapter import AdapterError, ErrorCode
+    calls: list = []
+    system, subject, rid = _with_removal(tmp_path, calls)
+    system.vq.store.decide(rid, "approved", decided_by="operator")       # approved without the automatic preparing
+    real = sh.disk_usage
+    monkeypatch.setattr(sh, "disk_usage", lambda p: real(p)._replace(free=500_000_000))
+    with pytest.raises(AdapterError) as e:
+        system.vq.render_approved(subject, None)
+    assert e.value.code == ErrorCode.INSUFFICIENT_STORAGE and "GB" in str(e.value) and calls == []

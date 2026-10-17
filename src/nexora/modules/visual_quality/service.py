@@ -63,6 +63,7 @@ class VisualQualityService:
         self._work, self._luts = Path(work_dir), Path(lut_dir)
         self._shots_of = shots_of                     # Video Intelligence's shots of an asset, when it has them
         self.profiler = SourceProfiler(adapters, self._work / "tmp")
+        self._probed: dict[str, dict] = {}             # what a file says of itself, for planning the disk
 
     def register(self, registry: PipelineRegistry) -> None:
         registry.register(ANALYSE, {"profile": self._profile_stage, "assess": self._assess_stage, "plan": self._plan_stage})
@@ -582,6 +583,7 @@ class VisualQualityService:
         """A stretch through the steps: FFmpeg filters in one go; when a step needs another tool, the steps up to the last such
         one run first, in their order, and the FFmpeg steps after it finish the job."""
         chain = filters_of(steps)
+        sound: dict = {}
         if chain is None:
             if kind == "still" and path.suffix.lower() in STILL_EXT:
                 source, rest = self._prepare_still(path, steps, work=out.parent)
@@ -592,17 +594,60 @@ class VisualQualityService:
                 source, rest = self._prepare(path, steps, t_in=start, seconds=STILL_WINDOW, work=out.parent)
                 chain, path, t_in = filters_of(rest) or [], source, t_in - start
             else:
+                self._room(seconds or self._length(path) - t_in, path, keep=False)
                 source, rest = self._prepare(path, steps, t_in=t_in, seconds=seconds, work=out.parent)
+                # The processors give pictures only: the sound comes straight from the same stretch of the source.
+                sound = {"sound_from": str(path), "sound_t_in": t_in}
                 chain, path, t_in = filters_of(rest) or [], source, 0.0
-        params = {"kind": kind, "out": str(out), "t_in": t_in, "filters": chain, "colour": colour or {}, "master": master, "deep": deep}
+        params = {"kind": kind, "out": str(out), "t_in": t_in, "filters": chain, "colour": colour or {}, "master": master, "deep": deep,
+                  **sound}
         if seconds and kind != "still":
             params["seconds"] = seconds
         if width:
             params["width"] = width
         if codec:
             params["codec"] = codec
-        self._adapters.submit("ffmpeg", Request("vq_render", inputs={"path": str(path)}, params=params))
+        try:
+            self._adapters.submit("ffmpeg", Request("vq_render", inputs={"path": str(path)}, params=params))
+        finally:
+            if Path(path).name.startswith("prep_") and Path(path) != out:
+                Path(path).unlink(missing_ok=True)                    # the last intermediate, read by the final render
         return out
+
+    # The rates the disk is planned with, at 4K and 30 frames a second (measured on 0002, 2026-10-17), scaled by pixels and rate.
+    STORE_RATE = 31e6           # bytes a second of a prepared file (HEVC 10-bit, Apple encoder)
+    WORK_RATE = 116e6           # of an intermediate (ProRes 422 HQ)
+    ROOM_MARGIN = 2e9           # always left free
+
+    def _rate(self, path: Path) -> float:
+        """How much bigger or smaller than 4K at 30 a picture is, for the rates above."""
+        tech = self._technical(path)
+        w, h = int(tech.get("width") or 3840), int(tech.get("height") or 2160)
+        fps = float(tech.get("frame_rate") or 30.0)
+        return (w * h) / (3840 * 2160) * fps / 30.0
+
+    def _length(self, path: Path) -> float:
+        return float(self._technical(path).get("duration") or 0.0)
+
+    def _technical(self, path: Path) -> dict:
+        """What the file says of its size, rate and length (the probe the profile is made from), kept by path."""
+        key = str(path)
+        if key not in self._probed:
+            try:
+                self._probed[key] = self._adapters.submit("ffprobe", Request("probe", inputs={"path": key})).outputs
+            except AdapterError:
+                self._probed[key] = {}
+        return self._probed[key]
+
+    def _room(self, seconds: float, path: Path, *, keep: bool, kept_seconds: float = 0.0) -> None:
+        """Refuse before starting, rather than fail half way: the disk must hold the intermediates of the longest stretch (two
+        at a time), what is kept (prepared files), and a margin."""
+        k = self._rate(path)
+        need = 2 * max(0.0, seconds) * self.WORK_RATE * k + (kept_seconds * self.STORE_RATE * k if keep else 0.0) + self.ROOM_MARGIN
+        free = shutil.disk_usage(self._work if self._work.exists() else self._work.parent).free
+        if free < need:
+            raise AdapterError(ErrorCode.INSUFFICIENT_STORAGE, f"cần khoảng {need / 1e9:.1f} GB trống cho việc này, ổ chỉ còn {free / 1e9:.1f} GB "
+                               "(bấm Dọn ở màn Chất lượng hình, hoặc giải phóng ổ)", retryable=False)
 
     def _process(self, step: dict, source: Path, out: Path, *, t_in: float, seconds: float | None) -> Path:
         """One step that is not an FFmpeg filter, by the tool its tier names; the result is a picture-only intermediate."""
@@ -694,8 +739,9 @@ class VisualQualityService:
 
     def _prepare(self, path: Path, steps: list[dict], *, t_in: float, seconds: float | None, work: Path) -> tuple[Path, list[dict]]:
         """Run the steps in their order up to the last that needs a processor: FFmpeg steps between processors are rendered in
-        between, so that each step sees what the steps before it made. Returns the intermediate (with the source's sound
-        put back) and the FFmpeg steps left after the last processor."""
+        between, so that each step sees what the steps before it made. Returns the intermediate (picture only: the final render
+        takes the sound from the source) and the FFmpeg steps left after the last processor. Each intermediate is removed as
+        soon as the next step has read it, so at most two are on the disk at once."""
         # Gyroflow reads the gyro by the original's timeline and corrects its lens: it goes first, on the original.
         steps = sorted(steps, key=lambda s: s.get("tier") != "gyroflow")
         last = max(i for i, s in enumerate(steps) if s.get("tier", "ffmpeg") != "ffmpeg")
@@ -710,13 +756,19 @@ class VisualQualityService:
                 self._adapters.submit("ffmpeg", Request("vq_render", inputs={"path": str(current)}, params={
                     "kind": "video", "out": str(baked), "t_in": offset, "filters": filters_of(pending) or [], "master": True,
                     **({"seconds": seconds} if seconds else {})}))
-                current, offset, pending = baked, 0.0, []
-            current = self._process(step, current, work / f"prep_{stamp}_{k}_{step['op']}.mov", t_in=offset, seconds=seconds if offset or current == path else None)
+                current = self._drop_intermediate(current, path, baked)
+                offset, pending = 0.0, []
+            made = self._process(step, current, work / f"prep_{stamp}_{k}_{step['op']}.mov", t_in=offset, seconds=seconds if offset or current == path else None)
+            current = self._drop_intermediate(current, path, made)
             offset = 0.0
-        sounded = work / f"prep_{stamp}_sound.mov"
-        self._adapters.submit("ffmpeg", Request("vq_mux", inputs={"path": str(current)}, params={"out": str(sounded), "sound_from": str(path), "t_in": t_in,
-                                                                                               **({"seconds": seconds} if seconds else {})}))
-        return sounded, steps[last + 1:]
+        return current, steps[last + 1:]
+
+    @staticmethod
+    def _drop_intermediate(previous: Path, source: Path, made: Path) -> Path:
+        """`made` replaces `previous`; an intermediate (never the source) is removed once it has been read."""
+        if Path(previous) != Path(source) and Path(previous) != Path(made) and Path(previous).name.startswith("prep_"):
+            Path(previous).unlink(missing_ok=True)
+        return made
 
     def _preview_stage(self, ctx):
         request = self._request(ctx.subject_ref, "preview")
@@ -776,6 +828,12 @@ class VisualQualityService:
         work.mkdir(parents=True, exist_ok=True)
         still = technical.get("kind") == "still"
         made: dict[int, Path] = {}
+        if not still:
+            # Room for every shot that will be kept prepared, and for the intermediates of the longest of them, before any starts.
+            todo = [shot["t_end"] - shot["t_start"] for shot in recipe.shots if filters_of([s for s in shot["steps"] if not s.get("off")]) is None
+                    and not self.reader.prepared_for(subject, shot["t_start"], shot["t_end"])]
+            if todo:
+                self._room(max(todo), path, keep=True, kept_seconds=sum(todo))
         for k, shot in enumerate(recipe.shots):
             steps = [s for s in shot["steps"] if not s.get("off")]
             if filters_of(steps) is not None:
@@ -787,8 +845,10 @@ class VisualQualityService:
             if still:
                 file = self._render(path, steps, out=work / "still.png", kind="still", colour=colour, deep=True)
             else:
-                file = self._render(path, steps, out=work / f"shot_{shot['t_start']:.2f}.mov", kind="video", t_in=shot["t_start"],
-                                    seconds=shot["t_end"] - shot["t_start"], colour=colour, master=True)
+                # Kept for as long as the recipe is approved: HEVC 10-bit by the Apple encoder, a quarter of ProRes for the same
+                # picture (SSIM 0.997), so a long shot's prepared file fits on the disk.
+                file = self._render(path, steps, out=work / f"shot_{shot['t_start']:.2f}.mp4", kind="video", t_in=shot["t_start"],
+                                    seconds=shot["t_end"] - shot["t_start"], colour=colour, codec="store")
             self.store.prepared(recipe.recipe_id, shot["t_start"], shot["t_end"], file)
             made[k] = Path(file)
             heartbeat()

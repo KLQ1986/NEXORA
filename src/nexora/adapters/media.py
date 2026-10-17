@@ -563,6 +563,12 @@ class FFmpegAdapter(Adapter):
         tags = ["-bsf:v", "hevc_metadata=" + ":".join(codes)] if codes and not params.get("master") else []
         if params.get("master"):
             video = ["-c:v", "prores_ks", "-profile:v", "3", "-pix_fmt", "yuv422p10le"]
+        elif params.get("codec") == "store":
+            # A file kept for cuts to take from (Visual Quality's prepared shots): HEVC 10-bit by the Apple encoder at a high
+            # quality. Measured on 0002 (2026-10-17): 31 MB/s against 116 for ProRes 422 HQ, SSIM 0.9973 against 0.9987, and faster
+            # to write; without the hardware encoder, x265 at crf 12 (20 MB/s, SSIM 0.993, three times slower).
+            video = (["-c:v", "hevc_videotoolbox", "-q:v", "80", "-pix_fmt", "p010le", "-tag:v", "hvc1"] if self._has_encoder("hevc_videotoolbox")
+                     else ["-c:v", "libx265", "-crf", "12", "-preset", "fast", "-x265-params", "log-level=error", "-pix_fmt", "yuv420p10le", "-tag:v", "hvc1"])
         elif params.get("codec") == "h264":                   # a preview any browser plays
             video = ["-c:v", "libx264", "-crf", str(int(params.get("crf", 20))), "-preset", "veryfast", "-pix_fmt", "yuv420p", "-movflags", "+faststart"]
             tags = [x for k, flag in (("color_primaries", "-color_primaries"), ("color_transfer", "-color_trc"), ("color_space", "-colorspace"))
@@ -570,8 +576,15 @@ class FFmpegAdapter(Adapter):
         else:
             video = ["-c:v", "libx265", "-crf", str(int(params.get("crf", 16))), "-preset", params.get("preset", "fast"), "-pix_fmt", "yuv420p10le", "-tag:v", "hvc1"]
         span = [*seek, "-i", str(src)] + (["-t", str(params["seconds"])] if params.get("seconds") else [])
+        sound = ["-map", "0:a:0?"]
+        if params.get("sound_from"):
+            # The picture came from a processor (picture only): the sound is taken straight from the same stretch of the source,
+            # so no copy of the picture is written just to put the sound back.
+            at = float(params.get("sound_t_in") or 0.0)
+            span += [*(["-ss", f"{at:.3f}"] if at > 0 else []), "-i", str(params["sound_from"])] + (["-t", str(params["seconds"])] if params.get("seconds") else [])
+            sound = ["-map", "1:a:0?", "-shortest"]
         out.unlink(missing_ok=True)
-        self._run(["-y", *span, "-map", "0:v:0", "-map", "0:a:0?", *vf, *video, *tags, "-c:a", "aac", "-b:a", "256k", str(out)], timeout, "vq video")
+        self._run(["-y", *span, "-map", "0:v:0", *sound, *vf, *video, *tags, "-c:a", "aac", "-b:a", "256k", str(out)], timeout, "vq video")
         if not out.is_file() or out.stat().st_size == 0:
             raise AdapterError(ErrorCode.OUTPUT_INVALID, f"nothing came out of {src.name}", retryable=False)
         return Result(outputs={"kind": "video", "size": out.stat().st_size}, files=(str(out),))
@@ -592,6 +605,16 @@ class FFmpegAdapter(Adapter):
         if not out.is_file() or out.stat().st_size == 0:
             raise AdapterError(ErrorCode.OUTPUT_INVALID, "stabilisation wrote nothing", retryable=False)
         return Result(outputs={"stabilised": True}, files=(str(out),))
+
+    def _has_encoder(self, name: str) -> bool:
+        known = getattr(self, "_encoders", None)
+        if known is None:
+            try:
+                listed = run_process([self._binary, "-hide_banner", "-encoders"], timeout=30).stdout
+            except AdapterError:
+                listed = ""
+            known = self._encoders = {line.split()[1] for line in listed.splitlines() if len(line.split()) > 1 and line.startswith(" V")}
+        return name in known
 
     def _vq_mux(self, src: Path, params: dict, timeout: float) -> Result:
         """The picture of a processed stretch with the sound of the same stretch of the source: processors work on pictures."""
