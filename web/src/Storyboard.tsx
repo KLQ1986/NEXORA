@@ -314,6 +314,7 @@ function Frame({ src, className = "absolute inset-0 h-full w-full object-cover" 
 
 function ShotCard({ s, on, tone, pick }: { s: SbShot; on: boolean; tone: string; pick: () => void }) {
   const [label, t] = STATE[s.state];
+  const passed = s.checks.filter((c) => c.st === "pass").length, of = s.checks.length || s.spec.criteria.length;
   const dot = ({ proof: "bg-proof", ai: "bg-ai", accent: "bg-accent", cue: "bg-cue", mute: "bg-faint" } as Record<string, string>)[t] ?? "bg-faint";
   const f = s.spec.framing;
   return (
@@ -327,7 +328,8 @@ function ShotCard({ s, on, tone, pick }: { s: SbShot; on: boolean; tone: string;
       <span className="text-[11px] font-semibold uppercase leading-snug tracking-wide text-ink">{`${s.code}: ${f.lens} | ${s.spec.duration.target}s | ${f.move} | ${f.size} · ${f.angle}`}</span>
       <span className="text-[12.5px] leading-relaxed text-mute">{s.spec.intent}</span>
       {s.spec.line && <span className="border-l-2 border-accent/40 pl-2 text-[12px] italic leading-snug text-mute">“{s.spec.line}”</span>}
-      <span className="flex items-center gap-1.5 text-[11px] text-faint"><span className={`h-1.5 w-1.5 rounded-full ${dot}`} aria-hidden="true" />{label}</span>
+      <span className="flex items-center gap-1.5 text-[11px] text-faint"><span className={`h-1.5 w-1.5 rounded-full ${dot}`} aria-hidden="true" />{label}
+        {of > 0 && <><span aria-hidden="true">·</span><span className={of && passed === of ? "text-proof" : passed ? "text-cue" : "text-faint"}>{tv`nghiệm thu ${passed}/${of}`}</span></>}</span>
     </button>
   );
 }
