@@ -35,7 +35,11 @@ SHA-256 and upgraded only on purpose; the web build is single-threaded and reads
 | Native export (`filmcraft-cli` 0.8.0, signed and notarized), originals (4K HEVC 10-bit 4:2:0) | 22 s of 1080p in **10–11 s** with VideoToolbox (19 s from the proxies in software); 4K fitted to the frame; captions burned in; loudness −16.1 LUFS | verified |
 | Saving into NEXORA and reopening | saved to the browser's private storage (`/opfs/`, never a download), sent to NEXORA as a version; reopened with its media brought in again | verified |
 | Inside the project page | the Edit step shows the editor; first visit builds v1 from the storyboard; Save version; Render the cut → a render waiting for review (QC passed, 14 s in all) | verified on "Thử ghép A-G" |
-| Narration, music and sound effects on A1–A3 | not built yet | open |
+| Narration on A1 | each line said as the render says it (`Edit.line_audio`: the operator's take, else the project's voice, Bible voices and pronunciations), from the start of its shot, never over the line before; the clip's own sound only where the shot asks for it. 7 lines made in 4 s; in the export each silence ends where a shot begins (3.0, 6.5 … 19.3 s); −16.0 LUFS | verified on "Thử ghép A-G" |
+| Music on A2, ducked | the project's music under the whole cut at its gain (0.35 → −9.1 dB), typed music, the lines typed dialogue, `essentialSound.generateDucking`: 7 triggers found, the bed held at −15 dB through the narration | verified (a stand-in bed, not saved: the project has no music) |
+| Sound effects on A3 | each shot's effect at its start, −4.4 dB | tested with a stand-in; no real effect in the library yet |
+| Building again | a fresh project each time (`file.newProject`), so nothing is imported twice; a file already fetched is only added (`file.import`) | verified (v4: one sequence, 13 files, none renamed) |
+| A file FilmCraft cannot read | 0.8.0 can wait forever drawing its slate in an export: nothing unreadable is sent, and a render past 15 min is stopped | worked around |
 
 ## Who holds what
 
@@ -76,7 +80,7 @@ a draft to CapCut.
 
 ## Phases
 
-1. **Use FilmCraft** (a–c done 2026-10-18: `core/cuts.py`, `modules/edit/cut.py`, `adapters/filmcraft.py`, `web/src/EditStep.tsx`)
+1. **Use FilmCraft** (a–c and the sound of b done 2026-10-18: `core/cuts.py`, `modules/edit/cut.py`, `adapters/filmcraft.py`, `web/src/EditStep.tsx`)
    a. The Edit step shows FilmCraft (same origin, pinned), the tree's "Cut and review" becoming "Edit".
    b. The bridge above; save and reopen through NEXORA's versions; captions kept in step with ripples.
    c. Native export with `filmcraft-cli`; QC; Screening room as today.

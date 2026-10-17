@@ -114,41 +114,46 @@ class Edit:
         lines = []
         script = self._projects.script(ctx.subject_ref)
         project = self._projects.project(script["project_id"])
-        recorded = project.get("narration_dir")
-        voice = project.get("voice") or self._orch.setting("voice", self._voice_name)      # the project's voice, else the installation's
-        bible = json.loads(project.get("bible") or "[]")
         for shot in script["shots"]:
             sel = self._projects.selection(shot.shot_id)
             if sel and sel.status != "gap" and sel.extras.get("live_sound") and sel.t_out is not None:
                 # The clip speaks for itself: its length on the timeline is the range chosen, at the speed chosen.
                 lines.append({"shot_id": shot.shot_id, "audio": None, "live": True, "duration": round((sel.t_out - sel.t_in) / float(sel.extras.get("speed") or 1.0), 2)})
                 continue
-            # The operator's own recording for this line, if one exists, takes the place of the synthetic voice.
-            own = next((p for ext in ("wav", "m4a", "mp3", "aiff") for p in [Path(recorded or "/nonexistent") / f"{shot.position + 1}.{ext}"] if p.is_file()), None)
-            if own:
-                duration = self._adapters.submit("ffprobe", Request("duration", inputs={"path": str(own)})).outputs["duration"]
-                lines.append({"shot_id": shot.shot_id, "audio": str(own), "duration": round(float(duration), 2), "own_voice": True})
-                continue
-            if not self._voice:
-                lines.append({"shot_id": shot.shot_id, "audio": None, "duration": round(max(2.0, len(shot.text.split()) / WORDS_PER_SECOND), 2)})
-                continue
-            who, spoken = spoken_by(shot.text, bible)
-            line_voice = (who or {}).get("voice") or voice           # a character with a voice of its own speaks in it
-            for written, said in (json.loads(project.get("profile") or "{}").get("pronounce") or {}).items():
-                spoken = spoken.replace(written, said)             # the brand's pronunciation dictionary: written form, spoken form
-            out = self._media / "narration" / f"{_key(spoken, line_voice)}.wav"
-            if preview and not out.is_file():        # a preview records nothing new
-                lines.append({"shot_id": shot.shot_id, "audio": None, "duration": round(max(2.0, len(shot.text.split()) / WORDS_PER_SECOND), 2)})
-                continue
-            if out.is_file():
-                import wave
-                with wave.open(str(out)) as w:
-                    duration = w.getnframes() / w.getframerate()
-            else:
-                duration = self._adapters.submit("voice", Request("speak", inputs={"text": spoken}, params={"out": str(out), "voice": line_voice},
-                                                                 attempt_id=ctx.claim.attempt_id)).outputs["duration"]
-            lines.append({"shot_id": shot.shot_id, "audio": str(out), "duration": round(float(duration), 2)})
+            said = self.line_audio(project, shot.text, shot.position, make=not preview, attempt_id=ctx.claim.attempt_id)
+            lines.append({"shot_id": shot.shot_id, **said})
         return {"lines": lines}
+
+    def line_audio(self, project: dict, text: str, position: int, *, make: bool = True, attempt_id: str | None = None) -> dict:
+        """The narration of one line: the operator's own recording for it (`<narration_dir>/<n>.wav`, …), else the project's
+        voice (a character of the Bible in its own, the brand's pronunciations applied), kept by its words and voice; without a
+        voice, or with `make` off and nothing made yet, no audio and the length the words would take. Shared by the render and
+        the Edit step, so both say a line the same way."""
+        recorded = project.get("narration_dir")
+        own = next((p for ext in ("wav", "m4a", "mp3", "aiff") for p in [Path(recorded or "/nonexistent") / f"{position + 1}.{ext}"] if p.is_file()), None)
+        if own:
+            duration = self._adapters.submit("ffprobe", Request("duration", inputs={"path": str(own)})).outputs["duration"]
+            return {"audio": str(own), "duration": round(float(duration), 2), "own_voice": True}
+        guess = {"audio": None, "duration": round(max(2.0, len(text.split()) / WORDS_PER_SECOND), 2)}
+        if not self._voice:
+            return guess
+        voice = project.get("voice") or self._orch.setting("voice", self._voice_name)      # the project's voice, else the installation's
+        who, spoken = spoken_by(text, json.loads(project.get("bible") or "[]"))
+        line_voice = (who or {}).get("voice") or voice           # a character with a voice of its own speaks in it
+        for written, said in (json.loads(project.get("profile") or "{}").get("pronounce") or {}).items():
+            spoken = spoken.replace(written, said)             # the brand's pronunciation dictionary: written form, spoken form
+        out = self._media / "narration" / f"{_key(spoken, line_voice)}.wav"
+        if not make and not out.is_file():                     # a preview records nothing new
+            return guess
+        if out.is_file():
+            import wave
+            with wave.open(str(out)) as w:
+                duration = w.getnframes() / w.getframerate()
+        else:
+            out.parent.mkdir(parents=True, exist_ok=True)
+            duration = self._adapters.submit("voice", Request("speak", inputs={"text": spoken}, params={"out": str(out), "voice": line_voice},
+                                                             attempt_id=attempt_id)).outputs["duration"]
+        return {"audio": str(out), "duration": round(float(duration), 2)}
 
     def import_finished(self, project_id: str, path: str | Path) -> str:
         """Bring back a cut finished in another editor as the project's newest render. It is measured like any render, and it

@@ -2454,6 +2454,15 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         return Response(system.cuts.document(cut_id), media_type="application/json",
                         headers={"content-disposition": f'attachment; filename="cut-v{c["version"]}.fcproj"', "cross-origin-resource-policy": "same-origin"})
 
+    @app.get("/api/v1/projects/{project_id}/cut/sound/{name}")
+    def cut_sound(project_id: str, name: str):
+        """A sound a cut names that is not a library version: a narration line, or the project's music."""
+        need_project(project_id)
+        path = system.cut.sound_file(project_id, name)
+        if path is None:
+            raise HTTPException(404, "no such sound")
+        return FileResponse(path, headers={"cross-origin-resource-policy": "same-origin"})
+
     @app.post("/api/v1/projects/{project_id}/cut/{version}/restore")
     def cut_restore(project_id: str, version: int):
         need_project(project_id)
@@ -2470,7 +2479,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         c = system.cuts.get(cut_id)
         if c is None or c["project_id"] != project_id:
             raise HTTPException(404, "no such cut")
-        _, unread = system.cut.relinked(system.cuts.document(cut_id))
+        _, unread = system.cut.relinked(system.cuts.document(cut_id), project_id)
         if unread:
             raise HTTPException(409, f"Bản dựng dùng file không đọc được trên máy này: {', '.join(unread)}")
         return {"run_id": system.cut.start_export(cut_id)}

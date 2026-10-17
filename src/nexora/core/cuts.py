@@ -21,12 +21,18 @@ CREATE TABLE IF NOT EXISTS edit_cuts (cut_id TEXT PRIMARY KEY, project_id TEXT N
     made_by TEXT NOT NULL, note TEXT, source TEXT, stats TEXT NOT NULL, created_at REAL NOT NULL);
 CREATE UNIQUE INDEX IF NOT EXISTS edit_cuts_version ON edit_cuts (project_id, version)
 """
-MEDIA = re.compile(r'"/files/(ver_[0-9a-zA-Z]+)\.[A-Za-z0-9]+"')
+MEDIA = re.compile(r'"/files/(ver_[0-9a-zA-Z]+)[^"/]*"')
+NAMES = re.compile(r'"/files/([^"/]+)"')
 
 
 def media_of(document: str) -> list[str]:
     """The NEXORA versions a cut names, in the order it first names them."""
     return list(dict.fromkeys(MEDIA.findall(document)))
+
+
+def files_of(document: str) -> list[str]:
+    """Every file a cut names (`/files/<name>`): NEXORA versions, narration lines, the project's music."""
+    return list(dict.fromkeys(NAMES.findall(document)))
 
 
 def summary(document: str) -> dict:

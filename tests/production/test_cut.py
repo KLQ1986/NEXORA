@@ -85,3 +85,44 @@ def test_the_storyboard_becomes_a_sequence_and_a_saved_cut_is_rendered_for_revie
     assert client.get(f"/api/v1/projects/{project}/cut").json()["versions"][0]["export"]["status"] == "waiting_review"
     decided = client.post(f"/api/v1/projects/{project}/render/decision", json={"approve": True}).json()
     assert decided["renders"][0]["review"]["approved"] is True
+
+
+def test_the_sequence_carries_the_narration_the_music_and_its_ducking(tmp_path):
+    """A1 says each line (here the operator's own takes), from the start of its shot; A2 holds the project's music under the
+    whole cut at its gain, ducked while a line is said; the clip's own sound only where the shot asks for it."""
+    system = build(tmp_path / "data", model=FakeModel(), segment_seconds=15.0)
+    system.adapters.register(FakeFilmCraft())
+    client = TestClient(create_app(system))
+    for name, src in (("market.mp4", "testsrc2"), ("bars.mp4", "smptebars")):
+        taken_in(system, film(tmp_path / name, [(src, 4)]))
+    takes, music = tmp_path / "takes", tmp_path / "bed.wav"
+    takes.mkdir()
+    for n in (1, 2):
+        subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=300:duration=1.5", str(takes / f"{n}.wav")], check=True)
+    subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=500:duration=20", str(music)], check=True)
+    project = system.projects.create_project("Vườn dừa")
+    system.projects.update_project(project, narration_dir=str(takes), music_path=str(music), music_gain=0.35)
+    system.projects.save_script(project, ["Chợ rau củ buổi sáng.", "Người ta pha cà phê."])
+    client.post(f"/api/v1/projects/{project}/storyboard/from-script")
+    client.post(f"/api/v1/projects/{project}/storyboard/run", json={})
+    plan = client.get(f"/api/v1/projects/{project}/cut/plan").json()
+    places = [c for c in plan["commands"] if c["id"] == "timeline.place"]
+    assert all(p["params"]["audio"] is False for p in places if p["params"]["track"] == "V1")          # the line speaks, not the clip
+    voice = [p for p in places if p.get("tag") == "voice"]
+    assert len(voice) == 2 and voice[0]["params"]["track"] == "A1" and voice[1]["params"]["seconds"] >= 1.5    # never over the line before
+    bed = next(p for p in places if p.get("tag") == "music")
+    assert bed["params"]["track"] == "A2" and bed["params"]["seconds"] == 0 and plan["sound"] == {"voice": 2, "music": True, "sfx": 0}
+    gain = next(c for c in plan["commands"] if c["id"] == "clip.audioGain")
+    assert gain["params"]["clips"] == "$tag:music" and abs(gain["params"]["db"] - 20 * __import__("math").log10(0.35)) < 0.01
+    ids = [c["id"] for c in plan["commands"]]
+    assert ids.index("essentialSound.generateDucking") > ids.index("essentialSound.setType")
+    # The sounds are handed out under the names the cut gives them, and nothing else is.
+    names = {m["name"]: m["url"] for m in plan["media"] if m["version"] is None}
+    music_name = next(n for n in names if n.startswith("music_"))
+    assert client.get(names[music_name]).content == music.read_bytes()
+    assert client.get(f"/api/v1/projects/{project}/cut/sound/..%2Fnexora.db").status_code == 404
+    # Rendered: every name pointed at its real file.
+    doc = json.loads(document([m["version"] for m in plan["media"] if m["version"]]))
+    doc["project"]["items"]["50"] = {"id": 50, "name": music_name, "kind": {"Media": {"media": {"File": {"path": f"/files/{music_name}"}}}}}
+    relinked, unread = system.cut.relinked(json.dumps(doc), project)
+    assert not unread and str(music) in relinked and "/files/" not in relinked

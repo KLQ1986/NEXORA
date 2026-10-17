@@ -639,7 +639,8 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     from nexora.modules.edit.cut import Cut
     adapters.register(FilmCraft(data_dir))
     cuts = CutStore(db_path)
-    cut = Cut(orch, projects, assets, _Board(db_path), cuts, adapters, data_dir / "media", source=edit.final_source)
+    cut = Cut(orch, projects, assets, _Board(db_path), cuts, adapters, data_dir / "media", source=edit.final_source,
+              narrate=lambda project, text, position: edit.line_audio(project, text, position))
     cut.register(registry)
     distribution = Distribution(projects, assets, adapters, data_dir / "exports")
     (data_dir / "logs").mkdir(exist_ok=True)

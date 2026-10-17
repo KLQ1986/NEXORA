@@ -7,8 +7,9 @@ import { Button, Icon, toast } from "./parts";
    (window.filmcraft, same origin). The storyboard is built into a sequence once; the operator edits; every save is a
    version of the project's cut kept by NEXORA; the final render runs on this Mac with FilmCraft's engine. */
 
-type Cmd = { id: string; params: Record<string, unknown> };
-type Plan = { media: { version: string; name: string; url: string }[]; commands: Cmd[]; missing: { code: string; reason: string }[]; seconds: number; shots: number };
+type Cmd = { id: string; params: Record<string, unknown>; tag?: string };
+type Plan = { media: { version: string | null; name: string; url: string }[]; commands: Cmd[]; missing: { code: string; reason: string }[]; notes: string[];
+  seconds: number; shots: number; sound: { voice: number; music: boolean; sfx: number } };
 type CutVersion = { cut_id: string; version: number; made_by: string; note: string | null; source: string | null; created_at: number;
   stats: { sequences: { name: string; video_clips: number; captions: number }[]; media: number }; document_url: string; export: { run_id: string; status: string } | null };
 type CutView = { editor: { ready: boolean; version: string; url: string; native: boolean; fix: string | null }; versions: CutVersion[]; storyboard: boolean };
@@ -17,11 +18,12 @@ type FilmCraftApi = {
   importUrl: (url: string, name?: string) => Promise<{ items: number[]; errors: unknown[] }>;
   openProject: (fileOrUrl: unknown) => Promise<unknown>;
   readFile: (path: string) => Promise<Uint8Array>;
+  files: () => Promise<{ path: string; size: number; kind: string }[]>;
 };
 
 const TICKS = 254016000000;                         // FilmCraft's time: ticks a second
 const PATH = "/opfs/nexora/cut.fcproj";       // written to the browser's private storage, never offered as a download
-const MEDIA = /"\/files\/(ver_[0-9a-zA-Z]+)(\.[A-Za-z0-9]+)"/g;
+const FILES = /"\/files\/([^"/]+)"/g;
 
 export default function EditStep({ projectId, approved, onChanged }: { projectId: string; approved: boolean; onChanged: () => void }) {
   const url = `/api/v1/projects/${projectId}/cut`;
@@ -54,9 +56,11 @@ export default function EditStep({ projectId, approved, onChanged }: { projectId
   /** Every medium a document names, brought into the editor under the name the document uses. */
   const bring = async (api: FilmCraftApi, media: { name: string; url: string }[]) => {
     const items: Record<string, number> = {};
+    const held = new Set((await api.files()).map((f) => f.path));
     for (const m of media) {
-      const r = await api.importUrl(m.url, m.name);
-      items[m.name.split(".")[0]] = r.items[0];
+      // A file already fetched in this session is only added to the project, so it keeps its one name (`/files/<name>`).
+      const r = held.has(`/files/${m.name}`) ? await api.execute("file.import", { paths: [`/files/${m.name}`] }) : await api.importUrl(m.url, m.name);
+      items[m.name] = items[m.name.split(".")[0]] = r.items[0];         // by its file name, and by the version id it starts with
     }
     return items;
   };
@@ -92,27 +96,35 @@ export default function EditStep({ projectId, approved, onChanged }: { projectId
   const build = async () => {
     const api = await fc();
     const plan = await call<Plan>(`${url}/plan`);
+    // A fresh project: the cut being edited stays as it was in its own version, and nothing is imported into it twice.
+    await api.execute("file.newProject", { name: "cut" });
     const items = await bring(api, plan.media);
     let clips: number[] = [];
+    const tags: Record<string, number[]> = {};
     const resolve = (v: unknown): unknown => {
       if (typeof v === "string" && v.startsWith("$item:")) return items[v.slice(6)];
-      if (Array.isArray(v) && v.length === 1 && v[0] === "$clip") return clips;
+      if (typeof v === "string" && v.startsWith("$tag:")) return tags[v.slice(5)] ?? [];
+      if (v === "$clip" || (Array.isArray(v) && v.length === 1 && v[0] === "$clip")) return clips;
       return v;
     };
     for (const c of plan.commands) {
       const params = Object.fromEntries(Object.entries(c.params).map(([k, v]) => [k, resolve(v)]));
       const r = await api.execute(c.id, params);
       if (c.id === "timeline.place") clips = (r?.clips ?? []) as number[];
+      if (c.tag) tags[c.tag] = [...(tags[c.tag] ?? []), ...clips];
     }
     await save(tr("lắp từ storyboard"), "storyboard");
     if (plan.missing.length) toast(tv`${plan.missing.length} shot chưa có hình: để trống trên timeline.`, { tone: "tally" });
+    if (plan.notes.length) toast(plan.notes.slice(0, 3).join(" · "), { tone: "tally" });
   };
 
   const openVersion = async (v: CutVersion) => {
     const api = await fc();
     const text = await (await fetch(v.document_url)).text();
-    const media = [...text.matchAll(MEDIA)].map((m) => ({ name: `${m[1]}${m[2]}`, url: `/media/${m[1]}` }));
-    await bring(api, [...new Map(media.map((m) => [m.name, m])).values()]);
+    const media = [...text.matchAll(FILES)].map((m) => ({ name: m[1], url: m[1].startsWith("ver_") ? `/media/${(m[1].match(/^ver_[0-9A-Za-z]+/) ?? [m[1]])[0]}` : `${url}/sound/${encodeURIComponent(m[1])}` }));
+    await api.execute("file.newProject", { name: "cut" });
+    const held = new Set((await api.files()).map((f) => f.path));
+    for (const m of new Map(media.map((m) => [m.name, m])).values()) if (!held.has(`/files/${m.name}`)) await api.importUrl(m.url, m.name);
     await api.openProject(v.document_url);
     setOpen(v.version);
     setDirty(false);
