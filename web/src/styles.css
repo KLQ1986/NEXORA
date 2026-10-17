@@ -3,9 +3,8 @@
 @import "@fontsource/be-vietnam-pro/500.css";
 @import "@fontsource/be-vietnam-pro/600.css";
 @import "@fontsource/be-vietnam-pro/700.css";
-@import "@fontsource/geist/400.css";
-@import "@fontsource/geist/500.css";
-@import "@fontsource/geist/600.css";
+@import "@fontsource-variable/geist/wght.css";
+@import "@fontsource-variable/lexend/wght.css";
 @import "@fontsource/geist-mono/400.css";
 @import "@fontsource/geist-mono/500.css";
 @import "@fontsource/geist-mono/600.css";
@@ -34,8 +33,8 @@
   --color-cue: #fbbf24;
   --color-tally: #f87171;
   --color-proof: #30afff;
-  --font-sans: "Geist", system-ui, -apple-system, sans-serif;
-  --font-display: "Geist", system-ui, -apple-system, sans-serif;
+  --font-sans: "Lexend Variable", "Geist Variable", "Geist", system-ui, -apple-system, sans-serif;
+  --font-display: "Lexend Variable", "Geist Variable", "Geist", system-ui, -apple-system, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, Menlo, monospace;
   /* One scale of corners: containers 12, nested panels 10, controls 8, chips 6. State tags alone are pills, so a state reads as a state. */
   --radius-card: 14px;
@@ -55,8 +54,8 @@ html[lang="vi"] h1, html[lang="vi"] h2, html[lang="vi"] h3 { letter-spacing: -0.
 body, #root { height: 100%; }
 body {
   background: radial-gradient(1200px 600px at 20% -10%, rgba(48, 175, 255, 0.07), transparent 60%), radial-gradient(900px 500px at 100% 0%, rgba(255, 140, 82, 0.04), transparent 60%), var(--color-canvas);
-  background-attachment: fixed; color: var(--color-ink); font-family: var(--font-sans); font-size: 14px; line-height: 1.55;
-  -webkit-font-smoothing: auto; text-rendering: optimizeLegibility; -webkit-tap-highlight-color: transparent;
+  background-attachment: fixed; color: var(--color-ink); font-family: var(--font-sans); font-size: 14px; font-weight: 350; line-height: 1.55;
+  -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; -webkit-tap-highlight-color: transparent;
 }
 h1, h2, h3 { letter-spacing: -0.02em; text-wrap-style: balance; }
 p { text-wrap-style: pretty; }
@@ -259,11 +258,19 @@ html[lang="vi"] .display { letter-spacing: -0.015em; }
 /* ── Legibility: everything drawn under 12px is set at 11px and a heavier weight (12px and up stay as drawn), and on dark
    backgrounds the type is drawn at its full weight (no thinning by greyscale smoothing). Unlayered, so it
    wins over the utilities without touching every screen. ── */
-:where(.text-faint, .text-mute):not([class*="font-"]) { font-weight: 450; }
-.text-\[9\.5px\], .text-\[10px\], .text-\[10\.5px\], .text-\[11px\], .text-\[11\.5px\], .chip { font-size: 11px; font-weight: 500; }
-.lab .lab-tag { font-size: 11px; font-weight: 500; }
-.lab-svgcap { font-size: 11px; font-weight: 500; }
-.lab-svgtag, .lab-svgnum { font-size: 11px; font-weight: 500; }
+:where(.text-faint, .text-mute):not([class*="font-"]) { font-weight: 400; }
+.text-\[9\.5px\], .text-\[10px\], .text-\[10\.5px\], .text-\[11px\], .text-\[11\.5px\], .chip { font-size: 11px; font-weight: 400; }
+.lab .lab-tag { font-size: 11px; font-weight: 400; }
+.lab-svgcap { font-size: 11px; font-weight: 400; }
+.lab-svgtag, .lab-svgnum { font-size: 11px; font-weight: 400; }
 .lab { --color-mute: #aabdb3; --color-faint: #93a79e; }
 .lab.lab-amber { --color-mute: #c9b89d; --color-faint: #ad9c82; }
 .studio { --color-faint: #94a0b6; }
+
+/* Lexend draws heavier than Geist at the same number, so the weight scale steps down by one notch:
+   body 350, medium 450, semibold 550, bold 650. */
+.font-medium { font-weight: 450; }
+.font-semibold { font-weight: 550; }
+.font-bold { font-weight: 650; }
+.display { font-weight: 550; }
+.eyebrow, .field-label, .chip { font-weight: 450; }
