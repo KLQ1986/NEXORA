@@ -652,12 +652,14 @@ def test_deblur_goes_to_a_model_beside_sharpening_and_to_the_cloud_only_when_the
                                                                         colour=[], have=have | {"ffmpeg:cas"}, options={"exposure": False, **o})}
     still = plan({"kind": "still", "width": 1200, "height": 800}, {"nafnet"})
     assert still["deblur"]["tier"] == "nafnet" and still["deblur"]["classic"]["op"] == "sharpen" and "sharpen" not in still
-    big = plan({"width": 3840, "height": 2160}, {"nafnet", "vrt_remote"})
-    assert big["deblur"]["tier"] == "nafnet"                                   # 4K too, at its own size, on this Mac
+    hd = plan({"width": 1920, "height": 1080, "frame_rate": 30}, {"nafnet", "remote:deblur"})
+    assert hd["deblur"]["tier"] == "nafnet"                                    # two seconds of 1080p: about 6 minutes here
+    big = plan({"width": 3840, "height": 2160, "frame_rate": 30}, {"nafnet", "remote:deblur"})
+    assert "deblur" not in big and "quá lâu" in big["sharpen"]["why"]          # of 4K about 25 minutes: sharpened, and said why
     nothing = plan({"width": 3840, "height": 2160}, set())
     assert "deblur" not in nothing and nothing["sharpen"]["tier"] == "ffmpeg"
-    allowed = plan({"width": 3840, "height": 2160}, {"nafnet", "vrt_remote"}, allow_cloud=True)
-    assert allowed["deblur"]["tier"] == "vrt_remote" and allowed["deblur"]["remote"]
+    allowed = plan({"width": 3840, "height": 2160, "frame_rate": 30}, {"nafnet", "remote:deblur"}, allow_cloud=True)
+    assert allowed["deblur"]["tier"] == "remote" and allowed["deblur"]["params"]["task"] == "deblur" and allowed["deblur"]["remote"]
 
 
 def test_a_remote_deblur_goes_out_marked_as_allowed_and_privacy_mode_still_stops_it(tmp_path):

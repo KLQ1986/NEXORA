@@ -4,6 +4,11 @@ Apple GPU, run by `deblur_helper.py` in the environment `scripts/setup-deblur.sh
 On a still, or a video span frame by frame, always at the picture's own size (in tiles), written to ProRes 422 HQ, picture
 only, like the other frame tools. Measured on an M4 (2026-10-17): about 6 s a 1080p frame, 25 s a 4K one. On motion blur of
 11 pixels added to a frame of foliage: PSNR 21.4 → 23.7, SSIM 0.46 → 0.66.
+
+The same port's denoiser (NAFNet SIDD width64, mlx-community, sha256 62c6825e…) was tried for stills and left out: on a frame
+of foliage it lost to nlmeans at every level (Gaussian σ 4: 31.0 against 39.7, below the noisy 36.0; σ 8: 29.5 against 34.3;
+correlated noise with chroma blotches: 29.0 against 31.1), shifting red and blue by about 3 and taking the leaves' texture for
+noise; it learned the smooth pictures of phone sensors (2026-10-17).
 """
 import json
 import subprocess

@@ -14,11 +14,12 @@ from pathlib import Path
 import numpy as np
 
 from nexora.modules.visual_quality import measure as M
+from nexora.modules.visual_quality.assess import severity
 
 # Steps that can cost a picture more than they give; each must show on the shot's own frame that it does not make it less
 # natural (NIQE) before it stays in a recipe.
 RISKY = frozenset({"deblock", "deband", "denoise", "sharpen"})
-ORDER = ("deinterlace", "ivtc", "constant_rate", "deblock", "restore", "remove", "deband", "denoise", "tonemap", "color_transform", "levels", "relight", "match",
+ORDER = ("deinterlace", "ivtc", "constant_rate", "chroma_align", "trim_band", "deblock", "restore", "remove", "deband", "denoise", "tonemap", "color_transform", "levels", "relight", "match",
          "deflicker", "stabilise", "deblur", "sharpen", "upscale", "faces", "interpolate")
 VERSION = "1"
 # Every picture is worked at its own size: Real-ESRGAN restores an 8.8-megapixel photo at full size in about 194 s and 1.5 GB
@@ -30,6 +31,39 @@ RELIGHT_TOP = 0.85         # ... under a 99th percentile above this calls for li
 DEBLUR_SEVERITY = 0.15     # less blurred than this, sharpening is enough (a model is still checked against sharpening)
 FACE_SIDES = (48, 400)     # pixels: smaller has too little to align on, larger is already detailed enough to lose by a redraw
 TARGET_MIDTONE = 0.45
+# A picture dark all over (no bright part to keep: a room at night, dusk) is lifted further than a mid-tone fix, to gamma 1.7
+# instead of 1.4: from a median of 0.19 that is 0.38 against 0.30. Its noise grows with the lift, so the denoise is set for the
+# noise as it will be seen (see `lift`).
+LOW_LIGHT_MIDDLE = 0.22
+LOW_LIGHT_GAMMA = 1.7
+# NAFNet on this Mac costs about 3 s a megapixel a frame (25 s a 4K frame, 2026-10-17): a shot whose frames would take longer
+# than this is not worth it here (ten seconds of 4K would take two hours); it goes to the operator's endpoint when allowed,
+# else to sharpening, and the recipe says why.
+NAFNET_SECONDS_PER_MP = 3.0
+NAFNET_BUDGET = 600.0
+# Footage this small with damage on it is taken for old footage (tape, an early phone, a DVD): restored by a model that sees
+# the frames around each one (RealBasicVSR) when the operator's endpoint has it and the recording may go there.
+OLD_HEIGHT = 720
+# Without a height asked for, footage this small is offered a step to this height, which a cut at 1080p or more needs, when
+# a model can make it (Apple's super resolution, the operator's endpoint): a resample alone is what a cut does anyway.
+SUGGEST_BELOW, SUGGEST_HEIGHT = 900, 1080
+CHROMA_SHIFT = 1.2        # pixels: a clean frame reads 0.1–0.4
+
+
+def scan_of(idet: dict | None) -> str | None:
+    """How a video was scanned, from FFmpeg's idet counts: `interlaced` when one field order holds most frames and the other
+    almost none (a progressive frame with fine horizontal lines is read as either, so it splits them: a test pattern gave 53
+    top-first and 48 bottom-first), `telecine` when such frames also repeat a field in a quarter to a half of them (3:2
+    pulldown repeats two in five, 0.4), else `progressive`; None without counts."""
+    if not idet:
+        return None
+    n = sum(int(idet.get(k) or 0) for k in ("tff", "bff", "progressive", "undetermined"))
+    if n < 20:
+        return None
+    first, second = max(idet.get("tff", 0), idet.get("bff", 0)), min(idet.get("tff", 0), idet.get("bff", 0))
+    if first >= 0.6 * n and second <= 0.1 * n:
+        return "telecine" if 0.25 <= int(idet.get("repeated") or 0) / max(1, int(idet.get("frames") or n)) <= 0.55 else "interlaced"
+    return "progressive"
 
 
 def exposure_balance(look: dict, *, content: str, parts: frozenset[str] = frozenset({"black", "white", "wb", "gamma", "saturation"})) -> dict | None:
@@ -59,9 +93,11 @@ def exposure_balance(look: dict, *, content: str, parts: frozenset[str] = frozen
     if "gamma" in parts and abs(mid - TARGET_MIDTONE) > 0.08 and 0.02 < mid < 0.98:
         gamma = math.log(mid) / math.log(TARGET_MIDTONE)
         low_key = mid < 0.25 and p99 > 0.9
+        dark = mid < LOW_LIGHT_MIDDLE and not low_key
         gamma = min(gamma, 1.15) if low_key else gamma
-        gamma = round(min(1.4, max(0.75, gamma)), 3)
-        why.append(("cảnh tối có vùng sáng: chỉ nâng nhẹ" if low_key else "trung tông lệch") + f" ({mid:.2f} → gamma {gamma})")
+        gamma = round(min(LOW_LIGHT_GAMMA if dark else 1.4, max(0.75, gamma)), 3)
+        why.append(("cảnh tối có vùng sáng: chỉ nâng nhẹ" if low_key else "thiếu sáng đều cả khung: nâng nhiều hơn, khử nhiễu theo mức nâng" if dark
+                    else "trung tông lệch") + f" ({mid:.2f} → gamma {gamma})")
     saturation = 1.12 if "saturation" in parts and sat < 0.06 and content not in ("screen", "graphics") else 1.0
     if saturation != 1.0:
         why.append(f"màu nhạt ({sat:.2f})")
@@ -69,6 +105,20 @@ def exposure_balance(look: dict, *, content: str, parts: frozenset[str] = frozen
         return None
     params = {"black": [black] * 3, "white": [round(white / g, 4) for g in gains], "gamma": gamma, "saturation": saturation}
     return {"op": "levels", "tier": "ffmpeg", "params": params, "why": "; ".join(why)}
+
+
+def lift(params: dict | None, mid: float, *, shadows: float = 0.0) -> float:
+    """How much the levels (and a local lift of the shadows) raise what is at the picture's middle, noise with it: the slope
+    of the curve there, at least 1. A median of 0.15 under white 0.6 and gamma 1.7 is raised 1.74 times, so noise measured
+    at σ 2 (no defect) is seen at 3.5 (a defect) once lifted."""
+    k = 1.0
+    if params:
+        black = float((params.get("black") or [0.0])[0])
+        white = float(min(params.get("white") or [1.0]))
+        g = float(params.get("gamma") or 1.0)
+        x = min(max((mid - black) / max(white - black, 1e-3), 1e-3), 1.0)
+        k = (1.0 / g) * x ** (1.0 / g - 1.0) / max(white - black, 1e-3)
+    return round(max(1.0, k * (1.0 + 0.6 * shadows)), 3)
 
 
 def levels_lut(params: dict, lut_dir: str | Path, *, size: int = 33) -> str:
@@ -103,17 +153,22 @@ DENOISE_STRENGTHS = (1.0, 0.85, 0.7)
 METHOD_NOISE_LIMIT = 1.0
 
 
-def tune_denoise(render, sigma: float) -> tuple[float, float]:
+def tune_denoise(render, sigma: float, *, lifted: float = 1.0) -> tuple[float, float]:
     """The strength of a denoise for this picture, from its method noise: what the filter takes away (luma, 0..255) against
     the noise measured. Taking away more than the noise is taking texture: on a frame of foliage (0042) full strength took
     1.06–1.22 times the noise and cost SSIM 0.92 → 0.79; on flat footage (0059) it took 1.01. The first of
     `DENOISE_STRENGTHS` within `METHOD_NOISE_LIMIT` is kept, never under 0.7 (at 0.5 flat footage keeps most of its noise).
     Measured 2026-10-17 with noise σ 6, 12 and 25 added: every case comes out better than the noisy frame, foliage at σ 25
-    by 3.6 dB instead of 2.4. `render(strength)` gives the frame (RGB, 0..1) with the denoise at that strength, None without."""
+    by 3.6 dB instead of 2.4. `render(strength)` gives the frame (RGB, 0..1) with the denoise at that strength, None without.
+    The frames are rendered with the shot's colour steps, so on a lifted picture (`lifted` > 1) what the filter takes is
+    raised with it: it is held against the noise as it is seen there (σ × lifted), and stronger settings are tried first, up to
+    √lifted (1.5 at most), since a lift makes the noise of the dark visible."""
     base = M.luma(render(None))
-    ratio = 0.0
-    for strength in DENOISE_STRENGTHS:
-        ratio = float((base - M.luma(render(strength))).std() * 255.0 / max(sigma, 0.1))
+    ratio, seen = 0.0, sigma * max(1.0, lifted)
+    top = min(1.5, round(max(1.0, lifted) ** 0.5, 2))
+    strengths = tuple(sorted({top, round((top + 1.0) / 2, 2)} - {1.0}, reverse=True)) + DENOISE_STRENGTHS if top > 1.05 else DENOISE_STRENGTHS
+    for strength in strengths:
+        ratio = float((base - M.luma(render(strength))).std() * 255.0 / max(seen, 0.1))
         if ratio <= METHOD_NOISE_LIMIT:
             return strength, round(ratio, 3)
     return DENOISE_STRENGTHS[-1], round(ratio, 3)
@@ -131,8 +186,30 @@ def plan_shot(shot: dict, *, profile: dict, colour: list[dict], have: set[str], 
     camera_like = content in ("camera", "ai", "still")
     still = content == "still"
     steps: list[dict] = []
-    if not still and str(tech.get("field_order") or "progressive") not in ("progressive", "unknown", "None", "") and "ffmpeg:bwdif" in have:
-        steps.append({"op": "deinterlace", "tier": "ffmpeg", "params": {}, "why": f"xen kẽ dòng ({tech.get('field_order')})"})
+
+    def remote(task: str) -> bool:
+        """A task on the operator's endpoint (RunPod): a video only, that recording allowed to leave this machine."""
+        return not still and bool(options.get("allow_cloud")) and f"remote:{task}" in have
+    height = int(tech.get("display_height") or tech.get("height") or 0)
+    rate = float(tech.get("frame_rate") or 0)
+    frames = max(1.0, (float(shot.get("t_end") or 0) - float(shot.get("t_start") or 0)) * (rate or 25.0))
+    old = not still and camera_like and 0 < height <= OLD_HEIGHT and any(sev.get(k, 0) > 0 for k in ("blocking", "soft", "noise", "banding"))
+    scan = scan_of(tech.get("idet"))
+    said_interlaced = str(tech.get("field_order") or "progressive") not in ("progressive", "unknown", "None", "")
+    if not still and scan == "telecine" and "ffmpeg:fieldmatch" in have:
+        steps.append({"op": "ivtc", "tier": "ffmpeg", "params": {}, "why": f"phim chuyển telecine (lặp {tech['idet']['repeated']}/{tech['idet']['frames']} trường): trả về khung gốc"})
+    elif not still and (said_interlaced or scan == "interlaced") and "ffmpeg:bwdif" in have:
+        steps.append({"op": "deinterlace", "tier": "ffmpeg", "params": {},
+                      "why": f"xen kẽ dòng ({tech.get('field_order') if said_interlaced else 'thấy trên hình, file ghi là progressive'})"})
+    # Tape: the colour carried to the side of the picture, and rows torn at the foot by the head switch.
+    shift = tech.get("chroma_offset") or [0.0, 0.0]
+    if not still and max(abs(float(v)) for v in shift) >= CHROMA_SHIFT and "ffmpeg:chromashift" in have:
+        sub = 1 if "444" in str(tech.get("pixel_format") or "") else 2           # chromashift moves chroma samples: half a pixel wide in 4:2:0
+        steps.append({"op": "chroma_align", "tier": "ffmpeg", "params": {"cb": -round(float(shift[0]) / sub), "cr": -round(float(shift[1]) / sub)},
+                      "why": f"màu lệch khỏi hình {shift[0]:+.1f}/{shift[1]:+.1f} px (kiểu băng từ)"})
+    band = int(tech.get("bottom_band") or 0)
+    if not still and band >= 3 and "ffmpeg:fillborders" in have:
+        steps.append({"op": "trim_band", "tier": "ffmpeg", "params": {"rows": band}, "why": f"{band} dòng cuối bị xé ngang (đầu từ băng chuyển): che bằng nền đen"})
     if not still and tech.get("variable_frame_rate") and "ffmpeg:fps" in have:
         fps = options.get("fps") or round(float(tech.get("nominal_frame_rate") or tech.get("frame_rate") or 30))
         steps.append({"op": "constant_rate", "tier": "ffmpeg", "params": {"fps": fps}, "why": "tốc độ khung thay đổi"})
@@ -148,15 +225,6 @@ def plan_shot(shot: dict, *, profile: dict, colour: list[dict], have: set[str], 
             steps.append(classic)
     if sev.get("banding", 0) > 0 and "ffmpeg:deband" in have:
         steps.append({"op": "deband", "tier": "ffmpeg", "params": {"threshold": round(0.02 + 0.02 * sev["banding"], 4), "range": 24}, "why": "dải màu"})
-    if camera_like and sev.get("noise", 0) > 0 and options.get("denoise", True):
-        sigma = float(shot["scores"]["noise"])
-        if "apple_vt" in have and not still:
-            strength = round(min(1.0, max(0.2, sigma / 12.0)), 2)
-            steps.append({"op": "denoise", "tier": "apple_vt", "params": {"strength": strength, "sigma": sigma}, "why": f"nhiễu {sigma} (lọc theo thời gian)"})
-        elif "ffmpeg:nlmeans" in have and still:
-            steps.append({"op": "denoise", "tier": "ffmpeg", "params": {"sigma": sigma, "method": "nlmeans"}, "why": f"nhiễu {sigma}"})
-        elif "ffmpeg:hqdn3d" in have:
-            steps.append({"op": "denoise", "tier": "ffmpeg", "params": {"sigma": sigma}, "why": f"nhiễu {sigma} (lọc theo không gian và thời gian)"})
     steps += [dict(s) for s in colour]
     lv = exposure_balance(shot["display"], content=content) if options.get("exposure", True) else None
     if lv and "ffmpeg:lut3d" in have:
@@ -171,6 +239,24 @@ def plan_shot(shot: dict, *, profile: dict, colour: list[dict], have: set[str], 
         highlights = 0.5 if disp.get("clipped_high", 0.0) > 0.005 else 0.2
         steps.append({"op": "relight", "tier": "local_tone", "params": {"shadows": shadows, "highlights": highlights}, "classic": None,
                       "why": f"giữa tối ({disp['luma_p50']:.2f}) dưới phần sáng ({disp['luma_p99']:.2f}): nâng vùng tối tại chỗ"})
+    # Noise is judged as it will be seen: the colour steps above raise it with the picture (a dark shot lifted 1.74 times shows
+    # noise of σ 2 as 3.5), so a lifted shot is denoised where its own measure alone would not call for it, and harder.
+    sigma = float(shot["scores"].get("noise") or 0.0)
+    lifted = lift(lv["params"] if lv else None, float(disp.get("luma_p50", 0.5)),
+                  shadows=next((x["params"]["shadows"] for x in steps if x["op"] == "relight"), 0.0))
+    seen = round(sigma * lifted, 2)
+    if camera_like and (sev.get("noise", 0) > 0 or severity("noise", seen) > 0) and options.get("denoise", True):
+        said = f"nhiễu {sigma}" + (f", thành {seen} sau khi nâng sáng ×{lifted}" if lifted > 1.05 else "")
+        if remote("denoise") and (severity("noise", seen) >= 0.6 or lifted >= 1.3):
+            steps.append({"op": "denoise", "tier": "remote", "params": {"task": "denoise", "sigma": sigma, "lift": lifted}, "generative": True, "remote": True,
+                          "why": f"{said}: khử nhiễu theo thời gian bằng VRT trên GPU thuê, đã được phép gửi footage"})
+        elif "apple_vt" in have and not still:
+            strength = round(min(1.0, max(0.2, seen / 12.0)), 2)
+            steps.append({"op": "denoise", "tier": "apple_vt", "params": {"strength": strength, "sigma": sigma, "lift": lifted}, "why": f"{said} (lọc theo thời gian)"})
+        elif "ffmpeg:nlmeans" in have and still:
+            steps.append({"op": "denoise", "tier": "ffmpeg", "params": {"sigma": sigma, "lift": lifted, "method": "nlmeans"}, "why": said})
+        elif "ffmpeg:hqdn3d" in have:
+            steps.append({"op": "denoise", "tier": "ffmpeg", "params": {"sigma": sigma, "lift": lifted}, "why": f"{said} (lọc theo không gian và thời gian)"})
     if not still and sev.get("flicker", 0) > 0 and "ffmpeg:deflicker" in have:
         steps.append({"op": "deflicker", "tier": "ffmpeg", "params": {"size": 5}, "why": f"nhấp nháy {shot['scores']['flicker']}"})
     if not still and camera_like and sev.get("shake", 0) > 0.3 and options.get("stabilise", True):
@@ -184,28 +270,46 @@ def plan_shot(shot: dict, *, profile: dict, colour: list[dict], have: set[str], 
         # NAFNet on this Mac's GPU for stills and video of any size; VRT on a rented GPU instead only when the operator has let
         # this recording leave the machine (it uses the frames around each one, which NAFNet cannot).
         blur = shot["scores"].get("blur", shot["scores"].get("sharpness"))
-        if sev["soft"] >= DEBLUR_SEVERITY and options.get("deblur", True) and ("nafnet" in have or "vrt_remote" in have):
-            if not still and options.get("allow_cloud") and "vrt_remote" in have:
-                steps.append({"op": "deblur", "tier": "vrt_remote", "params": {}, "generative": True, "remote": True,
-                              "why": f"mờ ({blur}): VRT trên GPU thuê, đã được phép gửi footage"})
-            elif "nafnet" in have:
-                steps.append({"op": "deblur", "tier": "nafnet", "params": {}, "generative": True, "classic": classic,
-                              "why": f"mờ ({blur}): khử mờ bằng NAFNet ở đúng độ phân giải của nguồn (AI)"})
-            else:
-                steps.append(classic)
+        cost = (1.0 if still else frames) * NAFNET_SECONDS_PER_MP * pixels / 1e6
+        if old and remote("restore"):
+            pass                                                          # the restoration below sharpens what it restores
+        elif sev["soft"] >= DEBLUR_SEVERITY and options.get("deblur", True) and remote("deblur"):
+            steps.append({"op": "deblur", "tier": "remote", "params": {"task": "deblur"}, "generative": True, "remote": True,
+                          "why": f"mờ ({blur}): VRT trên GPU thuê, đã được phép gửi footage"})
+        elif sev["soft"] >= DEBLUR_SEVERITY and options.get("deblur", True) and "nafnet" in have and cost <= NAFNET_BUDGET:
+            steps.append({"op": "deblur", "tier": "nafnet", "params": {}, "generative": True, "classic": classic,
+                          "why": f"mờ ({blur}): khử mờ bằng NAFNet ở đúng độ phân giải của nguồn (AI, khoảng {cost / 60:.0f} phút)"})
+        elif sev["soft"] >= DEBLUR_SEVERITY and options.get("deblur", True) and "nafnet" in have:
+            steps.append({**classic, "why": classic["why"] + f"; khử mờ AI trên máy này mất khoảng {cost / 60:.0f} phút cho shot này, "
+                                                                "quá lâu: làm nét thay (cho phép gửi footage lên GPU thuê để dùng VRT)"})
         else:
             steps.append(classic)
     target_h = options.get("target_height")
-    height = int(tech.get("display_height") or tech.get("height") or 0)
+    suggested = False
+    if target_h is None and camera_like and not still and 0 < height < SUGGEST_BELOW and content != "screen":
+        target_h, suggested = SUGGEST_HEIGHT, True                       # asked for nothing: a small source is offered 1080p
+    if old and remote("restore"):
+        # Old footage: one model takes out tape noise, blocks and softness together, from the frames around each one, and
+        # brings the picture up to the height asked (RealBasicVSR works ×4; the result is scaled to the height).
+        out_h = int(target_h or height)
+        steps.append({"op": "restore", "tier": "remote", "params": {"task": "restore", "height": out_h}, "generative": True, "remote": True,
+                      "why": f"footage cũ ({height}p, hỏng: {', '.join(k for k in ('blocking', 'soft', 'noise', 'banding') if sev.get(k, 0) > 0)}): "
+                             f"phục hồi bằng RealBasicVSR trên GPU thuê tới {out_h}p, đã được phép gửi footage"})
+        steps = [x for x in steps if x["op"] not in ("deblock", "deband", "denoise", "sharpen")]     # it does what these did
+        target_h = None
     if target_h and height and target_h > height * 1.2:
         factor = 2 if target_h <= height * 2.2 else 4
-        classic = {"op": "upscale", "tier": "ffmpeg", "params": {"factor": factor}, "why": f"phóng ×{factor} tới {height * factor}p"}
-        if "apple_sr" in have and not still and height <= 1080 and target_h >= height * 3:
-            steps.append({"op": "upscale", "tier": "apple_vt", "params": {"factor": 4}, "why": f"phóng ×4 tới {height * 4}p"})
+        said = " (gợi ý: nguồn nhỏ hơn 1080p)" if suggested else ""
+        classic = {"op": "upscale", "tier": "ffmpeg", "params": {"factor": factor, "height": int(target_h)}, "why": f"phóng tới {int(target_h)}p{said}"}
+        if remote("upscale") and not ("apple_sr" in have and height <= 1080 and target_h >= height * 3):
+            steps.append({"op": "upscale", "tier": "remote", "params": {"task": "upscale", "height": int(target_h)}, "generative": True, "remote": True,
+                          "why": f"phóng tới {int(target_h)}p bằng BasicVSR++ trên GPU thuê (nhìn các khung lân cận, không nhấp nháy){said}"})
+        elif "apple_sr" in have and not still and height <= 1080 and target_h >= height * 3:
+            steps.append({"op": "upscale", "tier": "apple_vt", "params": {"factor": 4}, "why": f"phóng ×4 tới {height * 4}p{said}"})
         elif ai and target_h <= height * 4:
             steps.append({"op": "upscale", "tier": "realesrgan", "params": {"height": int(target_h), "model": AI_MODEL}, "generative": True, "classic": classic,
                           "why": f"phóng tới {int(target_h)}p bằng Real-ESRGAN (AI, sinh chi tiết)"})
-        else:
+        elif not suggested:                  # a resample adds nothing a cut's own scaling does not: offered only when asked for
             steps.append(classic)
     # Faces of a still: offered where CodeFormer has something to give (a face small, or a picture noisy, soft or blocked), and
     # never where it would only redraw a large clean face; the service keeps it only if the faces measure more natural.
@@ -214,8 +318,10 @@ def plan_shot(shot: dict, *, profile: dict, colour: list[dict], have: set[str], 
     if still and faces and "faces" in have and options.get("faces", True) and (damaged or min(min(f["box"][2:]) for f in faces) < 160):
         steps.append({"op": "faces", "tier": "codeformer", "params": {"weight": 0.7}, "generative": True, "classic": None,
                       "why": f"{len(faces)} khuôn mặt: phục hồi bằng CodeFormer (AI, vẽ lại khuôn mặt)"})
+    if not still and faces and remote("faces") and options.get("faces", True) and (damaged or min(min(f["box"][2:]) for f in faces) < 160):
+        steps.append({"op": "faces", "tier": "remote", "params": {"task": "faces", "weight": 0.7}, "generative": True, "remote": True,
+                      "why": f"{len(faces)} khuôn mặt: phục hồi bằng CodeFormer trên GPU thuê, giữ ổn định giữa các khung, đã được phép gửi footage"})
     target_fps = options.get("target_fps")
-    rate = float(tech.get("frame_rate") or 0)
     if not still and target_fps and rate and target_fps > rate * 1.2:
         tier = "apple_vt" if "apple_frc" in have else "ffmpeg"          # Apple's conversion, else motion-compensated minterpolate
         steps.append({"op": "interpolate", "tier": tier, "params": {"fps": target_fps}, "why": f"nội suy {rate:g} → {target_fps} khung/s"})

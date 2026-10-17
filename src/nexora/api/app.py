@@ -1922,6 +1922,11 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             return bool(e.get("available"))
         tools = [{"name": k, "label": label, "available": up(k), "fix": (env.get(k) or {}).get("fix") or ("ollama serve" if k == "model" else None)}
                  for k, label in names.items() if k in env]
+        # The operator's endpoint: on while it answers its health check; what it does, for recordings allowed to leave.
+        for k, e in env.items():
+            if k.startswith("restore_remote"):
+                tools.append({"name": k, "label": "RunPod: " + ", ".join(e.get("tasks") or []), "available": bool(e.get("available")),
+                              "fix": e.get("fix") if not e.get("available") else None, "remote": True})
         tools_seen.update(at=time.time(), answer={"have": have, "tools": tools})
         return tools_seen["answer"]
 

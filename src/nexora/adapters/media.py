@@ -123,6 +123,8 @@ def technical(info: dict, video: dict) -> dict:
     }
 
 
+_IDET_MULTI = __import__("re").compile(r"Multi frame detection: TFF:\s*(\d+) BFF:\s*(\d+) Progressive:\s*(\d+) Undetermined:\s*(\d+)")
+_IDET_REPEAT = __import__("re").compile(r"Repeated Fields: Neither:\s*(\d+) Top:\s*(\d+) Bottom:\s*(\d+)")
 _BLACK = __import__("re").compile(r"black_start:([\d.]+)\s+black_end:([\d.]+)")
 _FREEZE = __import__("re").compile(r"freeze_(start|end): ([\d.]+)")
 HDR_TRANSFERS = frozenset({"smpte2084", "arib-std-b67"})
@@ -153,7 +155,7 @@ def ffmpeg_capabilities(binary: str = "ffmpeg") -> dict:
         "filters": {name: name in have for name in ("blackdetect", "scale", "fps", "zscale", "tonemap", "subtitles", "drawtext", "loudnorm", "blurdetect",
                                                      # what Visual Quality's steps are made of
                                                      "lut3d", "colorlevels", "eq", "hqdn3d", "nlmeans", "bm3d", "cas", "deflicker", "deband", "deblock",
-                                                     "bwdif", "fieldmatch", "decimate", "minterpolate", "vidstabdetect", "vidstabtransform", "libvmaf")},
+                                                     "bwdif", "fieldmatch", "decimate", "minterpolate", "vidstabdetect", "vidstabtransform", "libvmaf", "idet", "chromashift", "fillborders")},
         "encoders": {name: name in enc for name in ("h264_videotoolbox", "hevc_videotoolbox", "libx264")},
     }
 
@@ -181,7 +183,7 @@ class FFmpegAdapter(Adapter):
         return [HDR_TO_SDR]
 
     def describe(self) -> Capability:
-        return Capability(name="ffmpeg", operations=("blackdetect", "freezedetect", "proxy", "thumbnail", "frames", "segment", "concat", "loudness", "envelope", "enhance", "silencedetect", "scenecuts", "analysis", "unusable", "r128", "pcm", "telemetry", "extract", "vq_render", "vq_stabilise", "vq_mux"), runs="local", supports_cancel=True)
+        return Capability(name="ffmpeg", operations=("blackdetect", "freezedetect", "proxy", "thumbnail", "frames", "segment", "concat", "loudness", "envelope", "enhance", "silencedetect", "scenecuts", "analysis", "unusable", "r128", "pcm", "telemetry", "extract", "vq_render", "vq_stabilise", "vq_mux", "idet"), runs="local", supports_cancel=True)
 
     def submit(self, request: Request) -> Result:
         timeout = request.deadline_seconds or 3600
@@ -212,6 +214,18 @@ class FFmpegAdapter(Adapter):
                 if err.code is not ErrorCode.INVALID_REQUEST:
                     raise
         return self._run(args, timeout, what)
+
+    def _idet(self, src: Path, params: dict, timeout: float) -> Result:
+        """How the frames of a stretch were scanned, read from the picture rather than the file's word for it (a capture from tape
+        is often marked progressive): FFmpeg's idet over `frames` frames from `t_in`, its multi-frame counts of top-first,
+        bottom-first and progressive frames and of repeated fields (telecine repeats one field in every five)."""
+        span = ["-ss", f"{float(params.get('t_in', 0.0)):.3f}"] if params.get("t_in") else []
+        done = self._decode([*span, "-i", str(src), "-frames:v", str(int(params.get("frames", 400))), "-vf", "idet", "-an", "-f", "null", "-"], timeout, "idet")
+        multi = _IDET_MULTI.findall(done.stderr)
+        repeated = _IDET_REPEAT.findall(done.stderr)
+        tff, bff, prog, undet = (int(v) for v in (multi[-1] if multi else (0, 0, 0, 0)))
+        neither, top, bottom = (int(v) for v in (repeated[-1] if repeated else (0, 0, 0)))
+        return Result(outputs={"tff": tff, "bff": bff, "progressive": prog, "undetermined": undet, "repeated": top + bottom, "frames": neither + top + bottom})
 
     def _blackdetect(self, src: Path, params: dict, timeout: float) -> Result:
         min_duration = params.get("min_duration", 0.5)

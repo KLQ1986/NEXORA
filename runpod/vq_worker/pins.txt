@@ -1,0 +1,9 @@
+# SHA-256 of every weight the worker loads, taken 2026-10-17 from the files at the URLs in the Dockerfile.
+# The two OpenMMLab files carry the first eight of theirs in their names (52f77c2c), which agreed.
+64d44c1a6d15b77e83385cb20382bff221dcafdc163abed9f33a7f2037ef94c5  001_VRT_videosr_bi_REDS_6frames.pth
+9b65303ede076c4aa3d7c18737f9b76d98f3cdb26b975c2b5b5e2b1de1cb54ef  006_VRT_videodeblurring_GoPro.pth
+c0db34aedb1e0cc8c71ef7d2569483f4438ea51390b910f85677437022d3b9e0  008_VRT_videodenoising_DAVIS.pth
+52f77c2c835aaa3fe675b3959b2f85010a6c6f63f77f7e279394646e55a4e376  realbasicvsr_c64b20_1x30x8_lr5e-5_150k_reds_20211104-52f77c2c.pth
+1009e537e0c2a07d4cabce6355f53cb66767cd4b4297ec7a4a64ca4b8a5684b7  codeformer.pth
+6d1de9c2944f2ccddca5f5e010ea5ae64a39845a86311af6fdf30841b0a5a16d  detection_Resnet50_Final.pth
+3d558d8d0e42c20224f13cf5a29c79eba2d59913419f945545d8cf7b72920de2  parsing_parsenet.pth

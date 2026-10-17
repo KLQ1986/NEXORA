@@ -22,6 +22,7 @@ export const OP: Record<string, string> = {
   color_transform: tr("chuyển màu"), tonemap: tr("HDR về SDR"), levels: tr("phơi sáng, cân bằng trắng"), match: tr("khớp màu theo nguồn khác"), denoise: tr("khử nhiễu"), sharpen: tr("làm nét"),
   deblock: tr("giảm khối nén"), deband: tr("giảm dải màu"), deflicker: tr("giảm nhấp nháy"), stabilise: tr("ổn định hình"), deinterlace: tr("khử xen kẽ dòng"),
   constant_rate: tr("tốc độ khung cố định"), upscale: tr("phóng to"), interpolate: tr("nội suy khung"), ivtc: tr("bỏ telecine"), restore: tr("phục hồi ảnh nén"), faces: tr("phục hồi khuôn mặt"), remove: tr("xoá vật"), deblur: tr("khử mờ"), relight: tr("nâng sáng cục bộ"), tonemap_hdr: tr("HDR về SDR"),
+  chroma_align: tr("đặt màu về đúng chỗ"), trim_band: tr("che dòng xé ở đáy"),
 };
 export const DEFECT: Record<string, string> = {
   noise: tr("nhiễu"), soft: tr("mềm"), blocking: tr("khối nén"), banding: tr("dải màu"), underexposed: tr("thiếu sáng"), overexposed: tr("cháy sáng"),
@@ -33,7 +34,7 @@ export const CONTENT: Record<string, string> = { camera: tr("footage máy quay")
 /** The tool a step runs on, as the operator knows it. */
 export const TIER: Record<string, string> = {
   ffmpeg: "FFmpeg", apple_vt: "Apple", vidstab: "vidstab", gyroflow: "Gyroflow", realesrgan: "Real-ESRGAN", codeformer: "CodeFormer",
-  nafnet: "NAFNet", vrt_remote: tr("VRT (GPU thuê)"), propainter: "ProPainter", local_tone: tr("bản đồ gain"),
+  nafnet: "NAFNet", vrt_remote: tr("VRT (GPU thuê)"), remote: tr("GPU thuê (RunPod)"), propainter: "ProPainter", local_tone: tr("bản đồ gain"),
 };
 
 export function AssetVQ({ assetId, seek }: { assetId: string; seek?: (t: number) => void }) {

@@ -258,7 +258,13 @@ class VisualQualityService:
         return self.add_match(recipe.recipe_id, reference, t, shot=shot, mode=mode)
 
     def colour_gap(self, a: str, ta: float, b: str, tb: float, *, mode: str = "look") -> float:
-        """How far apart two subjects' colours sit at two times, each as its own newest recipe makes it look."""
+        """How far apart two subjects' colours sit at two times, each as its own newest recipe makes it look. Kept until either
+        recipe changes: the project page asks again every minute, and two frames rendered each time cost a second."""
+        recipes = tuple((self.reader.recipe(x, status="approved") or self.reader.recipe(x) or type("R", (), {"recipe_id": None})).recipe_id for x in (a, b))
+        key = (a, round(ta, 2), b, round(tb, 2), mode, recipes)
+        gaps = self.__dict__.setdefault("_gaps", {})
+        if key in gaps:
+            return gaps[key]
         sides = []
         for subject, t in ((a, ta), (b, tb)):
             profile = self.reader.profile(subject) or {}
@@ -267,7 +273,10 @@ class VisualQualityService:
             shot = next((x for x in (recipe.shots if recipe else []) if x["t_start"] <= t <= max(x["t_end"], x["t_start"])), None)
             chain = self._colour_chain(shot["steps"]) if shot else (filters_of(self.colour_steps(profile)[0]) or [] if profile else [])
             sides.append(self._colour_pixels(subject, {"t_start": t, "t_end": t}, chain, still=still, frames=1))
-        return round(CM.gap(*sides, mode=mode), 2)
+        if len(gaps) > 512:
+            gaps.clear()
+        gaps[key] = round(CM.gap(*sides, mode=mode), 2)
+        return gaps[key]
 
     @staticmethod
     def _colour_chain(steps: list[dict]) -> list[str]:
@@ -335,8 +344,15 @@ class VisualQualityService:
                     have.add("nafnet")
             except Exception:
                 pass
-        if any(n.startswith("restore_remote") for n in names):
-            have.add("vrt_remote")
+        # The operator's endpoint (RunPod): its tasks while it answers its health check (no job, no charge); offered by the
+        # planner only for a recording allowed to leave this machine.
+        for cap in [c for c in self._adapters.describe() if c.name.startswith("restore_remote")]:
+            try:
+                env = self._adapters.environment().get(cap.name) or {}
+            except Exception:
+                env = {}
+            if env.get("available"):
+                have |= {f"remote:{t}" for t in (env.get("tasks") or cap.operations)}
         if "inpaint" in names:
             try:
                 if (self._adapters.environment().get("inpaint") or {}).get("remove"):
@@ -443,7 +459,9 @@ class VisualQualityService:
         still = technical.get("kind") == "still"
         rate = float(technical.get("frame_rate") or 25.0)
         shots, defects = [], []
-        faces = self._faces(path) if still and "faces_find" in self._have() else []
+        have = self._have()
+        faces = self._faces(path) if still and "faces_find" in have else []
+        video_faces = not still and "faces_find" in have and "remote:faces" in have
         for k, (t0, t1) in enumerate(self._shots(ctx.subject_ref, path, technical)):
             mid = (t0 + t1) / 2
             if still:
@@ -461,11 +479,21 @@ class VisualQualityService:
                                              seconds=min(1.6, t1 - t0), fps=min(rate, 15.0), tag=f"burst{k}")
                 flick = M.flicker([float(M.luma(f).mean()) for f in burst])
                 shake = M.shake(burst)
+            if video_faces:
+                # Faces of a video shot, on its measured frame, given in the source's pixels: only looked for when the endpoint
+                # can restore them, which is the only use they have here.
+                probe = self._work / ctx.subject_ref / f"faces_{k}.png"
+                probe.parent.mkdir(parents=True, exist_ok=True)
+                Image.fromarray((np.clip(frame, 0, 1) * 255).astype(np.uint8)).save(probe)
+                k_scale = float(technical.get("width") or frame.shape[1]) / frame.shape[1]
+                faces = [{**f, "box": [round(v * k_scale, 1) for v in f["box"]]} for f in self._faces(probe)]
+                probe.unlink(missing_ok=True)
             score = A.ShotScore(t0, t1, lk, flick, shake, A.niqe_of(frame))
             shot_defects = A.defects_of(score, content=profile["content"], frame=frame)
             defects += shot_defects
             shots.append({"t_start": t0, "t_end": t1, "scores": score.scores(), "display": M.as_dict(lk), "defects": shot_defects,
-                          **({"faces": faces, "size": [frame.shape[1], frame.shape[0]]} if faces else {})})
+                          **({"faces": faces, "size": [frame.shape[1], frame.shape[0]] if still else
+                              [int(technical.get("width") or frame.shape[1]), int(technical.get("height") or frame.shape[0])]} if faces else {})})
             ctx.heartbeat()
         self.store.defects(ctx.subject_ref, defects, analyzer=ANALYZER)
         work = self._work / ctx.subject_ref
@@ -537,7 +565,7 @@ class VisualQualityService:
                 return got
 
             try:
-                strength, ratio = P.tune_denoise(frame, sigma)
+                strength, ratio = P.tune_denoise(frame, sigma, lifted=float(step["params"].get("lift") or 1.0))
             except AdapterError:
                 continue
             step["params"]["strength"] = strength
@@ -758,8 +786,9 @@ class VisualQualityService:
             self._adapters.submit("local_tone", Request("relight", inputs={"path": str(source)}, params={**span, **{k: p[k] for k in ("shadows", "highlights") if k in p}}))
         elif tier == "nafnet":
             self._adapters.submit("deblur", Request("deblur", inputs={"path": str(source)}, params={**span, "kind": "video"}))
-        elif tier == "vrt_remote":
-            self._remote_restore(source, out, t_in=t_in, seconds=seconds, task="deblur")
+        elif tier in ("remote", "vrt_remote"):                 # vrt_remote: a recipe made before the endpoint did more than deblur
+            self._remote_restore(source, out, t_in=t_in, seconds=seconds, task=p.get("task", "deblur"),
+                                 options={k: p[k] for k in ("height", "sigma", "lift", "weight") if p.get(k) is not None})
         elif tier == "propainter":
             self._adapters.submit("inpaint", Request("remove", inputs={"path": str(source)}, params={**span, "regions": p["regions"]}))
         elif tier == "vidstab":
@@ -770,17 +799,19 @@ class VisualQualityService:
             raise AdapterError(ErrorCode.UNAVAILABLE, f"no tool for {tier} on this machine", retryable=False)
         return out
 
-    def _remote_restore(self, source: Path, out: Path, *, t_in: float, seconds: float | None, task: str) -> None:
-        """A span sent to the operator's restoration endpoint (VRT/RVRT on a rented GPU). Only ever for a step the operator
-        allowed to leave this machine (the recipe's `allow_cloud`); privacy mode still stops it in the registry. The span goes
-        as a compact H.264 copy, and comes back cut to its exact number of frames, in ProRes like every other tool's."""
+    def _remote_restore(self, source: Path, out: Path, *, t_in: float, seconds: float | None, task: str, options: dict | None = None) -> None:
+        """A span sent to the operator's endpoint for `task` (deblur, denoise, upscale, restore, faces: see
+        adapters/runpod_restore.py). Only ever for a step the operator allowed to leave this machine (the recipe's `allow_cloud`);
+        privacy mode still stops it in the registry. The span goes as a compact H.264 copy (in chunks, by the adapter), and comes
+        back cut to its exact number of frames, in ProRes like every other tool's."""
         name = next((c.name for c in self._adapters.describe() if c.name.startswith("restore_remote")), None)
         if name is None:
             raise AdapterError(ErrorCode.UNAVAILABLE, "no restoration endpoint (runpod_restore_endpoint in nexora.toml)", retryable=False)
         sent, back = out.with_name(out.stem + "_sent.mp4"), out.with_name(out.stem + "_back.mp4")
         self._adapters.submit("ffmpeg", Request("vq_render", inputs={"path": str(source)}, params={
             "kind": "video", "out": str(sent), "t_in": t_in, "filters": [], "codec": "h264", **({"seconds": seconds} if seconds else {})}))
-        self._adapters.submit(name, Request("deblur", inputs={"video": str(sent)}, params={"out": str(back), "task": task}, privacy_class=PrivacyClass.CLOUD_ALLOWED))
+        self._adapters.submit(name, Request(task, inputs={"video": str(sent)}, params={"out": str(back), "task": task, **(options or {})},
+                                            privacy_class=PrivacyClass.CLOUD_ALLOWED, deadline_seconds=3 * 3600))
         self._adapters.submit("ffmpeg", Request("vq_render", inputs={"path": str(back)}, params={
             "kind": "video", "out": str(out), "t_in": 0.0, "filters": [], "master": True, **({"seconds": seconds} if seconds else {})}))
 

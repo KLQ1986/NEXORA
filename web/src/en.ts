@@ -2135,6 +2135,9 @@ const en: Record<string, string> = {
   "Xem trước & duyệt": "Preview & approve",
   "chưa phân tích chất lượng hình": "not analysed for picture quality yet",
   "Đã đề xuất khớp màu; xem trước rồi duyệt ở Chất lượng hình.": "Colour match proposed; preview and approve it in Picture quality.",
+  "đặt màu về đúng chỗ": "colour put back in place",
+  "che dòng xé ở đáy": "torn rows at the foot covered",
+  "GPU thuê (RunPod)": "rented GPU (RunPod)",
 };
 
 export default en;

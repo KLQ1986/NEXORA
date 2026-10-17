@@ -209,3 +209,68 @@ def grid_map(rgb: np.ndarray, measure, cells: int = 4) -> list[list[float]]:
             row.append(round(float(measure(part)), 4))
         out.append(row)
     return out
+
+
+def chroma_offset(rgb: np.ndarray, reach: int = 8) -> tuple[float, float]:
+    """How far the colour sits to the side of the picture (pixels, Cb and Cr; positive to the right), as on tape where the
+    colour is carried late: the shift that best lines the edges of each colour difference up with the edges of luma, to a
+    tenth of a pixel. Edges are horizontal gradients, read on rows with some detail."""
+    x = rgb.astype(np.float64)
+    y = x @ np.array([0.2126, 0.7152, 0.0722])
+    cb, cr = x[..., 2] - y, x[..., 0] - y
+    gy = np.abs(np.diff(y, axis=1))
+    rows = gy.mean(axis=1) > np.percentile(gy.mean(axis=1), 50)          # the rows with most detail
+    out = []
+    for c in (cb, cr):
+        gc = np.abs(np.diff(c, axis=1))
+        a, b = gy[rows] - gy[rows].mean(), gc[rows] - gc[rows].mean()
+        w = a.shape[1]
+        score = np.array([float((a[:, max(0, -d):w - max(0, d)] * b[:, max(0, d):w - max(0, -d)]).mean()) for d in range(-reach, reach + 1)])
+        k = int(score.argmax())
+        frac = 0.0
+        if 0 < k < len(score) - 1:                                       # a parabola through the peak and its neighbours
+            l, m, r = score[k - 1], score[k], score[k + 1]
+            den = l - 2 * m + r
+            frac = 0.5 * (l - r) / den if den else 0.0
+        out.append(round(k - reach + frac, 2))
+    return out[0], out[1]
+
+
+def bottom_band(frames: list[np.ndarray], *, depth: int = 20) -> int:
+    """Rows at the foot of the picture torn sideways, as a tape's head switch leaves them: how the edges along each row line
+    up with those two rows above, in the same field (correlation of horizontal gradients, the median over the frames: next
+    rows of interlaced footage come from two moments and never line up, and values alone stay alike in a smooth picture when
+    a row slides), counted up from the bottom while it is much worse (under 0.6 of) than rows
+    in the picture, one good row in between allowed. 0 when there is none."""
+    per_frame = []
+    for f in frames:
+        y = luma(f)
+        if y.shape[0] < depth * 4:
+            continue
+        rows = np.diff(y, axis=1)                                   # the edges along each row: a torn row loses their place
+        rows = rows - rows.mean(axis=1, keepdims=True)
+        norm = np.linalg.norm(rows, axis=1) + 1e-6
+        corr = (rows[2:] * rows[:-2]).sum(axis=1) / (norm[2:] * norm[:-2])     # two apart: the same field
+        # A row with little detail (a table top, sky) has edges of noise only: it cannot show a tear, so it never counts as one.
+        corr[norm[2:] < 0.3 * np.median(norm)] = np.nan
+        per_frame.append(corr)
+    if not per_frame:
+        return 0
+    corr = np.nanmedian(np.stack(per_frame), axis=0)                # corr[r]: row r+2 against row r
+    n = len(corr)
+    typical = float(np.nanmedian(corr[n // 4: 3 * n // 4]))
+    broken = np.nan_to_num(corr, nan=typical) < 0.6 * typical
+    k, gap = 0, 0
+    for r in range(n - 1, n - 1 - depth, -1):
+        if broken[r]:
+            k, gap = n - r, 0
+        elif gap == 0 and k:
+            gap = 1
+        else:
+            break
+    # A tear is short and sudden: the rows just above it are whole. A foot of grass or water that matches poorly all the way up
+    # (two library clips read 24 rows, the whole depth) is the scene, not the tape.
+    if k == 0 or k >= depth - 2:
+        return 0
+    above = corr[max(0, n - k - 14): n - k - 2]
+    return int(k) if np.isfinite(above).any() and float(np.nanmedian(above)) >= 0.75 * typical else 0

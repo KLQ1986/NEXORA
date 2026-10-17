@@ -14,6 +14,7 @@ from PIL import Image, ImageOps
 
 from nexora.core.adapter import AdapterError, AdapterRegistry, ErrorCode, Request
 from nexora.modules.visual_quality import measure as M
+from nexora.modules.visual_quality.plan import CHROMA_SHIFT, scan_of
 from nexora.modules.visual_quality.registry import identify
 
 VERSION = "1"
@@ -75,9 +76,29 @@ def content_type(technical: dict, looks: list[M.Look], *, path: Path) -> tuple[s
     return "camera", [f"nhiễu {noise:.2f}, {flat:.0%} khối phẳng: footage máy quay"]
 
 
+# Footage this small or smaller is looked at for what old footage carries (scan, tape colour, torn rows).
+LEGACY_HEIGHT = 720
+
+
 class SourceProfiler:
     def __init__(self, adapters: AdapterRegistry, work_dir: str | Path):
         self._adapters, self._work = adapters, Path(work_dir)
+
+    def _legacy(self, path: Path, technical: dict, *, subject: str) -> None:
+        """What old footage carries that newer does not, measured on the picture (tape and early digital say little of it):
+        how it was scanned (idet over 400 frames from a fifth in), and, at its own size, colour shifted to the side and rows
+        torn at the foot. Only for footage at most `LEGACY_HEIGHT` tall; a 4K camera file has none of it."""
+        duration = float(technical.get("duration") or 0.0)
+        try:
+            technical["idet"] = self._adapters.submit("ffmpeg", Request("idet", inputs={"path": str(path)}, params={"t_in": duration * 0.2, "frames": 400})).outputs
+        except AdapterError:
+            technical["idet"] = None
+        width = int(technical.get("width") or 0)
+        frames = self.sample(path, duration=duration, subject=subject, count=6, width=width or 720, tag="legacy") if width else []
+        if frames:
+            offsets = np.array([M.chroma_offset(f) for f in frames])
+            technical["chroma_offset"] = [round(float(v), 2) for v in np.median(offsets, axis=0)]
+            technical["bottom_band"] = M.bottom_band(frames)
 
     def sample(self, path: Path, *, duration: float, subject: str, count: int = 24, width: int = 960, filters: list[str] | None = None,
                t_in: float | None = None, seconds: float | None = None, fps: float | None = None, tag: str = "sample") -> list[np.ndarray]:
@@ -118,8 +139,17 @@ class SourceProfiler:
         height = int(technical.get("display_height") or technical.get("height") or 0)
         if technical.get("variable_frame_rate"):
             warnings.append(f"tốc độ khung thay đổi (khai {technical.get('nominal_frame_rate')}, trung bình {technical.get('frame_rate')}): sẽ đổi về tốc độ cố định")
+        if not is_still and 0 < height <= LEGACY_HEIGHT:
+            self._legacy(path, technical, subject=subject)
+        scan = scan_of(technical.get("idet"))
         if str(technical.get("field_order") or "progressive") not in ("progressive", "unknown", "None", ""):
             warnings.append(f"xen kẽ dòng ({technical.get('field_order')}): sẽ khử xen kẽ")
+        elif scan in ("interlaced", "telecine"):
+            warnings.append("xen kẽ dòng thấy trên hình dù file ghi progressive: sẽ khử xen kẽ" if scan == "interlaced" else "telecine 3:2: sẽ trả về khung gốc")
+        if max(abs(float(v)) for v in technical.get("chroma_offset") or [0.0]) >= CHROMA_SHIFT:
+            warnings.append(f"màu lệch ngang {technical['chroma_offset']} px (băng từ)")
+        if int(technical.get("bottom_band") or 0) >= 3:
+            warnings.append(f"{technical['bottom_band']} dòng cuối bị xé (đầu từ băng)")
         if height and height < 1080 and kind != "screen":
             warnings.append(f"độ phân giải thấp ({technical.get('display_width')}×{height})")
         apparent = None

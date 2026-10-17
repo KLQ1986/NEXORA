@@ -81,6 +81,10 @@ def step_filters(step: dict) -> list[str] | None:
         return [f"bwdif=mode={'send_field' if p.get('double_rate') else 'send_frame'}:parity=auto:deint=all"]
     if op == "ivtc":
         return ["fieldmatch", "yadif=deint=interlaced", "decimate"]
+    if op == "chroma_align":
+        return [f"chromashift=cbh={int(p.get('cb', 0))}:crh={int(p.get('cr', 0))}:edge=smear"]
+    if op == "trim_band":
+        return [f"fillborders=bottom={int(_num(p.get('rows', 0), 0, 64))}:mode=fixed:color=black"]
     if op == "constant_rate":
         return [f"fps={_num(p.get('fps', 30), 1, 240):g}"]
     if op == "deblock":
@@ -129,6 +133,8 @@ def step_filters(step: dict) -> list[str] | None:
     if op == "stabilise":
         return None                                  # two passes (vidstab) or Gyroflow: always a prepared file
     if op == "upscale":
+        if p.get("height"):                          # to the height asked (480 → 1080 is not a whole factor)
+            return [f"scale=-2:{int(_num(p['height'], 16, 8640))}:flags=lanczos"]
         f = int(p.get("factor", 2))
         return [f"scale=iw*{f}:ih*{f}:flags=lanczos"]
     if op == "interpolate":
