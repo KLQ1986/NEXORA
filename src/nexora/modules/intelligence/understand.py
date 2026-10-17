@@ -374,7 +374,10 @@ class Understanding:
         original = versions["original"]
         if original.metadata.get("probe", {}).get("still"):          # a photograph is one moment and its own frame
             return {"segments": [{"t_start": 0.0, "t_end": 0.0, "frames": [str(self._assets.path_of(original))]}]}
-        source = self._assets.path_of(versions.get("proxy", original))
+        # The original when its drive is here (a model sees what the proxy's compression took away), else the proxy.
+        source = self._assets.path_of(original)
+        if not source.is_file() and "proxy" in versions:
+            source = self._assets.path_of(versions["proxy"])
         structure = self._structure_of(ctx.subject_ref)
         if structure and structure.get("beats"):
             return {"segments": self._beats(ctx, original, source, structure), "structured": True}

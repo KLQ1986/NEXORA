@@ -28,6 +28,9 @@ AUDIO_EXT = frozenset({".mp3", ".wav", ".m4a", ".aiff", ".flac"})
 ENHANCE = PipelineDefinition("library.enhance", "1", [StageDef("enhance", timeout_seconds=6 * 3600, lane="background")])
 # Scene cuts for footage that was taken in before cuts were looked for.
 FIND_CUTS = PipelineDefinition("library.cuts", "1", [StageDef("cuts", lane="background")])
+# The proxy is the stand-in when the original cannot be read (its drive away, a format a browser cannot play); everything
+# that measures or shows the footage reads the original when it is at hand.
+PROXY_HEIGHT = 1080
 # A photograph: no proxy and no time ranges. It is its own thumbnail.
 INGEST_IMAGE = PipelineDefinition("library.ingest_image", "1", [StageDef("checksum"), StageDef("measure", depends_on=("checksum",))])
 # Music: its length and how loud it is, so that a track can be chosen for a cut without opening it.
@@ -298,10 +301,10 @@ class Library:
         if shutil.disk_usage(self._media).free < self._min_free:
             raise AdapterError(ErrorCode.INSUFFICIENT_STORAGE, f"less than {self._min_free} bytes free for derived media")
         out = self._derived_path(original, "_proxy.mp4")
-        self._adapters.submit("ffmpeg", Request("proxy", inputs={"path": str(path)}, params={"out": str(out), "max_height": 720, "color_transfer": original.metadata.get("probe", {}).get("color_transfer")},
+        self._adapters.submit("ffmpeg", Request("proxy", inputs={"path": str(path)}, params={"out": str(out), "max_height": PROXY_HEIGHT, "color_transfer": original.metadata.get("probe", {}).get("color_transfer")},
                                                attempt_id=ctx.claim.attempt_id))
         version_id = self._assets.add_version(ctx.subject_ref, out, role="proxy", parents=[original.version_id],
-                                              attempt_id=ctx.claim.attempt_id, metadata={"max_height": 720})
+                                              attempt_id=ctx.claim.attempt_id, metadata={"max_height": PROXY_HEIGHT, "bitrate": "5M"})
         return {"proxy_version_id": version_id}
 
     def _thumbnail(self, ctx):

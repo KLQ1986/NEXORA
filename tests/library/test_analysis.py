@@ -373,3 +373,26 @@ def test_an_asset_in_the_trash_is_out_of_sight_and_comes_back_to_the_lines_it_le
 
     shown = client.patch(f"/api/v1/assets/{going}", json={"title": "", "session": ""}).json()          # empty gives back what the file says
     assert shown["name"] == "going.mp4" and shown["session_set"] is None
+
+
+def test_measures_come_from_the_original_and_those_taken_from_the_proxy_are_taken_again_when_it_is_back(tmp_path):
+    from types import SimpleNamespace
+    system = build(tmp_path / "data", model=FakeModel())
+    asset = taken_in(system, film(tmp_path / "in" / "away.mp4", TWO_SHOTS))
+    analysis = system.intelligence.analysis
+    original = system.assets.original(asset)
+    file = system.assets.path_of(original)
+    signals = analysis._path(original, "_signals.npz")
+    marker = signals.with_name(signals.stem + ".from_proxy")
+    ctx = SimpleNamespace(subject_ref=asset, claim=SimpleNamespace(attempt_id=None))
+    assert not marker.exists()                                                  # taken in with its drive here: measured on it
+    # The drive is away: the proxy stands in, and says so.
+    signals.unlink()
+    hidden = file.with_name(file.name + ".away")
+    file.rename(hidden)
+    assert analysis._signals_stage(ctx)["from_proxy"] is True and marker.exists()
+    assert analysis._signals_stage(ctx) == {"cached": True}                     # nothing better to measure on yet
+    # The drive is back: measured again from the original.
+    hidden.rename(file)
+    again = analysis._signals_stage(ctx)
+    assert again.get("from_proxy") is False and not marker.exists()

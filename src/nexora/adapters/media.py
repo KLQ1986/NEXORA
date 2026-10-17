@@ -284,13 +284,16 @@ class FFmpegAdapter(Adapter):
 
     def _proxy(self, src: Path, params: dict, timeout: float) -> Result:
         out = Path(params["out"])
-        height = int(params.get("max_height", 720))
+        height = int(params.get("max_height", 1080))
         partial = out.with_name(out.stem + ".partial" + out.suffix)     # written under another name, renamed when complete
         common = ["-y", "-i", str(src), "-vf", ",".join([*self._sdr(params), f"scale=-2:'min({height},ih)'"]), "-pix_fmt", "yuv420p", "-fps_mode", "cfr"]
         audio = ["-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", str(partial)]
-        bitrate = params.get("video_bitrate", "1200k")
+        # The stand-in for when the original cannot be read (its drive away, a format the browser cannot play): 1080p at 5 Mb/s.
+        # Measured on 0050's foliage (2026-10-17): SSIM against the original 0.774, where the former 720p at 1.2 Mb/s gave 0.712;
+        # 14 Mb/s only reached 0.805 for nearly three times the size. About 190 MB for five minutes.
+        bitrate = params.get("video_bitrate", "5M")
         encoders = [["-c:v", params.get("encoder", "h264_videotoolbox"), "-b:v", bitrate],
-                    ["-c:v", "libx264", "-preset", "veryfast", "-b:v", bitrate, "-maxrate", bitrate, "-bufsize", "2400k"]]
+                    ["-c:v", "libx264", "-preset", "veryfast", "-b:v", bitrate, "-maxrate", "7M", "-bufsize", "10M"]]
         last = None
         for encoder in encoders:
             try:

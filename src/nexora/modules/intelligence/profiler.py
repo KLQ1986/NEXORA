@@ -48,8 +48,9 @@ class Profiler:
         return self._media / original.checksum[:2] / f"{original.checksum}{suffix}"
 
     def _source(self, asset_id: str) -> Path | None:
+        """The original when its drive is here; the proxy, compressed for a stand-in, only when it is not."""
         versions = {v.role: v for v in self._assets.versions(asset_id)}
-        return next((p for p in (self._assets.path_of(versions[r]) for r in ("proxy", "original") if r in versions) if p.is_file()), None)
+        return next((p for p in (self._assets.path_of(versions[r]) for r in ("original", "proxy") if r in versions) if p.is_file()), None)
 
     def profile(self, asset_id: str) -> dict | None:
         """The profile last worked out for an asset: its beats, text, sound and the file as a whole."""

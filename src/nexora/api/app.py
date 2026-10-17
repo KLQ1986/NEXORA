@@ -83,6 +83,8 @@ def asset_view(system, asset: dict, used: dict | None = None) -> dict:
         "still": bool(probe.get("still")), "kind": asset.get("kind"), "mean_db": probe.get("mean_db"),
         "thumbnail_url": f"/media/{by_role['thumbnail'].version_id}" if "thumbnail" in by_role else f"/media/{original.version_id}" if probe.get("still") else None,
         "proxy_url": f"/media/{by_role['proxy'].version_id}" if "proxy" in by_role else None,
+        # The camera's own file, played where the browser can decode it (HEVC and H.264 on a Mac); the proxy is the stand-in.
+        "original_url": f"/media/{original.version_id}", "codec": probe.get("codec"), "pixel_format": probe.get("pixel_format"),
         "ingest": next((run_view(system, r) for r in runs if system.orch.pipeline_of(r).startswith("library.ingest")), None),
         "understand": next((run_view(system, r) for r in runs if system.orch.pipeline_of(r) == "library.understand"), None),
     }

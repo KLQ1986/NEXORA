@@ -65,10 +65,14 @@ class Analysis:
         if "duplicate_of" in meta or probe.get("still") or not probe.get("duration"):
             return {"skipped": "nothing to measure"}
         target = self._path(original, "_signals.npz")
-        if measures.Signals.load(target) is not None:
+        # Measures taken from the proxy (its drive away at the time) are taken again from the original once it is back: the
+        # proxy is compressed enough to read a sharp scene as blurred (0050: blur 4.7–5.5 from the proxy, 4.3 from the original).
+        from_proxy = target.with_name(target.stem + ".from_proxy")
+        original_here = self._assets.path_of(original).is_file()
+        if measures.Signals.load(target) is not None and not (from_proxy.exists() and original_here):
             return {"cached": True}
         versions = {v.role: v for v in self._assets.versions(ctx.subject_ref)}
-        source = next((p for p in (self._assets.path_of(versions[r]) for r in ("proxy", "original") if r in versions) if p.is_file()), None)
+        source = next((p for p in (self._assets.path_of(versions[r]) for r in ("original", "proxy") if r in versions) if p.is_file()), None)
         if source is None:
             raise AdapterError(ErrorCode.MISSING_INPUT, "neither the footage nor its proxy is available")
         on_proxy = "proxy" in versions and source == self._assets.path_of(versions["proxy"])
@@ -83,9 +87,13 @@ class Analysis:
                 import numpy as np
                 found.blur, found.blur_rate = np.array(out["blur"], np.float32), float(out["blur_rate"])
             found.save(target)
+            if on_proxy:
+                from_proxy.write_text("measured from the proxy; measured again from the original when it is back\n")
+            else:
+                from_proxy.unlink(missing_ok=True)
         finally:
             raw.unlink(missing_ok=True)
-        return {"frames": found.frames, "fps": found.fps}
+        return {"frames": found.frames, "fps": found.fps, "from_proxy": on_proxy}
 
     def _structure_stage(self, ctx):
         made = self.restructure(ctx.subject_ref)
