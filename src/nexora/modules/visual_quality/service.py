@@ -23,6 +23,7 @@ from nexora.core.pipeline import PipelineDefinition, PipelineRegistry, StageDef
 from nexora.core.visual_quality import VisualQuality, filters_of
 from nexora.core.visual_quality_store import VisualQualityStore
 from nexora.modules.visual_quality import assess as A
+from nexora.modules.visual_quality import match as CM
 from nexora.modules.visual_quality import measure as M
 from nexora.modules.visual_quality import plan as P
 from nexora.modules.visual_quality import qa as Q
@@ -142,6 +143,8 @@ class VisualQualityService:
             target["params"] = {**target.get("params", {}), **params}
             if target["op"] == "levels":                       # the baked LUT follows the new numbers
                 target["params"]["lut"] = P.levels_lut(target["params"], self._work / "luts")
+            elif target["op"] == "match":
+                target["params"]["lut"] = CM.bake(target["params"], self._work / "luts", amount=target["params"].get("amount", 1.0))
         if off is not None:
             target["off"] = bool(off)
         target["edited"] = True
@@ -199,6 +202,74 @@ class VisualQualityService:
         data["shots"][shot]["steps"] = sorted(steps, key=lambda s: P.ORDER.index(s["op"]) if s["op"] in P.ORDER else 99)
         data["from"] = recipe_id
         return self.store.recipe(recipe.subject, data, status="proposed", decided_by="operator")
+
+    def add_match(self, recipe_id: str, reference: str, t: float, *, shot: int | None = None, amount: float = 1.0, mode: str = "look") -> str:
+        """Match a subject's colour to another's (footage cut together from different sources): a new proposed version of the
+        recipe with a `match` step in the given shot, or in every shot, fitted to the reference's shot at `t` as that one will
+        look (its own colour steps applied). Both sides are read after their colour steps, so the match is the last word on
+        colour; a match already there is replaced. `mode`: `look` (tone, white balance, saturation: any two scenes) or `scene`
+        (the whole spread of colours: two shots of one place)."""
+        if mode not in CM.MODES:
+            raise AdapterError(ErrorCode.INVALID_REQUEST, f"mode is one of {CM.MODES}", retryable=False)
+        recipe = self.reader.by_id(recipe_id)
+        if recipe is None:
+            raise LookupError(recipe_id)
+        if "ffmpeg:lut3d" not in self._have():
+            raise AdapterError(ErrorCode.UNAVAILABLE, "this FFmpeg build has no lut3d", retryable=False)
+        if reference == recipe.subject:
+            raise AdapterError(ErrorCode.INVALID_REQUEST, "a subject is not matched to itself", retryable=False)
+        ref_profile = self.reader.profile(reference)
+        if ref_profile is None:
+            raise AdapterError(ErrorCode.INVALID_REQUEST, "the reference has not been analysed yet", retryable=False)
+        ref_still = (ref_profile.get("technical") or {}).get("kind") == "still"
+        ref_recipe = self.reader.recipe(reference, status="approved") or self.reader.recipe(reference)
+        ref_shots = (ref_recipe.shots if ref_recipe else None) or [{"t_start": 0.0, "t_end": float((ref_profile.get("technical") or {}).get("duration") or 0), "steps": []}]
+        t = 0.0 if ref_still else max(0.0, float(t))
+        ref_shot = next((x for x in ref_shots if x["t_start"] <= t <= max(x["t_end"], x["t_start"])), ref_shots[0])
+        ref_chain = self._colour_chain(ref_shot["steps"]) if ref_recipe else (filters_of(self.colour_steps(ref_profile)[0]) or [])
+        wanted = self._colour_pixels(reference, ref_shot, ref_chain, still=ref_still)
+        still = ((self.reader.profile(recipe.subject) or {}).get("technical") or {}).get("kind") == "still"
+        data = __import__("copy").deepcopy(recipe.data)
+        amount = float(min(1.0, max(0.0, amount)))
+        for k in ([shot] if shot is not None else range(len(data["shots"]))):
+            here = data["shots"][k]
+            steps = [x for x in here["steps"] if x["op"] != "match"]
+            made = CM.fit(self._colour_pixels(recipe.subject, here, self._colour_chain(steps), still=still), wanted, mode=mode)
+            params = {**made["controls"], "amount": amount, "mode": mode, "reference": {"subject": reference, "t": round(t, 2)},
+                      "before": made["before"], "after": made["after"], "doubtful": made["doubtful"], "balanced": made["balanced"]}
+            params["lut"] = CM.bake(params, self._work / "luts", amount=amount)
+            why = f"khớp {'cả phân bố màu (cùng cảnh)' if mode == 'scene' else 'tông máy quay'} theo {reference} lúc {t:.1f}s (lệch {made['before']:.1f} → {made['after']:.1f})"
+            if not made["balanced"]:
+                why += "; không thấy mảng xám để đo cân bằng trắng, giữ nguyên nhiệt độ màu"
+            if made["doubtful"]:
+                why += "; KHÔNG CHẮC: " + (f"{', '.join(made['pinned'])} chạm giới hạn" if made["pinned"] else "khoảng lệch giảm ít") + ", có lẽ hai cảnh khác nhau về nội dung, xem kỹ trước khi duyệt"
+            steps.append({"op": "match", "tier": "ffmpeg", "params": params, "edited": True, "why": why})
+            here["steps"] = sorted(steps, key=lambda x: P.ORDER.index(x["op"]) if x["op"] in P.ORDER else 99)
+        data["from"] = recipe_id
+        return self.store.recipe(recipe.subject, data, status="proposed", decided_by="operator")
+
+    @staticmethod
+    def _colour_chain(steps: list[dict]) -> list[str]:
+        """The filters of a shot's colour steps alone: how its colours will look, without the work on detail."""
+        return filters_of([x for x in steps if x["op"] in ("color_transform", "tonemap", "levels", "match") and not x.get("off")]) or []
+
+    def _colour_pixels(self, subject: str, shot: dict, chain: list[str], *, still: bool, frames: int = 5) -> np.ndarray:
+        """Pixels of a shot as display RGB (0..1): a few frames across it (a still: its picture), small, through `chain`."""
+        work = self._work / subject / "match"
+        work.mkdir(parents=True, exist_ok=True)
+        t0, t1 = float(shot.get("t_start") or 0.0), float(shot.get("t_end") or 0.0)
+        times = [0.0] if still or t1 - t0 < 0.2 else [t0 + (t1 - t0) * (k + 0.5) / frames for k in range(frames)]
+        pixels = []
+        try:
+            for k, t in enumerate(times):
+                out = work / f"sample_{k}.png"
+                self._adapters.submit("ffmpeg", Request("vq_render", inputs={"path": str(self.path_of(subject))},
+                                                        params={"kind": "still", "out": str(out), "t_in": t, "filters": chain, "width": 480}))
+                with Image.open(out) as im:
+                    pixels.append(np.asarray(im.convert("RGB"), np.float64).reshape(-1, 3) / 255.0)
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+        return np.concatenate(pixels)
 
     # ------------------------------------------------------------------------------------------------------------ helpers
     def _have(self) -> set[str]:
@@ -804,7 +875,7 @@ class VisualQualityService:
         else:
             from nexora.modules.visual_quality.profiler import _rgb
             before, after = [_rgb(files["before_still"])], [_rgb(files["after_still"])]
-        verdict = Q.compare(before, after, colour_changed=any(s["op"] in ("color_transform", "tonemap", "levels") for s in steps), ops=[s["op"] for s in steps])
+        verdict = Q.compare(before, after, colour_changed=any(s["op"] in ("color_transform", "tonemap", "levels", "match") for s in steps), ops=[s["op"] for s in steps])
         data = {"files": {k: str(v) for k, v in files.items()}, "qa": verdict, "steps": [s["op"] for s in steps], "t_shot": [shot["t_start"], shot["t_end"]]}
         preview_id = self.store.preview(recipe.recipe_id, t0, seconds, data)
         self.store.metrics(recipe.recipe_id, [(shot["t_start"], shot["t_end"], name, b, a) for name, (b, a) in verdict["metrics"].items()])

@@ -97,8 +97,8 @@ def step_filters(step: dict) -> list[str] | None:
     if op == "color_transform":
         lut = str(p["lut"]).replace("\\", "/").replace(":", "\\:")
         return [f"lut3d=file='{lut}':interp=tetrahedral"]
-    if op == "levels" and p.get("lut"):
-        # Baked by the engine into a LUT (see visual_quality.plan.levels_lut): exact at any depth.
+    if op in ("levels", "match") and p.get("lut"):
+        # Baked by the engine into a LUT (visual_quality.plan.levels_lut, visual_quality.match.bake): exact at any depth.
         lut = str(p["lut"]).replace("\\", "/").replace(":", "\\:")
         return [f"lut3d=file='{lut}':interp=tetrahedral"]
     if op == "levels":

@@ -60,6 +60,9 @@ const KNOBS: Record<string, { key: string; label: string; min: number; max: numb
   faces: [{ key: "weight", label: tr("độ trung thành"), min: 0, max: 1, step: 0.05 }],
   stabilise: [{ key: "smoothing", label: tr("độ mượt"), min: 5, max: 60, step: 1 }],
   deflicker: [{ key: "size", label: tr("số khung"), min: 2, max: 30, step: 1 }],
+  match: [{ key: "amount", label: tr("mức khớp"), min: 0, max: 1, step: 0.05 }, { key: "exposure", label: tr("phơi sáng"), min: -1.5, max: 1.5, step: 0.05 },
+    { key: "temperature", label: tr("nhiệt độ màu"), min: -0.35, max: 0.35, step: 0.01 }, { key: "tint", label: tr("tint"), min: -0.25, max: 0.25, step: 0.01 },
+    { key: "saturation", label: tr("bão hoà"), min: -0.5, max: 0.5, step: 0.02 }],
 };
 
 const sevTone = (s: number) => (s >= 0.6 ? "tally" : s >= 0.25 ? "cue" : "proof") as "tally" | "cue" | "proof";
@@ -295,7 +298,7 @@ function Workspace({ subject }: { subject: string }) {
                 </button>))}
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto p-4">
-              {tab === "recipe" && <RecipeTab recipe={r} shot={shot} shotIndex={shotIndex} notes={r.notes} onChanged={reload} />}
+              {tab === "recipe" && <RecipeTab subject={subject} recipe={r} shot={shot} shotIndex={shotIndex} notes={r.notes} onChanged={reload} />}
               {tab === "source" && <SourceTab profile={p} info={info} />}
               {tab === "qa" && <QATab previews={data.previews} shot={shot} />}
               {tab === "defects" && <DefectsTab shot={shot} defects={data.defects} />}
@@ -473,7 +476,7 @@ function ShotStrip({ shots, index, onPick, duration }: { shots: Shot[]; index: n
 }
 
 /* ---------------------------------------------------------------------------------------------------------- the inspector */
-function RecipeTab({ recipe, shot, shotIndex, notes, onChanged }: { recipe: NonNullable<View["recipe"]>; shot: Shot; shotIndex: number; notes: string[]; onChanged?: () => void }) {
+function RecipeTab({ subject, recipe, shot, shotIndex, notes, onChanged }: { subject: string; recipe: NonNullable<View["recipe"]>; shot: Shot; shotIndex: number; notes: string[]; onChanged?: () => void }) {
   const edit = async (step: number, body: object) => {
     try { await call(`/api/v1/vq/recipes/${recipe.recipe_id}/shots/${shotIndex}/steps/${step}`, { method: "PATCH", body: JSON.stringify(body) }); toast(tr("Đã lưu thành phiên bản mới.")); onChanged?.(); }
     catch (e) { toast((e as Error).message, { tone: "tally" }); }
@@ -487,6 +490,7 @@ function RecipeTab({ recipe, shot, shotIndex, notes, onChanged }: { recipe: NonN
       {shot.defects.length > 0 && <div className="flex flex-wrap gap-1">{shot.defects.map((d) => <Tag key={d.kind} tone={sevTone(d.severity)}>{`${DEFECT[d.kind] ?? d.kind} ${Math.round(d.severity * 100)}%`}</Tag>)}</div>}
       {shot.steps.length === 0 && <p className="rounded-lg border border-line p-3 text-[12.5px] text-faint">{tr("Shot này không cần xử lý.")}</p>}
       <ol className="grid gap-2">{shot.steps.map((st, j) => <StepCard key={`${recipe.recipe_id}-${j}`} step={st} index={j} onEdit={(b) => edit(j, b)} />)}</ol>
+      <MatchColour subject={subject} recipeId={recipe.recipe_id} shotIndex={shotIndex} onDone={onChanged} />
       {(shot.dropped ?? []).length > 0 && (
         <div className="grid gap-1.5 rounded-lg border border-line p-3">
           <p className="eyebrow">{tr("Đã cân nhắc rồi bỏ")}</p>
@@ -495,6 +499,46 @@ function RecipeTab({ recipe, shot, shotIndex, notes, onChanged }: { recipe: NonN
         </div>
       )}
       {notes.length > 0 && <div className="grid gap-1 rounded-lg border border-line p-3"><p className="eyebrow">{tr("Ghi chú")}</p>{notes.map((n) => <p key={n} className="text-[12.5px] text-mute">{n}</p>)}</div>}
+    </div>
+  );
+}
+
+/* Footage from different sources cut together: this subject's colour brought to another's (its shot at a time, as its own
+   recipe makes it look). The result is a `match` step in a new proposed version, previewed and approved like any step. */
+function MatchColour({ subject, recipeId, shotIndex, onDone }: { subject: string; recipeId: string; shotIndex: number; onDone?: () => void }) {
+  const [open, setOpen] = useState(false);
+  const { data } = usePoll<{ subjects: Row[] }>(open ? "/api/v1/vq/subjects" : "", 60000);
+  const catalog = usePoll<{ items: { subject: string; code: string; title: string | null }[] }>(open ? "/api/v1/catalog" : "", 60000).data;
+  const book = useMemo(() => new Map((catalog?.items ?? []).map((e) => [e.subject, e])), [catalog]);
+  const choices = (data?.subjects ?? []).filter((r) => r.subject !== subject && r.recipe)
+    .map((r) => { const e = book.get(r.subject); return { ...r, label: e ? `${e.code} · ${e.title || r.name}` : r.name }; });
+  const [reference, setReference] = useState(""), [t, setT] = useState(0), [every, setEvery] = useState(false), [mode, setMode] = useState<"look" | "scene">("look"), [busy, setBusy] = useState(false);
+  const picked = choices.find((c) => c.subject === reference);
+  const run = async () => {
+    setBusy(true);
+    try {
+      await post(`/api/v1/vq/recipes/${recipeId}/match`, { reference, t, mode, shot: every ? null : shotIndex });
+      toast(tr("Đã thêm bước khớp màu; xem trước rồi duyệt.")); setOpen(false); onDone?.();
+    } catch (e) { toast((e as Error).message, { tone: "tally" }); }
+    setBusy(false);
+  };
+  if (!open) return <button type="button" onClick={() => setOpen(true)} className="flex items-center gap-1.5 justify-self-start rounded-md px-2 py-1 text-[12.5px] text-mute hover:bg-raised hover:text-ink"><Icon name="layers" size={13} />{tr("Khớp màu theo nguồn khác…")}</button>;
+  return (
+    <div className="grid gap-2 rounded-lg border border-line p-3 text-[12.5px]">
+      <p className="eyebrow">{tr("Khớp màu theo nguồn khác")}</p>
+      <p className="text-faint">{tr("Cho nguồn này cùng tông màu với một nguồn sẽ đứng cạnh nó khi dựng (máy khác, điện thoại, stock). Chỉ chỉnh phơi sáng, tương phản, cân bằng trắng và bão hoà; nguồn tham chiếu được lấy như công thức của nó làm ra.")}</p>
+      <select value={reference} onChange={(e) => { setReference(e.target.value); setT(0); }} aria-label={tr("Nguồn tham chiếu")} className="h-8 px-2">
+        <option value="">{data ? tr("Chọn nguồn tham chiếu…") : tr("Đang tải…")}</option>
+        {choices.map((c) => <option key={c.subject} value={c.subject}>{c.label}</option>)}
+      </select>
+      {picked && !picked.still && (picked.duration ?? 0) > 0 && (
+        <label className="flex items-center gap-2"><span className="w-28 shrink-0 text-faint">{tr("Lấy màu lúc")}</span>
+          <input type="range" min={0} max={picked.duration ?? 0} step={0.5} value={t} onChange={(e) => setT(Number(e.target.value))} className="min-w-0 flex-1" />
+          <span className="mono w-12 text-right">{timecode(t)}</span></label>)}
+      <Seg label={tr("Cách khớp")} value={mode} onChange={setMode} items={[["look", tr("Tông máy quay")], ["scene", tr("Cùng cảnh")]] as const} />
+      <p className="text-faint">{mode === "look" ? tr("Hai cảnh khác nhau: chỉ khớp đường cong sáng tối, cân bằng trắng (đo trên mảng xám) và độ bão hoà; màu của vật thể giữ nguyên.") : tr("Hai shot cùng một nơi: khớp cả phân bố màu. Dùng cho cảnh khác nội dung sẽ làm lệch màu vật thể (trời xanh hoá xanh lá).")}</p>
+      <label className="flex items-center gap-2"><input type="checkbox" checked={every} onChange={(e) => setEvery(e.target.checked)} />{tr("Áp cho mọi shot của nguồn này (không chỉ shot đang chọn)")}</label>
+      <div className="flex gap-2"><Button size="sm" kind="primary" busy={busy} disabled={!reference} onClick={run}>{tr("Khớp màu")}</Button><Button size="sm" kind="quiet" onClick={() => setOpen(false)}>{tr("Thôi")}</Button></div>
     </div>
   );
 }

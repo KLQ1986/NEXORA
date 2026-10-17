@@ -1688,6 +1688,24 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         except AdapterError as e:
             raise HTTPException(409 if e.code == ErrorCode.UNAVAILABLE else 422, str(e))
 
+    @app.post("/api/v1/vq/recipes/{recipe_id}/match")
+    def vq_match(recipe_id: str, body: dict):
+        """Match the subject's colour to another's: `reference` (a subject), `t` (where in it), `shot` (one shot; every shot when
+        absent), `amount` (0..1) and `mode` (`look`: tone, white balance and saturation, for any two scenes; `scene`: the whole spread
+        of colours, for two shots of one place). A new proposed version of the recipe, to preview and approve like any other step."""
+        reference = body.get("reference")
+        if not reference:
+            raise HTTPException(422, "a reference is needed")
+        shot = body.get("shot")
+        try:
+            return {"recipe_id": system.vq.add_match(recipe_id, str(reference), float(body.get("t") or 0.0),
+                                                     shot=None if shot is None else int(shot), amount=float(body.get("amount", 1.0)),
+                                                     mode=str(body.get("mode") or "look"))}
+        except (LookupError, IndexError):
+            raise HTTPException(404, "no such recipe or shot")
+        except AdapterError as e:
+            raise HTTPException(409 if e.code == ErrorCode.UNAVAILABLE else 422, str(e))
+
     @app.post("/api/v1/vq/jobs", status_code=201)
     def vq_job(body: dict):
         """Any file, not taken into the library: profiled, assessed and given a recipe. `options` as for an asset."""
