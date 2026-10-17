@@ -157,6 +157,18 @@ def main() -> None:
                 time.sleep(20)
         threading.Thread(target=watch, name="nexora-watch", daemon=True).start()
 
+        def ideas():
+            import time
+            from nexora.app import refresh_ideas
+            time.sleep(120)                                # let the server settle first
+            while True:
+                try:
+                    refresh_ideas(system)
+                except Exception as err:                   # a model that cannot answer now is asked again later
+                    print(f"ideas: {err!r}")
+                time.sleep(600)
+        threading.Thread(target=ideas, name="nexora-ideas", daemon=True).start()
+
         def announcer():
             import time
             from nexora.app import announce

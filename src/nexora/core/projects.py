@@ -58,7 +58,7 @@ class ProjectStore:
         return project_id
 
     def update_project(self, project_id: str, **fields) -> None:
-        allowed = {k: v for k, v in fields.items() if k in ("title", "format", "music_path", "auto_accept", "style", "narration_dir", "budget_cap", "voice", "music_gain", "template", "profile", "research", "due_date", "bible", "options", "channel")}
+        allowed = {k: v for k, v in fields.items() if k in ("title", "format", "music_path", "auto_accept", "style", "narration_dir", "budget_cap", "voice", "music_gain", "template", "profile", "research", "due_date", "bible", "options", "channel", "idea", "channel_version")}
         with db.write(self._conn) as c:
             for key, value in allowed.items():
                 c.execute(f"UPDATE projects SET {key} = ? WHERE project_id = ?", (value, project_id))
@@ -83,12 +83,12 @@ class ProjectStore:
         row = self._conn.execute("SELECT * FROM projects WHERE project_id = ?", (project_id,)).fetchone()
         return dict(row) if row else None
 
-    def save_script(self, project_id: str, lines: list[str]) -> str:
+    def save_script(self, project_id: str, lines: list[str], *, label: str | None = None) -> str:
         """A script is never edited in place: saving creates the next version."""
         script_id = new_id("scr")
         with db.write(self._conn) as c:
             version = c.execute("SELECT COALESCE(MAX(version), 0) + 1 FROM scripts WHERE project_id = ?", (project_id,)).fetchone()[0]
-            c.execute("INSERT INTO scripts (script_id, project_id, version, created_at) VALUES (?,?,?,?)", (script_id, project_id, version, time.time()))
+            c.execute("INSERT INTO scripts (script_id, project_id, version, label, created_at) VALUES (?,?,?,?,?)", (script_id, project_id, version, label, time.time()))
             # A line starting with "#" names a scene; the lines after it belong to that scene. Notes a line carried in the
             # previous version follow it into the new one, as long as its words are unchanged.
             before = {r["text"]: r for r in c.execute("SELECT s.text, s.brief, s.screen_text, s.target_seconds, s.sound_cue, s.is_fact, s.source, s.fact_check, s.gen FROM shots s JOIN scripts sc USING (script_id) "
@@ -211,6 +211,34 @@ class ProjectStore:
         row = self._conn.execute("SELECT script_id FROM scripts WHERE project_id = ? ORDER BY version DESC LIMIT 1", (project_id,)).fetchone()
         return self.script(row[0]) if row else None
 
+    # -------------------------------------------------------------------------------------- alternate openings and endings
+    def add_variants(self, project_id: str, script_id: str, part: str, items: list[dict]) -> list[str]:
+        """Alternatives for one part of a script, each kept whole: `items` are {label, note, lines}. Earlier alternatives of the
+        same part of the same version are replaced unless one was chosen."""
+        ids = []
+        with db.write(self._conn) as c:
+            c.execute("DELETE FROM script_variants WHERE project_id = ? AND script_id = ? AND part = ? AND chosen IS NULL", (project_id, script_id, part))
+            for item in items:
+                vid = new_id("var")
+                c.execute("INSERT INTO script_variants (variant_id, project_id, script_id, part, label, note, lines, created_at) VALUES (?,?,?,?,?,?,?,?)",
+                          (vid, project_id, script_id, part, item["label"], item.get("note") or None, json.dumps(item["lines"], ensure_ascii=False), time.time()))
+                ids.append(vid)
+        return ids
+
+    def variants(self, project_id: str) -> list[dict]:
+        rows = self._conn.execute("SELECT * FROM script_variants WHERE project_id = ? ORDER BY created_at, label", (project_id,))
+        return [{**dict(r), "lines": json.loads(r["lines"])} for r in rows]
+
+    def choose_variant(self, variant_id: str) -> str:
+        """The alternative becomes the script's next version, under its label; the others stay to choose later."""
+        r = self._conn.execute("SELECT * FROM script_variants WHERE variant_id = ?", (variant_id,)).fetchone()
+        if r is None:
+            raise LookupError(variant_id)
+        script_id = self.save_script(r["project_id"], json.loads(r["lines"]), label=r["label"])
+        with db.write(self._conn) as c:
+            c.execute("UPDATE script_variants SET chosen = ? WHERE variant_id = ?", (script_id, variant_id))
+        return script_id
+
     def set_match_approved(self, script_id: str, approved: bool) -> None:
         with db.write(self._conn) as c:
             c.execute("UPDATE scripts SET match_approved = ? WHERE script_id = ?", (int(approved), script_id))
@@ -322,6 +350,7 @@ class ProjectStore:
             if scripts:
                 c.execute(f"DELETE FROM scripts WHERE script_id IN ({marks})", scripts)
             c.execute("DELETE FROM renders WHERE project_id = ?", (project_id,))
+            c.execute("DELETE FROM script_variants WHERE project_id = ?", (project_id,))
             c.execute("DELETE FROM projects WHERE project_id = ?", (project_id,))
         return {"scripts": scripts, "shots": shots, "renders": renders}
 

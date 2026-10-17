@@ -1,6 +1,6 @@
 import { t as tr, tv, locale } from "./i18n";
 import { useState } from "react";
-import { call, megabytes, post, usePoll, type EvalRun, type Settings, type Template } from "./api";
+import { call, megabytes, post, usePoll, type EvalRun, type Settings, type Template, type Segment } from "./api";
 import { Button, Icon, LangSwitch, Meter, OpsSide, Page, SideLink, Tag, ask, toast } from "./parts";
 import { FieldAccuracy, PeopleCard, ReviewQueue } from "./Profile";
 
@@ -330,6 +330,7 @@ function Templates() {
               <label className={`${lab} col-span-2`}>Logo<input value={t.logo_path ?? ""} onChange={(e) => edit(i, { logo_path: e.target.value })} placeholder={tr("Đường dẫn tới file PNG (để trống nếu không dùng)")} className="mono h-9 min-w-0 px-2.5 text-[12.5px] text-ink" /></label>
             </div>
             <label className="mt-3 flex items-center gap-2 text-[13px]"><input type="checkbox" checked={t.auto_accept} onChange={(e) => edit(i, { auto_accept: e.target.checked })} />{tr("Tự duyệt clip")}</label>
+            <Structure value={t.structure ?? []} onChange={(structure) => edit(i, { structure })} />
             <label className={`${lab} mt-3`}>{tr("Cách đọc riêng, mỗi dòng một cặp viết=đọc")}
               <textarea rows={2} defaultValue={Object.entries(t.pronounce ?? {}).map(([k, v]) => `${k}=${v}`).join("\n")} placeholder={tr("NEXORA=nếch xô ra")}
                         onBlur={(e) => edit(i, { pronounce: Object.fromEntries(e.target.value.split("\n").map((l) => l.split("=")).filter((x) => x.length === 2).map(([k, v]) => [k, v])) })} className="mono p-2 text-[12.5px] text-ink" /></label>
@@ -337,6 +338,32 @@ function Templates() {
         ))}
       </ul>
     </Card>
+  );
+}
+
+const ROLE: Record<Segment["role"], string> = { hook: tr("Mở bài"), body: tr("Thân bài"), close: tr("Kết") };
+
+/** A template's shape: its segments in order, each with a duration range and what it must achieve. */
+function Structure({ value, onChange }: { value: Segment[]; onChange: (v: Segment[]) => void }) {
+  const set = (i: number, change: Partial<Segment>) => onChange(value.map((x, k) => (k === i ? { ...x, ...change } : x)));
+  const cell = "h-8 min-w-0 px-2 text-[12.5px] text-ink";
+  return (
+    <div className="mt-3">
+      <p className="mb-1.5 flex items-center gap-2 text-[12.5px] text-mute">{tr("Cấu trúc")}<span className="text-faint">{tr("các phần theo thứ tự; viết nháp và kiểm tra kịch bản dựa vào đây")}</span>
+        <button type="button" className="link ml-auto" onClick={() => onChange([...value, { role: "body", label: tr("Phần mới"), min: 5, max: 30, goal: "" }])}>{tr("Thêm phần")}</button></p>
+      <ul className="grid gap-1.5">
+        {value.map((seg, i) => (
+          <li key={i} className="grid grid-cols-[92px_minmax(0,1fr)_56px_56px_minmax(0,1.6fr)_28px] items-center gap-1.5">
+            <select aria-label={tr("Vai trò")} value={seg.role} onChange={(e) => set(i, { role: e.target.value as Segment["role"] })} className={`${cell} pl-1.5`}>{Object.entries(ROLE).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
+            <input aria-label={tr("Tên phần")} value={seg.label} onChange={(e) => set(i, { label: e.target.value })} className={cell} />
+            <input aria-label={tr("Ít nhất (giây)")} title={tr("Ít nhất (giây)")} type="number" inputMode="decimal" min="0" value={seg.min} onChange={(e) => set(i, { min: Number(e.target.value) })} className={`mono ${cell}`} />
+            <input aria-label={tr("Nhiều nhất (giây)")} title={tr("Nhiều nhất (giây)")} type="number" inputMode="decimal" min="0" value={seg.max} onChange={(e) => set(i, { max: Number(e.target.value) })} className={`mono ${cell}`} />
+            <input aria-label={tr("Việc cần đạt")} value={seg.goal} placeholder={tr("Việc cần đạt")} onChange={(e) => set(i, { goal: e.target.value })} className={cell} />
+            <button type="button" className="grid h-7 w-7 place-items-center rounded-md text-faint hover:bg-tally/10 hover:text-tally" aria-label={tr("Bỏ phần này")} onClick={() => onChange(value.filter((_, k) => k !== i))}><Icon name="x" size={13} /></button>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

@@ -151,6 +151,17 @@ CREATE TABLE IF NOT EXISTS scripts (
     match_approved INTEGER NOT NULL DEFAULT 0,
     created_at     REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS script_variants (
+    variant_id   TEXT PRIMARY KEY,
+    project_id   TEXT NOT NULL,
+    script_id    TEXT NOT NULL,
+    part         TEXT NOT NULL,
+    label        TEXT NOT NULL,
+    note         TEXT,
+    lines        TEXT NOT NULL,
+    chosen       TEXT,
+    created_at   REAL NOT NULL
+);
 CREATE TABLE IF NOT EXISTS shots (
     shot_id   TEXT PRIMARY KEY,
     script_id TEXT NOT NULL REFERENCES scripts(script_id),
@@ -275,7 +286,10 @@ MIGRATIONS = [
     ("projects", "trashed_at", "REAL"),
     ("runs", "dismissed_at", "REAL"),             # the operator has seen this failure and set it aside
     ("assets", "reference_only", "INTEGER NOT NULL DEFAULT 0"),   # studied for its style, never cut into a video
-    ("assets", "consent", "TEXT"),                # the people seen in it agreed to appear ("given"), or none need to ("not_needed")
+    ("assets", "consent", "TEXT"),
+    ("scripts", "label", "TEXT"),                 # what this version is, when it is a chosen alternative ("Mở bài B")
+    ("projects", "idea", "TEXT"),                 # the idea the project was taken from, as the idea store kept it
+    ("projects", "channel_version", "INTEGER"),   # the version of the channel's profile it was planned with                # the people seen in it agreed to appear ("given"), or none need to ("not_needed")
 ]
 
 

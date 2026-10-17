@@ -1,7 +1,7 @@
 import { t as tr, tv, locale } from "./i18n";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { call, post, projectNext, projectState, scriptText, stageName, timecode, usePoll, type Idea, type Source, type AgentTask, type Asset, type Settings, type Candidate, type Project, type RenderItem, type Shot, type BibleEntry, type GapPlan, type Op, type Rights, type Publishing, type Channel } from "./api";
+import { call, post, projectNext, projectState, scriptText, stageName, timecode, usePoll, type Idea, type Source, type AgentTask, type Asset, type Settings, type Candidate, type Project, type RenderItem, type Shot, type BibleEntry, type GapPlan, type Op, type Rights, type Publishing, type Channel, type StructureCheck, type Variant } from "./api";
 import Board from "./Board";
 import { ask, Button, Empty, Filmstrip, goTo, Icon, Meter, Page, Section, Seg, SideFrame, SideGroup, SideLink, SkeletonCards, StageRail, Steps, Tabs, Tag, TimeChip, toast, Readout } from "./parts";
 import Timeline from "./Timeline";
@@ -281,7 +281,111 @@ async function trashProject(p: { project_id: string; title: string }, then?: () 
   return true;
 }
 
-const CRITERIA: Record<string, string> = { hop_khan_gia: tr("Hợp người xem"), co_hinh: tr("Có hình trong kho"), moi_la: tr("Mới lạ"), de_lam: tr("Dễ làm") };
+const CRITERIA: Record<string, [string, boolean]> = { hop_khan_gia: [tr("Hợp người xem"), false], hop_kenh: [tr("Hợp kênh"), false], co_hinh: [tr("Có hình trong kho"), true],
+  moi: [tr("Footage chưa dùng"), true], khac_biet: [tr("Khác video đã làm"), true] };      // [name, measured rather than the model's opinion]
+
+const STATE: Record<string, [string, "proof" | "cue" | "tally"]> = { ok: [tr("vừa"), "proof"], short: [tr("ngắn"), "cue"], long: [tr("dài"), "cue"], missing: [tr("chưa có"), "tally"] };
+
+/** The script against its template's structure: each part's estimated length against its range. */
+function StructureCheck({ s }: { s: StructureCheck }) {
+  return (
+    <div className="mt-3 rounded-xl border border-line bg-raised/30 px-4 py-3 text-[13px]">
+      <div className="mb-2 flex items-center gap-2"><Icon name="layers" size={15} className="text-mute" /><span className="font-medium">{tr("Cấu trúc theo mẫu")}</span>
+        <span className="text-faint">{s.findings.length ? tv`${s.findings.length} điểm lệch` : tr("Các phần đều vừa độ dài.")}</span></div>
+      <ul className="grid gap-1 sm:grid-cols-3">{s.segments.map((seg) => (
+        <li key={seg.label} className="flex items-center gap-2"><Tag tone={STATE[seg.state][1]}>{STATE[seg.state][0]}</Tag><span>{seg.label}</span>
+          <span className="mono ml-auto text-faint">{seg.seconds == null ? "–" : `${Math.round(seg.seconds)}s`} / {seg.min}–{seg.max}s</span></li>))}</ul>
+      {s.findings.length > 0 && <p className="mt-2 text-mute">{tr("Dòng bắt đầu bằng # đặt tên phần, ví dụ “# Mở bài”. Độ dài ước theo thời lượng giữ hình của câu, hoặc theo số chữ.")}</p>}
+    </div>
+  );
+}
+
+/** Two or three other ways to open or to end the script; choosing one saves it as the next version, the rest stay. */
+function Variants({ id, p, busy, run }: { id: string; p: Project; busy: boolean; run: (fn: () => Promise<unknown>) => void }) {
+  const { data, reload } = usePoll<{ variants: Variant[] }>(`/api/v1/projects/${id}/variants`, 60000);
+  const current = new Set(p.shots.map((s) => s.text));
+  const mine = (data?.variants ?? []).filter((v) => v.script_id === p.script?.script_id && !v.chosen);
+  const make = (part: "opening" | "ending") => run(async () => { const r = await post<{ made: number }>(`/api/v1/projects/${id}/variants`, { part }); if (!r.made) toast(tr("Mô hình không viết được phương án nào khác.")); reload(); });
+  return (
+    <div className="mt-3 rounded-xl border border-line bg-raised/30 px-4 py-3 text-[13px]">
+      <div className="flex flex-wrap items-center gap-2"><Icon name="edit" size={15} className="text-ai" /><span className="font-medium">{tr("Phương án mở bài, kết bài")}</span>
+        <span className="text-faint">{tr("viết lại riêng một phần, phần còn lại giữ nguyên")}</span>
+        <span className="ml-auto flex gap-2"><Button size="sm" kind="ai" disabled={busy} onClick={() => make("opening")}>{tr("Phương án mở bài")}</Button><Button size="sm" kind="ai" disabled={busy} onClick={() => make("ending")}>{tr("Phương án kết")}</Button></span></div>
+      {mine.length > 0 && <ul className="mt-3 grid gap-2 lg:grid-cols-3">{mine.map((v) => { const changed = v.lines.filter((l) => !l.startsWith("#") && !current.has(l)); return (
+        <li key={v.variant_id} className="panel-raised flex flex-col gap-1.5 p-3"><div className="flex items-baseline gap-2"><span className="font-medium">{v.label}</span>{v.note && <span className="text-faint">{v.note}</span>}</div>
+          {changed.length ? <ul className="grid gap-0.5">{changed.map((l, k) => <li key={k}>{l}</li>)}</ul> : <p className="text-mute">{tr("Như kịch bản hiện tại.")}</p>}
+          {changed.length > 0 && <div className="mt-auto pt-1"><Button size="sm" disabled={busy} onClick={() => run(async () => { await post(`/api/v1/variants/${v.variant_id}/choose`); reload(); })}>{tr("Dùng phương án này")}</Button></div>}
+        </li>); })}</ul>}
+    </div>
+  );
+}
+
+/** Ideas the library can carry: each group of footage measured, the model asked only for the angle; a risk blocks. */
+function IdeasPanel({ format, close, go, onTask }: { format: string; close: () => void; go: (to: string) => void; onTask: () => void }) {
+  const [fast, setFast] = useState(false);
+  const { data, reload } = usePoll<{ ideas: Idea[]; clusters: number; running: boolean; error: string | null; started_at: number | null }>("/api/v1/ideas", fast ? 3000 : 30000);
+  const { data: chan } = usePoll<{ channels: Channel[] }>("/api/v1/channels", 60000);
+  const [channel, setChannel] = useState(""), [note, setNote] = useState<string | null>(null);
+  const [why, setWhy] = useState<Record<string, string>>({}), [showDone, setShowDone] = useState(false);
+  const thinking = !!data?.running;
+  useEffect(() => { setFast(thinking); }, [thinking]);
+  const propose = async () => { setNote(null); try { await post("/api/v1/ideas", { channel: channel || null }); setFast(true); } catch (e) { setNote((e as Error).message); } reload(); };
+  const accept = async (it: Idea) => { try { const p = await post<Project>(`/api/v1/ideas/${it.idea_id}/accept`, { reason: why[it.idea_id] ?? "" }); go(`/du-an/${p.project_id}/storyboard`); } catch (e) { toast((e as Error).message, { tone: "tally" }); } };
+  const drop = async (it: Idea) => { await post(`/api/v1/ideas/${it.idea_id}/drop`); reload(); toast(tv`Đã bỏ ý tưởng “${it.title}”.`); };
+  const all = data?.ideas ?? [];
+  const open = all.filter((i) => i.status === "new" || i.status === "blocked"), done = all.filter((i) => i.status === "accepted" || i.status === "dropped");
+  return (
+    <div className="panel rise mb-6 p-5">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0"><h2 className="flex items-center gap-2 text-[15px] font-semibold"><Icon name="spark" size={16} className="text-ai" />{tr("Ý tưởng làm được từ kho footage")}</h2>
+          <p className="max-w-3xl text-[13px] text-mute">{tv`Hệ thống gom footage theo chủ đề và buổi quay (${data?.clusters ?? 0} nhóm), rồi chỉ hỏi mô hình góc kể và các cảnh cần có. Mỗi cảnh được tìm thật trong kho; điểm có dấu ● là số đo, không phải ý mô hình. Ý tưởng có rủi ro bị chặn cho tới khi bạn ghi lý do.`}</p></div>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-2 text-[12.5px] text-mute">{tr("Cho kênh")}<select value={channel} onChange={(e) => setChannel(e.target.value)} className="h-9 pl-2.5 text-ink"><option value="">{tr("Không chọn")}</option>{(chan?.channels ?? []).map((c) => <option key={c.name}>{c.name}</option>)}</select></label>
+          <Button kind="ai" disabled={thinking} onClick={propose}>{thinking ? tr("Đang nghĩ…") : (open.length ? tr("Gợi ý lại") : tr("Gợi ý ý tưởng"))}</Button><Button kind="quiet" onClick={close} aria-label={tr("Đóng")}><Icon name="x" /></Button></div>
+      </div>
+      {(note || data?.error) && <p className="mb-2 text-tally">{note || data?.error}</p>}
+      {thinking && <p className="mb-3 flex items-center gap-2 text-[13px] text-ai"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-ai" />{tr("Mô hình đang nghĩ góc kể cho từng nhóm footage, mỗi nhóm khoảng hai phút. Có thể rời trang; ý tưởng hiện ra khi xong.")}</p>}
+      {data && open.length === 0 && !thinking && <p className="text-mute">{data.clusters ? tr("Chưa có ý tưởng nào đang chờ. Bấm Gợi ý ý tưởng.") : tr("Chưa có ý tưởng nào. Kho cần có footage đã được mô tả.")}</p>}
+      <ul className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+        {open.map((it) => (
+          <li key={it.idea_id} className={`panel-raised flex flex-col p-4 ${it.status === "blocked" ? "border-cue/40" : ""}`}>
+            <div className="mb-1 flex items-start justify-between gap-3"><p className="font-medium">{it.title}</p><span className="mono shrink-0 rounded-md bg-accent/15 px-1.5 text-[12px] text-accent" title={tr("Tổng điểm")}>{it.total}</span></div>
+            {it.angle && <p className="mb-2 text-[13px] text-mute">{it.angle}</p>}
+            <p className="mb-3 flex flex-wrap gap-1.5 text-[11.5px]">
+              <span className="chip">{it.material.kind}: {it.material.name}</span>
+              <span className="chip mono">{tv`${Math.round(it.coverage * 100)}% cảnh có hình`}</span>
+              <span className="chip mono">{tv`khoảng ${timecode(it.seconds)}`}</span>
+              {it.template && <span className="chip">{it.template}</span>}
+              {it.channel && <span className="chip">{it.channel}</span>}
+            </p>
+            <dl className="mb-3 grid grid-cols-2 gap-x-5 gap-y-1.5 text-[12.5px]">
+              {Object.entries(CRITERIA).filter(([key]) => key in it.scores).map(([key, [name, measured]]) => (
+                <div key={key} className="flex items-center justify-between gap-2"><dt className="text-mute">{measured && <span className="mr-1 text-proof" title={tr("Số đo từ kho")}>●</span>}{name}</dt>
+                  <dd className="flex gap-0.5" aria-label={tv`${it.scores[key]} trên 5`}>{[1, 2, 3, 4, 5].map((n) => <span key={n} className={`h-1.5 w-3 rounded-full ${n <= (it.scores[key] ?? 0) ? "bg-gradient-to-r from-accent to-ai" : "bg-overlay"}`} />)}</dd></div>
+              ))}
+            </dl>
+            <details className="mb-3 text-[12.5px]"><summary className="cursor-pointer list-none text-accent">{tv`${it.shots.length} cảnh cần có, ${it.gaps.length} còn thiếu`}</summary>
+              <ul className="mt-1.5 grid gap-1">{it.shots.map((sh, k) => (
+                <li key={k} className="flex items-start gap-2"><Icon name={sh.covered ? "check" : "alert"} size={13} className={`mt-0.5 shrink-0 ${sh.covered ? "text-proof" : "text-cue"}`} />
+                  <span className="min-w-0"><span className={sh.covered ? "" : "text-cue"}>{sh.need}</span>{sh.covered && sh.text && <span className="block truncate text-faint">{sh.text}</span>}</span></li>))}</ul></details>
+            {it.risk && <p className="mb-2 text-[12.5px] text-cue">{tv`Rủi ro: ${it.risk}`}</p>}
+            {it.status === "blocked" && <input aria-label={tr("Lý do vẫn làm")} value={why[it.idea_id] ?? ""} onChange={(e) => setWhy({ ...why, [it.idea_id]: e.target.value })} placeholder={tr("Lý do vẫn làm (bắt buộc với ý tưởng có rủi ro)")} className="mb-2 h-8 px-2.5 text-[12.5px]" />}
+            <div className="mt-auto flex flex-wrap gap-2">
+              <Button size="sm" kind="primary" disabled={it.status === "blocked" && !(why[it.idea_id] ?? "").trim()} onClick={() => accept(it)}><Icon name="check" size={14} />{tr("Nhận, mở Storyboard")}</Button>
+              <Button size="sm" kind="ai" disabled={it.status === "blocked"} onClick={async () => { const t = await post<AgentTask>("/api/v1/agent/tasks", { goal: `${it.title}. ${it.angle ?? ""}`, format }); onTask(); go(`/du-an/${t.project_id}`); }}><Icon name="sparkles" size={14} />{tr("Giao cho trợ lý")}</Button>
+              <Button size="sm" kind="quiet" onClick={() => drop(it)}>{tr("Bỏ")}</Button>
+            </div>
+          </li>
+        ))}
+      </ul>
+      {done.length > 0 && <div className="mt-4"><button type="button" className="link text-[12.5px]" onClick={() => setShowDone(!showDone)}>{showDone ? tr("Ẩn ý tưởng đã quyết") : tv`Xem ${done.length} ý tưởng đã quyết`}</button>
+        {showDone && <ul className="panel rows mt-2">{done.map((it) => (
+          <li key={it.idea_id} className="flex flex-wrap items-center gap-2 px-3 py-2 text-[13px]"><Tag tone={it.status === "accepted" ? "proof" : "mute"}>{it.status === "accepted" ? tr("Đã nhận") : tr("Đã bỏ")}</Tag><span>{it.title}</span>
+            {it.reason && <span className="text-faint">{tv`lý do: ${it.reason}`}</span>}
+            {it.project_id && <button type="button" className="link ml-auto" onClick={() => go(`/du-an/${it.project_id}`)}>{tr("Mở dự án")}</button>}</li>))}</ul>}</div>}
+    </div>
+  );
+}
 const TASK_STATES: Record<string, string> = { working: tr("Đang làm"), waiting_operator: tr("Chờ bạn"), done: "Xong", failed: tr("Dừng vì lỗi") };
 
 /** What the producer agent did for this project, role by role, in the order it happened. */
@@ -529,7 +633,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
               <Section title={tr("Kịch bản")} icon="edit" note={tr("Mỗi dòng là một câu lời dẫn; hệ thống tìm một clip cho từng câu. Dòng bắt đầu bằng dấu # là tên một cảnh.")}>
                 <div className={`panel overflow-hidden ${dirty ? "glow" : ""}`}>
                   <div className="flex flex-wrap items-center gap-3 border-b border-line bg-raised/40 px-4 py-2 text-[12px] text-mute">
-                    <span className="mono">{p.script ? `v${p.script.version}` : tr("bản nháp")}</span><span className="mono">{tv`${lines} câu`}</span>
+                    <span className="mono">{p.script ? `v${p.script.version}` : tr("bản nháp")}</span>{p.script?.label && <Tag tone="ai">{p.script.label}</Tag>}<span className="mono">{tv`${lines} câu`}</span>
                     {dirty && <span className="flex items-center gap-1.5 text-accent"><span className="h-1.5 w-1.5 rounded-full bg-accent" />{tr("Chưa lưu")}</span>}
                     <span className="ml-auto" />
                     <Button size="sm" disabled={busy || !dirty || !(text ?? "").trim()} onClick={() => run(() => post(`/api/v1/projects/${id}/script`, { lines: (text ?? "").split("\n") }, "PUT"))}>{tr("Lưu kịch bản")}</Button>
@@ -556,6 +660,8 @@ function Detail({ id, back }: { id: string; back: () => void }) {
                       <li key={i} className="flex gap-2.5"><span className="mono w-14 shrink-0 text-faint">{c.line ? tv`Câu ${c.line}` : tr("Cả bài")}</span><span className="min-w-0">{c.issue}{c.fix && <span className="text-mute"> {c.fix}</span>}</span></li>))}</ul>}
                   </div>
                 )}
+                {p.script && !dirty && p.structure && <StructureCheck s={p.structure} />}
+                {p.script && !dirty && <Variants id={id} p={p} busy={busy} run={run} />}
               </Section>
           </div>
           <aside className="grid gap-4 xl:sticky xl:top-0" aria-label={tr("Nguồn tham khảo")}>
@@ -880,9 +986,6 @@ export default function Projects({ sub, go }: { sub: string | null; go: (to: str
   const [filter, setFilterState] = useState<Filter>(() => listFilter);
   const setFilter = (f: Filter) => { listFilter = f; setFilterState(f); };
   const [view, setView] = useState<"grid" | "list">(() => { try { return (localStorage.getItem("nx.projects.view") as "grid" | "list") ?? "grid"; } catch { return "grid"; } });
-  const { data: ideas, reload: reloadIdeas } = usePoll<{ ideas: Idea[] }>("/api/v1/ideas", 60000);
-  const [thinking, setThinking] = useState(false);
-  const propose = async () => { setThinking(true); setAgentNote(null); try { await post("/api/v1/ideas"); } catch (e) { setAgentNote((e as Error).message); } setThinking(false); reloadIdeas(); };
   const { data: agent, reload: reloadAgent } = usePoll<{ tasks: AgentTask[] }>("/api/v1/agent/tasks", 4000);
   const [agentNote, setAgentNote] = useState<string | null>(null);
   const [urls, setUrls] = useState("");
@@ -935,32 +1038,7 @@ export default function Projects({ sub, go }: { sub: string | null; go: (to: str
           {agentNote && <p className="mt-2 text-tally">{agentNote}</p>}
         </form>
       )}
-      {mode === "ideas" && (
-        <div className="panel rise mb-6 p-5">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <div><h2 className="flex items-center gap-2 text-[15px] font-semibold"><Icon name="spark" size={16} className="text-ai" />{tr("Ý tưởng làm được từ kho footage")}</h2><p className="text-[13px] text-mute">{tr("Mô hình đề xuất; điểm “có hình” được đo từ kho, không lấy theo ý mô hình. Ý tưởng có rủi ro xếp sau.")}</p></div>
-            <div className="flex gap-2"><Button kind="ai" disabled={thinking} onClick={propose}>{thinking ? tr("Đang nghĩ…") : (ideas?.ideas.length ? tr("Gợi ý lại") : tr("Gợi ý ý tưởng"))}</Button><Button kind="quiet" onClick={() => toggle("ideas")}><Icon name="x" /></Button></div>
-          </div>
-          {agentNote && <p className="mb-2 text-tally">{agentNote}</p>}
-          {ideas && ideas.ideas.length === 0 && !thinking && <p className="text-mute">{tr("Chưa có gợi ý nào. Kho cần có footage đã được mô tả.")}</p>}
-          <ul className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
-            {(ideas?.ideas ?? []).map((it) => (
-              <li key={it.title} className="panel-raised flex flex-col p-4">
-                <div className="mb-1 flex items-start justify-between gap-3"><p className="font-medium">{it.title}</p><span className="mono shrink-0 rounded-md bg-accent/15 px-1.5 text-[12px] text-accent">{it.total}</span></div>
-                <p className="mb-3 text-[13px] text-mute">{it.summary}</p>
-                <dl className="mb-3 grid grid-cols-2 gap-x-5 gap-y-1.5 text-[12.5px]">
-                  {Object.entries(CRITERIA).map(([key, name]) => (
-                    <div key={key} className="flex items-center justify-between gap-2"><dt className="text-mute">{name}</dt>
-                      <dd className="flex gap-0.5" aria-label={tv`${it.scores[key]} trên 5`}>{[1, 2, 3, 4, 5].map((n) => <span key={n} className={`h-1.5 w-3 rounded-full ${n <= (it.scores[key] ?? 0) ? "bg-gradient-to-r from-accent to-ai" : "bg-overlay"}`} />)}</dd></div>
-                  ))}
-                </dl>
-                {it.risk && <p className="mb-3 text-[12.5px] text-cue">{tv`Rủi ro: ${it.risk}`}</p>}
-                <div className="mt-auto"><Button size="sm" kind="ai" onClick={async () => { const t = await post<AgentTask>("/api/v1/agent/tasks", { goal: `${it.title}. ${it.summary}`, format }); reloadAgent(); reload(); go(`/du-an/${t.project_id}`); }}><Icon name="sparkles" size={14} />{tr("Giao cho trợ lý làm")}</Button></div>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      {mode === "ideas" && <IdeasPanel format={format} close={() => toggle("ideas")} go={go} onTask={() => { reloadAgent(); reload(); }} />}
       {data && data.length === 0 && <Empty icon="clapper" title={tr("Chưa có dự án nào")} action={<Button kind="primary" onClick={() => setMode("new")}><Icon name="plus" />{tr("Dự án mới")}</Button>}>{tr("Bấm Dự án mới để tự viết kịch bản, hoặc Giao cho trợ lý để nó viết và dựng bản đầu tiên từ kho footage của bạn.")}</Empty>}
       {all.length > 0 && (
         <div className="mb-4 flex flex-wrap items-end gap-3">

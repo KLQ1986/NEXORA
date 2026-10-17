@@ -75,6 +75,7 @@ function Calendar() {
           {(data?.channels ?? []).map((c) => { const gap = data!.cadence.find((x) => x.channel === c.name); return (
             <li key={c.name} className="px-3 py-2.5 text-[13px]"><div className="flex items-center gap-2"><span className="font-medium">{c.name}</span><span className="text-faint">{[c.platform, c.per_week ? tv`${c.per_week} video mỗi tuần` : "", c.audience].filter(Boolean).join(", ")}</span>
               <button type="button" className="link ml-auto" onClick={() => { const before = data!.channels; saveChannels(before.filter((x) => x.name !== c.name)); toast(tv`Đã bỏ kênh “${c.name}”.`, { undo: () => saveChannels(before) }); }}>{tr("Bỏ")}</button></div>
+              <Profile channel={c} save={(change) => saveChannels(data!.channels.map((x) => (x.name === c.name ? { ...x, ...change } : x)))} />
               {gap && <p className="mt-1 flex flex-wrap gap-1.5">{gap.weeks.map((w) => <span key={w.from} title={tv`Tuần từ ${w.from}`} className={`mono rounded-md border px-1.5 py-0.5 text-[11.5px] ${w.short ? "border-cue/40 bg-cue/10 text-cue" : "border-proof/40 bg-proof/10 text-proof"}`}>{w.from.slice(5)}: {w.short ? tv`thiếu ${w.short}` : tr("đủ")}</span>)}</p>}
             </li>); })}
         </ul>
@@ -99,6 +100,25 @@ function Calendar() {
       </Section>
       </div>
     </div>
+  );
+}
+
+/** How a channel speaks: written into every prompt that plans or writes for it. Each change is a new version of the profile. */
+function Profile({ channel: c, save }: { channel: Channel; save: (change: Partial<Channel>) => void }) {
+  const field = "h-8 min-w-0 px-2.5 text-[12.5px]";
+  const blur = (key: keyof Channel) => (e: { target: { value: string } }) => { if (e.target.value !== (c[key] ?? "")) save({ [key]: e.target.value }); };
+  return (
+    <details className="mt-1.5">
+      <summary className="cursor-pointer list-none text-[12.5px] text-accent">{tr("Hồ sơ kênh")}{c.version ? <span className="mono ml-1.5 text-faint">v{c.version}</span> : null}
+        {(c.tone || c.banned?.length) ? <span className="ml-2 text-faint">{[c.tone, c.banned?.length ? tv`${c.banned.length} cụm từ cấm` : ""].filter(Boolean).join(", ")}</span> : null}</summary>
+      <div className="mt-2 grid gap-2">
+        <input aria-label={tr("Giọng văn")} placeholder={tr("Giọng văn: mộc, ấm, hài hước…")} defaultValue={c.tone ?? ""} onBlur={blur("tone")} className={field} />
+        <input aria-label={tr("Nhịp")} placeholder={tr("Nhịp: chậm, nhiều khoảng lặng…")} defaultValue={c.pacing ?? ""} onBlur={blur("pacing")} className={field} />
+        <textarea aria-label={tr("Cụm từ không bao giờ dùng, mỗi dòng một cụm")} rows={2} placeholder={tr("Cụm từ không bao giờ dùng, mỗi dòng một cụm")} defaultValue={(c.banned ?? []).join("\n")}
+                  onBlur={(e) => { const banned = e.target.value.split("\n").map((x) => x.trim()).filter(Boolean); if (banned.join("\n") !== (c.banned ?? []).join("\n")) save({ banned }); }} className="p-2 text-[12.5px]" />
+        <textarea aria-label={tr("Ghi chú cho người viết")} rows={2} placeholder={tr("Ghi chú cho người viết: điều kênh luôn làm, điều nên tránh")} defaultValue={c.notes ?? ""} onBlur={blur("notes")} className="p-2 text-[12.5px]" />
+      </div>
+    </details>
   );
 }
 

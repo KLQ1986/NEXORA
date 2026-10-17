@@ -315,10 +315,7 @@ def test_structured_script_brand_profile_ideas_draft_and_health_notices(tmp_path
     footage = tmp_path / "card"; footage.mkdir()
     client.post("/api/v1/assets/register", json={"path": str(make_video(footage / "f.mp4", picture=20))}); drain()
 
-    ideas = client.post("/api/v1/ideas").json()["ideas"]
-    assert [i["title"] for i in ideas] == ["Cá tươi trên sạp buổi sớm", "Tàu vũ trụ"]                 # an idea with a stated risk goes last, whatever its score
-    assert ideas[0]["scores"]["co_hinh"] >= 3 and ideas[1]["scores"]["co_hinh"] == 1                  # coverage is measured, not taken from the model
-    assert client.get("/api/v1/ideas").json()["ideas"] == ideas
+    assert client.post("/api/v1/ideas", json={"wait": True}).json()["ideas"] == []                                        # a model answer without shots is no idea (tests/production/test_ideas.py)
 
     pid = client.post("/api/v1/projects", json={"title": "Có cấu trúc", "lines": ["# Mở đầu", "con đường mòn", "# Ở chợ", "hàng hoá bày bán"]}).json()["project_id"]
     shots = client.get(f"/api/v1/projects/{pid}").json()["shots"]

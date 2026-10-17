@@ -106,7 +106,7 @@ export default function Storyboard({ projectId, back }: { projectId: string; bac
   const set = (shot: SbShot, field: string, value: unknown) => ops([{ op: "set", shot: shot.shot_id, field, value }]);
 
   if (!data) return <div className="grid flex-1 place-items-center"><Spinner /></div>;
-  if (!shots.length) return <Start url={url} title={data.project.title} back={back} onMade={reload} messages={data.messages} />;
+  if (!shots.length) return <Start url={url} title={data.project.title} back={back} onMade={reload} messages={data.messages} shared={data.shared} />;
 
   const sceneOf = new Map(data.scenes.map((s, k) => [s.scene_id, k]));
   const tone = (s: SbShot) => TONE[(sceneOf.get(s.scene_id) ?? 0) * 3 % TONE.length + (s.code.length % 2)];
@@ -218,8 +218,8 @@ export default function Storyboard({ projectId, back }: { projectId: string; bac
 }
 
 /* ---------------------------------------------------------------------------------------------------- an empty storyboard */
-function Start({ url, title, back, onMade, messages }: { url: string; title: string; back: () => void; onMade: () => void; messages: Msg[] }) {
-  const [idea, setIdea] = useState(""), [seconds, setSeconds] = useState(60), [busy, setBusy] = useState<string | null>(null);
+function Start({ url, title, back, onMade, messages, shared }: { url: string; title: string; back: () => void; onMade: () => void; messages: Msg[]; shared?: { idea: string; seconds: number } }) {
+  const [idea, setIdea] = useState(shared?.idea ?? ""), [seconds, setSeconds] = useState(shared?.seconds || 60), [busy, setBusy] = useState<string | null>(null);
   const open = [...messages].reverse().find((m) => m.proposal && m.status === "open" && m.proposal.kind !== "copilot");
   const run = async (key: string, fn: () => Promise<unknown>) => { setBusy(key); try { await fn(); onMade(); } catch (e) { toast((e as Error).message, { tone: "tally" }); } setBusy(null); };
   return (

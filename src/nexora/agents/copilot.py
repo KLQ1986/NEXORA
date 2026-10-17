@@ -23,6 +23,7 @@ from nexora.core.assets import AssetStore
 from nexora.core.index import MomentIndex
 from nexora.core.storyboard import Storyboard
 from nexora.modules.edit.roughcut import plan as rough_plan
+from nexora.modules.planning.ideas import channel_text
 from nexora.modules.planning.storyboard import StoryboardPlanner
 
 ROLES = {"hook": "mở đầu cuốn hút", "point": "luận điểm", "example": "ví dụ, bằng chứng", "counter": "phản biện", "transition": "chuyển ý",
@@ -127,12 +128,12 @@ class Copilot:
             words.append(w)
         return words, stretched
 
-    def _read(self, sentences: list[dict], goal: str) -> tuple[dict[int, dict], list[dict], bool]:
+    def _read(self, sentences: list[dict], goal: str, channel: dict | None = None) -> tuple[dict[int, dict], list[dict], bool]:
         """The writer model's reading of the sentences (role, weight, why) and of the key points; ({}, [], False) without one."""
         lines = "\n".join(f"{k + 1}. ({s['seconds']:.1f}s) {s['text']}" for k, s in enumerate(sentences))
         try:
             out = self._adapters.submit("model", Request("chat", privacy_class=PrivacyClass.CLOUD_ALLOWED, params={
-                "prompt": PROMPT.format(goal=goal[:400], roles="|".join(ROLES), lines=lines[:12000]), "json": True, "max_tokens": 2500,
+                "prompt": channel_text(channel) + PROMPT.format(goal=goal[:400], roles="|".join(ROLES), lines=lines[:12000]), "json": True, "max_tokens": 2500,
                 "task": "copilot_read"})).outputs.get("json") or {}
         except AdapterError:
             return {}, [], False
@@ -160,13 +161,13 @@ class Copilot:
             return None
 
     # ------------------------------------------------------------------------------------------------ the proposal
-    def propose(self, project_id: str, asset_ids: list[str], *, goal: str, target_seconds: float | None = None, presets: tuple = ()) -> dict:
+    def propose(self, project_id: str, asset_ids: list[str], *, goal: str, target_seconds: float | None = None, presets: tuple = (), channel: dict | None = None) -> dict:
         if not asset_ids:
             raise ValueError("chọn ít nhất một bản ghi có lời nói")
         sentences = self._sentences(asset_ids)
         if not sentences:
             raise ValueError("các bản ghi này chưa có lời nói được chép lại")
-        read, points, understood = self._read(sentences, goal)
+        read, points, understood = self._read(sentences, goal, channel)
         decisions = [{"decision_id": f"d{k + 1:03d}", "sentence": k, "asset_id": s["asset_id"], "moment_id": s["moment_id"], "text": s["text"],
                       "t_in": s["t_in"], "t_out": s["t_out"], "seconds": s["seconds"], "action": "KEEP", "reasons": [], "confidence": 0.7,
                       "review": "proposed", "evidence": {"transcript": s["text"], "range": [s["t_in"], s["t_out"]], "speaker": s["speaker"],

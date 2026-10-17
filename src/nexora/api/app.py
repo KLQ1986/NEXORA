@@ -45,6 +45,7 @@ def run_view(system, run_id: str) -> dict:
     }
 
 
+PROFILE_KEYS = ("platform", "audience", "tone", "pacing", "banned", "notes", "template")      # a change to these is a new version of a channel's profile
 TEXT_TASKS = {"write": "Viết nháp kịch bản và gợi ý ý tưởng", "critique": "Phản biện kịch bản", "revise": "Viết lại theo nhận xét", "facts": "Tìm câu nêu dữ kiện",
               "check": "Đối chiếu dữ kiện với nguồn", "titles": "Gợi ý tiêu đề", "translate": "Dịch phụ đề", "command": "Chỉnh sửa bằng lời"}
 
@@ -93,6 +94,7 @@ def asset_view(system, asset: dict, used: dict | None = None) -> dict:
 
 
 def create_app(system, *, web_dir: str | Path | None = None, config=None) -> FastAPI:
+    from nexora.app import channel_named, clean_structure, template_named
     app = FastAPI(title="NEXORA", version="0.1.0")
 
     @app.middleware("http")
@@ -346,22 +348,26 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
                       "typeface": "serif" if t.get("typeface") == "serif" else "sans", "caption_colour": t.get("caption_colour") if isinstance(t.get("caption_colour"), list) and len(t["caption_colour"]) == 3 else None,
                       "logo_path": str(Path(str(t["logo_path"])).expanduser()) if t.get("logo_path") else "",
                       "pronounce": {str(k).strip(): str(v).strip() for k, v in (t.get("pronounce") or {}).items() if str(k).strip() and str(v).strip()},
-                      **({"style": t["style"]} if isinstance(t.get("style"), dict) else {})} for t in body["templates"] if str(t.get("name", "")).strip()]
+                      **({"style": t["style"]} if isinstance(t.get("style"), dict) else {}),
+                      **({"structure": clean_structure(t["structure"])} if "structure" in t else {})} for t in body["templates"] if str(t.get("name", "")).strip()]
             system.orch.set_setting("templates", json.dumps(clean, ensure_ascii=False))
         return get_settings()
 
     @app.post("/api/v1/projects/{project_id}/template")
     def apply_template(project_id: str, body: dict):
-        from nexora.app import templates
+        from nexora.app import template_named
         need_project(project_id)
-        chosen = next((t for t in templates(system) if t["name"] == body.get("name")), None)
+        chosen = template_named(system, body.get("name"))
         if chosen is None:
             raise HTTPException(404, "Không có mẫu này")
+        use_template(project_id, chosen)
+        return project_view(need_project(project_id))
+
+    def use_template(project_id: str, chosen: dict) -> None:
         system.projects.update_project(project_id, template=chosen["name"], format=chosen["format"], voice=chosen["voice"] or None, music_gain=chosen["music_gain"], auto_accept=int(chosen["auto_accept"]),
                                        profile=json.dumps({"caption_scale": chosen.get("caption_scale", 1.0), "caption_position": chosen.get("caption_position", "bottom"),
                                                            "typeface": chosen.get("typeface", "sans"), "caption_colour": chosen.get("caption_colour"), "logo_path": chosen.get("logo_path") or None,
                                                            "pronounce": chosen.get("pronounce", {})}, ensure_ascii=False))
-        return project_view(need_project(project_id))
 
     @app.post("/api/v1/stages/{stage_id}/resume")
     def resume_stage(stage_id: str):
@@ -785,7 +791,11 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         renders = [{"render_id": r["render_id"], "script_id": r["script_id"], "created_at": r["created_at"], "qc": r["qc"], "review": r["review"],
                     "url": f"/api/v1/renders/{r['render_id']}/file", "package": system.distribution.package(r["render_id"])}
                    for r in system.projects.renders(project["project_id"])]
-        return {**project, "script": {"script_id": script["script_id"], "version": script["version"], "match_approved": script["match_approved"], "critique": script["critique"]} if script else None,
+        template = template_named(system, project.get("template"))
+        structure = system.planning.structure(project["project_id"], template["structure"]) if script and template and template.get("structure") else None
+        return {**project, "script": {"script_id": script["script_id"], "version": script["version"], "match_approved": script["match_approved"], "critique": script["critique"],
+                                      "label": script.get("label")} if script else None,
+                "idea": json.loads(project["idea"]) if project.get("idea") else None, "structure": structure,
                 "shots": shots, "match": latest_run(script["script_id"], "sourcing.match") if script else None,
                 "render": latest_cut_run(project["project_id"], script["script_id"] if script else None), "renders": renders,
                 "generate": latest_run(script["script_id"], "sourcing.generate") if script else None, "generators": system.generation.available(),
@@ -1058,7 +1068,8 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             goal = ", ".join({"shorten": f"rút còn {target:g} giây" if target else "rút ngắn", "opening": "mở đầu mạnh hơn", "repetition": "bỏ lặp ý",
                               "vertical": "bản dọc"}[p] for p in presets) or "giữ ý chính"
         try:
-            proposal = system.copilot.propose(project_id, [str(a) for a in body.get("assets") or []], goal=goal, target_seconds=target, presets=presets)
+            proposal = system.copilot.propose(project_id, [str(a) for a in body.get("assets") or []], goal=goal, target_seconds=target, presets=presets,
+                                              channel=channel_named(system, need_project(project_id).get("channel")))
         except ValueError as e:
             raise HTTPException(422, str(e))
         system.storyboard.say(project_id, "you", f"Copilot: {goal}")
@@ -1163,7 +1174,10 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
     def draft_script(project_id: str, body: dict):
         need_project(project_id)
         try:
-            return {"lines": system.planning.draft_script(str(body.get("topic", "")), lines=int(body.get("lines", 6)))}
+            project = need_project(project_id)
+            template = template_named(system, project.get("template"))
+            return {"lines": system.planning.draft_script(str(body.get("topic", "")), lines=int(body.get("lines", 6)), channel=channel_named(system, project.get("channel")),
+                                                          structure=(template or {}).get("structure"))}
         except Exception as err:
             raise HTTPException(503, f"Không viết nháp được: {err}")
 
@@ -1448,13 +1462,13 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
     @app.post("/api/v1/projects/{project_id}/critique")
     def critique_script(project_id: str):
         current_script_id(project_id)
-        planning_call(lambda: system.planning.critique(project_id))
+        planning_call(lambda: system.planning.critique(project_id, channel=channel_named(system, need_project(project_id).get("channel"))))
         return project_view(need_project(project_id))
 
     @app.post("/api/v1/projects/{project_id}/revise")
     def revise_script(project_id: str):
         current_script_id(project_id)
-        revised = planning_call(lambda: system.planning.revise(project_id))
+        revised = planning_call(lambda: system.planning.revise(project_id, channel=channel_named(system, need_project(project_id).get("channel"))))
         return {**project_view(need_project(project_id)), "revised": bool(revised)}
 
     @app.get("/api/v1/radar")
@@ -1480,6 +1494,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
     def save_channels(body: dict):
         from nexora.app import templates
         names, out = {t["name"] for t in templates(system)}, []
+        before_by = {c["name"]: c for c in channel_list()}
         for raw in body.get("channels") or []:
             name = str(raw.get("name", "")).strip()
             if not name or name in [c["name"] for c in out]:
@@ -1488,8 +1503,15 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
                 cadence = max(0, min(21, int(raw.get("per_week") or 0)))
             except (TypeError, ValueError):
                 cadence = 0
-            out.append({"name": name, "platform": str(raw.get("platform") or "").strip(), "audience": str(raw.get("audience") or "").strip(), "per_week": cadence,
-                        "template": raw.get("template") if raw.get("template") in names else None})
+            banned = raw.get("banned") or []
+            banned = [b.strip() for b in (banned.split("\n") if isinstance(banned, str) else banned) if isinstance(b, str) and b.strip()]
+            channel = {"name": name, "platform": str(raw.get("platform") or "").strip(), "audience": str(raw.get("audience") or "").strip(), "per_week": cadence,
+                       "template": raw.get("template") if raw.get("template") in names else None, "tone": str(raw.get("tone") or "").strip(),
+                       "pacing": str(raw.get("pacing") or "").strip(), "banned": list(dict.fromkeys(banned)), "notes": str(raw.get("notes") or "").strip()}
+            before = before_by.get(name)
+            same = before is not None and all(before.get(k) == channel[k] for k in PROFILE_KEYS)
+            channel["version"] = (before or {}).get("version", 0) if same else (before or {}).get("version", 0) + 1     # the profile changed: a new version
+            out.append(channel)
         system.orch.set_setting("channels", json.dumps(out, ensure_ascii=False))
         return {"channels": out}
 
@@ -1525,18 +1547,92 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         today = time.strftime("%Y-%m-%d")
         return {"projects": rows, "today": today, "channels": channel_list(), "cadence": cadence_gaps(rows, today)}
 
-    @app.post("/api/v1/ideas")
-    def propose_ideas():
-        try:
-            ideas = system.planning.ideas()
-        except AdapterError as err:
-            raise HTTPException(503, f"Mô hình không trả lời được: {err.message or err.code.value}")
-        system.orch.set_setting("ideas", json.dumps(ideas, ensure_ascii=False))
-        return {"ideas": ideas}
+    thinking = {"running": False, "error": None, "started_at": None}
+
+    @app.post("/api/v1/ideas", status_code=202)
+    def propose_ideas(body: dict | None = None):
+        """Ideas for the largest groups of unused footage, written for a channel when one is named; kept in the idea store.
+        A local model takes minutes for this, so it runs in the background and the screen follows `running`; `wait` holds
+        the answer until it is done."""
+        import threading
+        from nexora.app import templates
+        body = body or {}
+        channel = channel_named(system, body.get("channel"))
+
+        def run():
+            try:
+                system.planning.find_ideas(count=int(body.get("count") or 4), channel=channel, templates=[t["name"] for t in templates(system)])
+                thinking["error"] = None
+            except AdapterError as err:
+                thinking["error"] = f"Mô hình không trả lời được: {err.message or err.code.value}"
+            except Exception as err:                       # the screen says what went wrong rather than spinning forever
+                thinking["error"] = f"Không gợi ý được: {err}"
+            finally:
+                thinking["running"] = False
+        if not thinking["running"]:
+            thinking.update(running=True, error=None, started_at=time.time())
+            if body.get("wait"):
+                run()
+            else:
+                threading.Thread(target=run, name="nexora-ideas-asked", daemon=True).start()
+        return last_ideas()
 
     @app.get("/api/v1/ideas")
     def last_ideas():
-        return {"ideas": json.loads(system.orch.setting("ideas", "[]"))}
+        return {"ideas": system.planning.ideas.ideas()[:40], "clusters": len(system.planning.clusters()), **thinking}
+
+    @app.post("/api/v1/ideas/{idea_id}/accept", status_code=201)
+    def accept_idea(idea_id: str, body: dict | None = None):
+        """The idea becomes a project: its template and channel applied, the idea kept on it for the Storyboard to start from."""
+        reason = str((body or {}).get("reason") or "").strip()
+        try:
+            idea = system.planning.ideas.check(idea_id, reason=reason)
+        except LookupError:
+            raise HTTPException(404, "Ý tưởng không còn chờ quyết định")
+        except ValueError:
+            raise HTTPException(409, "Ý tưởng này có rủi ro: hãy ghi lý do vẫn làm")
+        template, channel = template_named(system, idea["template"]), channel_named(system, idea["channel"])
+        project_id = system.planning.create_project(idea["title"], format=(template or {}).get("format", "landscape"))
+        if template:
+            use_template(project_id, template)
+        system.projects.update_project(project_id, channel=idea["channel"], channel_version=(channel or {}).get("version"),
+                                       idea=json.dumps({k: idea[k] for k in ("idea_id", "title", "angle", "shots", "gaps", "seconds", "risk")} | {"reason": reason or None}, ensure_ascii=False))
+        system.planning.ideas.accept(idea_id, project_id, reason=reason)
+        # The Storyboard starts from the idea: its angle and the shots it needs, for the Director to propose scenes from.
+        needs = "; ".join(sh["need"] for sh in idea["shots"])
+        system.storyboard_planner.set_shared(project_id, idea=f"{idea['title']}. {idea['angle'] or ''} Cảnh cần có: {needs}.".replace("  ", " "), seconds=max(15, round(idea["seconds"])))
+        return project_view(need_project(project_id))
+
+    @app.post("/api/v1/ideas/{idea_id}/drop")
+    def drop_idea(idea_id: str):
+        try:
+            return system.planning.ideas.drop(idea_id)
+        except LookupError:
+            raise HTTPException(404, "Ý tưởng không còn chờ quyết định")
+
+    # ------------------------------------------------------------------------------- alternate openings and endings
+    @app.get("/api/v1/projects/{project_id}/variants")
+    def list_variants(project_id: str):
+        need_project(project_id)
+        return {"variants": system.projects.variants(project_id)}
+
+    @app.post("/api/v1/projects/{project_id}/variants")
+    def make_variants(project_id: str, body: dict):
+        project = need_project(project_id)
+        current_script_id(project_id)
+        part = body.get("part")
+        if part not in ("opening", "ending"):
+            raise HTTPException(422, "part is opening or ending")
+        made = planning_call(lambda: system.planning.variants(project_id, part, n=max(1, min(3, int(body.get("n") or 2))), channel=channel_named(system, project.get("channel"))))
+        return {"variants": system.projects.variants(project_id), "made": len(made)}
+
+    @app.post("/api/v1/variants/{variant_id}/choose")
+    def choose_variant(variant_id: str):
+        try:
+            script_id = system.projects.choose_variant(variant_id)
+        except LookupError:
+            raise HTTPException(404, "Không có phương án này")
+        return project_view(need_project(system.projects.script(script_id)["project_id"]))
 
     @app.post("/api/v1/projects/{project_id}/reorder")
     def reorder(project_id: str, body: dict):

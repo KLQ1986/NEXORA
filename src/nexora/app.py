@@ -454,17 +454,85 @@ def announce(system: "System", after: int) -> int:
     return after
 
 
-DEFAULT_TEMPLATES = [
-    {"name": "Video ngang có lời dẫn", "format": "landscape", "voice": "", "music_gain": 0.35, "auto_accept": False, "caption_scale": 1.0, "caption_position": "bottom", "pronounce": {}},
-    {"name": "Video dọc ngắn", "format": "portrait", "voice": "", "music_gain": 0.3, "auto_accept": True, "caption_scale": 1.15, "caption_position": "middle", "pronounce": {}},
+# The shape of a video (design v4.0, 16.4): segments in order, each with a duration range and what it must achieve.
+DEFAULT_STRUCTURE = [
+    {"role": "hook", "label": "Mở bài", "min": 3, "max": 8, "goal": "giữ người xem ngay từ câu đầu"},
+    {"role": "body", "label": "Thân bài", "min": 15, "max": 90, "goal": "kể nội dung chính"},
+    {"role": "close", "label": "Kết", "min": 3, "max": 10, "goal": "đọng lại một ý, mời xem tiếp"},
 ]
+SHORT_STRUCTURE = [
+    {"role": "hook", "label": "Mở bài", "min": 1, "max": 3, "goal": "một hình và một câu khiến người xem dừng lại"},
+    {"role": "body", "label": "Thân bài", "min": 10, "max": 45, "goal": "một ý, nhịp nhanh"},
+    {"role": "close", "label": "Kết", "min": 2, "max": 6, "goal": "chốt ý hoặc mời theo dõi"},
+]
+DEFAULT_TEMPLATES = [
+    {"name": "Video ngang có lời dẫn", "format": "landscape", "voice": "", "music_gain": 0.35, "auto_accept": False, "caption_scale": 1.0, "caption_position": "bottom", "pronounce": {},
+     "structure": DEFAULT_STRUCTURE},
+    {"name": "Video dọc ngắn", "format": "portrait", "voice": "", "music_gain": 0.3, "auto_accept": True, "caption_scale": 1.15, "caption_position": "middle", "pronounce": {},
+     "structure": SHORT_STRUCTURE},
+]
+ROLES = ("hook", "body", "close")
+
+
+def clean_structure(raw) -> list[dict]:
+    """A template's segments as the operator gave them, kept only where they make sense: a role, a label, min ≤ max."""
+    out = []
+    for seg in raw if isinstance(raw, list) else []:
+        if not isinstance(seg, dict) or not str(seg.get("label", "")).strip():
+            continue
+        try:
+            lo, hi = max(0.0, float(seg.get("min") or 0)), max(0.0, float(seg.get("max") or 0))
+        except (TypeError, ValueError):
+            continue
+        out.append({"role": seg.get("role") if seg.get("role") in ROLES else "body", "label": str(seg["label"]).strip(), "min": min(lo, hi), "max": max(lo, hi),
+                    "goal": str(seg.get("goal") or "").strip()})
+    return out
 MEDIA_EXT = frozenset({".mp4", ".mov", ".m4v", ".mkv", ".avi", ".mts", ".webm", ".jpg", ".jpeg", ".png", ".webp", ".mp3", ".wav", ".m4a", ".aiff", ".flac"})
 
 
 def templates(system: "System") -> list[dict]:
     """Format templates: the settings a kind of video always starts from."""
     stored = system.orch.setting("templates")
-    return json.loads(stored) if stored else DEFAULT_TEMPLATES
+    out = json.loads(stored) if stored else [dict(t) for t in DEFAULT_TEMPLATES]
+    for t in out:                                    # a template kept before templates had a structure takes the default one
+        if "structure" not in t:
+            t["structure"] = SHORT_STRUCTURE if t.get("format") == "portrait" else DEFAULT_STRUCTURE
+    return out
+
+
+def channel_named(system: "System", name: str | None) -> dict | None:
+    return next((c for c in json.loads(system.orch.setting("channels", "[]")) if c["name"] == name), None) if name else None
+
+
+def template_named(system: "System", name: str | None) -> dict | None:
+    return next((t for t in templates(system) if t["name"] == name), None) if name else None
+
+
+IDEAS_SETTLE = 3600.0          # proposed again when the understood library changed and an hour has passed
+IDEAS_WEEK = 7 * 86400.0       # or a week has passed whatever happened
+
+
+def refresh_ideas(system: "System", *, now: float | None = None) -> int:
+    """Ideas proposed in the background (design v4.0, 16.6): after new footage is understood, or once a week. The operator can
+    turn it off (`ideas_auto`). Returns how many ideas are open afterwards, or -1 when nothing was run."""
+    import time
+    now = time.time() if now is None else now
+    if system.orch.setting("ideas_auto", "1") != "1":
+        return -1
+    footprint = json.dumps(system.index.assets_with("video"))
+    last = float(system.orch.setting("ideas_last_at", "0") or 0)
+    changed = footprint != system.orch.setting("ideas_last_footprint", "")
+    if not ((changed and now - last >= IDEAS_SETTLE) or now - last >= IDEAS_WEEK):
+        return -1
+    system.orch.set_setting("ideas_last_at", str(now))
+    system.orch.set_setting("ideas_last_footprint", footprint)
+    channels = json.loads(system.orch.setting("channels", "[]"))
+    open_before = {i["idea_id"] for i in system.planning.ideas.ideas(status=("new", "blocked"))}
+    ideas = system.planning.find_ideas(channel=channels[0] if channels else None, templates=[t["name"] for t in templates(system)])
+    fresh = [i for i in ideas if i["idea_id"] not in open_before]
+    if fresh:
+        system.orch.notify("ideas", "", reason=str(len(fresh)))
+    return len(ideas)
 
 
 def scan_watch_folders(system: "System", *, now: float | None = None, settle_seconds: float = 15.0) -> list[str]:
@@ -611,7 +679,8 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     library.vq = vq_reader
     library.vq_render = lambda asset_id, out: vq.render_approved(asset_id, out)
     projects = ProjectStore(db_path)
-    planning = Planning(projects, assets, index, adapters)
+    from nexora.core.ideas import IdeaStore
+    planning = Planning(projects, assets, index, adapters, ideas=IdeaStore(db_path))
     sourcing = Sourcing(orch, projects, index, threshold=match_threshold, adapters=adapters, judge=judge and model is not None, rejected=assets.rejected,
                         may_accept=lambda project: system.autonomy.clips_may_be_accepted(project),
                         cuts=lambda asset_id: (assets.original(asset_id).metadata.get("scene_cuts") or [], assets.original(asset_id).metadata.get("probe", {}).get("duration")),
