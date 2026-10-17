@@ -826,3 +826,24 @@ def test_the_summary_shows_the_recipe_version_not_the_planner_version(tmp_path):
         drain(system)
     shown = system.vq_reader.summary(subject)
     assert shown["recipe"]["version"] == 2 and [v["version"] for v in shown["versions"]] == [2, 1]
+
+
+def test_an_export_through_the_api_can_only_be_written_inside_the_subjects_exports_folder(tmp_path):
+    system = vq_system(tmp_path)
+    client = TestClient(create_app(system))
+    src = shaky(tmp_path / "in" / "e.mp4", audio=False, seconds=2)
+    subject = system.vq.subject_for_file(src)
+    system.vq.analyse(subject, denoise=False, stabilise=False)
+    drain(system)
+    system.vq.approve(system.vq_reader.recipe(subject).recipe_id)
+    for bad in ("../../../escape.mp4", str(tmp_path / "elsewhere.mp4"), "/etc/escape.mp4", "~/escape.mp4"):
+        for url in (f"/api/v1/vq/subjects/{subject}/apply", f"/api/v1/vq/jobs/{subject}/apply"):
+            r = client.post(url, json={"out": bad})
+            assert r.status_code == 422, (url, bad, r.status_code)
+    r = client.post(f"/api/v1/vq/subjects/{subject}/apply", json={"export": True})
+    assert r.status_code == 202
+    out = Path(r.json()["out"])
+    assert out.parent == (system.data_dir / "vq" / subject / "exports").resolve()
+    drain(system)
+    assert out.is_file() and client.get(f"/api/v1/vq/subjects/{subject}").json()["exports"][0]["name"] == out.name
+    assert not (tmp_path / "elsewhere.mp4").exists()

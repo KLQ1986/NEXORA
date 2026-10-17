@@ -1595,6 +1595,20 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             preview["urls"] = {k: f"/api/v1/vq/files/{subject}/{Path(v).parent.name}/{Path(v).name}" for k, v in preview.get("files", {}).items()}
         return shown
 
+    def vq_out(subject: str, asked: str | None, *, master: bool) -> str:
+        """Where an export through the API is written: always inside the subject's own exports folder. A path from a request is
+        taken only if it resolves there, so no request can make the server write anywhere else on the disk."""
+        root = (system.data_dir / "vq" / subject / "exports").resolve()
+        if not asked:
+            return str(system.vq.export_path(subject, master=master))
+        given = Path(asked)
+        if not given.is_absolute() and given.name != asked:      # a bare file name, or an absolute path: nothing in between
+            raise HTTPException(422, "Chỉ xuất được vào thư mục exports của mục này")
+        path = (root / asked if not given.is_absolute() else given).resolve()
+        if root not in path.parents:
+            raise HTTPException(422, "Chỉ xuất được vào thư mục exports của mục này")
+        return str(path)
+
     @app.get("/api/v1/assets/{asset_id}/vq")
     def asset_vq(asset_id: str):
         """What Visual Quality knows of an asset: its source profile, defects, the current recipe, previews and measures."""
@@ -1620,7 +1634,8 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         b = body or {}
         if system.vq_reader.recipe(asset_id, status="approved") is None:
             raise HTTPException(409, "Chưa có công thức nào được duyệt")
-        return {"run_id": system.vq.apply(asset_id, out=b.get("out"), master=bool(b.get("master")))}
+        out = vq_out(asset_id, b.get("out"), master=bool(b.get("master"))) if (b.get("out") or b.get("export")) else None
+        return {"run_id": system.vq.apply(asset_id, out=out, master=bool(b.get("master"))), "out": out}
 
     @app.post("/api/v1/vq/recipes/{recipe_id}/approve")
     def vq_approve(recipe_id: str):
@@ -1679,10 +1694,12 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         return {"run_id": system.vq.preview(subject, t=b.get("t"), seconds=float(b.get("seconds", 3.0)), recipe_id=b.get("recipe_id"))}
 
     @app.post("/api/v1/vq/jobs/{subject}/apply", status_code=202)
-    def vq_job_apply(subject: str, body: dict):
+    def vq_job_apply(subject: str, body: dict | None = None):
+        b = body or {}
         if system.vq_reader.recipe(subject, status="approved") is None:
             raise HTTPException(409, "Chưa có công thức nào được duyệt")
-        return {"run_id": system.vq.apply(subject, out=body["out"], master=bool(body.get("master")))}
+        out = vq_out(subject, b.get("out"), master=bool(b.get("master")))
+        return {"run_id": system.vq.apply(subject, out=out, master=bool(b.get("master"))), "out": out}
 
     @app.post("/api/v1/vq/subjects/{subject}/bench")
     def vq_bench(subject: str, body: dict | None = None):
@@ -1782,7 +1799,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         b = body or {}
         if system.vq_reader.recipe(subject, status="approved") is None:
             raise HTTPException(409, "Chưa có công thức nào được duyệt")
-        out = b.get("out") or (str(system.vq.export_path(subject, master=bool(b.get("master")))) if b.get("export") else None)
+        out = vq_out(subject, b.get("out"), master=bool(b.get("master"))) if (b.get("out") or b.get("export")) else None
         return {"run_id": system.vq.apply(subject, out=out, master=bool(b.get("master"))), "out": out}
 
     @app.post("/api/v1/vq/subjects/{subject}/cancel")
