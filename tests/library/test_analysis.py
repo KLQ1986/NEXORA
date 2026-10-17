@@ -396,3 +396,17 @@ def test_measures_come_from_the_original_and_those_taken_from_the_proxy_are_take
     hidden.rename(file)
     again = analysis._signals_stage(ctx)
     assert again.get("from_proxy") is False and not marker.exists()
+
+
+def test_a_proxy_made_to_former_settings_is_made_again_once_and_the_old_file_goes(tmp_path):
+    system = build(tmp_path / "data", model=FakeModel())
+    asset = taken_in(system, film(tmp_path / "in" / "p.mp4", TWO_SHOTS))
+    proxy = next(v for v in system.assets.versions(asset) if v.role == "proxy")
+    assert proxy.metadata["max_height"] == 1080                                  # new footage gets the new proxy at once
+    system.assets.update_metadata(proxy.version_id, max_height=720, bitrate=None)  # as footage taken in before
+    old_file = system.assets.path_of(proxy)
+    made = system.library.refresh_proxy(asset)
+    newest = [v for v in system.assets.versions(asset) if v.role == "proxy"][-1]
+    assert made == newest.version_id and newest.metadata == {"max_height": 1080, "bitrate": "5M"}
+    assert system.assets.path_of(newest).is_file() and not old_file.exists()
+    assert system.library.refresh_proxy(asset) is None                           # already current: nothing to do

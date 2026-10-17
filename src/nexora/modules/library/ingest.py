@@ -157,6 +157,25 @@ class Library:
         version_id = self._assets.add_version(ctx.subject_ref, out, role="enhanced", parents=[original.version_id], attempt_id=ctx.claim.attempt_id, metadata=meta)
         return {"enhanced_version_id": version_id, **meta}
 
+    def refresh_proxy(self, asset_id: str) -> str | None:
+        """Make a video's proxy again to the current settings (1080p at 5 Mb/s), when its original is at hand; the former proxy
+        file goes. Returns the new version, or None when there is nothing to do."""
+        versions = {v.role: v for v in self._assets.versions(asset_id)}
+        original = versions["original"]
+        path = self._assets.path_of(original)
+        if self._assets.asset(asset_id)["kind"] != "video" or original.metadata.get("probe", {}).get("still") or not path.is_file():
+            return None
+        old = versions.get("proxy")
+        if old is not None and old.metadata.get("max_height") == PROXY_HEIGHT and old.metadata.get("bitrate") == "5M":
+            return None
+        out = self._derived_path(original, f"_proxy{PROXY_HEIGHT}.mp4")
+        self._adapters.submit("ffmpeg", Request("proxy", inputs={"path": str(path)}, params={
+            "out": str(out), "max_height": PROXY_HEIGHT, "color_transfer": original.metadata.get("probe", {}).get("color_transfer")}))
+        version_id = self._assets.add_version(asset_id, out, role="proxy", parents=[original.version_id], metadata={"max_height": PROXY_HEIGHT, "bitrate": "5M"})
+        if old is not None and self._assets.path_of(old) != out:
+            self._assets.path_of(old).unlink(missing_ok=True)
+        return version_id
+
     def find_missing_cuts(self) -> list[str]:
         """Look for scene cuts in every video that was taken in before cuts were looked for. Runs with the background work,
         so it never holds up a render. Returns the runs started."""
