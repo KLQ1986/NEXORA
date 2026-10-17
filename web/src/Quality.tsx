@@ -1,7 +1,7 @@
 import { t as tr, tv } from "./i18n";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { call, post, timecode, usePoll, type Run } from "./api";
-import { Button, Empty, Icon, Meter, Seg, Spinner, StageRail, Tag, toast } from "./parts";
+import { ask, Button, Empty, Icon, Meter, Seg, Spinner, StageRail, Tag, toast } from "./parts";
 import { CONTENT, DEFECT, OP, TIER, VERDICT } from "./VisualQuality";
 
 /* Visual Quality, its own workspace (design 2026-10-16): every source the engine can work on, library or not, down the left; the
@@ -199,7 +199,8 @@ function Sources({ selected, onSelect }: { selected: string | null; onSelect: (s
 /* --------------------------------------------------------------------------------------------------------- one source */
 function Workspace({ subject }: { subject: string }) {
   const { data, reload } = usePoll<View>(`/api/v1/vq/subjects/${subject}`, 2500);
-  const entry = usePoll<{ entry: { code: string; title: string | null } }>(`/api/v1/catalog/${subject}`, 120000).data?.entry;
+  // Only the library's own items are in the catalogue; a file job is named by its file.
+  const entry = usePoll<{ entry: { code: string; title: string | null } }>(subject.startsWith("ast_") ? `/api/v1/catalog/${subject}` : "", 120000).data?.entry;
   const [shotIndex, setShotIndex] = useState(0);
   const [tab, setTab] = useState<"recipe" | "source" | "qa" | "defects" | "versions">("recipe");
   const [busy, setBusy] = useState<string | null>(null);
@@ -237,7 +238,13 @@ function Workspace({ subject }: { subject: string }) {
           <Button size="sm" onClick={() => setOptions((v) => !v)} disabled={running}><Icon name="sliders" size={14} />{r ? tr("Phân tích lại") : tr("Phân tích")}</Button>
           {r && <Button size="sm" disabled={running} busy={busy === "preview"} onClick={() => act("preview", `${base}/preview`, { t: info.still ? 0 : mid, seconds: 3, recipe_id: r.recipe_id }, tr("Đã xếp việc xem trước shot này."))}>
             <Icon name="eye" size={14} />{tr("Xem trước shot")}</Button>}
-          {r && r.status !== "approved" && <Button size="sm" kind="primary" busy={busy === "approve"} onClick={() => act("approve", `/api/v1/vq/recipes/${r.recipe_id}/approve`, {}, tr("Đã duyệt công thức."))}>
+          {r && r.status !== "approved" && <Button size="sm" kind="primary" busy={busy === "approve"} onClick={async () => {
+            // A recipe whose newest preview (the list holds this version's, newest first) failed its checks is approved only on purpose.
+            const failed = data.previews[0];
+            if (failed?.qa.verdict === "fail" && !(await ask(tr("Bản xem trước gần nhất không qua kiểm tra"), {
+              body: <p>{tv`Lý do: ${failed.qa.reasons.join("; ")}. Duyệt thì công thức này sẽ được dùng khi dựng và trích xuất.`}</p>, confirm: tr("Vẫn duyệt"), danger: true }))) return;
+            act("approve", `/api/v1/vq/recipes/${r.recipe_id}/approve`, {}, tr("Đã duyệt công thức."));
+          }}>
             <Icon name="check" size={14} />{tr("Duyệt")}</Button>}
           {r && r.status !== "rejected" && r.status !== "approved" && <Button size="sm" kind="quiet" busy={busy === "reject"} onClick={() => act("reject", `/api/v1/vq/recipes/${r.recipe_id}/reject`)}>{tr("Bỏ")}</Button>}
           {data.approved && <ExportButton base={base} still={info.still} disabled={running} onDone={reload} />}

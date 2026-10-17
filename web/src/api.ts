@@ -54,6 +54,7 @@ export function usePoll<T>(url: string, ms = 2000) {
   const [error, setError] = useState<string | null>(null);
   const alive = useRef(true);
   const reload = useCallback(() => {
+    if (!url) return;                              // nothing to ask yet (or here): stay empty, do not fetch the page itself
     call<T>(url).then((d) => { if (alive.current) { setData(d); setError(null); } })
       .catch((e) => { if (alive.current) setError(e.message); });
   }, [url]);
