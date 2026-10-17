@@ -1,5 +1,5 @@
 import { t as tr, tv, locale } from "./i18n";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { call, post, projectState, scriptText, stageName, timecode, usePoll, type Idea, type Source, type AgentTask, type Asset, type Settings, type Candidate, type Project, type RenderItem, type Shot, type BibleEntry, type GapPlan, type Op, type Rights, type Publishing, type Channel } from "./api";
 import Board from "./Board";
@@ -457,15 +457,17 @@ function stepState(k: View, step: number, reviewing: boolean, renderReview: bool
 }
 
 /** The steps of a video down the side menu: a lamp for where each stands, the open one lit. Then the two views of the whole. */
-function StepSide({ view, step, reviewing, renderReview, packaged, onChange }: { view: View; step: number; reviewing: boolean; renderReview: boolean; packaged: boolean; onChange: (v: View) => void }) {
+function StepSide({ view, step, reviewing, renderReview, packaged, onChange, storyboard }: { view: View; step: number; reviewing: boolean; renderReview: boolean; packaged: boolean; onChange: (v: View) => void; storyboard?: () => void }) {
   const dot = { done: "border-proof/40 bg-proof/15 text-proof", now: "border-accent/60 bg-accent/15 text-accent", wait: "border-cue/60 bg-cue/15 text-cue", later: "border-line text-faint" };
   const said = { done: tr("Đã xong"), now: tr("Đang ở bước này"), wait: tr("Chờ bạn"), later: tr("Chưa tới") };
   return (
     <>
       <SideGroup label={tr("Các bước")}>
-        {FLOW.map(([k, label, icon]) => { const st = stepState(k, step, reviewing, renderReview, packaged); return (
-          <SideLink key={k} label={label} on={view === k} onClick={() => onChange(k)} title={said[st]}
-                    lead={<span className={`relative grid h-6 w-6 shrink-0 place-items-center rounded-full border ${dot[st]}`}><Icon name={st === "done" ? "check" : icon} size={12} />{st === "wait" && <span className="ping absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-cue" />}</span>} />); })}
+        {FLOW.map(([k, label, icon]) => { const st = stepState(k, step, reviewing, renderReview, packaged); return (<Fragment key={k}>
+          <SideLink label={label} on={view === k} onClick={() => onChange(k)} title={said[st]}
+                    lead={<span className={`relative grid h-6 w-6 shrink-0 place-items-center rounded-full border ${dot[st]}`}><Icon name={st === "done" ? "check" : icon} size={12} />{st === "wait" && <span className="ping absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-cue" />}</span>} />
+          {k === "script" && storyboard && <SideLink label={tr("Storyboard")} on={false} onClick={storyboard} title={tr("Từ ý tưởng hoặc kịch bản này thành cảnh và shot có đặc tả, mặt bằng máy, liền mạch; sửa bằng hội thoại.")}
+                    lead={<span className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-line text-mute"><Icon name="layers" size={12} /></span>} />}</Fragment>); })}
       </SideGroup>
       <SideGroup label={tr("Toàn cảnh")}>
         <SideLink label={tr("Dòng thời gian")} icon="timeline" on={view === "timeline"} onClick={() => onChange("timeline")} />
@@ -710,7 +712,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
             [String(p.renders.length || "–"), tr("bản dựng")],
             [latest ? timecode(latest.qc.duration) : "–", tr("thời lượng")],
           ]} extra={<>{FORMATS[p.format] ?? p.format}{p.template ? <span className="ml-3">{p.template}</span> : null}</>} />}
-          side={<ProjectSide current={id} steps={<StepSide view={view} step={step} reviewing={!!reviewing} renderReview={!!renderReview} packaged={!!latest?.package} onChange={setView} />} />}
+          side={<ProjectSide current={id} steps={<StepSide view={view} step={step} reviewing={!!reviewing} renderReview={!!renderReview} packaged={!!latest?.package} onChange={setView} storyboard={() => goTo(`/du-an/${id}/storyboard`)} />} />}
           tabs={<div className="lg:hidden"><StepTabs view={view} step={step} reviewing={!!reviewing} renderReview={!!renderReview} packaged={!!latest?.package} onChange={setView} /></div>}
           actions={<><Button onClick={() => goTo(`/du-an/${id}/storyboard`)} title={tr("Từ ý tưởng hoặc kịch bản này thành cảnh và shot có đặc tả, mặt bằng máy, liền mạch; sửa bằng hội thoại.")}>
             <Icon name="layers" size={15} />{tr("Storyboard")}</Button><Button onClick={() => setSettings(true)} title={tr("Mẫu, khung hình, nhạc, lời dẫn, kênh, ngày đăng")}><Icon name="sliders" size={15} />{tr("Thiết lập")}</Button>{next && <Button kind="primary" busy={busy} disabled={next.label === tr("Lưu kịch bản") && !(text ?? "").trim()} onClick={next.go}>{!busy && <Icon name={next.icon} />}{next.label}</Button>}</>}>
