@@ -2101,6 +2101,8 @@ const en: Record<string, string> = {
   "Xoá file trung gian, bản xem trước cũ, file chuẩn bị của công thức không còn duyệt. Công thức, bản xuất và bản enhanced vẫn giữ.": "Removes intermediates, old previews and the prepared files of recipes no longer approved. Recipes, exports and enhanced copies stay.",
   "Proxy": "Proxy",
   "Gốc: file của máy quay, đúng độ phân giải và chất lượng. Proxy: bản nhẹ để dự phòng.": "Original: the camera's own file, at its full resolution and quality. Proxy: a light stand-in.",
+  "Thu về khung nhỏ (t)": "Back to the small view (t)",
+  "Chế độ rạp (t); toàn màn hình: f": "Theatre mode (t); full screen: f",
 };
 
 export default en;
