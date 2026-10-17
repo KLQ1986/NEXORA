@@ -97,8 +97,8 @@ def test_a_storyboard_s_generated_shot_gets_its_keyframe_from_fal(fal, tmp_path)
     project = system.projects.create_project("Vườn dừa")
     system.projects.save_script(project, ["Vườn dừa lúc bình minh, sương trên tán."])
     client.post(f"/api/v1/projects/{project}/storyboard/from-script")
-    client.post(f"/api/v1/projects/{project}/storyboard/ops", json={"ops": [{"op": "set", "shot": "S1", "field": "source.policy", "value": "generate"},
-                                                                           {"op": "set", "shot": "S1", "field": "generation.provider", "value": "image_gen.fal"}]})
+    client.post(f"/api/v1/projects/{project}/storyboard/ops", json={"ops": [{"op": "set", "shot": "SC1", "field": "source.policy", "value": "generate"},
+                                                                           {"op": "set", "shot": "SC1", "field": "generation.provider", "value": "image_gen.fal"}]})
     assert client.get(f"/api/v1/projects/{project}/storyboard").json()["providers"]["image_providers"][0]["name"] == "image_gen.fal"
     client.post(f"/api/v1/projects/{project}/storyboard/keyframes")
     drain(system)

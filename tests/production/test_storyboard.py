@@ -37,13 +37,14 @@ def test_a_storyboard_from_the_script_and_operations_that_make_versions_and_can_
     system, _, client = _system(tmp_path)
     project = _project(system, ["Mỗi sáng bắt đầu từ hàng dừa.", "Chú Tư đi một vòng quanh vườn.", "Chiều xuống, ghe về."])
     view = client.post(f"/api/v1/projects/{project}/storyboard/from-script").json()
-    assert [s["code"] for s in view["shots"]] == ["S1", "S2", "S3"] and view["shots"][1]["spec"]["line"] == "Chú Tư đi một vòng quanh vườn."
+    assert system.storyboard_planner.resolve(project, "S2").shot_id == system.storyboard_planner.resolve(project, "sc2").shot_id   # the first codes still name their shot
+    assert [s["code"] for s in view["shots"]] == ["SC1", "SC2", "SC3"] and view["shots"][1]["spec"]["line"] == "Chú Tư đi một vòng quanh vườn."
     assert len(view["scenes"]) == 1 and view["scenes"][0]["script"].startswith("Mỗi sáng")
-    ops = [{"op": "retime", "shot": "S2", "seconds": 4}, {"op": "set", "shot": "S1", "field": "framing.lens", "value": "85mm"},
-           {"op": "insert", "after": "S2", "spec": {"intent": "Cận tay bổ dừa", "duration": 3, "source": "footage"}},
-           {"op": "set", "shot": "S1", "field": "nope", "value": 1}, {"op": "delete", "shot": "S9"}]
+    ops = [{"op": "retime", "shot": "SC2", "seconds": 4}, {"op": "set", "shot": "SC1", "field": "framing.lens", "value": "85mm"},
+           {"op": "insert", "after": "SC2", "spec": {"intent": "Cận tay bổ dừa", "duration": 3, "source": "footage"}},
+           {"op": "set", "shot": "SC1", "field": "nope", "value": 1}, {"op": "delete", "shot": "SC9"}]
     preview = client.post(f"/api/v1/projects/{project}/storyboard/ops", json={"ops": ops, "preview": True}).json()
-    assert [d["title"] for d in preview["diff"]] == ["S2 · thời lượng", "S1 · ống kính", "chèn sau S2"] and len(preview["problems"]) == 2
+    assert [d["title"] for d in preview["diff"]] == ["SC2 · thời lượng", "SC1 · ống kính", "chèn sau SC2"] and len(preview["problems"]) == 2
     done = client.post(f"/api/v1/projects/{project}/storyboard/ops", json={"ops": ops}).json()
     shots = done["storyboard"]["shots"]
     assert len(done["done"]) == 3 and [s["spec"]["intent"] for s in shots][2] == "Cận tay bổ dừa"
@@ -54,9 +55,9 @@ def test_a_storyboard_from_the_script_and_operations_that_make_versions_and_can_
     versions = client.get(f"/api/v1/projects/{project}/storyboard/shots/{s1['shot_id']}/versions").json()["versions"]
     assert [v["version"] for v in versions] == [3, 2, 1] and versions[0]["note"] == "quay lại v1"
     # split and merge keep the time; move puts a shot elsewhere
-    after = client.post(f"/api/v1/projects/{project}/storyboard/ops", json={"ops": [{"op": "split", "shot": "S4"}, {"op": "move", "shot": "S3", "after": "S1"}]}).json()["storyboard"]["shots"]
+    after = client.post(f"/api/v1/projects/{project}/storyboard/ops", json={"ops": [{"op": "split", "shot": "SC4"}, {"op": "move", "shot": "SC3", "after": "SC1"}]}).json()["storyboard"]["shots"]
     assert [s["spec"]["intent"] for s in after][1] == "Cận tay bổ dừa" and len(after) == 5
-    merged = client.post(f"/api/v1/projects/{project}/storyboard/ops", json={"ops": [{"op": "merge", "shot": "S4", "with": "S5"}]}).json()["storyboard"]["shots"]
+    merged = client.post(f"/api/v1/projects/{project}/storyboard/ops", json={"ops": [{"op": "merge", "shot": "SC4", "with": "SC5"}]}).json()["storyboard"]["shots"]
     assert len(merged) == 4
 
 
@@ -64,12 +65,12 @@ def test_continuity_is_read_at_every_cut_and_a_camera_across_the_axis_is_shown_a
     system, _, client = _system(tmp_path)
     project = _project(system, ["Một.", "Hai.", "Ba."])
     client.post(f"/api/v1/projects/{project}/storyboard/from-script")
-    ops = [{"op": "set", "shot": "S1", "field": "direction", "value": "phải"}, {"op": "set", "shot": "S2", "field": "direction", "value": "trái"},
-           {"op": "set", "shot": "S1", "field": "continuity.entities", "value": ["Chú Tư", "Áo bà ba"]},
-           {"op": "set", "shot": "S2", "field": "continuity.entities", "value": ["Chú Tư"]},
-           {"op": "set", "shot": "S2", "field": "framing.size", "value": "cận"}, {"op": "set", "shot": "S3", "field": "framing.size", "value": "cận"},
-           {"op": "set", "shot": "S2", "field": "continuity.time_of_day", "value": "sáng"}, {"op": "set", "shot": "S3", "field": "continuity.time_of_day", "value": "hoàng hôn"},
-           {"op": "flip_camera", "shot": "S3"}]
+    ops = [{"op": "set", "shot": "SC1", "field": "direction", "value": "phải"}, {"op": "set", "shot": "SC2", "field": "direction", "value": "trái"},
+           {"op": "set", "shot": "SC1", "field": "continuity.entities", "value": ["Chú Tư", "Áo bà ba"]},
+           {"op": "set", "shot": "SC2", "field": "continuity.entities", "value": ["Chú Tư"]},
+           {"op": "set", "shot": "SC2", "field": "framing.size", "value": "cận"}, {"op": "set", "shot": "SC3", "field": "framing.size", "value": "cận"},
+           {"op": "set", "shot": "SC2", "field": "continuity.time_of_day", "value": "sáng"}, {"op": "set", "shot": "SC3", "field": "continuity.time_of_day", "value": "hoàng hôn"},
+           {"op": "flip_camera", "shot": "SC3"}]
     view = client.post(f"/api/v1/projects/{project}/storyboard/ops", json={"ops": ops}).json()["storyboard"]
     s12, s23 = view["seams"]
     by = lambda seam: {c["key"]: c["st"] for c in seam["checks"]}
@@ -77,7 +78,7 @@ def test_continuity_is_read_at_every_cut_and_a_camera_across_the_axis_is_shown_a
     assert by(s23)["jump"] == "warn" and by(s23)["colour"] == "warn"
     assert any(f["ops"][0]["op"] == "flip_camera" for f in s12["fixes"])
     plan = view["plans"][0]
-    assert plan["crossed"] == [view["shots"][2]["shot_id"]]                      # S3's camera flipped to the far side
+    assert plan["crossed"] == [view["shots"][2]["shot_id"]]                      # SC3's camera flipped to the far side
     fixed = client.post(f"/api/v1/projects/{project}/storyboard/ops", json={"ops": next(f for f in s12["fixes"] if f["ops"][0]["op"] == "flip_camera")["ops"]}).json()["storyboard"]
     assert {c["key"]: c["st"] for c in fixed["seams"][0]["checks"]}["direction"] == "pass"
 
@@ -87,20 +88,20 @@ def test_the_director_finds_footage_measures_it_and_brings_what_it_cannot_accept
     taken_in(system, film(tmp_path / "market.mp4", [("testsrc2", 4), ("smptebars", 4)]))
     project = _project(system, ["Chợ rau củ buổi sáng.", "Một con tàu vũ trụ rời bệ phóng.", "Người ta pha cà phê."])
     client.post(f"/api/v1/projects/{project}/storyboard/from-script")
-    client.post(f"/api/v1/projects/{project}/storyboard/ops", json={"ops": [{"op": "set", "shot": "S2", "field": "source.policy", "value": "generate"},
-                                                                           {"op": "add_criterion", "shot": "S1", "criterion": {"check": "shot_size", "value": "trung"}}]})
+    client.post(f"/api/v1/projects/{project}/storyboard/ops", json={"ops": [{"op": "set", "shot": "SC2", "field": "source.policy", "value": "generate"},
+                                                                           {"op": "add_criterion", "shot": "SC1", "criterion": {"check": "shot_size", "value": "trung"}}]})
     client.patch(f"/api/v1/projects/{project}/storyboard/shared", json={"autonomy": 2})
     run = client.post(f"/api/v1/projects/{project}/storyboard/run", json={}).json()
     shots = {s["code"]: s for s in run["storyboard"]["shots"]}
-    s1 = shots["S1"]
+    s1 = shots["SC1"]
     assert s1["assignment"]["kind"] == "footage" and s1["frame_url"].startswith("/api/v1/vq/subjects/")
     checks = {c["check"]: c for c in s1["checks"]}
     assert checks["duration"]["st"] == "pass" and checks["shot_size"]["st"] == "unmeasured"   # a field not released is never passed
     assert s1["state"] == "needs"                                                             # so it waits for you, even at level 2
-    assert shots["S2"]["state"] == "needs" and shots["S2"]["checks"][0]["check"] == "keyframe"
+    assert shots["SC2"]["state"] == "needs" and shots["SC2"]["checks"][0]["check"] == "keyframe"
     accepted = client.post(f"/api/v1/projects/{project}/storyboard/shots/{s1['shot_id']}/decide", json={"accept": True}).json()
-    assert next(s for s in accepted["shots"] if s["code"] == "S1")["state"] == "accepted"
-    client.post(f"/api/v1/projects/{project}/storyboard/ops", json={"ops": [{"op": "set", "shot": "S2", "field": "generation.provider", "value": "image_gen.pollinations"}]})
+    assert next(s for s in accepted["shots"] if s["code"] == "SC1")["state"] == "accepted"
+    client.post(f"/api/v1/projects/{project}/storyboard/ops", json={"ops": [{"op": "set", "shot": "SC2", "field": "generation.provider", "value": "image_gen.pollinations"}]})
     # Written to the script: a line per shot, the accepted picture as its selection, the generated one as a gap to make.
     synced = client.post(f"/api/v1/projects/{project}/storyboard/sync").json()
     lines = system.projects.script(synced["script_id"])["shots"]
@@ -115,12 +116,12 @@ def test_the_conversation_proposes_operations_within_its_scope_and_an_idea_becom
     project = _project(system, ["Một.", "Hai.", "Ba."])
     view = client.post(f"/api/v1/projects/{project}/storyboard/from-script").json()
     s2 = view["shots"][1]["shot_id"]
-    model.answers["storyboard_ops"] = {"tra_loi": "Rút S2 và đổi góc S3.", "ops": [{"op": "retime", "shot": "S2", "seconds": 2},
-                                                                                   {"op": "set", "shot": "S3", "field": "framing.angle", "value": "thấp"},
-                                                                                   {"op": "explode", "shot": "S2"},
-                                                                                   {"op": "set", "shot": "S2", "field": "framing.angle", "value": "góc ngang mắt"}]}
-    m = client.post(f"/api/v1/projects/{project}/storyboard/say", json={"text": "S2 ngắn lại", "scope": "shot", "shot": s2}).json()["message"]
-    assert [d["title"] for d in m["proposal"]["diff"]] == ["S2 · thời lượng"]                 # S3 is out of the shot's scope; "explode" is no op
+    model.answers["storyboard_ops"] = {"tra_loi": "Rút SC2 và đổi góc SC3.", "ops": [{"op": "retime", "shot": "SC2", "seconds": 2},
+                                                                                   {"op": "set", "shot": "SC3", "field": "framing.angle", "value": "thấp"},
+                                                                                   {"op": "explode", "shot": "SC2"},
+                                                                                   {"op": "set", "shot": "SC2", "field": "framing.angle", "value": "góc ngang mắt"}]}
+    m = client.post(f"/api/v1/projects/{project}/storyboard/say", json={"text": "SC2 ngắn lại", "scope": "shot", "shot": s2}).json()["message"]
+    assert [d["title"] for d in m["proposal"]["diff"]] == ["SC2 · thời lượng"]                 # SC3 is out of the shot's scope; "explode" is no op
     done = client.post(f"/api/v1/projects/{project}/storyboard/messages/{m['message_id']}/apply").json()
     assert done["storyboard"]["shots"][1]["spec"]["duration"]["target"] == 2
     assert client.post(f"/api/v1/projects/{project}/storyboard/messages/{m['message_id']}/apply").status_code == 404     # settled once
@@ -144,8 +145,8 @@ def test_a_character_is_checked_against_the_bible_s_reference_and_without_a_face
     project = _project(system, ["Chợ rau củ buổi sáng."])
     system.projects.update_project(project, bible=json.dumps([{"name": "Chú Tư", "kind": "character", "asset_id": market}, {"name": "Vườn", "kind": "place"}]))
     client.post(f"/api/v1/projects/{project}/storyboard/from-script")
-    client.post(f"/api/v1/projects/{project}/storyboard/ops", json={"ops": [{"op": "set", "shot": "S1", "field": "continuity.entities", "value": ["Chú Tư", "Vườn"]},
-                                                                           {"op": "add_criterion", "shot": "S1", "criterion": {"check": "character"}}]})
+    client.post(f"/api/v1/projects/{project}/storyboard/ops", json={"ops": [{"op": "set", "shot": "SC1", "field": "continuity.entities", "value": ["Chú Tư", "Vườn"]},
+                                                                           {"op": "add_criterion", "shot": "SC1", "criterion": {"check": "character"}}]})
     character = lambda: next(c for c in client.get(f"/api/v1/projects/{project}/storyboard").json()["shots"][0]["checks"] if c["check"] == "character")
     asked = []
     system.director._likeness = lambda a, ref: asked.append(ref) or 0.94
@@ -168,7 +169,7 @@ def test_the_storyboard_is_where_pictures_are_chosen_ordered_treated_and_approve
     project = _project(system, ["Chợ rau củ buổi sáng.", "Người ta pha cà phê.", "Chiều xuống."])
     url = f"/api/v1/projects/{project}/storyboard"
     client.post(f"{url}/from-script")
-    # Moved by hand: S3 dropped on S1 goes before it; S1 sent to the end of the scene.
+    # Moved by hand: SC3 dropped on SC1 goes before it; SC1 sent to the end of the scene.
     view = client.get(url).json()
     s1, s2, s3 = (s["shot_id"] for s in view["shots"])
     scene = view["scenes"][0]["scene_id"]
@@ -206,7 +207,7 @@ def test_the_storyboard_is_where_pictures_are_chosen_ordered_treated_and_approve
     assert gone["assignment"] is None and gone["state"] == "needs"
     # Approved: the script carries every picture, accepted, its options and treatment; the clips count as approved.
     done = client.post(f"{url}/approve").json()
-    assert done["pictured"] == 2 and done["missing"] == 2                 # nothing in the footage shows coffee; S3 was turned down
+    assert done["pictured"] == 2 and done["missing"] == 2                 # nothing in the footage shows coffee; SC3 was turned down
     script = system.projects.script(done["script_id"])
     assert script["match_approved"]
     sel = system.projects.selection(script["shots"][0].shot_id)

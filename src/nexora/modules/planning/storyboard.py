@@ -172,13 +172,13 @@ Trả về JSON đúng dạng:
 Chỉ trả JSON."""
 
 OPS_PROMPT = """Bạn là đạo diễn, sửa storyboard theo lời người dùng. Chỉ được dùng các thao tác sau (JSON), không làm gì khác:
-- {{"op": "set", "shot": "S3", "field": "<trường>", "value": ...}}   trường là một trong: {fields}
-- {{"op": "retime", "shot": "S3", "seconds": 5}}
-- {{"op": "insert", "after": "S4", "spec": {{"intent": "...", "line": "...", "duration": 4, "framing": {{"size": "cận"}}, "source": "footage|generate|stock|any", "query": "..."}}}}
-- {{"op": "delete", "shot": "S5"}}     - {{"op": "move", "shot": "S5", "after": "S2"}}
-- {{"op": "split", "shot": "S3"}}      - {{"op": "merge", "shot": "S3", "with": "S4"}}
-- {{"op": "add_criterion", "shot": "S3", "criterion": {{"check": "{checks}", "value": ..., "text": "..."}}}}
-- {{"op": "flip_camera", "shot": "S3"}}
+- {{"op": "set", "shot": "SC3", "field": "<trường>", "value": ...}}   trường là một trong: {fields}
+- {{"op": "retime", "shot": "SC3", "seconds": 5}}
+- {{"op": "insert", "after": "SC4", "spec": {{"intent": "...", "line": "...", "duration": 4, "framing": {{"size": "cận"}}, "source": "footage|generate|stock|any", "query": "..."}}}}
+- {{"op": "delete", "shot": "SC5"}}     - {{"op": "move", "shot": "SC5", "after": "SC2"}}
+- {{"op": "split", "shot": "SC3"}}      - {{"op": "merge", "shot": "SC3", "with": "SC4"}}
+- {{"op": "add_criterion", "shot": "SC3", "criterion": {{"check": "{checks}", "value": ..., "text": "..."}}}}
+- {{"op": "flip_camera", "shot": "SC3"}}
 Phạm vi người dùng chọn: {scope}. Shot đang chọn: {current}. Không động tới shot ngoài phạm vi.
 Storyboard hiện tại:
 {board}
@@ -194,14 +194,16 @@ class StoryboardPlanner:
 
     # ------------------------------------------------------------------------------------------------------- reading
     def codes(self, project_id: str) -> dict[str, str]:
-        """Each shot's code in story order (S1, S2…): what the operator and the model call it."""
-        return {s.shot_id: f"S{k + 1}" for k, s in enumerate(self._store.shots(project_id))}
+        """Each shot's code in story order (SC1, SC2…, "story cut"): what the operator and the model call it."""
+        return {s.shot_id: f"SC{k + 1}" for k, s in enumerate(self._store.shots(project_id))}
 
     def resolve(self, project_id: str, ref) -> Shot | None:
         ref = str(ref or "").strip()
         shots = self._store.shots(project_id)
-        by_code = {f"S{k + 1}".lower(): s for k, s in enumerate(shots)}
-        return by_code.get(ref.lower()) or next((s for s in shots if s.shot_id == ref), None)
+        # SC3 is the code; S3, as the codes were first written (and as a person may still say it), means the same shot.
+        m = re.fullmatch(r"(?i)s(?:c)?\s*(\d+)", ref)
+        k = int(m.group(1)) - 1 if m else -1
+        return shots[k] if 0 <= k < len(shots) else next((s for s in shots if s.shot_id == ref), None)
 
     def shared(self, project_id: str) -> dict:
         board = self._store.board(project_id) or {}
