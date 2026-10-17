@@ -16,6 +16,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter
 
+from nexora.adapters.pinned import offline_env, verify
 from nexora.core.adapter import Adapter, AdapterError, Capability, ErrorCode, Request, Result
 
 PROCESS_PIXELS = 560 * 720
@@ -23,6 +24,7 @@ PROCESS_PIXELS = 560 * 720
 # with no difference to see): 640×360 in 36–74 s, 560×720 in 60 s with nothing else on the GPU, 920×1080 still running after
 # ten minutes. Earlier stalls at 960×544 came with other runs still on the GPU. The area is held to what was measured to run.
 RAFT_ITER = 10
+WEIGHTS = ("ProPainter.pth", "raft-things.pth", "recurrent_flow_completion.pth")
 CONTEXT = 1.0               # of the regions' larger side, on each side: what ProPainter sees around what it fills
 MIN_CONTEXT = 0.5           # the least it is given, to stay at the picture's own resolution
 FEATHER = 0.15              # of the region's smaller side: how softly the filled region meets the original
@@ -37,7 +39,7 @@ class ProPainter(Adapter):
         return Capability(name="inpaint", operations=("remove",), runs="local")
 
     def available(self) -> bool:
-        return self._python.is_file() and (self._repo / "inference_propainter.py").is_file() and (self._repo / "weights" / "ProPainter.pth").is_file()
+        return self._python.is_file() and (self._repo / "inference_propainter.py").is_file() and all((self._repo / "weights" / w).is_file() for w in WEIGHTS)
 
     def environment(self) -> dict:
         return {"available": True, "remove": True} if self.available() else {"available": False, "fix": "sh scripts/setup-propainter.sh"}
@@ -52,6 +54,9 @@ class ProPainter(Adapter):
             raise AdapterError(ErrorCode.UNAVAILABLE, "ProPainter is not set up (sh scripts/setup-propainter.sh)", retryable=False)
         if request.operation != "remove":
             raise AdapterError(ErrorCode.INVALID_REQUEST, f"unknown operation {request.operation}")
+        # Every weight present and the one that was checked: ProPainter would otherwise fetch a missing one itself and load it.
+        for w in WEIGHTS:
+            verify(self._repo / "weights" / w, fix="sh scripts/setup-propainter.sh")
         p = request.params
         src, out = Path(request.inputs["path"]), Path(p["out"])
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -95,7 +100,7 @@ class ProPainter(Adapter):
                 # Run from its own folder, which its script imports from (`model`, `core`): a pinned clone, run as a tool.
                 done = subprocess.run([str(self._python), "inference_propainter.py", "-i", str(work / "frames"), "-m", str(work / "mask.png"),
                                        "-o", str(work / "results"), "--save_frames", "--fp16", "--raft_iter", str(RAFT_ITER)],
-                                      cwd=self._repo, capture_output=True, text=True, timeout=300 + frames * 15)
+                                      cwd=self._repo, capture_output=True, text=True, timeout=300 + frames * 15, env=offline_env())
             except subprocess.TimeoutExpired:
                 raise AdapterError(ErrorCode.TIMEOUT, "ProPainter exceeded its time", retryable=True) from None
             made = work / "results" / "frames" / "frames"

@@ -789,3 +789,21 @@ def test_the_vision_model_can_stop_an_ai_step_only_when_both_looks_agree_it_is_w
     assert seen["veto"]                                                        # made up in both looks: stopped though "clearer"
     seen, _ = _judge_case(tmp_path / "d", None)
     assert seen is None                                                        # no vision model: NIQE alone decides
+
+
+def test_a_tool_file_runs_only_if_it_is_the_one_that_was_checked(tmp_path, monkeypatch):
+    import hashlib
+    from nexora.adapters import pinned
+    from nexora.core.adapter import AdapterError
+    good = tmp_path / "model.onnx"
+    good.write_bytes(b"weights that were checked")
+    monkeypatch.setitem(pinned.PINS, "model.onnx", hashlib.sha256(b"weights that were checked").hexdigest())
+    assert pinned.verify(good, fix="setup") == good
+    good.write_bytes(b"weights swapped on the release page")                    # same name, other content
+    with pytest.raises(AdapterError, match="SHA-256 differs"):
+        pinned.verify(good, fix="setup")
+    good.unlink()
+    with pytest.raises(AdapterError, match="missing .setup."):
+        pinned.verify(good, fix="setup")                                       # never fetched again on its own
+    env = pinned.offline_env()
+    assert env["HF_HUB_OFFLINE"] == "1" and env["HF_HUB_DISABLE_TELEMETRY"] == "1"

@@ -13,6 +13,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from nexora.adapters.pinned import verify
 from nexora.core.adapter import Adapter, AdapterError, Capability, ErrorCode, Request, Result
 
 MODELS = ("realesrgan-x4plus", "realesrgan-x4plus-anime", "realesr-animevideov3-x4")
@@ -44,6 +45,8 @@ class RestoreLocal(Adapter):
         model = p.get("model", "realesrgan-x4plus")
         if model not in MODELS:
             raise AdapterError(ErrorCode.INVALID_REQUEST, f"unknown model {model}", retryable=False)
+        for f in (self._binary, self._folder / "models" / f"{model}.bin", self._folder / "models" / f"{model}.param"):
+            verify(f, fix="sh scripts/setup-realesrgan.sh")
         out.parent.mkdir(parents=True, exist_ok=True)
         out.unlink(missing_ok=True)
         with tempfile.TemporaryDirectory(prefix="vq_esrgan_") as tmp:

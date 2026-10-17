@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from nexora.adapters.pinned import offline_env, verify
 from nexora.core.adapter import Adapter, AdapterError, Capability, ErrorCode, Request, Result
 
 HELPER = Path(__file__).with_name("deblur_helper.py")
@@ -35,9 +36,10 @@ class Deblur(Adapter):
             raise AdapterError(ErrorCode.OUTPUT_INVALID, f"{what}: {done.stderr.strip()[-300:]}", retryable=False)
 
     def _helper(self, src: Path, dst: Path, frames: int) -> dict:
+        verify(self._model, fix="sh scripts/setup-deblur.sh")
         try:
             done = subprocess.run([str(self._python), "-I", str(HELPER), str(src), str(dst), json.dumps({"model": str(self._model)})],
-                                  capture_output=True, text=True, timeout=120 + 60 * frames)
+                                  capture_output=True, text=True, timeout=120 + 60 * frames, env=offline_env())
         except subprocess.TimeoutExpired:
             raise AdapterError(ErrorCode.TIMEOUT, "deblurring took too long", retryable=True) from None
         line = next((l for l in reversed(done.stdout.splitlines()) if l.startswith("{")), None)

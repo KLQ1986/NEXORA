@@ -12,6 +12,7 @@ import json
 import subprocess
 from pathlib import Path
 
+from nexora.adapters.pinned import offline_env, verify
 from nexora.core.adapter import Adapter, AdapterError, Capability, ErrorCode, Request, Result
 
 HELPER = Path(__file__).with_name("faces_helper.py")
@@ -61,12 +62,13 @@ class Faces(Adapter):
         out = Path(p["out"])
         out.parent.mkdir(parents=True, exist_ok=True)
         out.unlink(missing_ok=True)
+        verify(self._model, fix="sh scripts/setup-faces.sh")
         found = self._find(src)["faces"]
         args = {"model": str(self._model), "faces": [f["points"] for f in found],
                 "weight": max(0.0, min(1.0, float(p.get("weight", 0.7)))), "blend": max(0.0, min(1.0, float(p.get("blend", 0.8))))}
         try:
             done = subprocess.run([str(self._python), "-I", str(HELPER), str(src), str(out), json.dumps(args)], capture_output=True, text=True,
-                                  timeout=120 + 60 * len(found))
+                                  timeout=120 + 60 * len(found), env=offline_env())
         except subprocess.TimeoutExpired:
             raise AdapterError(ErrorCode.TIMEOUT, "face recovery took too long", retryable=True) from None
         line = next((l for l in reversed(done.stdout.splitlines()) if l.startswith("{")), None)

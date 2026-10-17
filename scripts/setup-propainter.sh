@@ -18,4 +18,6 @@ mkdir -p "$DEST/repo/weights"
 for W in ProPainter.pth raft-things.pth recurrent_flow_completion.pth; do
   [ -s "$DEST/repo/weights/$W" ] || curl -fsSL -o "$DEST/repo/weights/$W" "https://github.com/sczhou/ProPainter/releases/download/v0.1.0/$W"
 done
+# The files that were checked (src/nexora/adapters/pinned.py); anything else is refused.
+printf "12c070c4b48f374c91d8a2a17851140b85c159621080989f9e191bbc18bd6591  $DEST/repo/weights/ProPainter.pth\nfcfa4125d6418f4de95d84aec20a3c5f4e205101715a79f193243c186ac9a7e1  $DEST/repo/weights/raft-things.pth\n22939a1a7900da878dbe1ccd011d646b1bfb30b8290039d8ff0e0c2fefbfd283  $DEST/repo/weights/recurrent_flow_completion.pth\n" | shasum -a 256 -c -
 "$DEST/env/bin/python" -I -c "import torch; print('ready', torch.__version__, 'mps' if torch.backends.mps.is_available() else 'cpu')"
