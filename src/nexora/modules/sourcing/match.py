@@ -192,6 +192,34 @@ class Sourcing:
         t_in = max(hit.moment.t_start, min(centre - need / 2, hit.moment.t_end - need))
         return round(t_in, 2), round(t_in + need, 2)
 
+    def find(self, wanted: str, need: float, *, line: str | None = None, limit: int = 6, exclude: frozenset[str] = frozenset()) -> list[dict]:
+        """Footage for some words without a script line to fill: the same search, the measured fields the words ask for, one hit
+        per stretch, and the operator's past verdicts on these words (a clip turned down is not offered, one chosen goes first),
+        each placed for `need` seconds inside its shot. For the storyboard, which asks per shot; the frames are not judged here."""
+        line = line or wanted
+        judged = len(self._projects.feedback(line))
+        hits = self._search(wanted, limit=3 * limit + judged, exclude=exclude)
+        asks = asked(wanted)
+        fits = {h.moment.moment_id: (self._intel.fit(h.moment.asset_id, (h.moment.t_start, h.moment.t_end), asks) if self._intel and asks else (0.0, []))
+                for h in hits}
+        hits = spread(sorted(hits, key=lambda h: h.score + fits[h.moment.moment_id][0], reverse=True), limit + judged)
+        told = {h.moment.moment_id: self._said(line, h.moment) for h in hits}
+        hits = sorted((h for h in hits if told[h.moment.moment_id] != "rejected"), key=lambda h: told.get(h.moment.moment_id) != "accepted")[:limit]
+        out = []
+        for h in hits:
+            c = self._candidate(h, need)
+            why = fits[h.moment.moment_id][1]
+            if why:
+                c["reason"] = f"Khớp {', '.join(why)}. {c['reason']}"
+            c["chosen_before"] = told.get(h.moment.moment_id) == "accepted"
+            out.append(c)
+        return out
+
+    def remember(self, line: str, moment_id: str | None, verdict: str, *, asset_id: str | None = None, t_in: float | None = None, t_out: float | None = None) -> None:
+        """The operator's verdict on a stretch of footage for these words ("accepted" or "rejected"), kept for every later search."""
+        if moment_id:
+            self._projects.add_feedback(line, moment_id, verdict, asset_id=asset_id, span=self._span(moment_id, t_in, t_out))
+
     def _match(self, ctx):
         used: set[str] = set()
         matched = gaps = 0

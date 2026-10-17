@@ -378,7 +378,13 @@ class StoryboardPlanner:
             return {"title": f"bỏ {code}", "old": shot.spec["intent"], "new": "—"}
         if kind == "move":
             after = self.resolve(project_id, o.get("after")) if o.get("after") else None
-            return {"title": f"chuyển {code}", "old": "", "new": f"sau {codes.get(after.shot_id) if after else 'đầu cảnh'}"}
+            before = self.resolve(project_id, o.get("before")) if o.get("before") else None
+            if (o.get("after") and after is None) or (o.get("before") and before is None):
+                raise ValueError(f"không có shot {o.get('after') or o.get('before')}")
+            if o.get("scene") and not any(sc.scene_id == o["scene"] for sc in self._store.scenes(project_id)):
+                raise ValueError(f"không có cảnh {o.get('scene')}")
+            where = f"sau {codes.get(after.shot_id)}" if after else f"trước {codes.get(before.shot_id)}" if before else "cuối cảnh" if o.get("scene") else "đầu cảnh"
+            return {"title": f"chuyển {code}", "old": "", "new": where}
         if kind == "split":
             t = shot.spec["duration"]["target"]
             return {"title": f"tách {code}", "old": f"{t:g}s", "new": f"{t / 2:g}s + {t / 2:g}s"}
@@ -439,10 +445,19 @@ class StoryboardPlanner:
         elif kind == "delete":
             self._store.remove_shot(shot.shot_id)
         elif kind == "move":
+            # After a shot, before one (a card dropped on another), to the end of a scene, or to the start of its own.
             after = self.resolve(project_id, o.get("after")) if o.get("after") else None
-            scene_id = after.scene_id if after else shot.scene_id
+            before = self.resolve(project_id, o.get("before")) if o.get("before") else None
+            scene_id = after.scene_id if after else before.scene_id if before else o.get("scene") or shot.scene_id
             rest = [s for s in siblings(scene_id) if s.shot_id != shot.shot_id]
-            pos = (after.position + next((s.position for s in rest if s.position > after.position), after.position + 2)) / 2 if after else (rest[0].position - 1 if rest else 0)
+            if after:
+                pos = (after.position + next((s.position for s in rest if s.position > after.position), after.position + 2)) / 2
+            elif before:
+                pos = (before.position + max((s.position for s in rest if s.position < before.position), default=before.position - 2)) / 2
+            elif o.get("scene"):
+                pos = (rest[-1].position + 1) if rest else 0
+            else:
+                pos = rest[0].position - 1 if rest else 0
             self._store.place(shot.shot_id, scene_id=scene_id, position=pos)
         elif kind == "split":
             spec = copy.deepcopy(shot.spec)

@@ -848,16 +848,25 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
                 return f"/media/{system.assets.original(a['asset_id']).version_id}" if system.assets.asset(a["asset_id"]) else None
             return f"/api/v1/vq/subjects/{a['asset_id']}/frame?t={(a['t_in'] + a['t_out']) / 2:.2f}&width=480"
 
+        def file_name(asset_id: str) -> str:
+            """The clip as the operator knows it: its file's name, as the library shows it."""
+            try:
+                return system.assets.path_of(system.assets.original(asset_id)).name
+            except Exception:
+                return asset_id
+
         def shot_view(sh) -> dict:
             a = sh.assignment
             names = {}
-            for c in (a or {}).get("candidates", []):
-                asset = system.assets.asset(c["asset_id"])
-                names[c["asset_id"]] = (asset or {}).get("title") or (asset or {}).get("file_name") or c["asset_id"]
+            for c in [*((a or {}).get("candidates", [])), *([a] if a and a.get("asset_id") else [])]:
+                names[c["asset_id"]] = file_name(c["asset_id"])
+            dress = lambda c: {**c, "name": names.get(c["asset_id"], c["asset_id"]),
+                               "frame_url": f"/api/v1/vq/subjects/{c['asset_id']}/frame?t={(c['t_in'] + c['t_out']) / 2:.2f}&width=320"}
+            # The other options, in the order the Director's "use" and "add-clip" count them: every candidate but the picture.
+            others = [c for c in (a or {}).get("candidates", []) if not (a.get("asset_id") and (c["asset_id"], c["t_in"]) == (a["asset_id"], a["t_in"]))]
             return {"shot_id": sh.shot_id, "code": codes[sh.shot_id], "scene_id": sh.scene_id, "version": sh.version, "state": sh.state, "spec": sh.spec,
-                    "assignment": {**a, "candidates": [{**c, "name": names.get(c["asset_id"], c["asset_id"]),
-                                                        "frame_url": f"/api/v1/vq/subjects/{c['asset_id']}/frame?t={(c['t_in'] + c['t_out']) / 2:.2f}&width=320"}
-                                                       for c in a.get("candidates", [])]} if a else None,
+                    "assignment": {**a, "candidates": [dress(c) for c in a.get("candidates", [])], "others": [dress(c) for c in others],
+                                   "name": names.get(a.get("asset_id"), a.get("asset_id"))} if a else None,
                     "checks": sh.checks, "frame_url": frame(sh), "script_shot": sh.script_shot}
 
         gap = lambda a, b: (b.assignment or {}).get("gap_prev")
@@ -875,7 +884,10 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
                 "messages": store.messages(project_id), "seconds": round(sum(sh.spec["duration"]["target"] for sh in shots), 1),
                 "vocabulary": {"sizes": SB.SIZES, "angles": SB.ANGLES, "moves": SB.MOVES, "lenses": SB.LENSES, "sources": SB.SOURCES, "times": SB.TIMES,
                                "checks": {k: {"text": v[0], "by": v[1], "op": v[2], "value": v[3]} for k, v in SB.CHECKS.items()}},
-                "providers": system.generation.available() if hasattr(system.generation, "available") else {}}
+                "providers": system.generation.available() if hasattr(system.generation, "available") else {},
+                # what the clip step offered on a picture: the rented models a clip can be sent to, the sounds to lay under it
+                "remote": sorted({c.name.partition(".")[0] for c in system.adapters.describe() if c.name.startswith(("lipsync", "upscale"))}),
+                "effects": [{"asset_id": a["asset_id"], "name": file_name(a["asset_id"])} for a in system.assets.assets() if a.get("kind") == "audio"]}
 
     def board_call(fn):
         try:
@@ -954,6 +966,66 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             raise HTTPException(404, "no such shot")
         system.director.decide(shot_id, accept=bool(body.get("accept")))
         return storyboard_view(project_id)
+
+    def picture_call(project_id: str, shot_id: str, fn):
+        """An operator's action on a shot's picture, answered with the storyboard as it now stands."""
+        need_project(project_id)
+        s = system.storyboard.shot(shot_id)
+        if s is None or s.project_id != project_id:
+            raise HTTPException(404, "no such shot")
+        try:
+            fn()
+        except LookupError:
+            raise HTTPException(409, "Shot này không có phương án đó")
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        return storyboard_view(project_id)
+
+    @app.post("/api/v1/projects/{project_id}/storyboard/shots/{shot_id}/use")
+    def storyboard_use(project_id: str, shot_id: str, body: dict):
+        """One of the shot's other options becomes its picture (the old one goes back among them)."""
+        return picture_call(project_id, shot_id, lambda: system.director.use(shot_id, int(body.get("candidate", -1))))
+
+    @app.post("/api/v1/projects/{project_id}/storyboard/shots/{shot_id}/add-clip")
+    def storyboard_add_clip(project_id: str, shot_id: str, body: dict):
+        """One of the shot's other options becomes a shot of its own, right after it."""
+        return picture_call(project_id, shot_id, lambda: system.director.add_clip(shot_id, int(body.get("candidate", -1))))
+
+    @app.post("/api/v1/projects/{project_id}/storyboard/shots/{shot_id}/none-fits")
+    def storyboard_none_fits(project_id: str, shot_id: str):
+        return picture_call(project_id, shot_id, lambda: system.director.none_fits(shot_id))
+
+    @app.post("/api/v1/projects/{project_id}/storyboard/shots/{shot_id}/trim")
+    def storyboard_trim(project_id: str, shot_id: str, body: dict):
+        return picture_call(project_id, shot_id, lambda: system.director.trim(shot_id, float(body["t_in"]), float(body["t_out"])))
+
+    @app.patch("/api/v1/projects/{project_id}/storyboard/shots/{shot_id}/treatment")
+    def storyboard_treat(project_id: str, shot_id: str, body: dict):
+        """How the shot's clip is treated in the cut: speed, stabilising, its own sound, lip-sync, upscaling, a sound effect."""
+        return picture_call(project_id, shot_id, lambda: system.director.treat(shot_id, **{k: body[k] for k in ("speed", "stabilise", "live_sound", "sfx", "lipsync", "upscale_ml") if k in body}))
+
+    @app.post("/api/v1/projects/{project_id}/storyboard/shots/{shot_id}/stock")
+    def storyboard_stock_call(project_id: str, shot_id: str, body: dict):
+        from nexora.app import storyboard_stock
+        query = str(body.get("query", "")).strip()
+        if not query:
+            raise HTTPException(422, "Cần từ khoá để tìm clip stock")
+        found: dict = {}
+        def go():
+            try:
+                found.update(storyboard_stock(system, shot_id, query))
+            except AdapterError as err:
+                raise ValueError(f"Không tìm được clip stock: {err.message}")
+        view = picture_call(project_id, shot_id, go)
+        return {**view, "stock": found}
+
+    @app.post("/api/v1/projects/{project_id}/storyboard/approve")
+    def storyboard_approve(project_id: str):
+        """The storyboard approved: written to the script with every picture, its options and treatment; the clips approved, so
+        the cut can be rendered."""
+        need_project(project_id)
+        done = board_call(lambda: system.director.approve(project_id))
+        return {**done, "storyboard": storyboard_view(project_id)}
 
     @app.post("/api/v1/projects/{project_id}/storyboard/say")
     def storyboard_say(project_id: str, body: dict):

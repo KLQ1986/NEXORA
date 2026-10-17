@@ -157,3 +157,57 @@ def test_a_character_is_checked_against_the_bible_s_reference_and_without_a_face
     system.director._likeness = lambda a, ref: None                                                  # no face in the picture
     client.post(f"/api/v1/projects/{project}/storyboard/run", json={})
     assert character()["st"] == "unmeasured" and character()["value"] == "không thấy khuôn mặt"
+
+
+def test_the_storyboard_is_where_pictures_are_chosen_ordered_treated_and_approved_for_the_cut(tmp_path):
+    """The clip step folded into the storyboard: cards moved by hand, another option used or made a shot of its own, "no clip
+    fits" remembered, a clip trimmed and treated, and the approval that writes all of it to the cut."""
+    system, _, client = _system(tmp_path)
+    for name, src in (("market.mp4", "testsrc2"), ("bars.mp4", "smptebars"), ("rgb.mp4", "rgbtestsrc")):
+        taken_in(system, film(tmp_path / name, [(src, 4)]))
+    project = _project(system, ["Chợ rau củ buổi sáng.", "Người ta pha cà phê.", "Chiều xuống."])
+    url = f"/api/v1/projects/{project}/storyboard"
+    client.post(f"{url}/from-script")
+    # Moved by hand: S3 dropped on S1 goes before it; S1 sent to the end of the scene.
+    view = client.get(url).json()
+    s1, s2, s3 = (s["shot_id"] for s in view["shots"])
+    scene = view["scenes"][0]["scene_id"]
+    order = lambda v: [s["shot_id"] for s in v["shots"]]
+    v = client.post(f"{url}/ops", json={"ops": [{"op": "move", "shot": s3, "before": s1}]}).json()["storyboard"]
+    assert order(v) == [s3, s1, s2]
+    v = client.post(f"{url}/ops", json={"ops": [{"op": "move", "shot": s3, "scene": scene}]}).json()["storyboard"]
+    assert order(v) == [s1, s2, s3]
+    # The Director picks with the clip step's search; the shot's other options are counted apart from its picture.
+    v = client.post(f"{url}/run", json={}).json()["storyboard"]
+    first = v["shots"][0]
+    others = first["assignment"]["others"]
+    assert first["assignment"]["asset_id"] and others and all((o["asset_id"], o["t_in"]) != (first["assignment"]["asset_id"], first["assignment"]["t_in"]) for o in others)
+    was, chosen = first["assignment"], others[0]
+    v = client.post(f"{url}/shots/{s1}/use", json={"candidate": 0}).json()
+    now = v["shots"][0]["assignment"]
+    assert (now["asset_id"], now["t_in"]) == (chosen["asset_id"], chosen["t_in"]) and any((o["asset_id"], o["t_in"]) == (was["asset_id"], was["t_in"]) for o in now["others"])
+    told = system.projects.feedback("Chợ rau củ buổi sáng.")
+    assert told.get(chosen["moment_id"]) == "accepted" and told.get(was["moment_id"]) == "rejected"   # the clip step will know it too
+    # Another option made a shot of its own, right after, with that clip and its length.
+    extra = now["others"][0]
+    v = client.post(f"{url}/shots/{s1}/add-clip", json={"candidate": 0}).json()
+    new = v["shots"][1]
+    assert len(v["shots"]) == 4 and new["assignment"]["asset_id"] == extra["asset_id"] and new["spec"]["source"]["policy"] == "footage"
+    assert abs(new["spec"]["duration"]["target"] - (extra["t_out"] - extra["t_in"])) < 0.05
+    # Trimmed and treated; a wrong answer is refused.
+    v = client.post(f"{url}/shots/{s1}/trim", json={"t_in": 0.5, "t_out": 2.5}).json()
+    assert (v["shots"][0]["assignment"]["t_in"], v["shots"][0]["assignment"]["t_out"]) == (0.5, 2.5)
+    v = client.patch(f"{url}/shots/{s1}/treatment", json={"speed": 0.6, "stabilise": True}).json()
+    assert v["shots"][0]["assignment"]["treat"] == {"speed": 0.5, "stabilise": True}
+    assert client.post(f"{url}/shots/{s1}/use", json={"candidate": 99}).status_code == 409
+    # "No clip fits": the shot waits without a picture.
+    v = client.post(f"{url}/shots/{s3}/none-fits").json()
+    gone = next(s for s in v["shots"] if s["shot_id"] == s3)
+    assert gone["assignment"] is None and gone["state"] == "needs"
+    # Approved: the script carries every picture, accepted, its options and treatment; the clips count as approved.
+    done = client.post(f"{url}/approve").json()
+    assert done["pictured"] == 2 and done["missing"] == 2                 # nothing in the footage shows coffee; S3 was turned down
+    script = system.projects.script(done["script_id"])
+    assert script["match_approved"]
+    sel = system.projects.selection(script["shots"][0].shot_id)
+    assert sel.status == "accepted" and (sel.t_in, sel.t_out) == (0.5, 2.5) and sel.alternates and sel.extras["speed"] == 0.5 and sel.extras["stabilise"]

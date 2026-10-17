@@ -168,6 +168,17 @@ apply. Every card says the shot's state, its source, its duration, its criteria 
    (`image_gen.comfy` a still, `video_gen.comfy` a clip); the checkpoint and the template's hash are kept as the generation's
    model. Config: `runpod_comfy_endpoint`, `comfy_checkpoint`, `comfy_video_checkpoint`.
 
+6. **The clip step folded into the storyboard** (2026-10-17, after the operator's first real use): a project's steps are Script →
+   Storyboard → Cut and review → Publish; the clip step's address opens the storyboard. The Director looks for footage with
+   the clip step's own search (`Sourcing.find`: pictures and words, the fields a line asks for, one hit per stretch, the
+   operator's verdicts on these words, kept inside one shot of the footage), and keeps six candidates with each shot. The
+   shot's Picture tab holds what the clip step did: the clip given (its in and out, speed, stabilising, its own sound,
+   lip-sync, upscaling, a sound effect), its other options (each used for the shot, or added as a shot of its own right
+   after it), "no clip fits", stock. Choices are remembered for the words as the clip step's were. Cards are moved by hand
+   (dropped on a card: before it; on a scene's last place: its end; Alt+←/→). "Approve storyboard → Cut" writes the script
+   with every picture accepted, its options and its treatment, and counts the clips approved. Not yet moved: the clip
+   step's quick review by keys, its inserts timed to a word, its camera angles, and the frame judge on candidates.
+
 Still to do, and each costs money: a real fal run and a real ComfyUI endpoint (worker-comfyui with the two checkpoints) run
 once, on the operator's word. Not done: ComfyUI on the Mac, inpaint / character swap / upscale templates, LoRA from the Bible
 inside a ComfyUI graph.

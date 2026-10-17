@@ -16,9 +16,11 @@ type Spec = {
   continuity: { entities: string[]; time_of_day: string; match_previous: boolean }; criteria: Crit[];
 };
 type Check = { check: string; text: string; by: string; required: boolean; st: "pass" | "fail" | "wait" | "unmeasured"; value: string };
-type Cand = { asset_id: string; t_in: number; t_out: number; score: number; text: string; passed: number; of: number; failed: string[]; name: string; frame_url: string };
+type Cand = { asset_id: string; moment_id?: string | null; t_in: number; t_out: number; score: number | null; text: string; passed: number; of: number; failed: string[]; name: string; frame_url: string; chosen_before?: boolean };
+type Treat = { speed?: number; stabilise?: boolean; live_sound?: boolean; sfx?: string | null; lipsync?: boolean; upscale_ml?: boolean };
 type SbShot = { shot_id: string; code: string; scene_id: string; version: number; state: "planned" | "running" | "accepted" | "needs" | "stale"; spec: Spec;
-  assignment: { kind: string; asset_id: string; t_in: number; t_out: number; score: number | null; text: string; gap_prev?: number; candidates?: Cand[] } | null;
+  assignment: { kind: string; asset_id: string; t_in: number; t_out: number; score: number | null; text: string; gap_prev?: number; candidates?: Cand[]; others?: Cand[];
+    name?: string; treat?: Treat; decided_by?: string } | null;
   checks: Check[]; frame_url: string | null; script_shot: string | null };
 type SeamCheck = { key: string; st: "pass" | "warn" | "fail"; name: string; detail: string; value: string };
 type Seam = { a: string; b: string; a_code: string; b_code: string; same_scene: boolean; checks: SeamCheck[]; worst: "pass" | "warn" | "fail"; fixes: { text: string; ops: object[] }[] };
@@ -29,7 +31,7 @@ type Board = {
   project: { project_id: string; title: string; format: string; budget_cap: number | null; spent: number };
   shared: { idea: string; seconds: number; palette: { name: string; hex: string }[]; fingerprint: string; moods: string[]; style_notes: string[]; autonomy: number };
   scenes: { scene_id: string; title: string; purpose: string; script: string; seconds: number; subject: { x: number; y: number; label: string } | null }[];
-  shots: SbShot[]; seams: Seam[]; plans: Plan[]; messages: Msg[]; seconds: number;
+  shots: SbShot[]; seams: Seam[]; plans: Plan[]; messages: Msg[]; seconds: number; remote?: string[]; effects?: { asset_id: string; name: string }[];
   vocabulary: { sizes: string[]; angles: string[]; moves: string[]; lenses: string[]; sources: string[]; times: string[]; checks: Record<string, { text: string; by: string; op: string; value: unknown }> };
   providers: { image_providers?: { name: string; label: string; runs: string }[]; video_providers?: { name: string; label: string; runs: string }[] };
 };
@@ -73,7 +75,7 @@ export default function Storyboard({ projectId, back }: { projectId: string; bac
   const [sel, setSel] = useState<string | null>(null);
   const [seam, setSeam] = useState<string | null>(null);
   const [view, setView] = useState<"board" | "time" | "plan">("board");
-  const [tab, setTab] = useState<"goal" | "source" | "gen" | "cont" | "crit" | "hist">("goal");
+  const [tab, setTab] = useState<"goal" | "source" | "gen" | "cont" | "crit" | "hist">("source");
   const [busy, setBusy] = useState<string | null>(null);
   const [sharedOpen, setSharedOpen] = useState(false);
   // The shot list repeats the board in words: folded by default so the board has the width, opened for a long storyboard.
@@ -86,6 +88,20 @@ export default function Storyboard({ projectId, back }: { projectId: string; bac
     try { await fn(); if (done) toast(done); reload(); } catch (e) { toast((e as Error).message, { tone: "tally" }); } finally { setBusy(null); }
   };
   const ops = (list: object[], note?: string) => act("ops", () => post(`${url}/ops`, { ops: list, note }));
+  // Alt+← / Alt+→ move the chosen shot one place back or on, across scenes too, as dragging its card would.
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if (!e.altKey || (e.key !== "ArrowLeft" && e.key !== "ArrowRight") || !cur) return;
+      if ((e.target as HTMLElement)?.closest("input, textarea, select, [contenteditable]")) return;
+      const i = shots.findIndex((x) => x.shot_id === cur.shot_id);
+      const to = shots[e.key === "ArrowLeft" ? i - 1 : i + 1];
+      if (!to) return;
+      e.preventDefault();
+      ops([e.key === "ArrowLeft" ? { op: "move", shot: cur.shot_id, before: to.shot_id } : { op: "move", shot: cur.shot_id, after: to.shot_id }], tr("đổi thứ tự"));
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  });
   const set = (shot: SbShot, field: string, value: unknown) => ops([{ op: "set", shot: shot.shot_id, field, value }]);
 
   if (!data) return <div className="grid flex-1 place-items-center"><Spinner /></div>;
@@ -125,11 +141,16 @@ export default function Storyboard({ projectId, back }: { projectId: string; bac
             <option value={2}>{tr("Mức 2: tự nhận shot footage đạt")}</option>
             <option value={3}>{tr("Mức 3: tự nhận cả shot AI")}</option>
           </select></label>
-        <Button size="sm" busy={busy === "sync"} onClick={() => act("sync", () => post(`${url}/sync`), tr("Đã ghi storyboard vào kịch bản dự án."))} title={tr("Ghi mỗi shot thành một dòng kịch bản, kèm hình đã chọn, để dựng và render")}>
-          <Icon name="edit" size={14} />{tr("Ghi vào kịch bản")}</Button>
+
         {shots.some((s) => s.spec.source.policy === "generate") && <Button size="sm" busy={busy === "keys"} onClick={() => act("keys", () => post(`${url}/keyframes`), tr("Đã xếp việc tạo ảnh khung cho các shot AI."))}>
           <Icon name="sparkles" size={14} />{tr("Tạo ảnh khung")}</Button>}
-        <Button size="sm" kind="primary" busy={busy === "run"} onClick={() => act("run", () => post(`${url}/run`, {}), tr("Director đã chạy một lượt."))}><Icon name="play" size={14} />{tr("Chạy Director")}</Button>
+        <Button size="sm" busy={busy === "run"} onClick={() => act("run", () => post(`${url}/run`, {}), tr("Director đã chạy một lượt."))}><Icon name="play" size={14} />{tr("Chạy Director")}</Button>
+        <Button size="sm" kind="primary" busy={busy === "approve"} title={tr("Ghi storyboard vào kịch bản cùng hình, phương án và cách xử lý của từng shot; duyệt clip; sang bước dựng")}
+                onClick={() => act("approve", async () => {
+                  const r = await post<{ pictured: number; missing: number }>(`${url}/approve`);
+                  toast(r.missing ? tv`Đã duyệt ${r.pictured} shot; ${r.missing} shot chưa có hình sẽ là nền trơn kèm phụ đề.` : tv`Đã duyệt ${r.pictured} shot.`, { tone: r.missing ? "tally" : "proof" });
+                  goTo(`/du-an/${projectId}?tab=cut`);
+                })}><Icon name="check" size={14} />{tr("Duyệt storyboard → Dựng")}</Button>
       </header>
 
       <nav aria-label={tr("Các bước")} className="scroll-x flex shrink-0 items-center gap-1 border-b border-line px-4 py-1.5">
@@ -178,7 +199,8 @@ export default function Storyboard({ projectId, back }: { projectId: string; bac
             <span className="flex-1" />
             <Button size="sm" kind="quiet" onClick={() => ops([{ op: "insert", after: cur?.shot_id, spec: { intent: tr("Shot mới"), duration: 4, source: "any" } }], tr("thêm shot"))}><Icon name="plus" size={13} />{tr("Thêm shot")}</Button>
           </div>
-          {view === "board" && <BoardView board={data} cur={cur} seam={seam} tone={tone} pick={(id) => { setSel(id); setSeam(null); }} pickSeam={setSeam} />}
+          {view === "board" && <BoardView board={data} cur={cur} seam={seam} tone={tone} pick={(id) => { setSel(id); setSeam(null); }} pickSeam={setSeam}
+                                          move={(o) => ops([{ op: "move", ...o }], tr("đổi thứ tự"))} />}
           {view === "time" && <TimeView board={data} cur={cur} tone={tone} pick={(id) => { setSel(id); setSeam(null); }} pickSeam={setSeam} />}
           {view === "plan" && <PlanView board={data} cur={cur} pick={(id) => { setSel(id); setSeam(null); }} flip={(id) => ops([{ op: "flip_camera", shot: id }], tr("lật sang bên kia trục"))} />}
         </main>
@@ -270,8 +292,18 @@ function Shared({ board, url, open, setOpen, onSaved }: { board: Board; url: str
 }
 
 /* ----------------------------------------------------------------------------------------------------- the board, by scene */
-function BoardView({ board, cur, seam, tone, pick, pickSeam }: { board: Board; cur?: SbShot; seam: string | null; tone: (s: SbShot) => string; pick: (id: string) => void; pickSeam: (id: string) => void }) {
+function BoardView({ board, cur, seam, tone, pick, pickSeam, move }: { board: Board; cur?: SbShot; seam: string | null; tone: (s: SbShot) => string; pick: (id: string) => void; pickSeam: (id: string) => void;
+  move: (op: { shot: string; before?: string; scene?: string }) => void }) {
   const seamBefore = new Map(board.seams.map((x) => [x.b, x]));
+  // A card is carried by hand: dropped on another it goes before it, dropped on a scene's last place it ends that scene.
+  const [drag, setDrag] = useState<string | null>(null), [over, setOver] = useState<string | null>(null);
+  const end = () => { setDrag(null); setOver(null); };
+  const drop = (e: React.DragEvent, target: { before?: string; scene?: string }) => {
+    e.preventDefault();
+    const id = drag ?? e.dataTransfer.getData("text/plain");
+    end();
+    if (id && id !== target.before) move({ shot: id, ...target });
+  };
   return (
     <div className="grid min-h-0 flex-1 content-start gap-5 overflow-y-auto p-3">
       {board.scenes.map((sc) => (
@@ -285,7 +317,11 @@ function BoardView({ board, cur, seam, tone, pick, pickSeam }: { board: Board; c
               const sm = seamBefore.get(s.shot_id);
               const flagged = sm && sm.worst !== "pass";
               return (
-                <div key={s.shot_id} className="grid min-w-0 content-start gap-2">
+                <div key={s.shot_id} draggable onDragStart={(e) => { setDrag(s.shot_id); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", s.shot_id); }}
+                     onDragEnd={end} onDragOver={(e) => { if (drag && drag !== s.shot_id) { e.preventDefault(); setOver(s.shot_id); } }} onDragLeave={() => setOver((o) => (o === s.shot_id ? null : o))}
+                     onDrop={(e) => drop(e, { before: s.shot_id })}
+                     className={`relative grid min-w-0 cursor-grab content-start gap-2 active:cursor-grabbing ${drag === s.shot_id ? "opacity-40" : ""}`}>
+                  {over === s.shot_id && <span className="pointer-events-none absolute -left-2.5 bottom-0 top-0 w-[3px] rounded-full bg-accent shadow-[0_0_8px_var(--color-accent)]" aria-hidden="true" />}
                   {sm && flagged && <button type="button" onClick={() => pickSeam(`${sm.a}-${sm.b}`)} title={tv`Mối nối ${sm.a_code} → ${sm.b_code}: ${SEAM[sm.worst][0]}`}
                                             className={`flex h-[22px] items-center justify-self-start rounded-full border px-2 text-[11px] ${seam === `${sm.a}-${sm.b}` ? "border-accent" : ""}`}
                                             style={{ color: SEAM[sm.worst][1], background: `${SEAM[sm.worst][1]}1f`, borderColor: seam === `${sm.a}-${sm.b}` ? undefined : `${SEAM[sm.worst][1]}66` }}>
@@ -294,6 +330,9 @@ function BoardView({ board, cur, seam, tone, pick, pickSeam }: { board: Board; c
                   <ShotCard s={s} on={s.shot_id === cur?.shot_id && !seam} tone={tone(s)} pick={() => pick(s.shot_id)} />
                 </div>);
             })}
+            {drag && <div onDragOver={(e) => { e.preventDefault(); setOver(`end-${sc.scene_id}`); }} onDragLeave={() => setOver(null)} onDrop={(e) => drop(e, { scene: sc.scene_id })}
+                          className={`mt-[30px] grid aspect-video place-items-center rounded-lg border-2 border-dashed text-[12px] ${over === `end-${sc.scene_id}` ? "border-accent bg-accent/10 text-ink" : "border-line text-faint"}`}>
+              {tr("Thả vào cuối cảnh")}</div>}
           </div>
         </section>))}
     </div>
@@ -433,6 +472,92 @@ function PlanView({ board, cur, pick, flip }: { board: Board; cur?: SbShot; pick
 }
 
 /* ---------------------------------------------------------------------------------------------- one shot's spec, in tabs */
+const SPEEDS = [0.5, 0.75, 1, 1.5, 2];
+const secs = (t: number) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, "0")}`;
+
+/** The shot's picture, where the clip step's work now happens: the clip given (its stretch, how it is treated in the cut), its
+    other options (each can be used for the shot or become a shot of its own after it), and what to do when none fits. */
+function PictureTab({ shot: s, board, url, set, act, busy }: { shot: SbShot; board: Board; url: string; set: (s: SbShot, field: string, value: unknown) => void;
+  act: (k: string, fn: () => Promise<unknown>, done?: string) => void; busy: string | null }) {
+  const v = board.vocabulary, a = s.assignment, has = !!a?.asset_id, t = a?.treat ?? {};
+  const others = a?.others ?? [];
+  const [inOut, setInOut] = useState<[string, string]>(["", ""]);
+  const [query, setQuery] = useState("");
+  useEffect(() => { setInOut(a ? [a.t_in.toFixed(1), a.t_out.toFixed(1)] : ["", ""]); }, [s.shot_id, a?.t_in, a?.t_out]);
+  const shotUrl = `${url}/shots/${s.shot_id}`;
+  const treat = (body: Treat) => act("treat", () => call(`${shotUrl}/treatment`, { method: "PATCH", body: JSON.stringify(body) }));
+  const remote = board.remote ?? [], effects = board.effects ?? [];
+  return (
+    <>
+      <div className="seg w-fit" role="radiogroup" aria-label={tr("Nguồn")}>
+        {v.sources.map((k) => <button key={k} type="button" role="radio" aria-checked={s.spec.source.policy === k} onClick={() => set(s, "source.policy", k)}>{SRC[k][0]}</button>)}
+      </div>
+      {s.spec.source.policy === "generate" ? <p className="text-[12.5px] text-faint">{tr("Shot tạo bằng AI: xem tab Tạo sinh.")}</p> : <>
+        <Field label={tr("Tìm trong footage")} value={s.spec.source.query} onSave={(x) => set(s, "source.query", x)} />
+
+        {has ? (
+          <div className="grid gap-2 rounded-lg border border-accent/40 bg-accent/[0.04] p-2.5">
+            <div className="flex items-start gap-2.5">
+              <span className="relative block aspect-video w-[132px] shrink-0 overflow-hidden rounded bg-black">{s.frame_url && <Frame src={s.frame_url} />}</span>
+              <span className="grid min-w-0 flex-1 gap-0.5 text-[12.5px]">
+                <span className="flex items-center gap-1.5"><span className="text-[11px] font-semibold text-proof">{tr("Hình của shot")}</span>{a?.decided_by === "operator" && <span className="text-[11px] text-accent">{tr("bạn chọn")}</span>}</span>
+                <span className="truncate" title={a?.name}>{a?.name}</span>
+                <span className="mono text-[11px] text-faint">{`${secs(a!.t_in)}–${secs(a!.t_out)} · ${(a!.t_out - a!.t_in).toFixed(1)}s`}{a?.score != null ? ` · ${tr("khớp")} ${a.score.toFixed(2)}` : ""}</span>
+                {a?.text && <span className="line-clamp-2 text-[11.5px] text-mute" title={a.text}>{a.text}</span>}
+              </span>
+            </div>
+            <form className="flex flex-wrap items-end gap-2 text-[12px] text-faint" onSubmit={(e) => { e.preventDefault(); act("trim", () => post(`${shotUrl}/trim`, { t_in: Number(inOut[0]), t_out: Number(inOut[1]) }), tr("Đã cắt lại đoạn.")); }}>
+              <label className="grid gap-0.5">{tr("Vào (s)")}<input value={inOut[0]} onChange={(e) => setInOut([e.target.value, inOut[1]])} inputMode="decimal" className="h-7 w-16 rounded border border-line bg-canvas px-1.5 text-ink" /></label>
+              <label className="grid gap-0.5">{tr("Ra (s)")}<input value={inOut[1]} onChange={(e) => setInOut([inOut[0], e.target.value])} inputMode="decimal" className="h-7 w-16 rounded border border-line bg-canvas px-1.5 text-ink" /></label>
+              <Button size="sm" type="submit" busy={busy === "trim"} disabled={a && inOut[0] === a.t_in.toFixed(1) && inOut[1] === a.t_out.toFixed(1)}>{tr("Cắt lại")}</Button>
+            </form>
+            <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1.5 text-[12px] text-mute">
+              <label className="flex items-center gap-1.5">{tr("Tốc độ")}<select value={t.speed ?? 1} onChange={(e) => treat({ speed: Number(e.target.value) })} className="h-7 rounded border border-line bg-canvas pl-1.5 text-[12px] text-ink">{SPEEDS.map((x) => <option key={x} value={x}>{x}×</option>)}</select></label>
+              <label className="flex items-center gap-1.5"><input type="checkbox" checked={!!t.stabilise} onChange={(e) => treat({ stabilise: e.target.checked })} />{tr("Chống rung")}</label>
+              <label className="flex items-center gap-1.5" title={tr("Giữ âm thanh của chính clip thay cho lời dẫn; độ dài cảnh bằng đúng đoạn đã chọn")}><input type="checkbox" checked={!!t.live_sound} onChange={(e) => treat({ live_sound: e.target.checked })} />{tr("Dùng âm thanh gốc")}</label>
+              {remote.includes("lipsync") && <label className="flex items-center gap-1.5"><input type="checkbox" checked={!!t.lipsync && !t.live_sound} disabled={!!t.live_sound} onChange={(e) => treat({ lipsync: e.target.checked })} />{tr("Khớp khẩu hình")}</label>}
+              {remote.includes("upscale") && <label className="flex items-center gap-1.5"><input type="checkbox" checked={!!t.upscale_ml} onChange={(e) => treat({ upscale_ml: e.target.checked })} />{tr("Phóng to bằng mô hình")}</label>}
+              {effects.length > 0 && <label className="flex items-center gap-1.5">{tr("Tiếng động")}<select value={t.sfx ?? ""} onChange={(e) => treat({ sfx: e.target.value || null })} className="h-7 max-w-[150px] rounded border border-line bg-canvas pl-1.5 text-[12px] text-ink"><option value="">{tr("Không")}</option>{effects.map((x) => <option key={x.asset_id} value={x.asset_id}>{x.name}</option>)}</select></label>}
+            </div>
+          </div>
+        ) : <p className="rounded-lg border border-dashed border-line p-2.5 text-[12.5px] text-faint">{tr("Shot chưa có hình. Bấm \"Chạy lại shot này\", đổi câu tìm, chọn một phương án bên dưới, hoặc tìm clip stock.")}</p>}
+
+        {others.length > 0 && <div className="grid gap-1.5">
+          <span className="eyebrow">{tv`Phương án khác · ${others.length}`}</span>
+          <ul className="grid grid-cols-2 gap-2">
+            {others.map((c, i) => (
+              <li key={c.asset_id + c.t_in} className="grid gap-1 rounded-lg border border-line p-1.5">
+                <span className="relative block aspect-video overflow-hidden rounded bg-black" title={c.text}>
+                  <Frame src={c.frame_url} />
+                  <span className="mono absolute bottom-1 left-1 rounded bg-black/70 px-1 text-[10px]">{secs(c.t_in)} · {(c.t_out - c.t_in).toFixed(1)}s</span>
+                  {c.chosen_before && <span className="absolute right-1 top-1 rounded bg-accent px-1 text-[10px] font-semibold text-canvas">{tr("từng chọn")}</span>}
+                </span>
+                <span className="truncate text-[11.5px] text-mute" title={c.text || c.name}>{c.name}</span>
+                {c.of > 0 && <span className={`text-[11px] ${c.passed === c.of ? "text-proof" : c.passed ? "text-cue" : "text-faint"}`} title={c.failed.join("; ")}>{tv`nghiệm thu ${c.passed}/${c.of}`}</span>}
+                <span className="grid grid-cols-2 gap-1">
+                  <button type="button" onClick={() => act(`use${i}`, () => post(`${shotUrl}/use`, { candidate: i }), tv`${s.code} dùng clip này.`)} disabled={!!busy}
+                          className="h-7 rounded-md border border-line text-[11.5px] text-ink hover:border-accent hover:bg-accent/10">{tr("Dùng cho shot")}</button>
+                  <button type="button" onClick={() => act(`add${i}`, () => post(`${shotUrl}/add-clip`, { candidate: i }), tv`Đã thêm shot mới sau ${s.code}.`)} disabled={!!busy}
+                          title={tr("Thêm clip này thành một shot mới ngay sau shot đang chọn")}
+                          className="flex h-7 items-center justify-center gap-1 rounded-md border border-line text-[11.5px] text-ink hover:border-accent hover:bg-accent/10"><Icon name="plus" size={12} />{tr("Thêm vào cảnh")}</button>
+                </span>
+              </li>))}
+          </ul>
+        </div>}
+
+        <div className="grid gap-2 border-t border-line pt-2.5">
+          {(has || others.length > 0) && <button type="button" className="link justify-self-start text-[12.5px]" onClick={() => act("none", () => post(`${shotUrl}/none-fits`), tr("Đã ghi nhận: các clip này không hợp với shot."))}>{tr("Không clip nào hợp")}</button>}
+          <form className="flex gap-1.5" onSubmit={(e) => { e.preventDefault(); if (query.trim()) act("stock", async () => { const r = await post<{ stock: { found: boolean } }>(`${shotUrl}/stock`, { query }); if (!r.stock?.found) toast(tr("Không tìm được clip stock cho từ khoá này."), { tone: "tally" }); }); }}>
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={tr("Từ khoá tiếng Anh, ví dụ: fishing boat at sea")} aria-label={tr("Từ khoá tìm clip stock")}
+                   className="h-8 min-w-0 flex-1 rounded-md border border-line bg-canvas px-2.5 text-[12.5px] outline-none focus:border-accent" />
+            <Button size="sm" type="submit" busy={busy === "stock"} disabled={!query.trim()}><Icon name="globe" size={13} />{tr("Tìm clip stock")}</Button>
+          </form>
+        </div>
+      </>}
+    </>
+  );
+}
+
 function Inspector({ shot: s, board, url, tab, setTab, set, ops, act, busy }: {
   shot: SbShot; board: Board; url: string; tab: string; setTab: (t: "goal" | "source" | "gen" | "cont" | "crit" | "hist") => void;
   set: (s: SbShot, field: string, value: unknown) => void; ops: (list: object[], note?: string) => void; act: (k: string, fn: () => Promise<unknown>, done?: string) => void; busy: string | null }) {
@@ -440,7 +565,7 @@ function Inspector({ shot: s, board, url, tab, setTab, set, ops, act, busy }: {
   const [label, t] = STATE[s.state];
   const { data: hist } = usePoll<{ versions: { version: number; made_by: string; note: string | null; at: number }[] }>(tab === "hist" ? `${url}/shots/${s.shot_id}/versions` : "", 10000);
   const [newEnt, setNewEnt] = useState(""), [newCheck, setNewCheck] = useState("human"), [newText, setNewText] = useState("");
-  const tabs = [["goal", tr("Mục tiêu")], ["source", tr("Nguồn")], ["gen", tr("Tạo sinh")], ["cont", tr("Liên tục")], ["crit", tr("Nghiệm thu")], ["hist", tr("Lịch sử")]] as const;
+  const tabs = [["source", tr("Hình")], ["goal", tr("Mục tiêu")], ["gen", tr("Tạo sinh")], ["cont", tr("Liên tục")], ["crit", tr("Nghiệm thu")], ["hist", tr("Lịch sử")]] as const;
   const results = new Map(s.checks.map((c) => [c.check + c.text, c]));
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-surface">
@@ -473,23 +598,7 @@ function Inspector({ shot: s, board, url, tab, setTab, set, ops, act, busy }: {
             <Pick label={tr("Ống kính")} value={s.spec.framing.lens} items={v.lenses} onPick={(x) => set(s, "framing.lens", x)} />
           </div>
         </>}
-        {tab === "source" && <>
-          <div className="seg w-fit" role="radiogroup" aria-label={tr("Nguồn")}>
-            {v.sources.map((k) => <button key={k} type="button" role="radio" aria-checked={s.spec.source.policy === k} onClick={() => set(s, "source.policy", k)}>{SRC[k][0]}</button>)}
-          </div>
-          <Field label={tr("Tìm trong footage")} value={s.spec.source.query} onSave={(x) => set(s, "source.query", x)} />
-          {s.assignment?.candidates?.length ? <div className="grid gap-2">
-            <span className="text-[12px] text-faint">{tr("Ứng viên Director đã đo (ứng viên đầu là hình đang gán)")}</span>
-            {s.assignment.candidates.map((c, i) => (
-              <div key={c.asset_id + c.t_in} className={`flex items-center gap-2.5 rounded-lg border p-2 ${i === 0 ? "border-accent/40" : "border-line"}`}>
-                <img src={c.frame_url} alt="" loading="lazy" className="aspect-video w-[86px] shrink-0 rounded bg-black object-cover" />
-                <span className="grid min-w-0 flex-1 gap-0.5 text-[12.5px]"><span className="truncate">{c.name}</span>
-                  <span className="mono text-[11px] text-faint">{`${c.t_in.toFixed(1)}–${c.t_out.toFixed(1)}s · khớp ${c.score.toFixed(2)} · đạt ${c.passed}/${c.of}`}</span>
-                  {c.failed.length > 0 && <span className="truncate text-[11px] text-ai">{c.failed.join("; ")}</span>}</span>
-                {i === 0 && <span className="text-[11px] text-proof">{tr("đang gán")}</span>}
-              </div>))}
-          </div> : <p className="text-[12.5px] text-faint">{s.spec.source.policy === "generate" ? tr("Shot tạo bằng AI: xem tab Tạo sinh.") : tr("Chưa tìm. Bấm \"Chạy Director\" hoặc \"Chạy lại shot này\".")}</p>}
-        </>}
+        {tab === "source" && <PictureTab shot={s} board={board} url={url} set={set} act={act} busy={busy} />}
         {tab === "gen" && <>
           <div className="grid grid-cols-2 gap-2">
             {([["provider", tr("Ảnh khung"), board.providers.image_providers], ["provider_video", tr("Video"), board.providers.video_providers]] as const).map(([k, l, list]) => (
@@ -600,6 +709,11 @@ function Chat({ board, url, cur, onDone }: { board: Board; url: string; cur?: Sb
   const [scope, setScope] = useState<"shot" | "scene" | "all">("scene"), [text, setText] = useState(""), [busy, setBusy] = useState(false);
   const end = useRef<HTMLDivElement>(null);
   const [past, setPast] = useState(false);
+  // The talk folds to its input line so the shot's inspector has the height; it opens by itself when a proposal waits.
+  const waiting = board.messages.some((m) => m.proposal && m.status === "open");
+  const [open, setOpenState] = useState(() => { try { return localStorage.getItem("nx.sb.chat") === "1"; } catch { return false; } });
+  const setOpen = (v: boolean) => { setOpenState(v); try { localStorage.setItem("nx.sb.chat", v ? "1" : "0"); } catch { /* private window */ } };
+  const shown = open || waiting;
   useEffect(() => { end.current?.scrollIntoView({ block: "nearest" }); }, [board.messages.length]);
   // What needs the operator stays in view: the latest exchange, and any proposal still waiting to be applied or dropped.
   // Everything settled before them folds into one line, opened on demand.
@@ -617,18 +731,21 @@ function Chat({ board, url, cur, onDone }: { board: Board; url: string; cur?: Sb
   const send = async () => {
     if (!text.trim()) return;
     setBusy(true);
-    try { await post(`${url}/say`, { text, scope, shot: cur?.shot_id }); setText(""); onDone(); } catch (e) { toast((e as Error).message, { tone: "tally" }); }
+    try { await post(`${url}/say`, { text, scope, shot: cur?.shot_id }); setText(""); setOpen(true); onDone(); } catch (e) { toast((e as Error).message, { tone: "tally" }); }
     setBusy(false);
   };
   return (
-    <section aria-label={tr("Hội thoại với Director")} className="flex h-[330px] shrink-0 flex-col overflow-hidden rounded-xl border border-line bg-surface">
+    <section aria-label={tr("Hội thoại với Director")} className={`flex shrink-0 flex-col overflow-hidden rounded-xl border border-line bg-surface ${shown ? "h-[330px]" : ""}`}>
       <div className="flex items-center gap-2 border-b border-line px-3 py-1.5">
-        <span className="font-semibold">Director</span><span className="flex-1" />
+        <button type="button" onClick={() => setOpen(!shown)} aria-expanded={shown} className="flex items-center gap-1.5 font-semibold" title={shown ? tr("Thu gọn hội thoại") : tr("Mở hội thoại")}>
+          <Icon name={shown ? "down" : "next"} size={13} />Director</button>
+        {waiting && <span className="rounded-full bg-ai/15 px-2 text-[11px] text-ai">{tr("có đề xuất chờ")}</span>}
+        <span className="flex-1" />
         <div className="seg" role="radiogroup" aria-label={tr("Phạm vi")}>
           {([["shot", tr("Shot này")], ["scene", tr("Cảnh")], ["all", tr("Toàn bộ")]] as const).map(([k, l]) => <button key={k} type="button" role="radio" aria-checked={scope === k} onClick={() => setScope(k)}>{l}</button>)}
         </div>
       </div>
-      <div className="grid min-h-0 flex-1 content-start gap-2.5 overflow-y-auto px-3 py-2.5">
+      {shown && <div className="grid min-h-0 flex-1 content-start gap-2.5 overflow-y-auto px-3 py-2.5">
         {board.messages.length === 0 && <p className="text-[12.5px] text-faint">{tr("Nói với Director điều cần đổi, ví dụ: \"cảnh 2 hơi dài, rút còn 20 giây và thêm một shot cận tay bổ dừa\". Director trả lời bằng một đề xuất; chưa có gì thay đổi cho tới khi bạn áp dụng.")}</p>}
         {settled.length > 0 && (
           <button type="button" onClick={() => setPast(!past)} aria-expanded={past}
@@ -641,7 +758,7 @@ function Chat({ board, url, cur, onDone }: { board: Board; url: string; cur?: Sb
         {past && <div className="grid gap-2.5 border-l border-line pl-2.5 opacity-75">{settled.map(bubble)}</div>}
         {live.map(bubble)}
         <div ref={end} />
-      </div>
+      </div>}
       <form className="flex gap-1.5 border-t border-line p-2" onSubmit={(e) => { e.preventDefault(); send(); }}>
         <input value={text} onChange={(e) => setText(e.target.value)} placeholder={cur ? tv`Với ${cur.code}: ví dụ đổi góc máy thấp, ánh hoàng hôn ấm hơn` : tr("Nói với Director")} aria-label={tr("Nói với Director")}
                className="h-9 min-w-0 flex-1 rounded-md border border-line bg-canvas px-2.5 text-[13px] outline-none focus:border-accent" />

@@ -80,6 +80,22 @@ class System:
     director: "Director" = None                  # carries the storyboard's shots to acceptance, and holds the conversation
 
 
+def storyboard_stock(system: "System", shot_id: str, query: str) -> dict:
+    """A storyboard shot without a picture filled from licensed stock: searched, brought into the Library like any footage, and
+    given to the shot whole (the operator trims it there). Only the query text leaves the machine."""
+    out_dir = system.data_dir / "media" / "stock"
+    sources = json.loads(system.orch.setting("stock_sources", "[]"))
+    result = system.adapters.submit("stock", Request("search", inputs={"queries": [query]}, params={"out_dir": str(out_dir), "clips_per_query": 1, **({"sources": sources} if sources else {})},
+                                                    privacy_class=PrivacyClass.CLOUD_ALLOWED))
+    if not result.files:
+        return {"found": False}
+    clip = result.outputs["clips"][0]
+    rights = {"source": clip.get("source"), "source_url": clip.get("source_url"), "license": clip.get("license"), "creator": clip.get("creator"), "query": query}
+    asset_id, run_id = system.library.ingest(result.files[0], origin="licensed", rights=rights)
+    system.director.use_asset(shot_id, asset_id, reason=f"Clip stock từ {clip.get('source')}. Giấy phép: {clip.get('license')}. Nguồn: {clip.get('source_url')}")
+    return {"found": True, "asset_id": asset_id, "run_id": run_id, "rights": rights}
+
+
 def fill_gap_from_stock(system: "System", shot_id: str, query: str) -> dict:
     """Resolve a gap with licensed stock: search, bring the clip into the Library like any footage, and propose it for the shot.
     Only the query text leaves the machine. Lives here because it joins two modules that may not import each other."""
@@ -644,7 +660,10 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     mid = lambda a: (float(a["t_in"]) + float(a["t_out"])) / 2
     system.director = Director(system.storyboard, system.storyboard_planner, index, vi, vq_reader, assets, projects,
                                colour_gap=lambda a, b: vq.colour_gap(a["asset_id"], mid(a), b["asset_id"], mid(b)),
-                               likeness=lambda a, ref: face_likeness(system, a["asset_id"], mid(a), ref))
+                               likeness=lambda a, ref: face_likeness(system, a["asset_id"], mid(a), ref),
+                               # the storyboard chooses pictures with the clip step's search and teaches it the operator's verdicts
+                               find=lambda words, need, line: system.sourcing.find(words, need, line=line),
+                               remember=lambda line, moment_id, verdict, **kw: system.sourcing.remember(line, moment_id, verdict, **kw))
     system.viewer = Viewer(projects, adapters, data_dir / "media") if model is not None else None
     def measured_boundaries(asset_id: str):
         made = analysis.as_measured(asset_id) if assets.asset(asset_id) else None
