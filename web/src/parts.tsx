@@ -257,8 +257,26 @@ export function Page({ title, note, actions, back, tabs, side, children, wide = 
 
 /** Underlined tabs under a page title. */
 export function Tabs<T extends string>({ items, value, onChange }: { items: { key: T; label: string; icon?: string; count?: number }[]; value: T; onChange: (k: T) => void }) {
+  // The chosen tab is brought into the row's view: a narrow row scrolls, and a tab chosen from elsewhere (a link, a key) may
+  // sit past its end.
+  const row = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = row.current;
+    if (!el) return;
+    const show = () => {                                  // the row alone scrolls, never the page around it
+      const on = el.querySelector<HTMLElement>('[aria-selected="true"]');
+      if (!on) return;
+      const left = on.offsetLeft - el.offsetLeft, right = left + on.offsetWidth;
+      if (left < el.scrollLeft) el.scrollLeft = left;
+      else if (right > el.scrollLeft + el.clientWidth) el.scrollLeft = right - el.clientWidth;
+    };
+    show();
+    const watch = new ResizeObserver(show);                // and again when the row is resized (a viewer going to theatre)
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, [value, items.length]);
   return (
-    <div className="scroll-x -mb-px flex gap-1" role="tablist">
+    <div ref={row} className="scroll-x -mb-px flex gap-1" role="tablist">
       {items.map((t) => (
         <button key={t.key} type="button" role="tab" aria-selected={value === t.key} onClick={() => onChange(t.key)}
                 className={`flex h-10 items-center gap-2 whitespace-nowrap border-b-2 px-3 text-[13.5px] transition-colors ${value === t.key ? "border-accent font-medium text-ink" : "border-transparent text-mute hover:text-ink"}`}>

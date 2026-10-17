@@ -5,6 +5,7 @@ import { call, megabytes, post, timecode, usePoll, type Asset, type Hit, type Mo
 const LEVEL: Record<string, string> = { segment: tr("CẢNH"), scene: tr("CẢNH"), event: tr("SỰ KIỆN"), speech: tr("LỜI NÓI"), note: tr("GHI CHÚ"), frame: tr("KHUNG HÌNH"), text: tr("CHỮ TRÊN HÌNH"), sound: tr("ÂM THANH") };
 import { ask, Button, Icon, Page, RangeStrip, Seg, SkeletonCards, Spinner, Tabs, TimeChip, toast, goTo } from "./parts";
 import { StructureStrip } from "./Structure";
+import { AddVQFile, STATE as VQ_STATE, useVQ, VQPanel, VQStage, VQTools, Workspace, type Row as VQRow } from "./Quality";
 import { AssetProfile } from "./Profile";
 import { AssetDossier } from "./Dossier";
 import { AssetStory } from "./Story";
@@ -250,7 +251,7 @@ function More({ acts }: { acts: Act[] }) {
   );
 }
 
-function Card({ item, on, chosen, choosing, pick, choose, acts }: { item: Item; on: boolean; chosen: boolean; choosing: boolean; pick: () => void; choose: () => void; acts: Act[] }) {
+function Card({ item, on, chosen, choosing, pick, choose, acts, vq }: { item: Item; on: boolean; chosen: boolean; choosing: boolean; pick: () => void; choose: () => void; acts: Act[]; vq?: VQRow }) {
   const meta = [item.code, item.kind === "render" || item.kind === "draft" ? (item.version ? `v${item.version}` : tr("Xem trước")) : null, day(item.at)];
   return (
     <li className="group relative">
@@ -269,6 +270,7 @@ function Card({ item, on, chosen, choosing, pick, choose, acts }: { item: Item; 
           <button type="button" onClick={choosing ? choose : pick} className="min-w-0 flex-1 text-left">
             <span className="block truncate text-[14px] font-medium leading-snug">{item.title}</span>
             <span className="mono mt-0.5 block truncate text-[12px] text-faint">{meta.filter(Boolean).join(" · ")}</span>
+            {vq && <VQMark row={vq} />}
           </button>
           <span className="-mr-1 mt-0.5 opacity-60 group-hover:opacity-100"><More acts={acts} /></span>
         </div>
@@ -278,6 +280,14 @@ function Card({ item, on, chosen, choosing, pick, choose, acts }: { item: Item; 
       </span>
     </li>
   );
+}
+
+/* Where an item stands in Visual Quality, on its card: a dot of the state's colour (hollow before any analysis) and its name. */
+const VQ_DOT: Record<string, string> = { mute: "border border-faint", cue: "bg-cue", proof: "bg-proof", tally: "bg-tally", accent: "bg-accent", ai: "bg-ai" };
+function VQMark({ row }: { row: VQRow }) {
+  const [label, tone] = VQ_STATE[row.state] ?? [row.state, "mute"];
+  return <span className="mt-1 flex items-center gap-1.5 text-[11.5px] text-mute"><span className={`h-1.5 w-1.5 rounded-full ${VQ_DOT[tone] ?? VQ_DOT.mute}`} />
+    {tr("Chất lượng hình")}: {label}{row.recipe && row.state !== "none" ? ` v${row.recipe.version}` : ""}</span>;
 }
 
 function Row({ item, on, chosen, choosing, pick, choose }: { item: Item; on: boolean; chosen: boolean; choosing: boolean; pick: () => void; choose: () => void }) {
@@ -673,8 +683,8 @@ function Glance({ item, reload, wide = false }: { item: Item; reload: () => void
 // This browser's last look in the library: what was open and where it was left.
 const LAST = "nx.lib.last";
 
-function Viewer({ item, items, start, assets, close, reload, similar, pick, compare, setCompare, theater = false, setTheater }: { item: Item; items: Item[]; start?: number; assets: Asset[]; close: () => void; reload: () => void;
-  theater?: boolean; setTheater?: (on: boolean) => void;
+function Viewer({ item, items, start, assets, close, reload, similar, pick, compare, setCompare, theater = false, setTheater, vqRow }: { item: Item; items: Item[]; start?: number; assets: Asset[]; close: () => void; reload: () => void;
+  theater?: boolean; setTheater?: (on: boolean) => void; vqRow?: VQRow;
   similar: (m: Moment) => void; pick: (key: string) => void; compare: string | null; setCompare: (k: string | null) => void }) {
   const asset = item.asset;
   const versions = item.project ? items.filter((i) => i.kind === "render" && i.project?.project_id === item.project!.project_id).sort((a, b) => (a.version ?? 0) - (b.version ?? 0)) : [];
@@ -690,15 +700,22 @@ function Viewer({ item, items, start, assets, close, reload, similar, pick, comp
   useEffect(() => { setNotes([]); loadNotes(); setT(start ?? 0); }, [item.key]);
   const shots = item.render?.qc.shots ?? [];
   const shotAt = shots.reduce<number[]>((acc, s, k) => { acc.push(k ? acc[k - 1] + shots[k - 1].duration : 0); return acc; }, []);
-  type Tab = "board" | "speech" | "notes" | "info" | "analysis";
+  type Tab = "board" | "speech" | "notes" | "info" | "analysis" | "vq";
   const tabs: { key: Tab; label: string; icon: string; count?: number }[] = [
     ...(item.kind === "video" || shots.length ? [{ key: "board" as const, label: tr("Storyboard"), icon: "layers" }] : []),
     ...((item.kind === "video" && asset?.has_audio) || shots.length ? [{ key: "speech" as const, label: tr("Lời thoại"), icon: "captions" }] : []),
     ...(item.kind === "video" && asset && !asset.still && !asset.duplicate_of ? [{ key: "analysis" as const, label: tr("Phân tích"), icon: "sparkles" }] : []),
     { key: "info", label: tr("Thông tin"), icon: "info" },
     { key: "notes", label: tr("Ghi chú"), icon: "comment", count: notes.filter((n) => !n.resolved).length || undefined },
+    // Visual Quality of a recording or a picture of the library: its recipe beside its before and after.
+    ...(asset && (item.kind === "video" || item.kind === "image") && !asset.duplicate_of
+      ? [{ key: "vq" as const, label: tr("Chất lượng"), icon: "sparkles", count: vqRow?.state === "proposed" ? 1 : undefined }] : []),     // 1: a recipe waits for approval
   ];
   const [tab, setTab] = useState<Tab>("board");
+  const vq = useVQ(tab === "vq" && asset ? asset.asset_id : "");
+  const comparing = tab === "vq" && !!vq.r && !!vq.shot;
+  // Its before and after want room: the tab opens the theatre once there is a recipe to look at (closing it is still allowed).
+  useEffect(() => { if (comparing) setTheater?.(true); }, [comparing]);
   useEffect(() => { const go = (e: Event) => setTab((e as CustomEvent).detail as Tab); window.addEventListener("nx-tab", go); return () => window.removeEventListener("nx-tab", go); }, []);
   // Three sizes, as YouTube has them: small beside the details (the default), theatre (the picture across the whole library,
   // `t`), and the player's own full screen (`f`).
@@ -770,7 +787,8 @@ function Viewer({ item, items, start, assets, close, reload, similar, pick, comp
       <div className={theater ? "flex min-h-0 shrink-0 flex-col overflow-y-auto border-r border-line" : "contents"} style={theater ? { width: THEATRE_WIDTH } : undefined}>
       <div className={`shrink-0 ${small ? "flex border-b border-line" : ""}`}>
         <div className={small ? "w-[60%] shrink-0" : ""}>
-        {feeds.length ? <Screen feeds={feeds} start={start} marks={marks} cuts={cuts} onTime={setT} jump={jump} small={small} tall={theater} onTheater={grow} />
+        {comparing ? <div className="p-3"><VQStage vq={vq} /></div>
+          : feeds.length ? <Screen feeds={feeds} start={start} marks={marks} cuts={cuts} onTime={setT} jump={jump} small={small} tall={theater} onTheater={grow} />
           : item.kind === "image" && item.thumb ? (better && sight === "both"
             ? <div className={`grid aspect-video w-full grid-cols-2 gap-1 bg-black ${theater ? "max-h-[78vh]" : "max-h-[56vh]"}`}>{[[item.thumb, tr("Gốc")], [better, asset?.enhanced_stale ? tr("Enhanced (cũ)") : tr("Enhanced")]].map(([src, label]) =>
                 <div key={label} className="relative grid min-h-0 place-items-center"><img src={src!} alt="" className="max-h-full max-w-full object-contain" /><span className="chip absolute left-2 top-2">{label}</span></div>)}</div>
@@ -802,6 +820,7 @@ function Viewer({ item, items, start, assets, close, reload, similar, pick, comp
         {shown === "info" && item.code && <div className="mb-5"><Lookup code={item.code} items={items} pick={pick} /></div>}
         {shown === "info" && asset && <FootageInfo asset={asset} reload={reload} others={assets} />}
         {shown === "info" && !asset && <CutInfo item={item} />}
+        {shown === "vq" && <VQPanel vq={vq} />}
         {shown === "analysis" && asset && <div className="grid gap-4"><RangeStrip asset={asset} tall playhead={t} onSeek={seek} /><StructureStrip asset={asset} t={t} seek={seek} /><AssetProfile assetId={asset.asset_id} /><AssetDossier assetId={asset.asset_id} seek={seek} /><AssetStory assetId={asset.asset_id} seek={seek} /></div>}
       </div>
       </div>
@@ -855,6 +874,12 @@ export default function Library() {
   const [open, setOpen] = useState<Record<string, boolean>>({ footage: true, made: true }), fold = (k: string) => setOpen((o) => ({ ...o, [k]: !o[k] }));
   const [panel, setPanel] = useState<"" | "filter" | "sort" | "keys">(""), [finding, setFinding] = useState(!!params.get("q"));
   const [q, setQ] = useState(""), [mode, setMode] = useState("all"), [hits, setHits] = useState<Hit[] | null>(null), [searching, setSearching] = useState(false), [similarOf, setSimilarOf] = useState<string | null>(null);
+  // Visual Quality, which lives here: where each item stands, a filter by it, and the files outside the library opened for it alone.
+  const { data: vqData, reload: reloadVQ } = usePoll<{ subjects: VQRow[] }>("/api/v1/vq/subjects", 15000);
+  const vqRows = useMemo(() => vqData?.subjects ?? [], [vqData]);
+  const vqMap = useMemo(() => new Map(vqRows.map((r) => [r.subject, r])), [vqRows]);
+  const outside = vqRows.filter((r) => !r.in_library);
+  const [vqState, setVqState] = useState(""), [fileJob, setFileJob] = useState<string | null>(params.get("file")), [addingFile, setAddingFile] = useState(false);
   const [picked, setPicked] = useState<string | null>(null), [start, setStart] = useState<number | undefined>(), [compare, setCompare] = useState<string | null>(null);
   const [chosen, setChosen] = useState<Set<string>>(new Set()), [newGroup, setNewGroup] = useState<string | null>(null);
   const runSearch = async (text: string) => { setSimilarOf(null); if (!text.trim()) { setHits(null); return; } setSearching(true); try { const r = await call<{ hits: Hit[] }>(`/api/v1/library/search?q=${encodeURIComponent(text.trim())}&limit=60`); setHits(r.hits); } catch (e) { toast((e as Error).message, { tone: "tally" }); } setSearching(false); };
@@ -862,13 +887,21 @@ export default function Library() {
   useEffect(() => { if (asked) { setQ(asked); setFinding(true); if (!CODE.test(asked.trim())) runSearch(asked); window.history.replaceState({}, "", "/thu-vien"); } }, [asked]);
   // A code typed or pasted opens its item straight away.
   useEffect(() => { const c = q.trim().toUpperCase(); if (!CODE.test(c)) return; const hit = items.find((i) => i.code === c); if (hit && picked !== hit.key) { setPicked(hit.key); setStart(undefined); } }, [q, items]);
+  // An item asked for in the address (from the old Visual Quality screen, a project's colour pairs): opened, in the tab asked.
+  const opened = params.get("mo"), openTab = params.get("tab");
+  useEffect(() => {
+    if (!opened || !items.some((i) => i.key === opened)) return;
+    setPicked(opened); setStart(undefined);
+    if (openTab) setTimeout(() => window.dispatchEvent(new CustomEvent("nx-tab", { detail: openTab })), 300);
+    window.history.replaceState({}, "", "/thu-vien");
+  }, [opened, items]);
   // The viewer is not left empty on arrival: it reopens what was last looked at, where it was left (unless that was
   // its end), or else the newest item. Once per visit, and never over a search the page was opened with.
   const arrived = useRef(false);
   useEffect(() => {
     if (arrived.current || !data || !projects || !items.length) return;
     arrived.current = true;
-    if (picked || asked) return;
+    if (picked || asked || opened || fileJob) return;
     let last: { key?: string; t?: number } = {};
     try { last = JSON.parse(localStorage.getItem(LAST) ?? "{}"); } catch { /* fine */ }
     const back = items.find((i) => i.key === last.key);
@@ -882,7 +915,7 @@ export default function Library() {
   const since = days === 0 ? 0 : days === 1 ? today.getTime() / 1000 : Date.now() / 1000 - days * 86400;
   const keep = (i: Item) => ON_SHELF[shelf](i) && (!project || i.projects.some((p) => p.project_id === project))
     && (!status || i.status === status) && (!group || (group === "__fav" ? i.rating >= 4 : i.collections.includes(group))) && (!platform || i.platforms.includes(platform))
-    && (!since || (i.at ?? 0) >= since) && (!session || i.asset?.session === session)
+    && (!since || (i.at ?? 0) >= since) && (!session || i.asset?.session === session) && (!vqState || (!!i.asset && vqMap.get(i.asset.asset_id)?.state === vqState))
     && (use === "" ? !i.asset?.rejected : !!i.asset && (use === "rejected" ? i.asset.rejected : !i.asset.rejected && (use === "unused" ? i.projects.length === 0 : i.projects.length > 0)));
   const named = q.trim() && !hits ? q.trim().toLowerCase() : "";
   const shown = items.filter((i) => keep(i) && (!named || i.title.toLowerCase().includes(named) || (i.code ?? "").toLowerCase().includes(named) || (i.asset?.file_name ?? "").toLowerCase().includes(named)))
@@ -891,7 +924,8 @@ export default function Library() {
   const levels = MODES.find(([k]) => k === mode)?.[2] ?? [];
   const found = (hits ?? []).filter((h) => !levels.length || levels.includes(h.level ?? "segment"));
   const current = items.find((i) => i.key === picked) ?? null;
-  const show = (key: string, t?: number) => { setPicked(key); setStart(t); setCompare(null); };
+  const show = (key: string, t?: number) => { setPicked(key); setStart(t); setCompare(null); setFileJob(null); };
+  const openFile = (subject: string) => { setFileJob(subject); setPicked(null); setCompare(null); window.history.replaceState({}, "", `/thu-vien?file=${encodeURIComponent(subject)}`); };
   const choose = (key: string) => setChosen((c) => { const n = new Set(c); if (n.has(key)) n.delete(key); else n.add(key); return n; });
   const picks = items.filter((i) => chosen.has(i.key));
   const chosenAssets = picks.filter((i) => i.asset).map((i) => i.asset!);
@@ -944,7 +978,7 @@ export default function Library() {
   const platforms = [...new Set(items.flatMap((i) => i.platforms))].sort();
   const extra = !!(platform || days || session || use);
   const reset = () => { setShelf(""); setProject(""); setStatus(""); setGroup(""); setPlatform(""); setDays(0); setSession(""); setUse(""); };
-  const place = (s: Shelf, st: Status | "" = "") => { setShelf(s); setStatus(st); setProject(""); setGroup(""); };
+  const place = (s: Shelf, st: Status | "" = "") => { setShelf(s); setStatus(st); setProject(""); setGroup(""); setVqState(""); };
   const here = shelf === "" && !status && !project && !group;
   const where = project ? (projects ?? []).find((p) => p.project_id === project)?.title : group === "__fav" ? tr("Yêu thích") : group || (status ? STATUS[status][0] : { "": tr("Tất cả"), footage: tr("Footage"), video: tr("Video"), image: tr("Ảnh"), audio: tr("Âm thanh"), made: tr("Sản phẩm"), draft: tr("Bản nháp"), render: tr("Bản dựng"), published: tr("Đã đăng") }[shelf]);
 
@@ -975,6 +1009,18 @@ export default function Library() {
           ? <form key={g} className="px-1 py-0.5" onSubmit={(e) => { e.preventDefault(); regroup(g, nameDraft); }}><input autoFocus value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} onBlur={() => setRenaming(null)} onKeyDown={(e) => { if (e.key === "Escape") setRenaming(null); }} aria-label={tr("Tên bộ sưu tập")} className="h-8 w-full px-2.5 text-[13px]" /></form>
           : <Node key={g} on={group === g} icon="board" label={g} n={count((i) => i.collections.includes(g))} click={() => { place(""); setGroup(g); }}
               more={<More acts={[[tr("Đổi tên"), "edit", () => { setRenaming(g); setNameDraft(g); }], [tr("Xoá bộ sưu tập"), "trash", () => regroup(g, ""), true]]} />} />)}
+        <div className="mt-4"><Head title={tr("Chất lượng hình")} /></div>
+        {([["none", "sparkles"], ["proposed", "eye"], ["approved", "check"], ["running", "pulse"], ["failed", "alert"]] as const).map(([k, icon]) => {
+          const n = vqRows.filter((r) => r.in_library && r.state === k).length;
+          return n || vqState === k ? <Node key={k} on={vqState === k} icon={icon} label={VQ_STATE[k][0]} n={n} click={() => { const was = vqState === k; place(""); setVqState(was ? "" : k); }} /> : null;
+        })}
+        <Node on={!!fileJob} icon="folder" label={tr("File ngoài thư viện")} n={outside.length} click={() => fold("outside")} open={open.outside} fold={() => fold("outside")} />
+        {open.outside && <>
+          {outside.map((r) => <Node key={r.subject} depth={1} on={fileJob === r.subject} icon={r.still ? "image" : "film"} label={r.name} click={() => openFile(r.subject)} />)}
+          <Node depth={1} on={false} icon="plus" label={tr("Thêm file ngoài…")} click={() => setAddingFile((v) => !v)} />
+          {addingFile && <AddVQFile onAdded={(s) => { setAddingFile(false); reloadVQ?.(); openFile(s); }} />}
+        </>}
+        <VQTools rows={vqRows} reload={reloadVQ} />
         <div className="mt-4"><Head title={tr("Dự án")} /></div>
         {(projects ?? []).slice(0, 30).map((p) => <Node key={p.project_id} on={project === p.project_id} icon="clapper" label={p.title} n={count((i) => i.projects.some((x) => x.project_id === p.project_id))} click={() => { place(""); setProject(p.project_id); }} />)}
       </div>
@@ -1049,7 +1095,7 @@ export default function Library() {
           </section>); })}</div>))
           : searching ? <p className="flex items-center justify-center gap-2 py-10 text-[13px] text-mute"><Spinner size={13} />{tr("Đang tìm theo nội dung…")}</p>
           : data && shown.length === 0 ? <div className="py-10 text-center text-[13px] text-mute">{items.length ? <>{tr("Không có mục nào khớp bộ lọc.")} <button type="button" className="link" onClick={reset}>{tr("Bỏ lọc")}</button></> : tr("Thư viện còn trống. Bấm + để thêm footage.")}</div>
-          : view === "grid" ? <ul className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" }}>{shown.map((i) => <Card key={i.key} item={i} on={picked === i.key} chosen={chosen.has(i.key)} choosing={chosen.size > 0} pick={() => show(i.key)} choose={() => choose(i.key)} acts={actsOf(i)} />)}</ul>
+          : view === "grid" ? <ul className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" }}>{shown.map((i) => <Card key={i.key} vq={i.asset ? vqMap.get(i.asset.asset_id) : undefined} item={i} on={picked === i.key} chosen={chosen.has(i.key)} choosing={chosen.size > 0} pick={() => show(i.key)} choose={() => choose(i.key)} acts={actsOf(i)} />)}</ul>
           : <ul className="grid gap-0.5">{shown.map((i) => <Row key={i.key} item={i} on={picked === i.key} chosen={chosen.has(i.key)} choosing={chosen.size > 0} pick={() => show(i.key)} choose={() => choose(i.key)} />)}</ul>}
       </div>
       {chosen.size > 0 && (
@@ -1068,11 +1114,19 @@ export default function Library() {
   // asked for with its button each time — every item opens in the small frame, and closing returns to it.
   const [theater, setTheater] = useState(false);
   useEffect(() => { if (!picked) setTheater(false); }, [picked]);
-  const wide = theater && !!current;
+  const wide = (theater && !!current) || !!fileJob;
 
-  const viewer = current ? (
+  const viewer = fileJob ? (
+    <section className="flex h-full min-h-0 flex-col" aria-label={tr("Chất lượng hình")}>
+      <div className="flex h-10 shrink-0 items-center gap-2 border-b border-line px-3 text-[12.5px] text-faint">
+        <span className="flex-1">{tr("File ngoài thư viện: chỉ sửa chất lượng hình")}</span>
+        <button type="button" onClick={() => { setFileJob(null); window.history.replaceState({}, "", "/thu-vien"); }} aria-label={tr("Đóng")} className="grid h-7 w-7 place-items-center rounded-md hover:bg-raised hover:text-ink"><Icon name="x" size={15} /></button>
+      </div>
+      <Workspace key={fileJob} subject={fileJob} />
+    </section>
+  ) : current ? (
     <Viewer item={current} items={items} start={start} assets={assets} close={() => { setPicked(null); setCompare(null); }} reload={reloadAll} pick={(k) => show(k)} compare={compare} setCompare={setCompare}
-      theater={theater} setTheater={setTheater}
+      theater={theater} setTheater={setTheater} vqRow={current.asset ? vqMap.get(current.asset.asset_id) : undefined}
       similar={async (m) => { try { const r = await call<{ hits: Hit[] }>(`/api/v1/moments/${m.moment_id}/similar`); setQ(m.text.slice(0, 60)); setFinding(true); setMode("all"); setHits(r.hits); setSimilarOf(m.moment_id); } catch (e) { toast((e as Error).message, { tone: "tally" }); } }} />
   ) : (
     <div className="grid h-full place-items-center p-8 text-center">

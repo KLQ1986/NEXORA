@@ -1,7 +1,7 @@
 import { t as tr, tv } from "./i18n";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { call, megabytes, post, timecode, usePoll, type Run } from "./api";
-import { ask, Button, Empty, Icon, Meter, Seg, Spinner, StageRail, Tag, toast } from "./parts";
+import { ask, Button, Empty, goTo, Icon, Meter, Seg, Spinner, StageRail, Tag, toast } from "./parts";
 import { CONTENT, DEFECT, OP, TIER, VERDICT } from "./VisualQuality";
 
 /* Visual Quality, its own workspace (design 2026-10-16): every source the engine can work on, library or not, down the left; the
@@ -28,12 +28,12 @@ type Info = { name: string; file_name?: string; in_library: boolean; path: strin
 type View = { subject: string; info: Info; profile: Profile | null; defects: Defect[]; state: string; run: Run | null;
   recipe: { recipe_id: string; version: number; status: string; decided_by: string | null; shots: Shot[]; notes: string[]; options?: Record<string, unknown> } | null;
   approved: string | null; previews: Preview[]; versions: Version[]; exports: { name: string; size: number; at: number; url: string }[] };
-type Row = { subject: string; in_library: boolean; name: string; still: boolean | null; thumbnail_url: string | null; duration?: number | null; width?: number | null;
+export type Row = { subject: string; in_library: boolean; name: string; still: boolean | null; thumbnail_url: string | null; duration?: number | null; width?: number | null;
   height?: number | null; state: string; recipe: { recipe_id: string; version: number; status: string } | null; encoding_name: string | null; content: string | null;
   warnings: number; defects: number; worst: { kind: string; severity: number } | null; steps: number; generative: number; verdict: string | null; code?: string };
 type Tool = { name: string; label: string; available: boolean; fix: string | null };
 
-const STATE: Record<string, [string, "mute" | "cue" | "proof" | "tally" | "accent" | "ai"]> = {
+export const STATE: Record<string, [string, "mute" | "cue" | "proof" | "tally" | "accent" | "ai"]> = {
   none: [tr("chưa phân tích"), "mute"], running: [tr("đang chạy"), "accent"], proposed: [tr("chờ duyệt"), "cue"], approved: [tr("đã duyệt"), "proof"],
   rejected: [tr("đã bỏ"), "mute"], failed: [tr("lỗi"), "tally"],
 };
@@ -69,135 +69,63 @@ const sevTone = (s: number) => (s >= 0.6 ? "tally" : s >= 0.25 ? "cue" : "proof"
 const sevColour = (s: number) => (s >= 0.6 ? "bg-tally" : s >= 0.25 ? "bg-cue" : s > 0 ? "bg-proof/70" : "bg-white/[0.08]");
 const fmt = (v: number | null | undefined, d = 2) => (v == null ? "–" : Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(d));
 
+/* The old address of the Visual Quality screen: it now lives in the Library, a library item's in its viewer's tab, a file
+   outside the library on the library's shelf of such files. */
 export default function Quality() {
-  const params = new URLSearchParams(window.location.search);
-  const [selected, setSelected] = useState<string | null>(params.get("s"));
-  const select = (s: string) => { setSelected(s); window.history.replaceState({}, "", `/chat-luong-hinh?s=${encodeURIComponent(s)}`); };
-  return (
-    <div className="flex min-h-0 min-w-0 flex-1">
-      <Sources selected={selected} onSelect={select} />
-      <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-        {selected ? <Workspace key={selected} subject={selected} /> : (
-          <div className="grid flex-1 place-items-center p-8">
-            <Empty icon="sparkles" title={tr("Chọn một nguồn để xem chất lượng hình")}>
-              {tr("Mỗi video hay ảnh được đo shot theo shot: profile màu, nhiễu, mờ, phơi sáng, rung… rồi được lập công thức sửa. Không có gì được áp cho đến khi bạn duyệt.")}
-            </Empty>
-          </div>
-        )}
-      </section>
-    </div>
-  );
+  useEffect(() => {
+    const s = new URLSearchParams(window.location.search).get("s");
+    goTo(s ? (s.startsWith("ast_") ? `/thu-vien?mo=${encodeURIComponent(s)}&tab=vq` : `/thu-vien?file=${encodeURIComponent(s)}`) : "/thu-vien");
+  }, []);
+  return <div className="grid flex-1 place-items-center"><Spinner /></div>;
 }
 
-/* ------------------------------------------------------------------------------------------------------ the list of sources */
-function Sources({ selected, onSelect }: { selected: string | null; onSelect: (s: string) => void }) {
-  const { data, reload } = usePoll<{ subjects: Row[] }>("/api/v1/vq/subjects", 4000);
-  // One name and one house code for each item, as the library shows them.
-  const catalog = usePoll<{ items: { subject: string; code: string; title: string | null }[] }>("/api/v1/catalog", 60000).data;
-  const book = useMemo(() => new Map((catalog?.items ?? []).map((e) => [e.subject, e])), [catalog]);
+/* What the library's side shows for Visual Quality besides its shelves: analysing what is waiting, the room the work takes,
+   and the tools this machine (and the operator's endpoint) has. */
+export function VQTools({ rows, reload }: { rows: Row[]; reload?: () => void }) {
   const tools = usePoll<{ tools: Tool[] }>("/api/v1/vq/tools", 60000).data?.tools ?? [];
-  const [scope, setScope] = useState<"library" | "files" | "all">("library");
-  const [state, setState] = useState<string>("all");
-  const [q, setQ] = useState("");
-  const [adding, setAdding] = useState(false);
-  const [path, setPath] = useState("");
   const [busy, setBusy] = useState(false);
-  const rows = useMemo(() => (data?.subjects ?? []).map((r) => {
-    const e = book.get(r.subject);
-    return e ? { ...r, name: e.title || r.name, code: e.code } : r;
-  }), [data, book]);
-  const counts = useMemo(() => {
-    const c: Record<string, number> = {};
-    for (const r of rows) if (scope === "all" || (scope === "library") === r.in_library) c[r.state] = (c[r.state] ?? 0) + 1;
-    return c;
-  }, [rows, scope]);
-  const shown = rows.filter((r) => (scope === "all" || (scope === "library") === r.in_library) && (state === "all" || r.state === state)
-    && (!q.trim() || r.name.toLowerCase().includes(q.trim().toLowerCase())));
   const waiting = rows.filter((r) => r.in_library && r.state === "none");
   const analyseAll = async () => {
     setBusy(true);
     try { for (const r of waiting) await post(`/api/v1/vq/subjects/${r.subject}/plan`, {}); toast(tv`Đã xếp ${waiting.length} mục vào hàng phân tích.`); reload?.(); }
     catch (e) { toast((e as Error).message, { tone: "tally" }); } finally { setBusy(false); }
   };
-  const addFile = async () => {
-    if (!path.trim()) return;
-    setBusy(true);
-    try { const r = await post<{ subject: string }>("/api/v1/vq/jobs", { path: path.trim() }); setPath(""); setAdding(false); setScope("files"); reload?.(); onSelect(r.subject); }
-    catch (e) { toast((e as Error).message, { tone: "tally" }); } finally { setBusy(false); }
-  };
   const missing = tools.filter((t) => !t.available);
   return (
-    <aside aria-label={tr("Nguồn")} className="flex w-[330px] shrink-0 flex-col border-r border-line bg-surface/40 max-lg:hidden">
-      <div className="grid gap-2.5 border-b border-line p-3">
-        <div className="flex items-center gap-2">
-          <p className="eyebrow flex-1">{tr("Chất lượng hình")}</p>
-          <Button size="sm" kind="quiet" onClick={() => setAdding((v) => !v)} title={tr("Thêm file ngoài thư viện")}><Icon name="plus" size={14} />{tr("File")}</Button>
-          {waiting.length > 0 && <Button size="sm" onClick={analyseAll} busy={busy}>{tv`Phân tích ${waiting.length}`}</Button>}
-        </div>
-        {adding && (
-          <form className="flex gap-1.5" onSubmit={(e) => { e.preventDefault(); addFile(); }}>
-            <input value={path} onChange={(e) => setPath(e.target.value)} placeholder={tr("Đường dẫn file trên máy, ví dụ ~/Movies/clip.mov")} autoFocus
-                   className="h-8 min-w-0 flex-1 rounded-md border border-line bg-raised px-2 text-[12.5px] outline-none focus:border-accent" />
-            <Button size="sm" kind="primary" type="submit" busy={busy}>{tr("Thêm")}</Button>
-          </form>
-        )}
-        <Seg label={tr("Phạm vi")} value={scope} onChange={setScope} items={[["library", tr("Thư viện")], ["files", tr("File ngoài")], ["all", tr("Tất cả")]] as const} />
-        <div className="flex flex-wrap gap-1">
-          {(["all", "proposed", "approved", "running", "none", "failed"] as const).map((k) => {
-            const n = k === "all" ? Object.values(counts).reduce((a, b) => a + b, 0) : counts[k] ?? 0;
-            if (k !== "all" && !n) return null;
-            return <button key={k} type="button" onClick={() => setState(k)} className={`h-6 rounded-full px-2.5 text-[11.5px] ${state === k ? "bg-accent/15 text-accent" : "bg-white/[0.04] text-mute hover:text-ink"}`}>
-              {k === "all" ? tr("Tất cả") : STATE[k][0]} <span className="mono">{n}</span></button>;
-          })}
-        </div>
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={tr("Tìm theo tên")} className="h-8 rounded-md border border-line bg-raised px-2.5 text-[12.5px] outline-none focus:border-accent" />
-      </div>
-      <ul className="min-h-0 flex-1 overflow-y-auto p-2">
-        {!data && <li className="grid place-items-center p-6"><Spinner /></li>}
-        {data && shown.length === 0 && <li className="p-4 text-center text-[12.5px] text-faint">{tr("Không có mục nào ở đây.")}</li>}
-        {shown.map((r) => {
-          const [label, tone] = STATE[r.state] ?? [r.state, "mute"];
-          return (
-            <li key={r.subject}>
-              <button type="button" onClick={() => onSelect(r.subject)} aria-current={selected === r.subject ? "true" : undefined}
-                      className={`flex w-full gap-2.5 rounded-lg p-2 text-left transition-colors ${selected === r.subject ? "bg-accent/10 shadow-[inset_0_0_0_1px_rgba(48,175,255,0.25)]" : "hover:bg-raised/60"}`}>
-                <span className="relative h-[42px] w-[74px] shrink-0 overflow-hidden rounded-md bg-overlay">
-                  {r.thumbnail_url && <img src={r.thumbnail_url} alt="" loading="lazy" className="h-full w-full object-cover" />}
-                  {r.duration ? <span className="mono absolute bottom-0.5 right-0.5 rounded bg-black/70 px-1 text-[10px]">{timecode(r.duration)}</span> : null}
-                  {r.still && <span className="absolute bottom-0.5 right-0.5 rounded bg-black/70 px-1"><Icon name="image" size={11} /></span>}
-                </span>
-                <span className="grid min-w-0 flex-1 content-start gap-1">
-                  <span className="truncate text-[13px] text-ink">{r.name}</span>
-                  {r.code && <span className="mono -mt-0.5 text-[11px] text-faint">{r.code}</span>}
-                  <span className="flex flex-wrap items-center gap-1">
-                    <Tag tone={tone}>{label}</Tag>
-                    {r.recipe && <span className="mono text-[11px] text-faint">v{r.recipe.version}</span>}
-                    {r.generative > 0 && <Tag tone="ai" dot={false}>AI {r.generative}</Tag>}
-                    {r.verdict && <span className={`text-[11px] ${r.verdict === "pass" ? "text-proof" : r.verdict === "warn" ? "text-cue" : "text-tally"}`}>{tv`QA ${VERDICT_NAME[r.verdict] ?? r.verdict}`}</span>}
-                  </span>
-                  {(r.encoding_name || r.worst) && <span className="truncate text-[11.5px] text-faint">
-                    {[r.encoding_name, r.worst ? tv`${DEFECT[r.worst.kind] ?? r.worst.kind} ${Math.round(r.worst.severity * 100)}%` : null].filter(Boolean).join(" · ")}</span>}
-                </span>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-      <div className="grid gap-2 border-t border-line p-3">
-        <Tidy />
-        <details>
-          <summary className="cursor-pointer list-none text-[12px] text-faint">
-            {tv`Công cụ trên máy: ${tools.length - missing.length}/${tools.length}`}{missing.length > 0 && <span className="ml-1 text-cue">{tv`· thiếu ${missing.length}`}</span>}
-          </summary>
-          <ul className="mt-2 grid gap-1 text-[12px]">
-            {tools.map((t) => <li key={t.name} className="flex items-start gap-1.5">
-              <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${t.available ? "bg-proof" : "bg-cue"}`} />
-              <span className="min-w-0"><span className={t.available ? "text-mute" : "text-ink"}>{t.label}</span>
-                {!t.available && t.fix && <code className="mono block truncate text-[11px] text-faint">{t.fix}</code>}</span></li>)}
-          </ul>
-        </details>
-      </div>
-    </aside>
+    <div className="grid gap-2 px-2 pt-1 text-[12px]">
+      {waiting.length > 0 && <Button size="sm" onClick={analyseAll} busy={busy}><Icon name="sparkles" size={13} />{tv`Phân tích ${waiting.length} mục chưa làm`}</Button>}
+      <Tidy />
+      <details>
+        <summary className="cursor-pointer list-none text-faint">
+          {tv`Công cụ trên máy: ${tools.length - missing.length}/${tools.length}`}{missing.length > 0 && <span className="ml-1 text-cue">{tv`· thiếu ${missing.length}`}</span>}
+        </summary>
+        <ul className="mt-2 grid gap-1">
+          {tools.map((t) => <li key={t.name} className="flex items-start gap-1.5">
+            <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${t.available ? "bg-proof" : "bg-cue"}`} />
+            <span className="min-w-0"><span className={t.available ? "text-mute" : "text-ink"}>{t.label}</span>
+              {!t.available && t.fix && <code className="mono block truncate text-[11px] text-faint">{t.fix}</code>}</span></li>)}
+        </ul>
+      </details>
+    </div>
+  );
+}
+
+/* A file outside the library, given by its path, to have only its picture quality worked on. */
+export function AddVQFile({ onAdded }: { onAdded: (subject: string) => void }) {
+  const [path, setPath] = useState("");
+  const [busy, setBusy] = useState(false);
+  const add = async () => {
+    if (!path.trim()) return;
+    setBusy(true);
+    try { const r = await post<{ subject: string }>("/api/v1/vq/jobs", { path: path.trim() }); setPath(""); onAdded(r.subject); }
+    catch (e) { toast((e as Error).message, { tone: "tally" }); } finally { setBusy(false); }
+  };
+  return (
+    <form className="flex gap-1.5 px-1 py-1" onSubmit={(e) => { e.preventDefault(); add(); }}>
+      <input value={path} onChange={(e) => setPath(e.target.value)} placeholder={tr("Đường dẫn file trên máy, ví dụ ~/Movies/clip.mov")} autoFocus aria-label={tr("Đường dẫn file")}
+             className="h-8 min-w-0 flex-1 rounded-md border border-line bg-raised px-2 text-[12.5px] outline-none focus:border-accent" />
+      <Button size="sm" kind="primary" type="submit" busy={busy}>{tr("Thêm")}</Button>
+    </form>
   );
 }
 
@@ -219,10 +147,12 @@ function Tidy() {
 }
 
 /* --------------------------------------------------------------------------------------------------------- one source */
-function Workspace({ subject }: { subject: string }) {
-  const { data, reload } = usePoll<View>(`/api/v1/vq/subjects/${subject}`, 2500);
-  // Only the library's own items are in the catalogue; a file job is named by its file.
-  const entry = usePoll<{ entry: { code: string; title: string | null } }>(subject.startsWith("ast_") ? `/api/v1/catalog/${subject}` : "", 120000).data?.entry;
+/* One source's Visual Quality, read and acted on: shared by the Library (its picture beside the player, its panel in the
+   viewer's "Chất lượng hình" tab) and by the whole workspace a file outside the library opens in. An empty subject asks
+   for nothing. */
+export type VQ = ReturnType<typeof useVQ>;
+export function useVQ(subject: string) {
+  const { data, reload } = usePoll<View>(subject ? `/api/v1/vq/subjects/${subject}` : "", 2500);
   const [shotIndex, setShotIndex] = useState(0);
   const [tab, setTab] = useState<"recipe" | "source" | "qa" | "defects" | "versions">("recipe");
   const [busy, setBusy] = useState<string | null>(null);
@@ -232,33 +162,44 @@ function Workspace({ subject }: { subject: string }) {
     try { await post(url, body ?? {}); if (done) toast(done); reload?.(); }
     catch (e) { toast((e as Error).message, { tone: "tally" }); } finally { setBusy(null); }
   };
-  if (!data) return <div className="grid flex-1 place-items-center"><Spinner /></div>;
-  const r = data.recipe, info = data.info, p = data.profile;
+  const r = data?.recipe ?? null;
   const shots = r?.shots ?? [];
-  const shot = shots[Math.min(shotIndex, Math.max(0, shots.length - 1))];
-  const running = data.state === "running";
-  const mid = shot ? (shot.t_start + shot.t_end) / 2 : 0;
-  const base = `/api/v1/vq/subjects/${subject}`;
+  const shot = shots[Math.min(shotIndex, Math.max(0, shots.length - 1))] as Shot | undefined;
+  return { subject, data, reload, shotIndex, setShotIndex, tab, setTab, busy, act, options, setOptions, r, shots, shot,
+           running: data?.state === "running", mid: shot ? (shot.t_start + shot.t_end) / 2 : 0, base: `/api/v1/vq/subjects/${subject}` };
+}
+
+/* The picture: before and after of the chosen shot, and the shots to choose from. Nothing until there is a recipe. */
+export function VQStage({ vq }: { vq: VQ }) {
+  const { data, r, shot, shots } = vq;
+  if (!data || !r || !shot) return null;
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line px-5 py-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center gap-2">
-            <h2 className="display truncate text-[17px]">{entry?.title || info.name}</h2>
-            {entry?.code && <span className="mono rounded border border-line px-1.5 text-[11px] text-faint">{entry.code}</span>}
-            <Tag tone={(STATE[data.state] ?? ["", "mute"])[1]}>{(STATE[data.state] ?? [data.state])[0]}</Tag>
-            {r && <span className="mono text-[12px] text-faint">{tv`công thức v${r.version}`}</span>}
-            {!info.in_library && <Tag tone="mute" dot={false}>{tr("ngoài thư viện")}</Tag>}
-          </div>
-          <p className="mt-0.5 truncate text-[12.5px] text-faint">
-            {[info.width && info.height ? `${info.width}×${info.height}` : null, p?.technical.bit_depth ? `${p.technical.bit_depth}-bit` : null,
-              info.frame_rate ? `${Number(info.frame_rate).toFixed(2)} fps` : null, info.duration ? timecode(info.duration) : info.still ? tr("ảnh tĩnh") : null,
-              p?.encoding_name, p ? CONTENT[p.content] ?? p.content : null].filter(Boolean).join(" · ")}
-          </p>
+    <div className="grid gap-2">
+      <Viewer subject={vq.subject} view={data} shot={shot} shotIndex={vq.shotIndex} onRemove={vq.reload} />
+      {shots.length > 1 && <ShotStrip shots={shots} index={vq.shotIndex} onPick={vq.setShotIndex} duration={data.info.duration ?? shots[shots.length - 1].t_end} />}
+    </div>
+  );
+}
+
+/* What is decided and what to do: the state and version, the actions, the run under way, and the recipe, checks, defects,
+   source and versions of the chosen shot. Before any analysis, the way to start one. */
+export function VQPanel({ vq }: { vq: VQ }) {
+  const { data, r, shot, busy, act, base, running } = vq;
+  if (!data) return <div className="grid place-items-center p-8"><Spinner /></div>;
+  const info = data.info, p = data.profile;
+  return (
+    <div className="grid gap-3">
+      <div className="grid gap-2.5 rounded-xl border border-line bg-raised/30 p-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <Tag tone={(STATE[data.state] ?? ["", "mute"])[1]}>{(STATE[data.state] ?? [data.state])[0]}</Tag>
+          {r && <span className="mono text-[12px] text-faint">{tv`công thức v${r.version}`}</span>}
+          {data.previews[0] && <span className={`text-[12px] ${data.previews[0].qa.verdict === "pass" ? "text-proof" : data.previews[0].qa.verdict === "warn" ? "text-cue" : "text-tally"}`}>
+            {tv`QA ${VERDICT_NAME[data.previews[0].qa.verdict] ?? data.previews[0].qa.verdict}`}</span>}
+          <span className="min-w-0 truncate text-[12px] text-faint">{[p?.encoding_name, p ? CONTENT[p.content] ?? p.content : null].filter(Boolean).join(" · ")}</span>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" onClick={() => setOptions((v) => !v)} disabled={running}><Icon name="sliders" size={14} />{r ? tr("Phân tích lại") : tr("Phân tích")}</Button>
-          {r && <Button size="sm" disabled={running} busy={busy === "preview"} onClick={() => act("preview", `${base}/preview`, { t: info.still ? 0 : mid, seconds: 3, recipe_id: r.recipe_id }, tr("Đã xếp việc xem trước shot này."))}>
+          <Button size="sm" onClick={() => vq.setOptions((v) => !v)} disabled={running}><Icon name="sliders" size={14} />{r ? tr("Phân tích lại") : tr("Phân tích")}</Button>
+          {r && <Button size="sm" disabled={running} busy={busy === "preview"} onClick={() => act("preview", `${base}/preview`, { t: info.still ? 0 : vq.mid, seconds: 3, recipe_id: r.recipe_id }, tr("Đã xếp việc xem trước shot này."))}>
             <Icon name="eye" size={14} />{tr("Xem trước shot")}</Button>}
           {r && r.status !== "approved" && <Button size="sm" kind="primary" busy={busy === "approve"} onClick={async () => {
             // A recipe whose newest preview (the list holds this version's, newest first) failed its checks is approved only on purpose.
@@ -269,44 +210,57 @@ function Workspace({ subject }: { subject: string }) {
           }}>
             <Icon name="check" size={14} />{tr("Duyệt")}</Button>}
           {r && r.status !== "rejected" && r.status !== "approved" && <Button size="sm" kind="quiet" busy={busy === "reject"} onClick={() => act("reject", `/api/v1/vq/recipes/${r.recipe_id}/reject`)}>{tr("Bỏ")}</Button>}
-          {data.approved && (info.in_library ? <EnhanceButton subject={subject} info={info} approvedVersion={data.versions.find((v) => v.recipe_id === data.approved)?.version} onDone={reload} />
-            : <ExportButton base={base} still={info.still} disabled={running} onDone={reload} />)}
+          {data.approved && (info.in_library ? <EnhanceButton subject={vq.subject} info={info} approvedVersion={data.versions.find((v) => v.recipe_id === data.approved)?.version} onDone={vq.reload} />
+            : <ExportButton base={base} still={info.still} disabled={running} onDone={vq.reload} />)}
           {running && <Button size="sm" kind="danger" busy={busy === "cancel"} onClick={() => act("cancel", `${base}/cancel`, {}, tr("Đã huỷ."))}>{tr("Huỷ")}</Button>}
         </div>
-        {options && <AnalyseOptions recipeOptions={r?.options} onRun={(o) => { setOptions(false); act("plan", `${base}/plan`, o, tr("Đã xếp việc phân tích.")); }} onClose={() => setOptions(false)} />}
-      </header>
+        {vq.options && <AnalyseOptions recipeOptions={r?.options} onRun={(o) => { vq.setOptions(false); act("plan", `${base}/plan`, o, tr("Đã xếp việc phân tích.")); }} onClose={() => vq.setOptions(false)} />}
+      </div>
       <RunBar run={data.run} state={data.state} />
       {!r && !running && (
-        <div className="grid flex-1 place-items-center p-8">
-          <Empty icon="sparkles" title={tr("Chưa phân tích")} action={<Button kind="primary" busy={busy === "plan"} onClick={() => act("plan", `${base}/plan`, {}, tr("Đã xếp việc phân tích."))}>{tr("Phân tích chất lượng hình")}</Button>}>
-            {tr("Hệ thống sẽ nhận diện profile màu, đo từng shot và đề xuất công thức sửa. Chưa áp gì cho tới khi bạn duyệt.")}
-          </Empty>
-        </div>
+        <Empty icon="sparkles" title={tr("Chưa phân tích chất lượng hình")} action={<Button kind="primary" busy={busy === "plan"} onClick={() => act("plan", `${base}/plan`, {}, tr("Đã xếp việc phân tích."))}>{tr("Phân tích chất lượng hình")}</Button>}>
+          {tr("Hệ thống sẽ nhận diện profile màu, đo từng shot và đề xuất công thức sửa. Chưa áp gì cho tới khi bạn duyệt.")}
+        </Empty>
       )}
-      {r && shot && (
-        <div className="flex min-h-0 flex-1 max-xl:flex-col">
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto p-4">
-            <Viewer subject={subject} view={data} shot={shot} shotIndex={shotIndex} onRemove={reload} />
-            {shots.length > 1 && <ShotStrip shots={shots} index={shotIndex} onPick={setShotIndex} duration={info.duration ?? shots[shots.length - 1].t_end} />}
-          </div>
-          <aside className="flex min-h-0 w-[440px] shrink-0 flex-col border-l border-line max-xl:w-auto max-xl:border-l-0 max-xl:border-t">
-            <div className="flex gap-1 border-b border-line px-3 pt-2">
-              {([["recipe", tr("Công thức")], ["source", tr("Nguồn")], ["qa", tr("Kiểm tra")], ["defects", tr("Lỗi")], ["versions", tr("Phiên bản")]] as const).map(([k, l]) => (
-                <button key={k} type="button" onClick={() => setTab(k)} className={`-mb-px border-b-2 px-2.5 pb-2 text-[13px] ${tab === k ? "border-accent text-ink" : "border-transparent text-mute hover:text-ink"}`}>{l}
-                  {k === "defects" && shot.defects.length > 0 && <span className="mono ml-1 text-[11px] text-faint">{shot.defects.length}</span>}
-                  {k === "versions" && <span className="mono ml-1 text-[11px] text-faint">{data.versions.length}</span>}
-                </button>))}
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto p-4">
-              {tab === "recipe" && <RecipeTab subject={subject} recipe={r} shot={shot} shotIndex={shotIndex} notes={r.notes} onChanged={reload} />}
-              {tab === "source" && <SourceTab profile={p} info={info} />}
-              {tab === "qa" && <QATab previews={data.previews} shot={shot} />}
-              {tab === "defects" && <DefectsTab shot={shot} defects={data.defects} />}
-              {tab === "versions" && <VersionsTab versions={data.versions} current={r.recipe_id} exports={data.exports} info={info} onChanged={reload} />}
-            </div>
-          </aside>
+      {r && shot && <>
+        <div className="flex flex-wrap gap-1">
+          {([["recipe", tr("Công thức")], ["qa", tr("Kiểm tra")], ["defects", tr("Lỗi")], ["source", tr("Nguồn")], ["versions", tr("Phiên bản")]] as const).map(([k, l]) => (
+            <button key={k} type="button" onClick={() => vq.setTab(k)} aria-pressed={vq.tab === k}
+                    className={`h-7 rounded-md px-2.5 text-[12.5px] ${vq.tab === k ? "bg-accent/15 text-ink shadow-[inset_0_0_0_1px_rgba(48,175,255,0.35)]" : "text-mute hover:bg-raised hover:text-ink"}`}>{l}
+              {k === "defects" && shot.defects.length > 0 && <span className="mono ml-1 text-[11px] text-faint">{shot.defects.length}</span>}
+              {k === "versions" && <span className="mono ml-1 text-[11px] text-faint">{data.versions.length}</span>}
+            </button>))}
         </div>
-      )}
+        {vq.tab === "recipe" && <RecipeTab subject={vq.subject} recipe={r} shot={shot} shotIndex={vq.shotIndex} notes={r.notes} onChanged={vq.reload} />}
+        {vq.tab === "source" && <SourceTab profile={p} info={info} />}
+        {vq.tab === "qa" && <QATab previews={data.previews} shot={shot} />}
+        {vq.tab === "defects" && <DefectsTab shot={shot} defects={data.defects} />}
+        {vq.tab === "versions" && <VersionsTab versions={data.versions} current={r.recipe_id} exports={data.exports} info={info} onChanged={vq.reload} />}
+      </>}
+    </div>
+  );
+}
+
+/* A file outside the library: its name, then the picture and the panel side by side. */
+export function Workspace({ subject }: { subject: string }) {
+  const vq = useVQ(subject);
+  if (!vq.data) return <div className="grid flex-1 place-items-center"><Spinner /></div>;
+  const info = vq.data.info, p = vq.data.profile;
+  return (
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <header className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line px-4 py-3">
+        <h2 className="display min-w-0 truncate text-[16px]">{info.name}</h2>
+        {!info.in_library && <Tag tone="mute" dot={false}>{tr("ngoài thư viện")}</Tag>}
+        <span className="min-w-0 truncate text-[12.5px] text-faint">
+          {[info.width && info.height ? `${info.width}×${info.height}` : null, p?.technical.bit_depth ? `${p.technical.bit_depth}-bit` : null,
+            info.frame_rate ? `${Number(info.frame_rate).toFixed(2)} fps` : null, info.duration ? timecode(info.duration) : info.still ? tr("ảnh tĩnh") : null].filter(Boolean).join(" · ")}</span>
+      </header>
+      <div className="flex min-h-0 flex-1 max-xl:flex-col">
+        {vq.r && vq.shot && <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4"><VQStage vq={vq} /></div>}
+        <aside className={`min-h-0 overflow-y-auto p-4 ${vq.r && vq.shot ? "w-[440px] shrink-0 border-l border-line max-xl:w-auto max-xl:border-l-0 max-xl:border-t" : "flex-1"}`}>
+          <VQPanel vq={vq} />
+        </aside>
+      </div>
     </div>
   );
 }

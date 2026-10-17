@@ -2250,6 +2250,13 @@ const en: Record<string, string> = {
   "đặt màu về đúng chỗ": "colour put back in place",
   "che dòng xé ở đáy": "torn rows at the foot covered",
   "GPU thuê (RunPod)": "rented GPU (RunPod)",
+  "File ngoài thư viện": "Files outside the library",
+  "Thêm file ngoài…": "Add an outside file…",
+  "File ngoài thư viện: chỉ sửa chất lượng hình": "A file outside the library: picture quality only",
+  "Mở tab Chất lượng hình": "Open the Picture quality tab",
+  "Phân tích {0} mục chưa làm": "Analyse {0} not yet done",
+  "Đường dẫn file": "File path",
+  "Chưa phân tích chất lượng hình": "Picture quality not analysed yet",
 };
 
 export default en;

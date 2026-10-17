@@ -313,7 +313,7 @@ function ColourPairs({ id }: { id: string }) {
           <span className="min-w-0 flex-1">{tv`${p.change.source} theo ${p.reference.source}`}
             <span className="text-faint">{` · ${p.mode === "scene" ? tv`cùng nơi (${p.place ?? ""})` : tr("tông máy quay")}${p.gap != null ? tv` · lệch ${p.gap.toFixed(1)}` : ""}`}</span></span>
           {p.state === "approved" ? <Tag tone="proof">{tr("đã khớp")}</Tag>
-            : p.state === "proposed" ? <button type="button" className="link" onClick={() => goTo(`/chat-luong-hinh?s=${p.change.asset_id}`)}>{tr("Xem trước & duyệt")}</button>
+            : p.state === "proposed" ? <button type="button" className="link" onClick={() => goTo(`/thu-vien?mo=${p.change.asset_id}&tab=vq`)}>{tr("Xem trước & duyệt")}</button>
             : !p.ready ? <span className="text-faint">{tr("chưa phân tích chất lượng hình")}</span>
             : <Button size="sm" busy={busy === p.after} onClick={() => match(p)}>{tr("Khớp màu")}</Button>}
         </li>))}</ul>

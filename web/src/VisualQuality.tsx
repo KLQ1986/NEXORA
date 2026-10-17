@@ -72,7 +72,7 @@ export function AssetVQ({ assetId, seek }: { assetId: string; seek?: (t: number)
         {r && <Button size="sm" kind="quiet" onClick={() => act(`/api/v1/assets/${assetId}/vq/preview`, { recipe_id: r.recipe_id }, tr("Đã xếp việc xem trước."))}>{tr("Xem trước")}</Button>}
         {r && r.status !== "approved" && <Button size="sm" kind="primary" onClick={() => act(`/api/v1/vq/recipes/${r.recipe_id}/approve`)}>{tr("Duyệt công thức")}</Button>}
         {r && r.status !== "rejected" && <Button size="sm" kind="quiet" onClick={() => act(`/api/v1/vq/recipes/${r.recipe_id}/reject`)}>{tr("Bỏ")}</Button>}
-        <Button size="sm" kind="quiet" onClick={() => goTo(`/chat-luong-hinh?s=${encodeURIComponent(assetId)}`)}>{tr("Mở màn hình Chất lượng hình")}</Button>
+        <Button size="sm" kind="quiet" onClick={() => window.dispatchEvent(new CustomEvent("nx-tab", { detail: "vq" }))}>{tr("Mở tab Chất lượng hình")}</Button>
         {note && <span className="text-faint">{note}</span>}
       </div>
       {p && p.warnings.length > 0 && <ul className="mt-2 grid gap-0.5">{p.warnings.map((w) => <li key={w} className="text-cue">{w}</li>)}</ul>}

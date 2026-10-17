@@ -23,7 +23,7 @@ const PAGES = [
   { path: "/du-an", label: tr("Dự án"), icon: "clapper", view: null, group: 0 },
   { path: "/phong-chieu", label: tr("Phòng chiếu"), icon: "screen", view: Review, group: 0 },
   { path: "/thu-vien", label: tr("Thư viện"), icon: "film", view: Library, group: 0 },
-  { path: "/chat-luong-hinh", label: tr("Chất lượng hình"), icon: "eye", view: Quality, group: 0 },
+  { path: "/chat-luong-hinh", label: tr("Chất lượng hình"), icon: "eye", view: Quality, group: 0, hidden: true },     // now a tab of the Library; the address forwards there
   { path: "/ke-hoach", label: tr("Kế hoạch"), icon: "calendar", view: Plan, group: 0 },
   { path: "/phong-may", label: tr("Phòng máy"), icon: "gauge", view: Control, group: 1 },
   { path: "/tien-trinh", label: tr("Tiến trình"), icon: "pulse", view: Runs, group: 1 },
@@ -65,7 +65,7 @@ function Palette({ close, go, projects, kill }: { close: () => void; go: (to: st
       { key: "autonomy", icon: "bolt", label: tr("Mức tự chủ"), hint: tr("Hệ thống"), to: "/he-thong?muc=autonomy" },
     ];
     for (const a of actions) if (term && a.label.toLowerCase().includes(term)) out.push(a);
-    for (const p of PAGES) if (!term || p.label.toLowerCase().includes(term)) out.push({ key: p.path, icon: p.icon, label: p.label, hint: tr("Màn hình"), to: p.path });
+    for (const p of PAGES) if (!p.hidden && (!term || p.label.toLowerCase().includes(term))) out.push({ key: p.path, icon: p.icon, label: p.label, hint: tr("Màn hình"), to: p.path });
     for (const p of projects) if (!term || p.title.toLowerCase().includes(term)) out.push({ key: p.project_id, icon: "clapper", label: p.title, hint: projectState(p).label, to: `/du-an/${p.project_id}` });
     out.push({ key: "new", icon: "plus", label: tr("Làm video mới"), hint: tr("Dự án"), to: "/du-an?moi=1" });
     if (!term) out.push(...actions);
@@ -168,8 +168,7 @@ const SECTIONS = [
   { key: "ops", label: tr("Vận hành"), icon: "pulse", to: "/phong-may", paths: ["/phong-may", "/tien-trinh", "/chi-phi", "/thong-bao", "/thung-rac", "/he-thong"] },
   { key: "projects", label: tr("Dự án"), icon: "clapper", to: "/du-an", paths: ["/du-an"] },
   { key: "review", label: tr("Phòng chiếu"), icon: "screen", to: "/phong-chieu", paths: ["/phong-chieu"] },
-  { key: "library", label: tr("Thư viện"), icon: "film", to: "/thu-vien", paths: ["/thu-vien"] },
-  { key: "quality", label: tr("Chất lượng hình"), icon: "eye", to: "/chat-luong-hinh", paths: ["/chat-luong-hinh"] },
+  { key: "library", label: tr("Thư viện"), icon: "film", to: "/thu-vien", paths: ["/thu-vien", "/chat-luong-hinh"] },
   { key: "plan", label: tr("Kế hoạch"), icon: "calendar", to: "/ke-hoach", paths: ["/ke-hoach"] },
 ];
 
@@ -241,7 +240,7 @@ function App() {
       <div className="mb-4 flex items-center gap-2.5 px-1"><Mark /><span className="display text-[15px]">NEXORA</span></div>
       <button type="button" onClick={() => go("/du-an?moi=1")} className="brand-button mb-4 flex h-10 items-center justify-center gap-2 rounded-lg text-[14px] font-medium"><Icon name="plus" size={16} />{tr("Làm video mới")}</button>
       <div className="grid gap-0.5 overflow-y-auto">
-        {PAGES.map((p) => { const on = p === page; return (
+        {PAGES.filter((p) => !p.hidden).map((p) => { const on = p === page; return (
           <button key={p.path} type="button" onClick={() => go(p.path)} aria-current={on ? "page" : undefined}
                   className={`flex h-10 items-center gap-3 rounded-lg px-3 text-[14px] ${on ? "bg-accent/10 text-accent" : "text-mute hover:bg-raised hover:text-ink"}`}><Icon name={p.icon} size={18} />{p.label}</button>); })}
       </div>
