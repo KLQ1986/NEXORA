@@ -2388,6 +2388,31 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
     from nexora.api.catalog import add_catalog
     add_catalog(app, system)                         # one code and one name for every item in the library
 
+    @app.get("/filmcraft/{name:path}", include_in_schema=False)
+    def filmcraft_file(name: str = ""):
+        """FilmCraft's web build, the Edit step's timeline editor, as it was pinned (scripts/setup-filmcraft.sh): every file of
+        code is checked against its SHA-256 before it is handed out, and the page is isolated (COOP/COEP) as its authors ask.
+        It is served from this origin, so the project page can drive it and it can read the project's media."""
+        import hashlib
+        from nexora.adapters.pinned import FILMCRAFT_INDEX, FILMCRAFT_VERSION, verify
+        root = (system.data_dir / "tools" / "filmcraft-web" / FILMCRAFT_VERSION).resolve()
+        name = name or "index.html"
+        path = (root / name).resolve()
+        if root not in path.parents or not path.is_file():
+            raise HTTPException(404, "FilmCraft is not set up: sh scripts/setup-filmcraft.sh" if not root.is_dir() else "no such file")
+        try:
+            if path.suffix in (".wasm", ".js"):
+                verify(path, fix="sh scripts/setup-filmcraft.sh")
+            elif path.name == "index.html" and hashlib.sha256(path.read_bytes()).hexdigest() != FILMCRAFT_INDEX:
+                raise AdapterError(ErrorCode.INVALID_REQUEST, "FilmCraft's page is not the one that was pinned: sh scripts/setup-filmcraft.sh")
+        except AdapterError as e:
+            raise HTTPException(409, str(e))
+        kinds = {".wasm": "application/wasm", ".js": "text/javascript", ".html": "text/html", ".png": "image/png"}
+        return FileResponse(path, media_type=kinds.get(path.suffix), headers={
+            "cross-origin-opener-policy": "same-origin", "cross-origin-embedder-policy": "require-corp",
+            "cross-origin-resource-policy": "same-origin", "x-content-type-options": "nosniff",
+            "cache-control": "no-cache" if path.suffix == ".html" else "public, max-age=31536000, immutable"})
+
     if web_dir and Path(web_dir).is_dir():
         app.mount("/assets", StaticFiles(directory=Path(web_dir) / "assets"), name="web-assets")
 

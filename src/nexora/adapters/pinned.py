@@ -27,7 +27,14 @@ PINS = {
     "realesrgan-x4plus-anime.param": "2b8fb6e0ae4d2d85704ca08c119a2f5ea40add4f2ecd512eb7f4cd44b6127ed4",
     "realesr-animevideov3-x4.bin": "548a36f9c3f4ab8da56cd3b13badf23968bee207b396dad14d04b830e5f2ab2d",
     "realesr-animevideov3-x4.param": "850a248e7c14c27e5bd8cf7265113a9441036a7db63963bb8aa5169d788a435e",
+    # FilmCraft 0.8.0's web build (2026-10-17): the release's SHA256SUMS and GitHub's digest agree on its zip; the page names
+    # no address it fetches by itself (help links and model downloads are on the operator's click only).
+    "filmcraft_web_bg.wasm": "eb7882f9e8c17a5d28be4d287265a8f2029d4f1fe860eb3bcb3cf1664281399e",
+    "filmcraft_web.js": "8892fadd3f0a25f414259781316e95b6bb788b587afb9dbb645c0fb3648f38ce",
+    "audio-worklet.js": "e3d3272a30eafe34505e5676eb3543d7248870835a5569f314f388c89b807524",
 }
+FILMCRAFT_VERSION = "0.8.0"
+FILMCRAFT_INDEX = "bd87b647b9a99a5dc19c843d809f088b161238a122854af2698a24ba03515799"
 
 _checked: dict[str, tuple[int, int]] = {}
 
