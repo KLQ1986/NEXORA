@@ -2103,6 +2103,9 @@ const en: Record<string, string> = {
   "Gốc: file của máy quay, đúng độ phân giải và chất lượng. Proxy: bản nhẹ để dự phòng.": "Original: the camera's own file, at its full resolution and quality. Proxy: a light stand-in.",
   "Thu về khung nhỏ (t)": "Back to the small view (t)",
   "Chế độ rạp (t); toàn màn hình: f": "Theatre mode (t); full screen: f",
+  "Chế độ rạp (t)": "Theatre mode (t)",
+  "Toàn màn hình (f)": "Full screen (f)",
+  "Thoát toàn màn hình (f)": "Exit full screen (f)",
 };
 
 export default en;
