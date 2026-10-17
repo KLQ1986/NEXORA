@@ -46,8 +46,10 @@ SHA-256 and upgraded only on purpose; the web build is single-threaded and reads
 - **The caption bug is upstream.** `ripple_trim_group` (`crates/edit/src/lib.rs:781`) moves video and audio tracks but not
   caption tracks, where insert (`:296`) and extract (`:365`) do. A fix and its test are on the branch
   `nexora/ripple-trim-captions` of `reference/filmcraft` (the same closing range on sync-locked caption tracks, `extract_range`
-  when shorter, `insert_gap` when longer). Not yet compiled: the Rust toolchain is not on this Mac. The bridge keeps laying
-  captions over their shots until a FilmCraft release carries it and is pinned.
+  when shorter, `insert_gap` when longer). Built and tested with Rust 1.99.1 (rustup, minimal profile, installed 2026-10-18):
+  the new test fails on `main` and passes with the fix; `filmcraft-edit` 70 tests, clippy `-D warnings`, fmt, and the engine's
+  trim/caption/ripple tests (60) pass. Sent upstream as storytold/filmcraft#2305 (from the fork KLQ1986/filmcraft). The bridge
+  keeps laying captions over their shots until a FilmCraft release carries it and is pinned here.
 - **G19 confirmed on the pinned binary:** `transcript.models` answers `available: false`, `transcript.generate` is disabled.
   NEXORA now carries its own transcript into the editor (`transcript.set`, media ticks, speakers; a word Whisper stretched over a
   silence keeps its last 0.6 s) for every clip that plays its own sound, so FilmCraft's Transcript panel works on it: 164
