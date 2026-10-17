@@ -403,7 +403,7 @@ class Profiler:
         source = original if original.is_file() else self._source(ctx.subject_ref)
         if source is None:
             raise AdapterError(ErrorCode.MISSING_INPUT, "neither the footage nor its proxy is available")
-        on_proxy = source.name.endswith("_proxy.mp4")
+        on_proxy = source != original                                   # by which file it is, not by its name: proxies made again are _proxy1080
         probe = self._assets.original(ctx.subject_ref).metadata.get("probe", {})
         drawn = self._path(ctx.subject_ref, f"_look.{ctx.claim.attempt_id or 'draw'}")
         try:
@@ -535,7 +535,7 @@ class Profiler:
         source = original if original.is_file() else self._source(asset_id)
         if source is None:
             raise AdapterError(ErrorCode.MISSING_INPUT, "neither the footage nor its proxy is available")
-        on_proxy = source.name.endswith("_proxy.mp4")
+        on_proxy = source != original                                   # by which file it is, not by its name: proxies made again are _proxy1080
         probe = self._assets.original(asset_id).metadata.get("probe", {})
         drawn = self._path(asset_id, "_pictures.draw")
         try:

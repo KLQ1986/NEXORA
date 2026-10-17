@@ -25,6 +25,18 @@ def test_proxy_is_written_atomically_at_the_requested_height(plain_clip, tmp_pat
     assert probe["height"] == 90 and probe["duration"] == pytest.approx(2.0, abs=0.2)
 
 
+def test_an_upright_clip_keeps_its_short_side_at_the_proxy_height_and_a_small_one_its_size(tmp_path):
+    import subprocess
+    for size, want in (("360x640", (180, 320)), ("640x360", (320, 180)), ("160x90", (160, 90))):
+        src = tmp_path / f"{size}.mp4"
+        subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", f"testsrc2=size={size}:rate=25:duration=1",
+                        "-pix_fmt", "yuv420p", str(src)], check=True)
+        out = tmp_path / f"{size}_proxy.mp4"
+        FFmpegAdapter().submit(Request("proxy", inputs={"path": str(src)}, params={"out": str(out), "max_height": 180}))
+        probe = FFprobeAdapter().submit(Request("probe", inputs={"path": str(out)})).outputs
+        assert (probe["width"], probe["height"]) == want, size
+
+
 def test_thumbnail_is_taken_at_the_requested_time(plain_clip, tmp_path):
     out = tmp_path / "t.jpg"
     FFmpegAdapter().submit(Request("thumbnail", inputs={"path": str(plain_clip)}, params={"out": str(out), "at": 1.0}))

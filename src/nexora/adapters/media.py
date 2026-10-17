@@ -286,7 +286,10 @@ class FFmpegAdapter(Adapter):
         out = Path(params["out"])
         height = int(params.get("max_height", 1080))
         partial = out.with_name(out.stem + ".partial" + out.suffix)     # written under another name, renamed when complete
-        common = ["-y", "-i", str(src), "-vf", ",".join([*self._sdr(params), f"scale=-2:'min({height},ih)'"]), "-pix_fmt", "yuv420p", "-fps_mode", "cfr"]
+        # The short side is held to `height`, so an upright phone clip gets 1080x1920 as a level one gets 1920x1080 (capping the
+        # height made it 608x1080); smaller footage keeps its size.
+        fit = f"scale='if(gt(iw,ih),-2,min({height},iw))':'if(gt(iw,ih),min({height},ih),-2)'"
+        common = ["-y", "-i", str(src), "-vf", ",".join([*self._sdr(params), fit]), "-pix_fmt", "yuv420p", "-fps_mode", "cfr"]
         audio = ["-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", str(partial)]
         # The stand-in for when the original cannot be read (its drive away, a format the browser cannot play): 1080p at 5 Mb/s.
         # Measured on 0050's foliage (2026-10-17): SSIM against the original 0.774, where the former 720p at 1.2 Mb/s gave 0.712;
