@@ -5,6 +5,7 @@ import { call, post, projectState, scriptText, stageName, timecode, usePoll, typ
 import Board from "./Board";
 import { ask, Button, Empty, Filmstrip, goTo, Icon, Meter, Page, Section, Seg, SideGroup, SideLink, SkeletonCards, StageRail, Steps, Tabs, Tag, TimeChip, toast, Readout } from "./parts";
 import Timeline from "./Timeline";
+import Storyboard from "./Storyboard";
 
 const VERDICT: Record<string, [string, "proof" | "tally" | "cue"]> = { supported: [tr("Nguồn xác nhận"), "proof"], contradicted: [tr("Trái với nguồn"), "tally"], not_found: [tr("Chưa có căn cứ"), "cue"] };
 
@@ -711,7 +712,8 @@ function Detail({ id, back }: { id: string; back: () => void }) {
           ]} extra={<>{FORMATS[p.format] ?? p.format}{p.template ? <span className="ml-3">{p.template}</span> : null}</>} />}
           side={<ProjectSide current={id} steps={<StepSide view={view} step={step} reviewing={!!reviewing} renderReview={!!renderReview} packaged={!!latest?.package} onChange={setView} />} />}
           tabs={<div className="lg:hidden"><StepTabs view={view} step={step} reviewing={!!reviewing} renderReview={!!renderReview} packaged={!!latest?.package} onChange={setView} /></div>}
-          actions={<><Button onClick={() => setSettings(true)} title={tr("Mẫu, khung hình, nhạc, lời dẫn, kênh, ngày đăng")}><Icon name="sliders" size={15} />{tr("Thiết lập")}</Button>{next && <Button kind="primary" busy={busy} disabled={next.label === tr("Lưu kịch bản") && !(text ?? "").trim()} onClick={next.go}>{!busy && <Icon name={next.icon} />}{next.label}</Button>}</>}>
+          actions={<><Button onClick={() => goTo(`/du-an/${id}/storyboard`)} title={tr("Từ ý tưởng hoặc kịch bản này thành cảnh và shot có đặc tả, mặt bằng máy, liền mạch; sửa bằng hội thoại.")}>
+            <Icon name="layers" size={15} />{tr("Storyboard")}</Button><Button onClick={() => setSettings(true)} title={tr("Mẫu, khung hình, nhạc, lời dẫn, kênh, ngày đăng")}><Icon name="sliders" size={15} />{tr("Thiết lập")}</Button>{next && <Button kind="primary" busy={busy} disabled={next.label === tr("Lưu kịch bản") && !(text ?? "").trim()} onClick={next.go}>{!busy && <Icon name={next.icon} />}{next.label}</Button>}</>}>
       {p.trashed_at && <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-cue/40 bg-cue/10 px-4 py-3 text-cue"><Icon name="trash" />
         <span className="min-w-0 flex-1">{tr("Dự án này đang ở Thùng rác. Nó không hiện trong danh sách và trợ lý không làm tiếp cho tới khi bạn khôi phục.")}</span>
         <Button size="sm" disabled={busy} onClick={() => run(() => post("/api/v1/trash/restore", { projects: [id] }))}><Icon name="undo" size={14} />{tr("Khôi phục")}</Button></div>}
@@ -723,6 +725,12 @@ function Detail({ id, back }: { id: string; back: () => void }) {
       {view === "script" && (
         <div className="rise grid items-start gap-8 xl:grid-cols-[minmax(0,1fr)_380px]">
           <div className="min-w-0">
+              <div className="mb-3 flex flex-wrap items-center gap-3 rounded-xl border border-accent/30 bg-accent/[0.05] px-4 py-3">
+                <Icon name="layers" size={18} className="text-accent" />
+                <span className="min-w-0 flex-1 text-[13px]"><span className="font-medium text-ink">{tr("Storyboard & Director")}</span>
+                  <span className="block text-mute">{tr("Từ ý tưởng hoặc kịch bản này thành cảnh và shot có đặc tả, mặt bằng máy, liền mạch; sửa bằng hội thoại.")}</span></span>
+                <Button kind="primary" onClick={() => goTo(`/du-an/${id}/storyboard`)}>{tr("Mở Storyboard")}</Button>
+              </div>
               <Section title={tr("Kịch bản")} icon="edit" note={tr("Mỗi dòng là một câu lời dẫn; hệ thống tìm một clip cho từng câu. Dòng bắt đầu bằng dấu # là tên một cảnh.")}>
                 <div className={`panel overflow-hidden ${dirty ? "glow" : ""}`}>
                   <div className="flex flex-wrap items-center gap-3 border-b border-line bg-raised/40 px-4 py-2 text-[12px] text-mute">
@@ -1139,7 +1147,11 @@ export default function Projects({ sub, go }: { sub: string | null; go: (to: str
   const [urls, setUrls] = useState("");
   const [seek, setSeek] = useState(false);
   useEffect(() => { if (!sub && new URLSearchParams(window.location.search).has("moi")) setMode("new"); }, [sub, window.location.search]);
-  if (sub) return <Detail key={sub} id={sub} back={() => go("/du-an")} />;
+  if (sub) {
+    const [pid, part] = sub.split("/");
+    if (part === "storyboard") return <Storyboard key={pid} projectId={pid} back={() => go(`/du-an/${pid}`)} />;
+    return <Detail key={pid} id={pid} back={() => go("/du-an")} />;
+  }
   const remove = async (p: Project) => { await trashProject(p); reload(); };
   const bin = (p: Project, cls: string) => <button type="button" onClick={() => remove(p)} aria-label={tv`Xoá dự án ${p.title}`} title={tr("Xoá dự án")}
     className={`grid h-8 w-8 place-items-center rounded-md border border-line bg-surface/80 text-mute backdrop-blur transition hover:border-tally/50 hover:text-tally ${cls}`}><Icon name="trash" size={15} /></button>;

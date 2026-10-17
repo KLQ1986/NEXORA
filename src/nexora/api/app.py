@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from nexora.core.adapter import AdapterError, ErrorCode
 from nexora.modules.edit.colour import colour_pairs
+from nexora.modules.planning import storyboard as SB
 
 VIDEO_EXT = {".mp4", ".mov", ".m4v", ".mkv", ".avi", ".mts", ".webm", ".ogv"}
 IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp"}
@@ -828,6 +829,171 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
     @app.get("/api/v1/projects/{project_id}")
     def get_project(project_id: str):
         return project_view(need_project(project_id))
+
+    # ------------------------------------------------------------------------------------------------- the storyboard
+    def storyboard_view(project_id: str) -> dict:
+        """Everything the Director screen shows: the look shared by every shot, scenes with their words, shots with their specs,
+        pictures and checks, the seams at every cut, the camera plan of each scene, and the conversation."""
+        project = need_project(project_id)
+        store, planner = system.storyboard, system.storyboard_planner
+        scenes, shots = store.scenes(project_id), store.shots(project_id)
+        codes = planner.codes(project_id)
+        scene_of = {sc.scene_id: sc.scene_id for sc in scenes}
+
+        def frame(sh) -> str | None:
+            a = sh.assignment
+            if not a or not a.get("asset_id"):
+                return None
+            if a.get("kind") == "generated":
+                return f"/media/{system.assets.original(a['asset_id']).version_id}" if system.assets.asset(a["asset_id"]) else None
+            return f"/api/v1/vq/subjects/{a['asset_id']}/frame?t={(a['t_in'] + a['t_out']) / 2:.2f}&width=480"
+
+        def shot_view(sh) -> dict:
+            a = sh.assignment
+            names = {}
+            for c in (a or {}).get("candidates", []):
+                asset = system.assets.asset(c["asset_id"])
+                names[c["asset_id"]] = (asset or {}).get("title") or (asset or {}).get("file_name") or c["asset_id"]
+            return {"shot_id": sh.shot_id, "code": codes[sh.shot_id], "scene_id": sh.scene_id, "version": sh.version, "state": sh.state, "spec": sh.spec,
+                    "assignment": {**a, "candidates": [{**c, "name": names.get(c["asset_id"], c["asset_id"]),
+                                                        "frame_url": f"/api/v1/vq/subjects/{c['asset_id']}/frame?t={(c['t_in'] + c['t_out']) / 2:.2f}&width=320"}
+                                                       for c in a.get("candidates", [])]} if a else None,
+                    "checks": sh.checks, "frame_url": frame(sh), "script_shot": sh.script_shot}
+
+        gap = lambda a, b: (b.assignment or {}).get("gap_prev")
+        seams = SB.seams(shots, scene_of, colour_gap=gap)
+        for x in seams:
+            x["a_code"], x["b_code"] = codes[x["a"]], codes[x["b"]]
+        cost_cap = project.get("budget_cap")
+        return {"project": {"project_id": project_id, "title": project["title"], "format": project["format"], "budget_cap": cost_cap,
+                            "spent": round(system.generation.spent(project_id), 2)},
+                "shared": planner.shared(project_id),
+                "scenes": [{"scene_id": sc.scene_id, "title": sc.title, "purpose": sc.data.get("purpose", ""), "subject": sc.data.get("subject"),
+                            "script": " ".join(sh.spec["line"] for sh in shots if sh.scene_id == sc.scene_id and sh.spec["line"]),
+                            "seconds": round(sum(sh.spec["duration"]["target"] for sh in shots if sh.scene_id == sc.scene_id), 1)} for sc in scenes],
+                "shots": [shot_view(sh) for sh in shots], "seams": seams, "plans": SB.camera_plan(shots, scenes),
+                "messages": store.messages(project_id), "seconds": round(sum(sh.spec["duration"]["target"] for sh in shots), 1),
+                "vocabulary": {"sizes": SB.SIZES, "angles": SB.ANGLES, "moves": SB.MOVES, "lenses": SB.LENSES, "sources": SB.SOURCES, "times": SB.TIMES,
+                               "checks": {k: {"text": v[0], "by": v[1], "op": v[2], "value": v[3]} for k, v in SB.CHECKS.items()}},
+                "providers": system.generation.available() if hasattr(system.generation, "available") else {}}
+
+    def board_call(fn):
+        try:
+            return fn()
+        except (LookupError, IndexError):
+            raise HTTPException(404, "no such shot, scene or proposal")
+        except AdapterError as e:
+            raise HTTPException(409 if e.code == ErrorCode.UNAVAILABLE else 422, str(e))
+
+    @app.get("/api/v1/projects/{project_id}/storyboard")
+    def storyboard_get(project_id: str):
+        return storyboard_view(project_id)
+
+    @app.post("/api/v1/projects/{project_id}/storyboard/from-script")
+    def storyboard_from_script(project_id: str):
+        """A storyboard from the project's script as it stands, a shot for each line."""
+        need_project(project_id)
+        board_call(lambda: system.storyboard_planner.from_script(project_id))
+        return storyboard_view(project_id)
+
+    @app.post("/api/v1/projects/{project_id}/storyboard/idea")
+    def storyboard_idea(project_id: str, body: dict):
+        """The Director proposes a whole storyboard from an idea; it replaces the current one only when applied."""
+        need_project(project_id)
+        idea = str(body.get("idea") or "").strip()
+        if not idea:
+            raise HTTPException(422, "an idea is needed")
+        return {"message": system.director.propose_idea(project_id, idea, seconds=int(body.get("seconds") or 60))}
+
+    @app.patch("/api/v1/projects/{project_id}/storyboard/shared")
+    def storyboard_shared(project_id: str, body: dict):
+        need_project(project_id)
+        return system.storyboard_planner.set_shared(project_id, **{k: v for k, v in body.items() if k in ("idea", "seconds", "palette", "fingerprint", "moods", "style_notes", "autonomy")})
+
+    @app.post("/api/v1/projects/{project_id}/storyboard/ops")
+    def storyboard_ops(project_id: str, body: dict):
+        """Operations the operator applies directly (an edit in the inspector, a fix of a seam, a camera flipped): `preview: true`
+        only says what they would change."""
+        need_project(project_id)
+        ops = [o for o in (body.get("ops") or []) if isinstance(o, dict)]
+        if body.get("preview"):
+            diff, problems = system.storyboard_planner.describe(project_id, ops)
+            return {"diff": [d for d in diff if d], "problems": problems}
+        done = board_call(lambda: system.storyboard_planner.apply(project_id, ops, made_by="operator", note=body.get("note")))
+        return {"done": done, "storyboard": storyboard_view(project_id)}
+
+    @app.patch("/api/v1/projects/{project_id}/storyboard/scenes/{scene_id}")
+    def storyboard_scene(project_id: str, scene_id: str, body: dict):
+        need_project(project_id)
+        sc = next((x for x in system.storyboard.scenes(project_id) if x.scene_id == scene_id), None)
+        if sc is None:
+            raise HTTPException(404, "no such scene")
+        data = {**sc.data, **{k: str(body[k]).strip()[:300] for k in ("title", "purpose") if k in body}}
+        if isinstance(body.get("subject"), dict):
+            sub = body["subject"]
+            data["subject"] = {"x": max(0, min(SB.PLAN_W, float(sub.get("x", 300)))), "y": SB.AXIS, "label": str(sub.get("label") or "")[:60]}
+        system.storyboard.set_scene(scene_id, data)
+        return storyboard_view(project_id)
+
+    @app.get("/api/v1/projects/{project_id}/storyboard/shots/{shot_id}/versions")
+    def storyboard_versions(project_id: str, shot_id: str):
+        need_project(project_id)
+        return {"versions": system.storyboard.versions(shot_id)}
+
+    @app.post("/api/v1/projects/{project_id}/storyboard/shots/{shot_id}/revert")
+    def storyboard_revert(project_id: str, shot_id: str, body: dict):
+        need_project(project_id)
+        board_call(lambda: system.storyboard_planner.revert(shot_id, int(body.get("version") or 0), made_by="operator"))
+        return storyboard_view(project_id)
+
+    @app.post("/api/v1/projects/{project_id}/storyboard/shots/{shot_id}/decide")
+    def storyboard_decide(project_id: str, shot_id: str, body: dict):
+        """The operator accepts a shot (its human criteria with it) or sends it back."""
+        need_project(project_id)
+        if system.storyboard.shot(shot_id) is None:
+            raise HTTPException(404, "no such shot")
+        system.director.decide(shot_id, accept=bool(body.get("accept")))
+        return storyboard_view(project_id)
+
+    @app.post("/api/v1/projects/{project_id}/storyboard/say")
+    def storyboard_say(project_id: str, body: dict):
+        """The operator's words to the Director: answered with a proposal of typed operations, or with why there is none."""
+        need_project(project_id)
+        text = str(body.get("text") or "").strip()
+        if not text:
+            raise HTTPException(422, "say something")
+        scope = body.get("scope") if body.get("scope") in ("shot", "scene", "all") else "shot"
+        return {"message": system.director.say(project_id, text, scope=scope, current=body.get("shot"))}
+
+    @app.post("/api/v1/projects/{project_id}/storyboard/messages/{message_id}/{verdict}")
+    def storyboard_settle(project_id: str, message_id: str, verdict: str):
+        need_project(project_id)
+        if verdict not in ("apply", "drop"):
+            raise HTTPException(404, "apply or drop")
+        done = board_call(lambda: system.director.settle(message_id, apply=verdict == "apply"))
+        return {"done": done, "storyboard": storyboard_view(project_id)}
+
+    @app.post("/api/v1/projects/{project_id}/storyboard/run")
+    def storyboard_run(project_id: str, body: dict | None = None):
+        """One pass of the Director over the storyboard (or one shot): pictures looked for, measured, accepted or brought to you."""
+        need_project(project_id)
+        done = system.director.run(project_id, only=(body or {}).get("shot"))
+        return {"done": done, "storyboard": storyboard_view(project_id)}
+
+    @app.post("/api/v1/projects/{project_id}/storyboard/sync")
+    def storyboard_sync(project_id: str):
+        """The storyboard written into the project's script: lines, briefs, times, picture choices and the chosen pictures."""
+        need_project(project_id)
+        script_id = board_call(lambda: system.storyboard_planner.sync(project_id))
+        return {"script_id": script_id, "storyboard": storyboard_view(project_id)}
+
+    @app.post("/api/v1/projects/{project_id}/storyboard/keyframes")
+    def storyboard_keyframes(project_id: str):
+        """Keyframes for the generated shots: the storyboard is written to the script, then the project's generation runs on its
+        gaps (keyframe first; a video is paid for only once its keyframe is approved there)."""
+        need_project(project_id)
+        script_id = board_call(lambda: system.storyboard_planner.sync(project_id))
+        return {"run_id": system.generation.start(script_id), "script_id": script_id}
 
     @app.get("/api/v1/projects/{project_id}/colour")
     def project_colour(project_id: str):

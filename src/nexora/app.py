@@ -75,6 +75,9 @@ class System:
     vq_reader: "VisualQuality" = None            # what every other module reads of Visual Quality
     publishing: Publishing = None
     autonomy: Autonomy = None
+    storyboard: "Storyboard" = None              # a project's storyboard: scenes, shot specs and their versions, the conversation
+    storyboard_planner: "StoryboardPlanner" = None
+    director: "Director" = None                  # carries the storyboard's shots to acceptance, and holds the conversation
 
 
 def fill_gap_from_stock(system: "System", shot_id: str, query: str) -> dict:
@@ -579,6 +582,14 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     system.extractor = Extractor(assets, adapters, vi, data_dir / "exports" / "assets", vq=vq_reader)
     system.roughcut = RoughCut(projects, assets, index)
     system.commands = Commands(adapters, projects, sourcing, edit)
+    from nexora.agents.director import Director
+    from nexora.core.storyboard import Storyboard
+    from nexora.modules.planning.storyboard import StoryboardPlanner
+    system.storyboard = Storyboard(db_path)
+    system.storyboard_planner = StoryboardPlanner(system.storyboard, projects, adapters, inventory=planning.inventory)
+    mid = lambda a: (float(a["t_in"]) + float(a["t_out"])) / 2
+    system.director = Director(system.storyboard, system.storyboard_planner, index, vi, vq_reader, assets, projects,
+                               colour_gap=lambda a, b: vq.colour_gap(a["asset_id"], mid(a), b["asset_id"], mid(b)))
     system.viewer = Viewer(projects, adapters, data_dir / "media") if model is not None else None
     def measured_boundaries(asset_id: str):
         made = analysis.as_measured(asset_id) if assets.asset(asset_id) else None

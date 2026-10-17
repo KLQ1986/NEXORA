@@ -145,11 +145,19 @@ apply. Every card says the shot's state, its source, its duration, its criteria 
 
 ## Phases
 
-1. **UI on fixture data** (this step): the Director screen, interactive, agreed with the operator.
-2. Shot Spec model, versioning, staleness; idea → storyboard proposal; conversation with typed operations; animatic.
-3. Director loop on footage: assignment by policy, automatic criteria, needs-you.
-4. Generation through fal; continuity entities and checks (character, colour, direction).
-5. ComfyUI on RunPod with pinned workflow templates; higher autonomy.
+1. **UI on fixture data**: the Director screen, agreed with the operator (with their additions: the look shared by every
+   shot, the camera plan seen from above, the scene's script, the shot's line on its card and the timeline). Done.
+2. **Shot Spec, versions, staleness; idea → storyboard; conversation; animatic.** Done (2026-10-17): `core/storyboard.py`,
+   `modules/planning/storyboard.py`, `/api/v1/projects/{id}/storyboard…`, `web/src/Storyboard.tsx` at `/du-an/<id>/storyboard`.
+   The writer model is the local one (Qwen3 through Ollama): a proposal of operations in about 20 s, a whole storyboard from an
+   idea in about 70 s.
+3. **Director loop on footage.** Done: `agents/director.py`; candidates from the library's search, measured against the
+   automatic criteria (search score, duration, VI fields only while released, VQ defects, colour gap to the shot before),
+   accepted alone at level 2+, else brought to the operator; the colour gap is kept with the picture for the seam.
+4. **Generation.** Through the project's existing generation (keyframe first), reached by writing the storyboard to the
+   script; the shot chooses its keyframe and video providers among those configured. **Not done:** a fal backend and the
+   continuity checks that need it (character likeness by SigLIP against the Bible).
+5. **Not done:** ComfyUI on RunPod with pinned workflow templates.
 
 ## Testing
 
