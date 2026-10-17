@@ -55,6 +55,9 @@ class Library:
         self._orch, self._assets, self._adapters = orch, assets, adapters
         self._min_free = min_free_bytes
         self.vq = None                   # Visual Quality's reader, handed over by the composition root: an enhanced copy carries the approved recipe
+        # Visual Quality's renderer of an approved recipe, handed over the same way (`render(asset_id, out)` → what it made): the
+        # enhanced copy of a recording with an approved recipe is that recipe, every step of it, not a filter chain made here.
+        self.vq_render = None
         self.on_taken_in = []                        # called with an asset id once a file has been taken in
         self.on_note = []                            # called with an asset id and the operator's note when it changes
         self._media = Path(media_dir)
@@ -95,9 +98,16 @@ class Library:
             for listener in self.on_note:
                 listener(asset_id, note)
 
-    def enhance(self, asset_id: str, *, upscale: int = 1, smooth_fps: int | None = None) -> str:
-        """Start making a larger (`upscale` 2) or smoother (`smooth_fps` 50 or 60) copy of a clip. Renders use it once it exists."""
+    def enhance(self, asset_id: str, *, upscale: int = 1, smooth_fps: int | None = None, from_vq: bool = False) -> str:
+        """Start making the enhanced copy of an asset: with `from_vq`, its approved Visual Quality recipe (a video or a still);
+        otherwise a larger (`upscale` 2) or smoother (`smooth_fps` 50 or 60) copy of a clip. Renders use it while it is current."""
         original = self._assets.original(asset_id)
+        if from_vq:
+            recipe = self.vq.recipe(asset_id, status="approved") if self.vq is not None else None
+            if recipe is None or self.vq_render is None:
+                raise ValueError("no approved Visual Quality recipe")
+            self._assets.update_metadata(original.version_id, enhance={"vq": recipe.recipe_id})
+            return self._orch.submit_run(ENHANCE, subject_ref=asset_id)
         if original.metadata.get("probe", {}).get("still") or self._assets.asset(asset_id)["kind"] != "video":
             raise ValueError("only video can be enhanced")
         wanted = {"upscale": 2 if int(upscale or 1) >= 2 else 1, "smooth_fps": int(smooth_fps) if smooth_fps in (50, 60) else None}
@@ -111,6 +121,18 @@ class Library:
         wanted = original.metadata.get("enhance") or {}
         if shutil.disk_usage(self._media).free < self._min_free:
             raise AdapterError(ErrorCode.INSUFFICIENT_STORAGE, f"less than {self._min_free} bytes free for derived media")
+        if wanted.get("vq") and self.vq_render is not None:
+            # The approved Visual Quality recipe, rendered by Visual Quality: every shot with its own steps, AI and processors
+            # included, as a cut would take it. A still stays a still.
+            recipe = self.vq.recipe(ctx.subject_ref, status="approved") if self.vq is not None else None
+            if recipe is None:
+                raise AdapterError(ErrorCode.INVALID_REQUEST, "the recipe asked for is no longer approved", retryable=False)
+            still = bool(original.metadata.get("probe", {}).get("still")) or self._assets.asset(ctx.subject_ref)["kind"] == "image"
+            out = self._derived_path(original, f"_enhanced_vq_v{recipe.version}{'.png' if still else '.mp4'}")
+            made = self.vq_render(ctx.subject_ref, out)
+            meta = {"visual_quality": made.get("recipe_id", recipe.recipe_id), "visual_quality_version": made.get("version", recipe.version), "vq": True}
+            version_id = self._assets.add_version(ctx.subject_ref, out, role="enhanced", parents=[original.version_id], attempt_id=ctx.claim.attempt_id, metadata=meta)
+            return {"enhanced_version_id": version_id, **meta}
         # Visual Quality's steps and the recording's approved recipe (design 2026-10-16 §8): one definition of each step, one
         # recipe for a recording, whatever makes the copy.
         from nexora.core.visual_quality import step_filters

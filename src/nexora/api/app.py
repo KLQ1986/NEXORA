@@ -47,6 +47,12 @@ TEXT_TASKS = {"write": "Viết nháp kịch bản và gợi ý ý tưởng", "cr
               "check": "Đối chiếu dữ kiện với nguồn", "titles": "Gợi ý tiêu đề", "translate": "Dịch phụ đề", "command": "Chỉnh sửa bằng lời"}
 
 
+def enhanced_stale(system, asset_id: str, meta: dict) -> bool:
+    approved = system.vq_reader.recipe(asset_id, status="approved")
+    made_from = (meta or {}).get("visual_quality")
+    return (made_from != approved.recipe_id) if approved else bool(made_from)
+
+
 def asset_view(system, asset: dict, used: dict | None = None) -> dict:
     versions = system.assets.versions(asset["asset_id"])
     by_role = {v.role: v for v in versions}
@@ -69,6 +75,9 @@ def asset_view(system, asset: dict, used: dict | None = None) -> dict:
         "transcribe": next((run_view(system, r) for r in runs if system.orch.pipeline_of(r) == "library.transcribe"), None),
         "enhance": next((run_view(system, r) for r in runs if system.orch.pipeline_of(r) == "library.enhance"), None),
         "enhanced": by_role["enhanced"].metadata if "enhanced" in by_role else None,
+        "enhanced_url": f"/media/{by_role['enhanced'].version_id}" if "enhanced" in by_role else None,
+        # An enhanced copy made from a recipe that is no longer the approved one: shown as old, and never cut from.
+        "enhanced_stale": enhanced_stale(system, asset["asset_id"], by_role["enhanced"].metadata) if "enhanced" in by_role else False,
         "music": meta.get("music"),
         "note": asset.get("note"), "rating": asset.get("rating", 0), "collections": json.loads(asset.get("collections") or "[]"),
         "still": bool(probe.get("still")), "kind": asset.get("kind"), "mean_db": probe.get("mean_db"),
@@ -987,8 +996,12 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         if system.assets.asset(asset_id) is None:
             raise HTTPException(404, "no such asset")
         try:
+            if body.get("vq"):
+                return {"run_id": system.library.enhance(asset_id, from_vq=True)}
             return {"run_id": system.library.enhance(asset_id, upscale=int(body.get("upscale") or 1), smooth_fps=body.get("smooth_fps"))}
-        except ValueError:
+        except ValueError as e:
+            if body.get("vq"):
+                raise HTTPException(409, "Chưa có công thức chất lượng hình nào được duyệt") from e
             raise HTTPException(422, "Chỉ nâng chất lượng được cho video, và phải chọn phóng to hoặc làm mượt")
 
     @app.post("/api/v1/projects/{project_id}/preview", status_code=202)
@@ -1768,7 +1781,10 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             card = asset_view(system, system.assets.asset(subject))
             info = {"name": card.get("name"), "file_name": card.get("file_name"), "in_library": True, "path": card.get("path"),
                     "still": bool(card.get("still")), "duration": card.get("duration"), "width": card.get("width"), "height": card.get("height"),
-                    "frame_rate": card.get("frame_rate"), "thumbnail_url": card.get("thumbnail_url"), "proxy_url": card.get("proxy_url")}
+                    "frame_rate": card.get("frame_rate"), "thumbnail_url": card.get("thumbnail_url"), "proxy_url": card.get("proxy_url"),
+                    # The library's enhanced copy: what the approved recipe made, where to see it, and whether it is still current.
+                    "enhanced": {**(card.get("enhanced") or {}), "url": card.get("enhanced_url"), "stale": card.get("enhanced_stale")} if card.get("enhanced") else None,
+                    "enhance_run": card.get("enhance")}
         else:
             tech = (shown.get("profile") or {}).get("technical", {})
             info = {"name": Path(known["path"]).name, "file_name": Path(known["path"]).name, "in_library": False, "path": known["path"], "still": tech.get("kind") == "still",
@@ -1827,6 +1843,17 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         if root not in path.parents or not path.is_file():
             raise HTTPException(404, "no such file")
         return FileResponse(path, filename=name)
+
+    @app.post("/api/v1/vq/tidy")
+    def vq_tidy():
+        """Remove what Visual Quality keeps that nothing will use again (preview intermediates and old previews, prepared files
+        of recipes not approved, trial renders, cached frames). Recipes, exports and the approved recipe's files stay."""
+        return system.vq.tidy()
+
+    @app.get("/api/v1/vq/usage")
+    def vq_usage():
+        root = system.data_dir / "vq"
+        return {"bytes": sum(f.stat().st_size for f in root.rglob("*") if f.is_file()) if root.is_dir() else 0}
 
     tools_seen: dict = {}
 

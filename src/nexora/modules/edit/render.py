@@ -204,7 +204,7 @@ class Edit:
             path = self._assets.path_of(versions["proxy"])
         if original.metadata.get("probe", {}).get("still"):
             return str(path), original.checksum, 0.0
-        enhanced = [v for v in self._assets.versions(asset_id) if v.role == "enhanced" and self._assets.path_of(v).is_file()]
+        enhanced = [v for v in self._assets.versions(asset_id) if v.role == "enhanced" and self._assets.path_of(v).is_file() and self._current(asset_id, v)]
         if enhanced and not proxy and self._assets.path_of(original).is_file():
             # The operator had a larger or smoother copy made: the final cut is taken from it. Its times are those of the original.
             path = self._assets.path_of(enhanced[-1])
@@ -329,6 +329,16 @@ class Edit:
             fill = shot_fill
             ctx.heartbeat()
         return {"segments": out, "draft": draft, "notes": remote_notes}
+
+    def _current(self, asset_id: str, version) -> bool:
+        """Whether an enhanced copy still stands for the recording: made from the recipe approved now, or, a plain larger or
+        smoother copy, while no recipe is approved. A copy of an older recipe is never cut from: the source and the approved
+        recipe are."""
+        approved = self._vq.recipe(asset_id, status="approved") if self._vq is not None else None
+        made_from = version.metadata.get("visual_quality")
+        if approved is None:
+            return not made_from
+        return made_from == approved.recipe_id
 
     def _apply_vq(self, asset_id: str, path: str, t_in: float, seconds: float, checksum: str, treat: dict) -> tuple[str, float, str]:
         """The approved Visual Quality recipe of a stretch, if there is one: its filters go into the shot's treatment (and its

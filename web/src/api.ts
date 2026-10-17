@@ -5,7 +5,8 @@ export type Stage = { stage_id: string; stage_key: string; status: string; block
 export type Run = { held?: boolean; stalled?: boolean; cleared?: boolean; run_id: string; pipeline: string; subject_ref: string | null; created_at: number; status: string; cost: number; stages: Stage[] };
 export type Word = { text: string; start: number; end: number; p: number };
 export type Asset = {
-  scene_cuts?: number[]; enhance: Run | null; enhanced: { upscale: number; smooth_fps: number | null } | null; rejected: boolean; reference_only?: boolean; consent?: string | null; session: string; used_in: { project_id: string; title: string }[]; speech: { words: number; sentences: number; seconds: number; doubtful: number } | null; transcribe: Run | null;
+  scene_cuts?: number[]; enhance: Run | null; enhanced: { upscale?: number; smooth_fps?: number | null; vq?: boolean; visual_quality?: string; visual_quality_version?: number } | null;
+  enhanced_url?: string | null; enhanced_stale?: boolean; rejected: boolean; reference_only?: boolean; consent?: string | null; session: string; used_in: { project_id: string; title: string }[]; speech: { words: number; sentences: number; seconds: number; doubtful: number } | null; transcribe: Run | null;
   asset_id: string; name: string; file_name: string; title: string | null; session_set: string | null; trashed_at: number | null; path: string; online: boolean; size: number; duplicate_of: string | null;
   duration: number | null; width: number | null; height: number | null; frame_rate: number | null; has_audio: boolean | null;
   usable_ranges: number[][]; black_ranges: number[][]; frozen_ranges: number[][];

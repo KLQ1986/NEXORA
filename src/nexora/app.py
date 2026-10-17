@@ -536,6 +536,7 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
                               shots_of=lambda asset_id: [(s.t_start, s.t_end) for s in vi.segments(asset_id, "shot")])
     vq.register(registry)
     library.vq = vq_reader
+    library.vq_render = lambda asset_id, out: vq.render_approved(asset_id, out)
     projects = ProjectStore(db_path)
     planning = Planning(projects, assets, index, adapters)
     sourcing = Sourcing(orch, projects, index, threshold=match_threshold, adapters=adapters, judge=judge and model is not None, rejected=assets.rejected,

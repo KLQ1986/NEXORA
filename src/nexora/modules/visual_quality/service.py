@@ -115,8 +115,17 @@ class VisualQualityService:
         self.store.request(subject, "apply", {"out": str(out) if out else None, "master": master})
         return self._orch.submit_run(APPLY, subject_ref=subject)
 
-    def approve(self, recipe_id: str, *, by: str = "operator") -> None:
+    def approve(self, recipe_id: str, *, by: str = "operator") -> str | None:
+        """Approve a recipe. What other versions of the subject had prepared goes (only the approved one is ever used), and when
+        this one has steps a cut cannot do with filters, their files are prepared at once: a cut never has to fall back to the
+        source as it is because nobody pressed apply. Returns that run, if any."""
         self.store.decide(recipe_id, "approved", decided_by=by)
+        recipe = self.reader.by_id(recipe_id)
+        if recipe is None:
+            return None
+        self._drop_prepared(recipe.subject, keep=recipe_id)
+        needs = any(filters_of([s for s in shot["steps"] if not s.get("off")]) is None for shot in recipe.shots)
+        return self.apply(recipe.subject) if needs and by != "policy" else None
 
     def reject(self, recipe_id: str, *, by: str = "operator") -> None:
         self.store.decide(recipe_id, "rejected", decided_by=by)
@@ -401,6 +410,7 @@ class VisualQualityService:
             self.approve(recipe_id, by="policy")
         if request["request_id"]:
             self.store.finish_request(request["request_id"], "done", {"recipe_id": recipe_id})
+        shutil.rmtree(self._work / ctx.subject_ref / "verify", ignore_errors=True)       # the trial renders of the checks
         return {"recipe_id": recipe_id, "steps": sum(len(s["steps"]) for s in shots)}
 
     def _verify(self, path: Path, shot: dict, steps: list[dict], *, subject: str, still: bool) -> list[dict]:
@@ -748,59 +758,129 @@ class VisualQualityService:
         self.store.metrics(recipe.recipe_id, [(shot["t_start"], shot["t_end"], name, b, a) for name, (b, a) in verdict["metrics"].items()])
         if request["request_id"]:
             self.store.finish_request(request["request_id"], "done", {"preview_id": preview_id, "verdict": verdict["verdict"]})
+        self._tidy_previews(ctx.subject_ref)
         return {"preview_id": preview_id, "verdict": verdict["verdict"]}
+
+    def render_approved(self, subject: str, out: str | Path | None, *, master: bool = False, heartbeat=lambda: None) -> dict:
+        """The approved recipe of a subject, rendered: the files a cut takes for steps it cannot do with filters, and, with `out`,
+        the whole result in one file (HEVC 10-bit, ProRes with `master`, PNG for a still) with the recipe's colour description.
+        A shot already prepared is taken from its prepared file, so no AI step runs twice. The library's enhanced copy is made
+        by this, so the copy and a cut are the same picture."""
+        recipe = self.reader.recipe(subject, status="approved")
+        if recipe is None:
+            raise AdapterError(ErrorCode.INVALID_REQUEST, "no approved recipe", retryable=False)
+        path = self.path_of(subject)
+        technical = (self.reader.profile(subject) or {}).get("technical", {})
+        colour = recipe.data.get("output", {}).get("colour", {})
+        work = self._work / subject / "apply" / recipe.recipe_id
+        work.mkdir(parents=True, exist_ok=True)
+        still = technical.get("kind") == "still"
+        made: dict[int, Path] = {}
+        for k, shot in enumerate(recipe.shots):
+            steps = [s for s in shot["steps"] if not s.get("off")]
+            if filters_of(steps) is not None:
+                continue
+            known = self.reader.prepared_for(subject, shot["t_start"], shot["t_end"]) if not still else None
+            if known and Path(known[0]).is_file() and known[1] == 0:
+                made[k] = Path(known[0])
+                continue
+            if still:
+                file = self._render(path, steps, out=work / "still.png", kind="still", colour=colour, deep=True)
+            else:
+                file = self._render(path, steps, out=work / f"shot_{shot['t_start']:.2f}.mov", kind="video", t_in=shot["t_start"],
+                                    seconds=shot["t_end"] - shot["t_start"], colour=colour, master=True)
+            self.store.prepared(recipe.recipe_id, shot["t_start"], shot["t_end"], file)
+            made[k] = Path(file)
+            heartbeat()
+        result: dict = {"prepared": len(made), "recipe_id": recipe.recipe_id, "version": recipe.version}
+        if out:
+            out = Path(out)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            if still:
+                if 0 in made:      # already made above: written in the format asked, without running the AI a second time
+                    self._adapters.submit("ffmpeg", Request("vq_render", inputs={"path": str(made[0])}, params={"kind": "still", "out": str(out), "filters": [], "colour": colour}))
+                else:
+                    self._render(path, [s for s in recipe.shots[0]["steps"] if not s.get("off")], out=out, kind="still", colour=colour)
+            elif not made and (len(recipe.shots) == 1 or (len({str(s["steps"]) for s in recipe.shots}) == 1 and not self._across_frames(recipe.shots[0]["steps"]))):
+                self._render(path, [s for s in recipe.shots[0]["steps"] if not s.get("off")], out=out, kind="video", colour=colour, master=master)
+            else:
+                # Shot by shot, each with its own steps (a prepared shot from its file), in the codec of the result, then joined
+                # without re-encoding. Steps that look across frames never see across a cut this way.
+                parts = []
+                for k, shot in enumerate(recipe.shots):
+                    part = work / f"part_{k:04d}{'.mov' if master else '.mp4'}"
+                    if k in made:
+                        parts.append(self._render(made[k], [], out=part, kind="video", colour=colour, master=master))
+                    else:
+                        steps = [s for s in shot["steps"] if not s.get("off")]
+                        parts.append(self._render(path, steps, out=part, kind="video", t_in=shot["t_start"], seconds=shot["t_end"] - shot["t_start"],
+                                                  colour=colour, master=master))
+                    heartbeat()
+                self._adapters.submit("ffmpeg", Request("concat", inputs={"paths": [str(x) for x in parts]}, params={"out": str(out), "plain": True}))
+                for part in parts:
+                    Path(part).unlink(missing_ok=True)
+                result["parts"] = len(parts)
+            result["out"] = str(out)
+        return result
+
+    # ------------------------------------------------------------------------------------------------------------ tidying
+    PREVIEWS_KEPT = 6           # previews of a recipe kept with their pictures; older ones go
+
+    def _drop_prepared(self, subject: str, *, keep: str | None) -> int:
+        """Prepared files of a subject's recipes other than `keep`: never used again, so removed with their records."""
+        others = [r.recipe_id for r in self.reader.recipes(subject) if r.recipe_id != keep]
+        freed = 0
+        for rid in others:
+            folder = self._work / subject / "apply" / rid
+            if folder.is_dir():
+                freed += sum(f.stat().st_size for f in folder.rglob("*") if f.is_file())
+                shutil.rmtree(folder, ignore_errors=True)
+        self.store.forget_prepared(others)
+        return freed
+
+    def _tidy_previews(self, subject: str) -> int:
+        """The working files of previews (the prepared intermediates) go once the preview is made, and only the newest
+        previews of each recipe keep their pictures."""
+        freed = 0
+        root = self._work / subject / "previews"
+        if not root.is_dir():
+            return 0
+        for f in root.glob("*/prep_*"):
+            freed += f.stat().st_size
+            f.unlink(missing_ok=True)
+        for recipe in self.reader.recipes(subject):
+            old = self.reader.previews(recipe.recipe_id)[self.PREVIEWS_KEPT:]
+            for preview in old:
+                folder = next((Path(v).parent for v in (preview.get("files") or {}).values()), None)
+                if folder and folder.is_dir() and root in folder.parents:
+                    freed += sum(f.stat().st_size for f in folder.rglob("*") if f.is_file())
+                    shutil.rmtree(folder, ignore_errors=True)
+            self.store.forget_previews([p["preview_id"] for p in old])
+        return freed
+
+    def tidy(self, subject: str | None = None) -> dict:
+        """Everything the engine keeps that nothing will use again, removed: preview intermediates and old previews, the
+        prepared files of recipes that are not approved, the checks' trial renders and cached frames. The recipes, profiles,
+        the approved recipe's prepared files and anything exported stay. Returns what was freed."""
+        subjects = [subject] if subject else [p.name for p in self._work.iterdir() if p.is_dir() and p.name not in ("luts", "tmp")] if self._work.is_dir() else []
+        freed = 0
+        for sub in subjects:
+            if self.reader.subject(sub) is None:
+                continue
+            approved = self.reader.recipe(sub, status="approved")
+            freed += self._drop_prepared(sub, keep=approved.recipe_id if approved else None)
+            freed += self._tidy_previews(sub)
+            for name in ("verify", "frames"):
+                folder = self._work / sub / name
+                if folder.is_dir():
+                    freed += sum(f.stat().st_size for f in folder.rglob("*") if f.is_file())
+                    shutil.rmtree(folder, ignore_errors=True)
+        return {"subjects": len(subjects), "freed_bytes": freed}
 
     def _apply_stage(self, ctx):
         request = self._request(ctx.subject_ref, "apply")
         p = request["params"]
-        recipe = self.reader.recipe(ctx.subject_ref, status="approved")
-        if recipe is None:
-            raise AdapterError(ErrorCode.INVALID_REQUEST, "no approved recipe", retryable=False)
-        path = self.path_of(ctx.subject_ref)
-        technical = (self.reader.profile(ctx.subject_ref) or {}).get("technical", {})
-        colour = recipe.data.get("output", {}).get("colour", {})
-        work = self._work / ctx.subject_ref / "apply" / recipe.recipe_id
-        work.mkdir(parents=True, exist_ok=True)
-        prepared = 0
-        still = technical.get("kind") == "still"
-        # Shots whose steps need another tool are rendered ahead, so that a cut (or, for a still, an extract) takes them from a file.
-        for shot in recipe.shots:
-            steps = [s for s in shot["steps"] if not s.get("off")]
-            if filters_of(steps) is None:
-                seconds = shot["t_end"] - shot["t_start"]
-                if still:
-                    file = self._render(path, steps, out=work / "still.png", kind="still", colour=colour, deep=True)
-                else:
-                    file = self._render(path, steps, out=work / f"shot_{shot['t_start']:.2f}.mov", kind="video", t_in=shot["t_start"], seconds=seconds,
-                                        colour=colour, master=True)
-                self.store.prepared(recipe.recipe_id, shot["t_start"], shot["t_end"], file)
-                prepared += 1
-                ctx.heartbeat()
-        result: dict = {"prepared": prepared}
-        if p.get("out"):
-            out = Path(p["out"])
-            out.parent.mkdir(parents=True, exist_ok=True)
-            if still and prepared:
-                # Already made above: written in the format asked, without running the AI a second time.
-                self._adapters.submit("ffmpeg", Request("vq_render", inputs={"path": str(work / "still.png")}, params={"kind": "still", "out": str(out), "filters": [], "colour": colour}))
-            elif still:
-                steps = [s for s in recipe.shots[0]["steps"] if not s.get("off")]
-                self._render(path, steps, out=out, kind="still", colour=colour)
-            elif len(recipe.shots) == 1 or (len({str(s["steps"]) for s in recipe.shots}) == 1 and not self._across_frames(recipe.shots[0]["steps"])):
-                steps = [s for s in recipe.shots[0]["steps"] if not s.get("off")]
-                self._render(path, steps, out=out, kind="video", colour=colour, master=bool(p.get("master")))
-            else:
-                # Shot by shot, each with its own steps, in the codec of the result, then joined without re-encoding. Steps that
-                # look across frames (interpolation, stabilising, deflicker, temporal denoise) never see across a cut this way.
-                master = bool(p.get("master"))
-                parts = []
-                for k, shot in enumerate(recipe.shots):
-                    steps = [s for s in shot["steps"] if not s.get("off")]
-                    parts.append(self._render(path, steps, out=work / f"part_{k:04d}{'.mov' if master else '.mp4'}", kind="video", t_in=shot["t_start"],
-                                              seconds=shot["t_end"] - shot["t_start"], colour=colour, master=master))
-                    ctx.heartbeat()
-                self._adapters.submit("ffmpeg", Request("concat", inputs={"paths": [str(x) for x in parts]}, params={"out": str(out), "plain": True}))
-            result["out"] = str(out)
+        result = self.render_approved(ctx.subject_ref, p.get("out"), master=bool(p.get("master")), heartbeat=ctx.heartbeat)
         if request["request_id"]:
             self.store.finish_request(request["request_id"], "done", result)
         return result

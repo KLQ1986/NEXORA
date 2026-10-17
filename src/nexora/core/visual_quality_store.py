@@ -96,6 +96,14 @@ class VisualQualityStore:
         with db.write(self._conn) as c:
             c.execute("UPDATE vq_requests SET status = ?, result = ? WHERE request_id = ?", (status, json.dumps(result or {}, ensure_ascii=False), request_id))
 
+    def forget_previews(self, preview_ids: list[str]) -> None:
+        with db.write(self._conn) as c:
+            c.executemany("DELETE FROM vq_previews WHERE preview_id = ?", [(i,) for i in preview_ids])
+
+    def forget_prepared(self, recipe_ids: list[str]) -> None:
+        with db.write(self._conn) as c:
+            c.executemany("DELETE FROM vq_prepared WHERE recipe_id = ?", [(i,) for i in recipe_ids])
+
     def forget(self, subject: str) -> None:
         with db.write(self._conn) as c:
             ids = [r[0] for r in c.execute("SELECT recipe_id FROM vq_recipes WHERE subject = ?", (subject,))]

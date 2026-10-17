@@ -1,6 +1,6 @@
 import { t as tr, tv } from "./i18n";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import { call, post, timecode, usePoll, type Run } from "./api";
+import { call, megabytes, post, timecode, usePoll, type Run } from "./api";
 import { ask, Button, Empty, Icon, Meter, Seg, Spinner, StageRail, Tag, toast } from "./parts";
 import { CONTENT, DEFECT, OP, TIER, VERDICT } from "./VisualQuality";
 
@@ -23,7 +23,8 @@ type Version = { recipe_id: string; version: number; status: string; decided_by:
 type Profile = { encoding: string | null; encoding_name: string | null; encoding_confidence: string; encoding_why?: string[]; content: string; content_why?: string[];
   warnings: string[]; technical: Record<string, unknown>; apparent_detail?: unknown };
 type Info = { name: string; file_name?: string; in_library: boolean; path: string; still: boolean; duration: number | null; width: number | null; height: number | null;
-  frame_rate: number | null; thumbnail_url: string | null; proxy_url: string | null };
+  frame_rate: number | null; thumbnail_url: string | null; proxy_url: string | null;
+  enhanced?: { url: string | null; stale: boolean; visual_quality?: string; visual_quality_version?: number; vq?: boolean } | null; enhance_run?: Run | null };
 type View = { subject: string; info: Info; profile: Profile | null; defects: Defect[]; state: string; run: Run | null;
   recipe: { recipe_id: string; version: number; status: string; decided_by: string | null; shots: Shot[]; notes: string[]; options?: Record<string, unknown> } | null;
   approved: string | null; previews: Preview[]; versions: Version[]; exports: { name: string; size: number; at: number; url: string }[] };
@@ -179,7 +180,8 @@ function Sources({ selected, onSelect }: { selected: string | null; onSelect: (s
           );
         })}
       </ul>
-      <div className="border-t border-line p-3">
+      <div className="grid gap-2 border-t border-line p-3">
+        <Tidy />
         <details>
           <summary className="cursor-pointer list-none text-[12px] text-faint">
             {tv`Công cụ trên máy: ${tools.length - missing.length}/${tools.length}`}{missing.length > 0 && <span className="ml-1 text-cue">{tv`· thiếu ${missing.length}`}</span>}
@@ -193,6 +195,23 @@ function Sources({ selected, onSelect }: { selected: string | null; onSelect: (s
         </details>
       </div>
     </aside>
+  );
+}
+
+/* How much room the engine's working files take, and a way to give back what nothing will use again. */
+function Tidy() {
+  const { data, reload } = usePoll<{ bytes: number }>("/api/v1/vq/usage", 60000);
+  const [busy, setBusy] = useState(false);
+  const go = async () => {
+    setBusy(true);
+    try { const r = await post<{ freed_bytes: number }>("/api/v1/vq/tidy", {}); toast(tv`Đã dọn ${megabytes(r.freed_bytes)}.`); reload?.(); }
+    catch (e) { toast((e as Error).message, { tone: "tally" }); } finally { setBusy(false); }
+  };
+  return (
+    <div className="flex items-center gap-2 text-[12px]">
+      <span className="flex-1 text-faint">{data ? tv`File làm việc: ${megabytes(data.bytes)}` : "…"}</span>
+      <Button size="sm" kind="quiet" busy={busy} onClick={go} title={tr("Xoá file trung gian, bản xem trước cũ, file chuẩn bị của công thức không còn duyệt. Công thức, bản xuất và bản enhanced vẫn giữ.")}>{tr("Dọn")}</Button>
+    </div>
   );
 }
 
@@ -247,7 +266,8 @@ function Workspace({ subject }: { subject: string }) {
           }}>
             <Icon name="check" size={14} />{tr("Duyệt")}</Button>}
           {r && r.status !== "rejected" && r.status !== "approved" && <Button size="sm" kind="quiet" busy={busy === "reject"} onClick={() => act("reject", `/api/v1/vq/recipes/${r.recipe_id}/reject`)}>{tr("Bỏ")}</Button>}
-          {data.approved && <ExportButton base={base} still={info.still} disabled={running} onDone={reload} />}
+          {data.approved && (info.in_library ? <EnhanceButton subject={subject} info={info} approvedVersion={data.versions.find((v) => v.recipe_id === data.approved)?.version} onDone={reload} />
+            : <ExportButton base={base} still={info.still} disabled={running} onDone={reload} />)}
           {running && <Button size="sm" kind="danger" busy={busy === "cancel"} onClick={() => act("cancel", `${base}/cancel`, {}, tr("Đã huỷ."))}>{tr("Huỷ")}</Button>}
         </div>
         {options && <AnalyseOptions recipeOptions={r?.options} onRun={(o) => { setOptions(false); act("plan", `${base}/plan`, o, tr("Đã xếp việc phân tích.")); }} onClose={() => setOptions(false)} />}
@@ -279,7 +299,7 @@ function Workspace({ subject }: { subject: string }) {
               {tab === "source" && <SourceTab profile={p} info={info} />}
               {tab === "qa" && <QATab previews={data.previews} shot={shot} />}
               {tab === "defects" && <DefectsTab shot={shot} defects={data.defects} />}
-              {tab === "versions" && <VersionsTab versions={data.versions} current={r.recipe_id} exports={data.exports} onChanged={reload} />}
+              {tab === "versions" && <VersionsTab versions={data.versions} current={r.recipe_id} exports={data.exports} info={info} onChanged={reload} />}
             </div>
           </aside>
         </div>
@@ -613,7 +633,7 @@ function DefectsTab({ shot, defects }: { shot: Shot; defects: Defect[] }) {
   );
 }
 
-function VersionsTab({ versions, current, exports, onChanged }: { versions: Version[]; current: string; exports: View["exports"]; onChanged?: () => void }) {
+function VersionsTab({ versions, current, exports, info, onChanged }: { versions: Version[]; current: string; exports: View["exports"]; info: Info; onChanged?: () => void }) {
   const approve = async (id: string) => { try { await post(`/api/v1/vq/recipes/${id}/approve`, {}); toast(tr("Đã duyệt phiên bản này.")); onChanged?.(); } catch (e) { toast((e as Error).message, { tone: "tally" }); } };
   return (
     <div className="grid gap-4">
@@ -628,12 +648,25 @@ function VersionsTab({ versions, current, exports, onChanged }: { versions: Vers
           </li>;
         })}
       </ol>
-      <div className="grid gap-1.5">
+      {info.in_library && (
+        <div className="grid gap-1.5">
+          <p className="eyebrow">{tr("Bản enhanced trong Thư viện")}</p>
+          {!info.enhanced?.url ? <p className="text-[12.5px] text-faint">{tr("Chưa có. Duyệt công thức rồi bấm “Tạo bản enhanced”: bản này nằm cạnh bản gốc trong Thư viện.")}</p> : (
+            <div className="flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-[12.5px]">
+              <Icon name="layers" size={14} />
+              <span className="min-w-0 flex-1 text-ink">{info.enhanced.visual_quality_version ? tv`từ công thức v${info.enhanced.visual_quality_version}` : tr("bản phóng to / làm mượt")}</span>
+              {info.enhanced.stale ? <Tag tone="cue">{tr("cũ")}</Tag> : <Tag tone="proof">{tr("đang dùng")}</Tag>}
+              <a href={`/thu-vien`} className="text-accent hover:underline">{tr("Mở Thư viện")}</a>
+              <a href={info.enhanced.url} download className="text-mute hover:text-ink"><Icon name="download" size={14} /></a>
+            </div>)}
+          <p className="text-[12px] text-faint">{tr("Bản gốc không bao giờ bị sửa. Khi dựng, hệ thống lấy bản enhanced nếu nó khớp công thức đang duyệt; nếu đã cũ thì lấy bản gốc rồi áp công thức.")}</p>
+        </div>)}
+      {(!info.in_library || exports.length > 0) && <div className="grid gap-1.5">
         <p className="eyebrow">{tr("File đã xuất")}</p>
         {exports.length === 0 ? <p className="text-[12.5px] text-faint">{tr("Chưa xuất file nào. Duyệt công thức rồi bấm “Xuất file”.")}</p>
           : exports.map((f) => <a key={f.name} href={f.url} download className="flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-[12.5px] hover:bg-raised">
             <Icon name="download" size={14} /><span className="min-w-0 flex-1 truncate text-ink">{f.name}</span><span className="mono text-faint">{`${(f.size / 1e6).toFixed(1)} MB`}</span></a>)}
-      </div>
+      </div>}
     </div>
   );
 }
@@ -671,6 +704,22 @@ function AnalyseOptions({ recipeOptions, onRun, onClose }: { recipeOptions?: Rec
       </div>
     </div>
   );
+}
+
+/* For a library asset, the result of the approved recipe becomes its enhanced copy in the library, next to the original. */
+function EnhanceButton({ subject, info, approvedVersion, onDone }: { subject: string; info: Info; approvedVersion?: number; onDone?: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const run = info.enhance_run;
+  const making = run && (run.status === "queued" || run.status === "running");
+  const current = info.enhanced && !info.enhanced.stale && info.enhanced.visual_quality_version === approvedVersion;
+  const go = async () => {
+    setBusy(true);
+    try { await post(`/api/v1/assets/${subject}/enhance`, { vq: true }); toast(tr("Đang tạo bản enhanced theo công thức đã duyệt; nó sẽ nằm cạnh bản gốc trong Thư viện.")); onDone?.(); }
+    catch (e) { toast((e as Error).message, { tone: "tally" }); } finally { setBusy(false); }
+  };
+  if (making) return <Tag tone="accent">{tr("đang tạo bản enhanced")}</Tag>;
+  if (current) return <Tag tone="proof">{tv`bản enhanced v${approvedVersion} trong Thư viện`}</Tag>;
+  return <Button size="sm" onClick={go} busy={busy}><Icon name="layers" size={14} />{info.enhanced ? tr("Tạo lại bản enhanced") : tr("Tạo bản enhanced")}</Button>;
 }
 
 function ExportButton({ base, still, disabled, onDone }: { base: string; still: boolean; disabled?: boolean; onDone?: () => void }) {

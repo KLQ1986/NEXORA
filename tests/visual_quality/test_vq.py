@@ -415,8 +415,9 @@ def test_a_step_across_frames_is_applied_shot_by_shot_so_it_never_blends_across_
     out = tmp_path / "out" / "smooth.mp4"
     system.vq.apply(subject, out=str(out))
     drain(system)
-    parts = sorted((system.data_dir / "vq" / subject / "apply" / recipe.recipe_id).glob("part_*"))
-    assert len(parts) == 2                                                     # one render per shot, joined after
+    done = system.vq_reader.requests(subject, kind="apply")[-1]["result"]
+    assert done["parts"] == 2                                                  # one render per shot, joined after
+    assert not list((system.data_dir / "vq" / subject / "apply" / recipe.recipe_id).glob("part_*"))   # and the parts did not stay
     frames = subprocess.run(["ffprobe", "-v", "error", "-count_frames", "-select_streams", "v:0", "-show_entries", "stream=nb_read_frames",
                              "-of", "csv=p=0", str(out)], capture_output=True, text=True).stdout.strip()
     assert 196 <= int(frames) <= 204
@@ -847,3 +848,77 @@ def test_an_export_through_the_api_can_only_be_written_inside_the_subjects_expor
     drain(system)
     assert out.is_file() and client.get(f"/api/v1/vq/subjects/{subject}").json()["exports"][0]["name"] == out.name
     assert not (tmp_path / "elsewhere.mp4").exists()
+
+
+def test_the_librarys_enhanced_copy_is_the_approved_recipe_and_an_older_one_is_never_cut_from(tmp_path):
+    system = vq_system(tmp_path)
+    client = TestClient(create_app(system))
+    asset, _ = system.library.ingest(fake_dlogm(tmp_path / "in" / "lib.mov", 2))
+    drain(system)
+    subject = system.vq.subject_for_asset(asset)
+    system.vq.analyse(subject)
+    drain(system)
+    first = system.vq_reader.recipe(subject)
+    system.vq.approve(first.recipe_id)
+    assert client.post(f"/api/v1/assets/{asset}/enhance", json={"vq": True}).status_code == 202
+    drain(system)
+    enhanced = next(v for v in system.assets.versions(asset) if v.role == "enhanced")
+    assert enhanced.metadata["visual_quality"] == first.recipe_id and enhanced.metadata["vq"] and f"_vq_v{first.version}" in enhanced.relative_path
+    card = next(a for a in client.get("/api/v1/library").json()["assets"] if a["asset_id"] == asset)
+    assert card["enhanced_url"] == f"/media/{enhanced.version_id}" and card["enhanced_stale"] is False
+    original = str(system.assets.path_of(system.assets.original(asset)))
+    path, _, _ = system.edit._source(asset, 0.0, 1.0)
+    assert path == str(system.assets.path_of(enhanced))                        # the current copy is cut from
+    # A new version approved: the copy is old, shown as such, and cuts go back to the source and the new recipe.
+    newer = system.vq.edit_step(first.recipe_id, 0, 0, off=True)
+    system.vq.approve(newer)
+    assert next(a for a in client.get("/api/v1/library").json()["assets"] if a["asset_id"] == asset)["enhanced_stale"] is True
+    assert client.get(f"/api/v1/vq/subjects/{subject}").json()["info"]["enhanced"]["stale"] is True
+    path, _, _ = system.edit._source(asset, 0.0, 1.0)
+    assert path == original
+
+
+def test_approving_a_recipe_with_a_processor_step_prepares_its_files_and_drops_the_others(tmp_path):
+    system = vq_system(tmp_path)
+    calls: list = []
+    system.adapters.register(_Recorder("inpaint", ("remove",), calls))
+    src = shaky(tmp_path / "in" / "r.mp4", audio=False, seconds=2)
+    subject = system.vq.subject_for_file(src)
+    system.vq.analyse(subject, denoise=False, stabilise=False)
+    drain(system)
+    plain = system.vq_reader.recipe(subject)
+    with_removal = system.vq.add_removal(plain.recipe_id, 0, [[10, 10, 60, 40]])
+    run = system.vq.approve(with_removal)
+    assert run is not None                                                     # the prepared files are made without anyone asking
+    drain(system)
+    shot = system.vq_reader.by_id(with_removal).shots[0]
+    prepared = system.vq_reader.prepared_for(subject, shot["t_start"], shot["t_end"])
+    assert prepared is not None and Path(prepared[0]).is_file()
+    # Approving the plain one drops what the other had prepared: it is never used again.
+    assert system.vq.approve(plain.recipe_id) is None
+    assert not Path(prepared[0]).exists() and system.vq_reader.prepared_for(subject, shot["t_start"], shot["t_end"]) is None
+
+
+def test_tidying_removes_only_what_nothing_will_use_again(tmp_path):
+    system = vq_system(tmp_path)
+    src = shaky(tmp_path / "in" / "t.mp4", audio=False, seconds=2)
+    subject = system.vq.subject_for_file(src)
+    system.vq.analyse(subject, denoise=False, stabilise=False)
+    drain(system)
+    recipe = system.vq_reader.recipe(subject)
+    for k in range(system.vq.PREVIEWS_KEPT + 2):
+        system.vq.preview(subject, t=0.2 + k * 0.1, seconds=0.5, recipe_id=recipe.recipe_id)
+        drain(system)
+    previews = system.vq_reader.previews(recipe.recipe_id)
+    assert len(previews) == system.vq.PREVIEWS_KEPT                              # the oldest went, with their pictures
+    assert all(Path(f).is_file() for p in previews for f in p["files"].values())
+    assert not list((system.data_dir / "vq" / subject / "previews").glob("*/prep_*"))
+    frame = system.vq.frame(subject, 0.5)
+    assert frame.is_file()
+    system.vq.approve(recipe.recipe_id)
+    out = system.vq.export_path(subject)
+    system.vq.apply(subject, out=str(out))
+    drain(system)
+    done = system.vq.tidy()
+    assert done["freed_bytes"] > 0 and not frame.exists()
+    assert out.is_file() and system.vq_reader.recipe(subject, status="approved") is not None   # exports and recipes stay
