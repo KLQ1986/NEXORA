@@ -71,7 +71,7 @@ function Pick({ label, value, items, onPick }: { label: string; value: string; i
 
 export default function Storyboard({ projectId, back }: { projectId: string; back: () => void }) {
   const url = `/api/v1/projects/${projectId}/storyboard`;
-  const { data, reload } = usePoll<Board>(url, 5000);
+  const { data, reload, set: show } = usePoll<Board>(url, 5000);
   const [sel, setSel] = useState<string | null>(null);
   const [seam, setSeam] = useState<string | null>(null);
   const [view, setView] = useState<"board" | "time" | "plan">("board");
@@ -87,7 +87,8 @@ export default function Storyboard({ projectId, back }: { projectId: string; bac
     setBusy(key);
     try { await fn(); if (done) toast(done); reload(); } catch (e) { toast((e as Error).message, { tone: "tally" }); } finally { setBusy(null); }
   };
-  const ops = (list: object[], note?: string) => act("ops", () => post(`${url}/ops`, { ops: list, note }));
+  // A change shows the storyboard the server answered with, at once, on every view (board, timeline, plan).
+  const ops = (list: object[], note?: string) => act("ops", async () => { const r = await post<{ storyboard?: Board }>(`${url}/ops`, { ops: list, note }); if (r.storyboard) show(r.storyboard); });
   // Alt+← / Alt+→ move the chosen shot one place back or on, across scenes too, as dragging its card would.
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -401,8 +402,11 @@ function TimeView({ board, cur, tone, pick, pickSeam }: { board: Board; cur?: Sb
         <input type="range" min={0} max={total} step={0.1} value={at} onChange={(e) => setAt(Number(e.target.value))} aria-label={tr("Vị trí trên timeline")} className="min-w-0 flex-1 accent-[#30afff]" />
         <span className="mono">{mmss(total)}</span>
       </div>
-      <Lane label={tr("Hình")}>{shots.map((s) => <button key={s.shot_id} type="button" onClick={() => { pick(s.shot_id); setAt(starts[shots.indexOf(s)]); }}
-                                                         className={`mono h-11 min-w-0 rounded text-[11px] ${s.shot_id === cur?.shot_id ? "outline outline-2 outline-accent" : ""}`} style={{ flex: `${s.spec.duration.target} 1 0`, background: tone(s) }}>{s.code}</button>)}</Lane>
+      {/* Each shot as its frame, so the order reads at a glance and a move shows at once (the codes follow the order and alone look the same). */}
+      <Lane label={tr("Hình")}>{shots.map((s) => <button key={s.shot_id} type="button" onClick={() => { pick(s.shot_id); setAt(starts[shots.indexOf(s)]); }} title={s.spec.intent}
+                                                         className={`mono relative h-11 min-w-0 overflow-hidden rounded text-[11px] ${s.shot_id === cur?.shot_id ? "outline outline-2 outline-accent" : ""}`} style={{ flex: `${s.spec.duration.target} 1 0`, background: tone(s) }}>
+        {s.frame_url && <img src={s.frame_url} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-cover" />}
+        <span className="relative rounded bg-black/65 px-1">{s.code}</span></button>)}</Lane>
       <Lane label={tr("Lời dẫn")} top>{shots.map((s) => <div key={s.shot_id} className="line-clamp-4 min-w-0 border-t-2 border-accent/40 pt-1 text-[10.5px] leading-snug text-mute" style={{ flex: `${s.spec.duration.target} 1 0` }}>{s.spec.line}</div>)}</Lane>
       <div className="grid gap-1.5 border-t border-line pt-3">
         <div className="flex items-baseline gap-2.5"><span className="font-semibold">{tr("Liền mạch")}</span><span className="text-[12px] text-faint">{tr("mỗi làn là một thực thể; vạch đứt là chỗ nó vắng mặt")}</span><span className="flex-1" />

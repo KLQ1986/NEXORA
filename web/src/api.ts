@@ -54,11 +54,17 @@ export function usePoll<T>(url: string, ms = 2000) {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   const alive = useRef(true);
+  // Answers can come back out of order (a poll sent before a change, answered after it): only one newer than what is shown
+  // is shown, so a change never flickers back to how things were.
+  const asked = useRef(0), shown = useRef(0);
   const reload = useCallback(() => {
     if (!url) return;                              // nothing to ask yet (or here): stay empty, do not fetch the page itself
-    call<T>(url).then((d) => { if (alive.current) { setData(d); setError(null); } })
+    const mine = ++asked.current;
+    call<T>(url).then((d) => { if (alive.current && mine > shown.current) { shown.current = mine; setData(d); setError(null); } })
       .catch((e) => { if (alive.current) setError(e.message); });
   }, [url]);
+  /** What the server just answered to a change, shown at once; any answer asked for before it is then too old to show. */
+  const set = useCallback((d: T) => { shown.current = ++asked.current; setData(d); }, []);
   useEffect(() => {
     alive.current = true;
     reload();
@@ -67,7 +73,7 @@ export function usePoll<T>(url: string, ms = 2000) {
     window.addEventListener(CHANGED, now);         // the server says something changed: refresh at once, do not wait for the next poll
     return () => { alive.current = false; clearInterval(id); window.removeEventListener(CHANGED, now); };
   }, [reload, ms]);
-  return { data, error, reload };
+  return { data, error, reload, set };
 }
 
 export const timecode = (s: number | null | undefined) => {
