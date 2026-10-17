@@ -167,7 +167,7 @@ export const goTo = (to: string) => navigate(to);
 let sideHidden = (() => { try { return localStorage.getItem("nx.side") === "1"; } catch { return false; } })();
 const sideListeners = new Set<() => void>();
 export function toggleSide() { sideHidden = !sideHidden; try { localStorage.setItem("nx.side", sideHidden ? "1" : "0"); } catch { /* private window */ } sideListeners.forEach((l) => l()); }
-function useSideHidden() {
+export function useSideHidden() {
   const [, bump] = useState(0);
   useEffect(() => { const l = () => bump((n) => n + 1); sideListeners.add(l); return () => { sideListeners.delete(l); }; }, []);
   return sideHidden;
@@ -202,6 +202,17 @@ export function SideLink({ label, icon, lead, on, onClick, count, tone, small, t
 /** Every screen: the menu of its section down the side (when it has one), a slim bar with its facts and actions, and the content
  *  scrolling beneath. The section itself is named in the top bar, so the screen does not repeat its own name unless it is a
  *  single item (a project, a render) reached from a list. */
+/** The section's side menu beside a screen that draws its own header (the storyboard): the same column as Page's, folded with it. */
+export function SideFrame({ side, children }: { side: React.ReactNode; children: React.ReactNode }) {
+  const hidden = useSideHidden();
+  return (
+    <div className="flex min-h-0 min-w-0 flex-1">
+      {!hidden && <aside aria-label={tr("Menu của mục này")} className="hidden w-[248px] shrink-0 overflow-y-auto overflow-x-hidden border-r border-line bg-surface/40 px-3 py-4 lg:block">{side}</aside>}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
+    </div>
+  );
+}
+
 export function Page({ title, note, actions, back, tabs, side, children, wide = false, full = false, flush = false }: { title: React.ReactNode; eyebrow?: React.ReactNode; note?: React.ReactNode; actions?: React.ReactNode;
   back?: { label: string; onClick: () => void }; tabs?: React.ReactNode; side?: React.ReactNode; children: React.ReactNode; wide?: boolean; full?: boolean; flush?: boolean }) {
   // How wide the content may run: a reading measure, a wide one for work surfaces, or the whole window for the overview.

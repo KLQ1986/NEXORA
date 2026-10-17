@@ -3,7 +3,7 @@ import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { call, post, projectState, scriptText, stageName, timecode, usePoll, type Idea, type Source, type AgentTask, type Asset, type Settings, type Candidate, type Project, type RenderItem, type Shot, type BibleEntry, type GapPlan, type Op, type Rights, type Publishing, type Channel } from "./api";
 import Board from "./Board";
-import { ask, Button, Empty, Filmstrip, goTo, Icon, Meter, Page, Section, Seg, SideGroup, SideLink, SkeletonCards, StageRail, Steps, Tabs, Tag, TimeChip, toast, Readout } from "./parts";
+import { ask, Button, Empty, Filmstrip, goTo, Icon, Meter, Page, Section, Seg, SideFrame, SideGroup, SideLink, SkeletonCards, StageRail, Steps, Tabs, Tag, TimeChip, toast, Readout } from "./parts";
 import Timeline from "./Timeline";
 import Storyboard from "./Storyboard";
 
@@ -456,44 +456,58 @@ function stepState(k: View, step: number, reviewing: boolean, renderReview: bool
   return step >= 5 ? (packaged ? "done" : "now") : "later";
 }
 
-/** The steps of a video down the side menu: a lamp for where each stands, the open one lit. Then the two views of the whole. */
-function StepSide({ view, step, reviewing, renderReview, packaged, onChange, storyboard }: { view: View; step: number; reviewing: boolean; renderReview: boolean; packaged: boolean; onChange: (v: View) => void; storyboard?: () => void }) {
+type Lamps = { step: number; reviewing: boolean; renderReview: boolean; packaged: boolean };
+type Place = View | "storyboard";
+
+/** The steps of the open project, hung beneath it in the side menu: a lamp for where each stands, the open one lit; the
+    Storyboard after the script, then the two views of the whole. */
+function StepTree({ id, place, lamps, onChange }: { id: string; place: Place; lamps: Lamps; onChange?: (v: View) => void }) {
   const dot = { done: "border-proof/40 bg-proof/15 text-proof", now: "border-accent/60 bg-accent/15 text-accent", wait: "border-cue/60 bg-cue/15 text-cue", later: "border-line text-faint" };
   const said = { done: tr("Đã xong"), now: tr("Đang ở bước này"), wait: tr("Chờ bạn"), later: tr("Chưa tới") };
+  // On the project's page a step changes the view in place; from the storyboard it opens the project at that step.
+  const open = (k: View) => (onChange ? onChange(k) : goTo(`/du-an/${id}?tab=${k}`));
+  const lamp = (cls: string, icon: string, wait = false) => <span className={`relative grid h-5 w-5 shrink-0 place-items-center rounded-full border ${cls}`}><Icon name={icon} size={11} />{wait && <span className="ping absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-cue" />}</span>;
   return (
     <>
-      <SideGroup label={tr("Các bước")}>
-        {FLOW.map(([k, label, icon]) => { const st = stepState(k, step, reviewing, renderReview, packaged); return (<Fragment key={k}>
-          <SideLink label={label} on={view === k} onClick={() => onChange(k)} title={said[st]}
-                    lead={<span className={`relative grid h-6 w-6 shrink-0 place-items-center rounded-full border ${dot[st]}`}><Icon name={st === "done" ? "check" : icon} size={12} />{st === "wait" && <span className="ping absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-cue" />}</span>} />
-          {k === "script" && storyboard && <SideLink label={tr("Storyboard")} on={false} onClick={storyboard} title={tr("Từ ý tưởng hoặc kịch bản này thành cảnh và shot có đặc tả, mặt bằng máy, liền mạch; sửa bằng hội thoại.")}
-                    lead={<span className="grid h-6 w-6 shrink-0 place-items-center rounded-full border border-line text-mute"><Icon name="layers" size={12} /></span>} />}</Fragment>); })}
-      </SideGroup>
-      <SideGroup label={tr("Toàn cảnh")}>
-        <SideLink label={tr("Dòng thời gian")} icon="timeline" on={view === "timeline"} onClick={() => onChange("timeline")} />
-        <SideLink label={tr("Bảng theo dõi")} icon="board" on={view === "board"} onClick={() => onChange("board")} />
-      </SideGroup>
+      {FLOW.map(([k, label, icon]) => { const st = stepState(k, lamps.step, lamps.reviewing, lamps.renderReview, lamps.packaged); return (<Fragment key={k}>
+        <SideLink small label={label} on={place === k} onClick={() => open(k)} title={said[st]} lead={lamp(dot[st], st === "done" ? "check" : icon, st === "wait")} />
+        {k === "script" && <SideLink small label={tr("Storyboard")} on={place === "storyboard"} onClick={() => goTo(`/du-an/${id}/storyboard`)}
+                                     title={tr("Từ ý tưởng hoặc kịch bản này thành cảnh và shot có đặc tả, mặt bằng máy, liền mạch; sửa bằng hội thoại.")}
+                                     lead={lamp(place === "storyboard" ? dot.now : "border-line text-mute", "layers")} />}
+      </Fragment>); })}
+      <span className="mx-2.5 my-1 h-px bg-line" aria-hidden="true" />
+      <SideLink small label={tr("Dòng thời gian")} icon="timeline" on={place === "timeline"} onClick={() => open("timeline")} />
+      <SideLink small label={tr("Bảng theo dõi")} icon="board" on={place === "board"} onClick={() => open("board")} />
     </>
   );
 }
 
-/** The projects section's side menu: the open project's steps first (when one is open), then every project by where it stands. */
-function ProjectSide({ current, steps, filter }: { current?: string; steps?: React.ReactNode; filter?: { value: Filter; set: (f: Filter) => void; counts: Record<Filter, number> } }) {
+/* The list's filter outlives a visit to a project, so coming back from one finds the list as it was left. */
+let listFilter: Filter = "all";
+const bucket = (p: Project): Filter => { const st = projectState(p); return st.step === 5 ? "done" : st.tone === "cue" || st.tone === "tally" ? "waiting" : "active"; };
+
+/** The projects section's side menu, the same on every screen of it: the list's filters, then every project by where it
+    stands, the open one unfolding its steps (and its storyboard) beneath it, so the menu never changes shape under the hand. */
+function ProjectSide({ current, place, lamps, onView, filter }: { current?: string; place?: Place; lamps?: Lamps; onView?: (v: View) => void; filter?: { value: Filter; set: (f: Filter) => void } }) {
   const { data } = usePoll<Project[]>("/api/v1/projects", 15000);
   const all = data ?? [];
-  const lamp = { mute: "bg-faint", cue: "bg-cue", proof: "bg-proof", tally: "bg-tally" };
-  const row = (p: Project) => { const st = projectState(p); return (
-    <SideLink key={p.project_id} small label={p.title} title={`${p.title}: ${st.label}`} on={p.project_id === current} onClick={() => goTo(`/du-an/${p.project_id}`)}
-              lead={<span className={`relative h-1.5 w-1.5 shrink-0 rounded-full ${lamp[st.tone]} ${st.tone === "cue" ? "ping" : ""}`} />} />); };
+  const tone = { mute: "bg-faint", cue: "bg-cue", proof: "bg-proof", tally: "bg-tally" };
+  const counts = { all: all.length, active: 0, waiting: 0, done: 0 } as Record<Filter, number>;
+  all.forEach((p) => { counts[bucket(p)] += 1; });
+  const pick = (k: Filter) => { listFilter = k; if (filter) filter.set(k); else goTo("/du-an"); };
+  const row = (p: Project) => { const st = projectState(p); const open = p.project_id === current; return (
+    <SideLink key={p.project_id} small label={p.title} title={`${p.title}: ${st.label}`} on={open && !place} onClick={() => goTo(`/du-an/${p.project_id}`)}
+              lead={<Icon name={open ? "down" : "next"} size={13} className={open ? "text-ink" : "text-faint"} />}
+             >
+      {open && <StepTree id={p.project_id} place={place ?? "script"} lamps={lamps ?? { step: st.step, reviewing: st.tone === "cue" && st.step < 3, renderReview: false, packaged: st.step === 5 }} onChange={onView} />}
+    </SideLink>); };
   const active = all.filter((p) => projectState(p).step < 5), done = all.filter((p) => projectState(p).step === 5);
+  const lit = filter?.value ?? (current ? null : listFilter);
   return (
     <>
-      {steps}
-      {filter ? (
-        <SideGroup label={tr("Dự án")}>
-          {FILTERS.map(([k, name]) => <SideLink key={k} label={name} icon={({ all: "layers", active: "pulse", waiting: "bell", done: "check" } as const)[k]} on={filter.value === k} onClick={() => filter.set(k)} count={filter.counts[k]} tone={k === "waiting" ? "cue" : undefined} />)}
-        </SideGroup>
-      ) : <SideGroup><SideLink label={tr("Tất cả dự án")} icon="layers" onClick={() => goTo("/du-an")} count={all.length} /></SideGroup>}
+      <SideGroup label={tr("Dự án")}>
+        {FILTERS.map(([k, name]) => <SideLink key={k} small label={name} icon={({ all: "layers", active: "pulse", waiting: "bell", done: "check" } as const)[k]} on={lit === k} onClick={() => pick(k)} count={counts[k]} tone={k === "waiting" ? "cue" : undefined} />)}
+      </SideGroup>
       {active.length > 0 && <SideGroup label={tr("Đang làm")} end={<span className="mono">{active.length}</span>}>{active.map(row)}</SideGroup>}
       {done.length > 0 && <SideGroup label={tr("Đã xong")} end={<span className="mono">{done.length}</span>}>{done.map(row)}</SideGroup>}
     </>
@@ -712,7 +726,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
             [String(p.renders.length || "–"), tr("bản dựng")],
             [latest ? timecode(latest.qc.duration) : "–", tr("thời lượng")],
           ]} extra={<>{FORMATS[p.format] ?? p.format}{p.template ? <span className="ml-3">{p.template}</span> : null}</>} />}
-          side={<ProjectSide current={id} steps={<StepSide view={view} step={step} reviewing={!!reviewing} renderReview={!!renderReview} packaged={!!latest?.package} onChange={setView} storyboard={() => goTo(`/du-an/${id}/storyboard`)} />} />}
+          side={<ProjectSide current={id} place={view} lamps={{ step, reviewing: !!reviewing, renderReview: !!renderReview, packaged: !!latest?.package }} onView={setView} />}
           tabs={<div className="lg:hidden"><StepTabs view={view} step={step} reviewing={!!reviewing} renderReview={!!renderReview} packaged={!!latest?.package} onChange={setView} /></div>}
           actions={<><Button onClick={() => goTo(`/du-an/${id}/storyboard`)} title={tr("Từ ý tưởng hoặc kịch bản này thành cảnh và shot có đặc tả, mặt bằng máy, liền mạch; sửa bằng hội thoại.")}>
             <Icon name="layers" size={15} />{tr("Storyboard")}</Button><Button onClick={() => setSettings(true)} title={tr("Mẫu, khung hình, nhạc, lời dẫn, kênh, ngày đăng")}><Icon name="sliders" size={15} />{tr("Thiết lập")}</Button>{next && <Button kind="primary" busy={busy} disabled={next.label === tr("Lưu kịch bản") && !(text ?? "").trim()} onClick={next.go}>{!busy && <Icon name={next.icon} />}{next.label}</Button>}</>}>
@@ -1139,7 +1153,8 @@ export default function Projects({ sub, go }: { sub: string | null; go: (to: str
   const [goal, setGoal] = useState("");
   const [format, setFormat] = useState("landscape");
   const [mode, setMode] = useState<"none" | "new" | "agent" | "ideas">(() => (new URLSearchParams(window.location.search).has("moi") ? "new" : "none"));
-  const [filter, setFilter] = useState<Filter>("all");
+  const [filter, setFilterState] = useState<Filter>(() => listFilter);
+  const setFilter = (f: Filter) => { listFilter = f; setFilterState(f); };
   const [view, setView] = useState<"grid" | "list">(() => { try { return (localStorage.getItem("nx.projects.view") as "grid" | "list") ?? "grid"; } catch { return "grid"; } });
   const { data: ideas, reload: reloadIdeas } = usePoll<{ ideas: Idea[] }>("/api/v1/ideas", 60000);
   const [thinking, setThinking] = useState(false);
@@ -1151,7 +1166,7 @@ export default function Projects({ sub, go }: { sub: string | null; go: (to: str
   useEffect(() => { if (!sub && new URLSearchParams(window.location.search).has("moi")) setMode("new"); }, [sub, window.location.search]);
   if (sub) {
     const [pid, part] = sub.split("/");
-    if (part === "storyboard") return <Storyboard key={pid} projectId={pid} back={() => go(`/du-an/${pid}`)} />;
+    if (part === "storyboard") return <SideFrame side={<ProjectSide current={pid} place="storyboard" />}><Storyboard key={pid} projectId={pid} back={() => go(`/du-an/${pid}`)} /></SideFrame>;
     return <Detail key={pid} id={pid} back={() => go("/du-an")} />;
   }
   const remove = async (p: Project) => { await trashProject(p); reload(); };
@@ -1163,12 +1178,11 @@ export default function Projects({ sub, go }: { sub: string | null; go: (to: str
   const setLook = (v: "grid" | "list") => { setView(v); try { localStorage.setItem("nx.projects.view", v); } catch { /* fine */ } };
   const formats = <Seg label={tr("Khung hình")} value={format} onChange={setFormat} items={Object.entries(FORMATS) as [string, string][]} />;
   const all = data ?? [];
-  const bucket = (p: Project): Filter => { const st = projectState(p); return st.step === 5 ? "done" : st.tone === "cue" || st.tone === "tally" ? "waiting" : "active"; };
   const shown = all.filter((p) => filter === "all" || bucket(p) === filter);
   const toggle = (m: typeof mode) => { setMode(mode === m ? "none" : m); if (window.location.search) window.history.replaceState({}, "", "/du-an"); };
   return (
     <Page eyebrow={tr("Sản xuất")} title={tr("Dự án")} note={tr("Mỗi dự án là một video, từ kịch bản tới bản dựng đã duyệt.")}
-          side={<ProjectSide filter={{ value: filter, set: setFilter, counts: { all: all.length, active: all.filter((p) => bucket(p) === "active").length, waiting: all.filter((p) => bucket(p) === "waiting").length, done: all.filter((p) => bucket(p) === "done").length } }} />}
+          side={<ProjectSide filter={{ value: filter, set: setFilter }} />}
           actions={<><Button kind="quiet" onClick={() => toggle("ideas")}><Icon name="spark" />{tr("Gợi ý ý tưởng")}</Button><Button kind="ai" onClick={() => toggle("agent")}><Icon name="sparkles" />{tr("Giao cho trợ lý")}</Button><Button kind="primary" onClick={() => toggle("new")}><Icon name="plus" />{tr("Dự án mới")}</Button></>}>
       {mode === "new" && (
         <form className="panel glow rise mb-6 max-w-3xl p-5" onSubmit={(e) => { e.preventDefault(); if (title.trim()) create(); }}>
