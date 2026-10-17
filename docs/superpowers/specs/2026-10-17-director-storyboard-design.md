@@ -102,6 +102,20 @@ Idea → scenes uses the same mechanism: the first proposal is a whole storyboar
 duration and source policy) from the idea, a length and a format; the story structure follows VI's beats (hook, setup,
 development, peak, close) and the target length.
 
+## Seeing continuity
+
+Continuity is shown where the eye cannot keep it on a long storyboard, from the measures above:
+
+- **A seam at every cut** of the project's storyboard (between two neighbouring shots, across scenes too), green / amber /
+  red. Opening it shows the last frame of the shot before beside the first of the shot after, and each dimension: colour and
+  light step (VQ colour gap; a new scene may change it), screen direction (180° line), character and wardrobe (SigLIP against
+  the Bible), jump-cut risk (same size, angle and place). Each failing dimension comes with the Director's fix, which becomes
+  a proposal in the conversation.
+- **Continuity lanes** on the timeline draft: one lane per Bible entity, a bar where it is present, a gap where it is not; a
+  direction lane (→ ←); the warmth and brightness of the light as curves across the shots, so an intended drift (dawn to dusk)
+  reads as a line and an accident as a spike; the seams as marks at the cuts.
+- A seam's verdict is part of the Director loop: a red seam keeps the shot after it from being accepted alone.
+
 ## Animatic (Timeline Draft)
 
 Every shot as its keyframe (a generated still, or a frame of its matched footage) held for its duration, with temp voice
