@@ -2256,6 +2256,10 @@ const en: Record<string, string> = {
   "Phân tích {0} mục chưa làm": "Analyse {0} not yet done",
   "Đường dẫn file": "File path",
   "Chưa phân tích VQ": "VQ not analysed yet",
+  "Về thư viện (t)": "Back to the library (t)",
+  "QA đạt": "QA passed",
+  "QA cảnh báo": "QA warning",
+  "QA hỏng": "QA failed",
 };
 
 export default en;

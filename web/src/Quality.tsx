@@ -195,8 +195,11 @@ export function VQPanel({ vq }: { vq: VQ }) {
           {r && <span className="mono text-[12px] text-faint">{tv`công thức v${r.version}`}</span>}
           {data.previews[0] && <span className={`text-[12px] ${data.previews[0].qa.verdict === "pass" ? "text-proof" : data.previews[0].qa.verdict === "warn" ? "text-cue" : "text-tally"}`}>
             {tv`QA ${VERDICT_NAME[data.previews[0].qa.verdict] ?? data.previews[0].qa.verdict}`}</span>}
-          <span className="min-w-0 truncate text-[12px] text-faint">{[p?.encoding_name, p ? CONTENT[p.content] ?? p.content : null].filter(Boolean).join(" · ")}</span>
         </div>
+        <p className="text-[12px] text-faint">
+          {[info.width && info.height ? `${info.width}×${info.height}` : null, p?.technical.bit_depth ? `${p.technical.bit_depth}-bit` : null,
+            info.frame_rate ? `${Number(info.frame_rate).toFixed(2)} fps` : null, info.duration ? timecode(info.duration) : info.still ? tr("ảnh tĩnh") : null,
+            p?.encoding_name, p ? CONTENT[p.content] ?? p.content : null].filter(Boolean).join(" · ")}</p>
         <div className="flex flex-wrap items-center gap-2">
           <Button size="sm" onClick={() => vq.setOptions((v) => !v)} disabled={running}><Icon name="sliders" size={14} />{r ? tr("Phân tích lại") : tr("Phân tích")}</Button>
           {r && <Button size="sm" disabled={running} busy={busy === "preview"} onClick={() => act("preview", `${base}/preview`, { t: info.still ? 0 : vq.mid, seconds: 3, recipe_id: r.recipe_id }, tr("Đã xếp việc xem trước shot này."))}>

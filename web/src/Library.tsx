@@ -6,6 +6,7 @@ const LEVEL: Record<string, string> = { segment: tr("CẢNH"), scene: tr("CẢNH
 import { ask, Button, Icon, Page, RangeStrip, Seg, SkeletonCards, Spinner, Tabs, TimeChip, toast, goTo } from "./parts";
 import { StructureStrip } from "./Structure";
 import { AddVQFile, STATE as VQ_STATE, useVQ, VQPanel, VQStage, VQTools, Workspace, type Row as VQRow } from "./Quality";
+import { DEFECT } from "./VisualQuality";
 import { AssetProfile } from "./Profile";
 import { AssetDossier } from "./Dossier";
 import { AssetStory } from "./Story";
@@ -286,8 +287,17 @@ function Card({ item, on, chosen, choosing, pick, choose, acts, vq }: { item: It
 const VQ_DOT: Record<string, string> = { mute: "border border-faint", cue: "bg-cue", proof: "bg-proof", tally: "bg-tally", accent: "bg-accent", ai: "bg-ai" };
 function VQMark({ row }: { row: VQRow }) {
   const [label, tone] = VQ_STATE[row.state] ?? [row.state, "mute"];
-  return <span className="mt-1 flex items-center gap-1.5 text-[11.5px] text-mute"><span className={`h-1.5 w-1.5 rounded-full ${VQ_DOT[tone] ?? VQ_DOT.mute}`} />
-    {tr("VQ")}: {label}{row.recipe && row.state !== "none" ? ` v${row.recipe.version}` : ""}</span>;
+  const verdict = row.verdict ? ({ pass: [tr("QA đạt"), "text-proof"], warn: [tr("QA cảnh báo"), "text-cue"], fail: [tr("QA hỏng"), "text-tally"] } as Record<string, [string, string]>)[row.verdict] : null;
+  return (
+    <span className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 text-[11.5px] text-mute"
+          title={[row.encoding_name, row.worst ? `${DEFECT[row.worst.kind] ?? row.worst.kind} ${Math.round(row.worst.severity * 100)}%` : null].filter(Boolean).join(" · ") || undefined}>
+      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${VQ_DOT[tone] ?? VQ_DOT.mute}`} />
+      {tr("VQ")}: {label}{row.recipe && row.state !== "none" ? ` v${row.recipe.version}` : ""}
+      {verdict && <span className={verdict[1]}>· {verdict[0]}</span>}
+      {row.generative > 0 && <span className="text-ai">· AI {row.generative}</span>}
+      {row.worst && row.state !== "none" && <span className="truncate text-faint">· {DEFECT[row.worst.kind] ?? row.worst.kind} {Math.round(row.worst.severity * 100)}%</span>}
+    </span>
+  );
 }
 
 function Row({ item, on, chosen, choosing, pick, choose }: { item: Item; on: boolean; chosen: boolean; choosing: boolean; pick: () => void; choose: () => void }) {
@@ -715,7 +725,11 @@ function Viewer({ item, items, start, assets, close, reload, similar, pick, comp
   const vq = useVQ(tab === "vq" && asset ? asset.asset_id : "");
   const comparing = tab === "vq" && !!vq.r && !!vq.shot;
   // Its before and after want room: the tab opens the theatre once there is a recipe to look at (closing it is still allowed).
-  useEffect(() => { if (comparing) setTheater?.(true); }, [comparing]);
+  const autoTheatre = useRef(false);
+  useEffect(() => {
+    if (comparing && !theater) { autoTheatre.current = true; setTheater?.(true); }
+    else if (!comparing && autoTheatre.current) { autoTheatre.current = false; setTheater?.(false); }     // leaving the tab: back as it was
+  }, [comparing]);
   useEffect(() => { const go = (e: Event) => setTab((e as CustomEvent).detail as Tab); window.addEventListener("nx-tab", go); return () => window.removeEventListener("nx-tab", go); }, []);
   // Three sizes, as YouTube has them: small beside the details (the default), theatre (the picture across the whole library,
   // `t`), and the player's own full screen (`f`).
@@ -755,6 +769,8 @@ function Viewer({ item, items, start, assets, close, reload, similar, pick, comp
   return (
     <section className="flex h-full min-h-0 flex-col" aria-label={tr("Xem")}>
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-3">
+        {theater && <button type="button" onClick={() => setTheater?.(false)} title={tr("Về thư viện (t)")}
+          className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-line px-2.5 text-[13px] text-mute hover:border-edge hover:text-ink"><Icon name="back" size={14} />{tr("Thư viện")}</button>}
         <span className="hidden shrink-0 text-[13.5px] text-faint xl:inline">{({ video: tr("Footage"), image: tr("Ảnh"), audio: tr("Âm thanh"), draft: tr("Bản nháp"), render: tr("Bản dựng") } as Record<Kind, string>)[item.kind]}</span>
         <span className="hidden shrink-0 text-faint xl:inline">/</span>
         <Name item={item} reload={reload} />
@@ -773,7 +789,7 @@ function Viewer({ item, items, start, assets, close, reload, similar, pick, comp
             : <select value="" onChange={(e) => e.target.value && setCompare(e.target.value)} aria-label={tr("So sánh với")} className="h-7 w-[132px] pl-2 text-[12.5px]"><option value="">{tr("So sánh với…")}</option>
                 {compareTo.slice(0, 40).map((i) => <option key={i.key} value={i.key}>{i.version ? `v${i.version} · ` : ""}{i.title.slice(0, 40)}</option>)}</select>)}
           {item.status === "review" && !why && <><Button size="sm" disabled={busy} onClick={() => setWhy(issues.map((n) => `${n.t != null ? timecode(n.t) + ": " : ""}${n.text}`).join("; "))}>{tr("Từ chối")}</Button><Button size="sm" kind="primary" busy={busy} onClick={() => decide(true)}><Icon name="check" size={13} />{tr("Duyệt")}</Button></>}
-          {!feeds.length && <button type="button" onClick={grow} title={theater ? tr("Thu về khung nhỏ (t)") : tr("Chế độ rạp (t); toàn màn hình: f")} aria-label={theater ? tr("Thu về khung nhỏ (t)") : tr("Chế độ rạp (t); toàn màn hình: f")} aria-pressed={theater} className="grid h-7 w-7 place-items-center rounded-md text-faint hover:bg-raised hover:text-ink"><Icon name={theater ? "collapse" : "expand"} size={14} /></button>}
+          {!feeds.length && !theater && <button type="button" onClick={grow} title={theater ? tr("Thu về khung nhỏ (t)") : tr("Chế độ rạp (t); toàn màn hình: f")} aria-label={theater ? tr("Thu về khung nhỏ (t)") : tr("Chế độ rạp (t); toàn màn hình: f")} aria-pressed={theater} className="grid h-7 w-7 place-items-center rounded-md text-faint hover:bg-raised hover:text-ink"><Icon name={theater ? "collapse" : "expand"} size={14} /></button>}
           {item.project && <button type="button" onClick={() => goTo(`/du-an/${item.project!.project_id}`)} title={tr("Mở dự án")} aria-label={tr("Mở dự án")} className="grid h-7 w-7 place-items-center rounded-md text-faint hover:bg-raised hover:text-ink"><Icon name="external" size={14} /></button>}
           <button type="button" onClick={close} aria-label={tr("Đóng")} className="grid h-7 w-7 place-items-center rounded-md text-faint hover:bg-raised hover:text-ink"><Icon name="x" size={15} /></button>
         </span>
@@ -1016,7 +1032,7 @@ export default function Library() {
         })}
         <Node on={!!fileJob} icon="folder" label={tr("File ngoài thư viện")} n={outside.length} click={() => fold("outside")} open={open.outside} fold={() => fold("outside")} />
         {open.outside && <>
-          {outside.map((r) => <Node key={r.subject} depth={1} on={fileJob === r.subject} icon={r.still ? "image" : "film"} label={r.name} click={() => openFile(r.subject)} />)}
+          {outside.map((r) => <Node key={r.subject} depth={1} on={fileJob === r.subject} icon={r.still ? "image" : "film"} label={`${r.name} · ${(VQ_STATE[r.state] ?? [r.state])[0]}`} click={() => openFile(r.subject)} />)}
           <Node depth={1} on={false} icon="plus" label={tr("Thêm file ngoài…")} click={() => setAddingFile((v) => !v)} />
           {addingFile && <AddVQFile onAdded={(s) => { setAddingFile(false); reloadVQ?.(); openFile(s); }} />}
         </>}
@@ -1119,8 +1135,9 @@ export default function Library() {
   const viewer = fileJob ? (
     <section className="flex h-full min-h-0 flex-col" aria-label={tr("VQ")}>
       <div className="flex h-10 shrink-0 items-center gap-2 border-b border-line px-3 text-[12.5px] text-faint">
+        <button type="button" onClick={() => { setFileJob(null); window.history.replaceState({}, "", "/thu-vien"); }}
+          className="flex h-7 items-center gap-1.5 rounded-md border border-line px-2.5 text-[13px] text-mute hover:border-edge hover:text-ink"><Icon name="back" size={14} />{tr("Thư viện")}</button>
         <span className="flex-1">{tr("File ngoài thư viện: chỉ sửa VQ")}</span>
-        <button type="button" onClick={() => { setFileJob(null); window.history.replaceState({}, "", "/thu-vien"); }} aria-label={tr("Đóng")} className="grid h-7 w-7 place-items-center rounded-md hover:bg-raised hover:text-ink"><Icon name="x" size={15} /></button>
       </div>
       <Workspace key={fileJob} subject={fileJob} />
     </section>
