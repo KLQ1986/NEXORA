@@ -288,6 +288,39 @@ function RightsList({ renderId }: { renderId: string }) {
 const LANGS: Record<string, string> = { en: tr("tiếng Anh"), zh: tr("tiếng Trung"), ja: tr("tiếng Nhật"), ko: tr("tiếng Hàn"), fr: tr("tiếng Pháp"), es: tr("tiếng Tây Ban Nha"), th: tr("tiếng Thái") };
 
 /** Tracks from the library that would sit under this cut, with why each is where it is. */
+/* Neighbouring shots from different sources (another camera, a phone, stock): each pair the cut puts side by side, the side
+   that changes, to what, and the gap now. Matching proposes a step in Visual Quality, previewed and approved there. */
+type ColourPair = { after: number; reference: { asset_id: string; t: number; source: string }; change: { asset_id: string; t: number; source: string };
+  mode: "look" | "scene"; place: string | null; ready: boolean; state: "none" | "proposed" | "approved"; gap: number | null };
+function ColourPairs({ id }: { id: string }) {
+  const { data, reload } = usePoll<{ pairs: ColourPair[] }>(`/api/v1/projects/${id}/colour`, 60000);
+  const [busy, setBusy] = useState<number | null>(null);
+  const pairs = data?.pairs ?? [];
+  if (!pairs.length) return null;
+  const match = async (p: ColourPair) => {
+    setBusy(p.after);
+    try { await post(`/api/v1/projects/${id}/colour/match`, { after: p.after }); toast(tr("Đã đề xuất khớp màu; xem trước rồi duyệt ở Chất lượng hình.")); reload(); }
+    catch (e) { toast((e as Error).message, { tone: "tally" }); }
+    setBusy(null);
+  };
+  return (
+    <div className="grid gap-2 rounded-xl border border-line p-3">
+      <p className="text-[13px] text-ink">{tr("Khớp màu giữa các nguồn")}</p>
+      <p className="text-[12px] text-faint">{tr("Các cảnh kề nhau đến từ nguồn khác nhau. Nguồn dùng nhiều nhất trong bản dựng được giữ làm chuẩn; nguồn kia được chỉnh theo.")}</p>
+      <ul className="grid gap-1.5">{pairs.map((p) => (
+        <li key={p.after} className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px]">
+          <span className="mono text-faint">{tv`Cảnh ${p.after + 1}–${p.after + 2}`}</span>
+          <span className="min-w-0 flex-1">{tv`${p.change.source} theo ${p.reference.source}`}
+            <span className="text-faint">{` · ${p.mode === "scene" ? tv`cùng nơi (${p.place ?? ""})` : tr("tông máy quay")}${p.gap != null ? tv` · lệch ${p.gap.toFixed(1)}` : ""}`}</span></span>
+          {p.state === "approved" ? <Tag tone="proof">{tr("đã khớp")}</Tag>
+            : p.state === "proposed" ? <button type="button" className="link" onClick={() => goTo(`/chat-luong-hinh?s=${p.change.asset_id}`)}>{tr("Xem trước & duyệt")}</button>
+            : !p.ready ? <span className="text-faint">{tr("chưa phân tích chất lượng hình")}</span>
+            : <Button size="sm" busy={busy === p.after} onClick={() => match(p)}>{tr("Khớp màu")}</Button>}
+        </li>))}</ul>
+    </div>
+  );
+}
+
 function MusicIdeas({ id, choose }: { id: string; choose: (path: string) => void }) {
   const [energy, setEnergy] = useState("");
   const [data, setData] = useState<{ seconds: number; tracks: { asset_id: string; name: string; path: string; why: string }[] } | null>(null);
@@ -970,6 +1003,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
                 <label className="flex items-start gap-2.5 text-[13px]"><input type="checkbox" className="mt-0.5" checked={!!p.options.match_colour} disabled={busy} onChange={(e) => patch({ options: { match_colour: e.target.checked } })} />
                   <span>{tr("Cân màu giữa các cảnh")}<span className="block text-[12px] text-faint">{tr("Kéo độ sáng và tương phản của từng cảnh về cùng một mức.")}</span></span></label>
               </div>
+              <ColourPairs id={id} />
               {channels.length > 0 && <div><label htmlFor="channel" className={field}>{tr("Kênh")}</label>
                 <select id="channel" value={p.channel ?? ""} disabled={busy} onChange={(e) => patch({ channel: e.target.value })} className="mt-1.5 h-9 w-full pl-2.5"><option value="">{tr("Chưa thuộc kênh nào")}</option>{channels.map((c) => <option key={c.name}>{c.name}</option>)}</select></div>}
               <div><label htmlFor="due" className={field}>{tr("Ngày dự định đăng")}</label>

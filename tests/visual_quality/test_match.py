@@ -1,4 +1,5 @@
 """Matching a subject's colour to a reference's."""
+import subprocess
 from pathlib import Path
 
 import numpy as np
@@ -11,7 +12,7 @@ from nexora.core.visual_quality import filters_of, step_filters
 from nexora.modules.visual_quality import match as CM
 from nexora.modules.visual_quality import plan as P
 
-from tests.visual_quality.test_vq import drain, texture, vq_system
+from tests.visual_quality.test_vq import drain, fake_dlogm, texture, vq_system
 
 
 def _pixels(path: Path) -> np.ndarray:
@@ -104,3 +105,57 @@ def test_a_still_matched_to_a_warmer_brighter_one_comes_out_closer_to_it(tmp_pat
     assert client.post(f"/api/v1/vq/recipes/{recipe.recipe_id}/match", json={"reference": subject}).status_code == 422
     assert client.post(f"/api/v1/vq/recipes/{recipe.recipe_id}/match", json={}).status_code == 422
     assert client.post(f"/api/v1/vq/recipes/{recipe.recipe_id}/match", json={"reference": reference, "mode": "hue"}).status_code == 422
+
+
+def _phone(path: Path, seconds: int = 2) -> Path:
+    """A plain Rec.709 clip of the textured scene, warmer and brighter, tagged as a phone's."""
+    tex = texture(path.with_suffix(".png"), seed=9)
+    subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-loop", "1", "-framerate", "25", "-t", str(seconds), "-i", str(tex),
+                    "-vf", "crop=640:360:40:60,colorbalance=rs=0.15:bs=-0.15:rm=0.1:bm=-0.1,eq=brightness=0.06", "-pix_fmt", "yuv420p",
+                    "-movflags", "use_metadata_tags", "-metadata", "make=Apple", "-metadata", "model=iPhone 15", str(path)], check=True)
+    return path
+
+
+def test_a_cut_proposes_matching_only_where_neighbouring_shots_come_from_different_sources(tmp_path):
+    system = vq_system(tmp_path)
+    client = TestClient(create_app(system))
+    dji_a, _ = system.library.ingest(fake_dlogm(tmp_path / "in" / "a.mov", 2))
+    dji_b, _ = system.library.ingest(fake_dlogm(tmp_path / "in" / "b.mov", 2))
+    phone, _ = system.library.ingest(_phone(tmp_path / "in" / "p.mov"))
+    drain(system)
+    for asset in (dji_a, dji_b, phone):
+        client.post(f"/api/v1/assets/{asset}/vq/plan", json={"denoise": False, "sharpen": False})
+    drain(system)
+    project = system.projects.create_project("Hai máy")
+    script = system.projects.save_script(project, ["Câu một.", "Câu hai.", "Câu ba."])
+    for shot, asset in zip(system.projects.script(script)["shots"], (dji_a, dji_b, phone)):
+        system.projects.set_selection(shot.shot_id, status="accepted", asset_id=asset, t_in=0.2, t_out=1.6, decided_by="operator")
+    pairs = client.get(f"/api/v1/projects/{project}/colour").json()["pairs"]
+    assert len(pairs) == 1                                           # two DJI shots side by side are one camera: nothing to match
+    pair = pairs[0]
+    assert pair["change"]["asset_id"] == phone and pair["reference"]["asset_id"] == dji_b       # the cut leans on the DJI
+    assert pair["mode"] == "look" and pair["state"] == "none" and pair["ready"] and pair["gap"] > 0
+    made = client.post(f"/api/v1/projects/{project}/colour/match", json={"after": pair["after"]})
+    assert made.status_code == 200, made.text
+    step = next(s for shot in system.vq_reader.by_id(made.json()["recipe_id"]).shots for s in shot["steps"] if s["op"] == "match")
+    assert step["params"]["reference"]["subject"] == dji_b and step["params"]["mode"] == "look"
+    assert client.get(f"/api/v1/projects/{project}/colour").json()["pairs"][0]["state"] == "proposed"
+    assert client.post(f"/api/v1/projects/{project}/colour/match", json={"after": 99}).status_code == 404
+
+
+def test_two_sources_seen_in_one_place_match_their_whole_colour_and_screens_are_left_out():
+    from types import SimpleNamespace as NS
+    from nexora.modules.edit.colour import colour_pairs
+    shots = [NS(shot_id=f"s{k}", position=k) for k in range(4)]
+    picks = {"s0": "dji", "s1": "phone", "s2": "screen", "s3": "phone"}
+    projects = NS(current_script=lambda _p: {"shots": shots},
+                  selection=lambda sid: NS(status="accepted", asset_id=picks[sid], t_in=1.0, t_out=3.0))
+    devices = {"dji": ("DJI OsmoAction6", "camera"), "phone": ("Apple iPhone 15", "camera"), "screen": (None, "screen")}
+    vq = NS(profile=lambda a: {"technical": {"device": devices[a][0]}, "encoding": "rec709", "content": devices[a][1]},
+            recipe=lambda a, status=None: None)
+    vi = NS(entities=lambda kind: [{"key": "vườn", "name": "vườn dừa", "data": {}, "appearances": [
+        {"asset_id": "dji", "t_start": 0.0, "t_end": 5.0}, {"asset_id": "phone", "t_start": 1.5, "t_end": 2.5}]}])
+    pairs = colour_pairs(projects, vq, vi, "p")
+    assert [p["after"] for p in pairs] == [0]                       # beside the screen recording nothing is proposed
+    assert pairs[0]["mode"] == "scene" and pairs[0]["place"] == "vườn dừa"
+    assert pairs[0]["reference"]["asset_id"] == "phone"             # the phone is used twice: it is the cut's main source

@@ -248,6 +248,27 @@ class VisualQualityService:
         data["from"] = recipe_id
         return self.store.recipe(recipe.subject, data, status="proposed", decided_by="operator")
 
+    def match_at(self, subject: str, at: float, reference: str, t: float, *, mode: str = "look") -> str:
+        """Match the shot of `subject` that holds `at` (where a cut uses it) to `reference` at `t`: `add_match` on the subject's
+        newest recipe, for a cut that puts the two side by side."""
+        recipe = self.reader.recipe(subject)
+        if recipe is None or not recipe.shots:
+            raise AdapterError(ErrorCode.INVALID_REQUEST, f"{subject} has not been analysed by Visual Quality yet", retryable=False)
+        shot = next((k for k, x in enumerate(recipe.shots) if x["t_start"] <= at <= max(x["t_end"], x["t_start"])), len(recipe.shots) - 1)
+        return self.add_match(recipe.recipe_id, reference, t, shot=shot, mode=mode)
+
+    def colour_gap(self, a: str, ta: float, b: str, tb: float, *, mode: str = "look") -> float:
+        """How far apart two subjects' colours sit at two times, each as its own newest recipe makes it look."""
+        sides = []
+        for subject, t in ((a, ta), (b, tb)):
+            profile = self.reader.profile(subject) or {}
+            still = (profile.get("technical") or {}).get("kind") == "still"
+            recipe = self.reader.recipe(subject, status="approved") or self.reader.recipe(subject)
+            shot = next((x for x in (recipe.shots if recipe else []) if x["t_start"] <= t <= max(x["t_end"], x["t_start"])), None)
+            chain = self._colour_chain(shot["steps"]) if shot else (filters_of(self.colour_steps(profile)[0]) or [] if profile else [])
+            sides.append(self._colour_pixels(subject, {"t_start": t, "t_end": t}, chain, still=still, frames=1))
+        return round(CM.gap(*sides, mode=mode), 2)
+
     @staticmethod
     def _colour_chain(steps: list[dict]) -> list[str]:
         """The filters of a shot's colour steps alone: how its colours will look, without the work on detail."""
@@ -258,7 +279,7 @@ class VisualQualityService:
         work = self._work / subject / "match"
         work.mkdir(parents=True, exist_ok=True)
         t0, t1 = float(shot.get("t_start") or 0.0), float(shot.get("t_end") or 0.0)
-        times = [0.0] if still or t1 - t0 < 0.2 else [t0 + (t1 - t0) * (k + 0.5) / frames for k in range(frames)]
+        times = [0.0] if still else [t0] if t1 - t0 < 0.2 else [t0 + (t1 - t0) * (k + 0.5) / frames for k in range(frames)]
         pixels = []
         try:
             for k, t in enumerate(times):

@@ -2124,6 +2124,17 @@ const en: Record<string, string> = {
   "Cùng cảnh": "Same scene",
   "Hai cảnh khác nhau: chỉ khớp đường cong sáng tối, cân bằng trắng (đo trên mảng xám) và độ bão hoà; màu của vật thể giữ nguyên.": "Different scenes: only the tone curve, the white balance (read on grey areas) and saturation are matched; the colours of things stay.",
   "Hai shot cùng một nơi: khớp cả phân bố màu. Dùng cho cảnh khác nội dung sẽ làm lệch màu vật thể (trời xanh hoá xanh lá).": "Two shots of one place: the whole spread of colours is matched. Used on scenes of other content it shifts the colours of things (a blue sky turns green).",
+  "Khớp màu giữa các nguồn": "Colour across sources",
+  "Các cảnh kề nhau đến từ nguồn khác nhau. Nguồn dùng nhiều nhất trong bản dựng được giữ làm chuẩn; nguồn kia được chỉnh theo.": "Neighbouring shots come from different sources. The source the cut uses most is kept as the reference; the other is brought to it.",
+  "Cảnh {0}–{1}": "Shots {0}–{1}",
+  "{0} theo {1}": "{0} to {1}",
+  "cùng nơi ({0})": "same place ({0})",
+  "tông máy quay": "camera look",
+  " · lệch {0}": " · gap {0}",
+  "đã khớp": "matched",
+  "Xem trước & duyệt": "Preview & approve",
+  "chưa phân tích chất lượng hình": "not analysed for picture quality yet",
+  "Đã đề xuất khớp màu; xem trước rồi duyệt ở Chất lượng hình.": "Colour match proposed; preview and approve it in Picture quality.",
 };
 
 export default en;

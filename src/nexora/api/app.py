@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from nexora.core.adapter import AdapterError, ErrorCode
+from nexora.modules.edit.colour import colour_pairs
 
 VIDEO_EXT = {".mp4", ".mov", ".m4v", ".mkv", ".avi", ".mts", ".webm", ".ogv"}
 IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp"}
@@ -827,6 +828,33 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
     @app.get("/api/v1/projects/{project_id}")
     def get_project(project_id: str):
         return project_view(need_project(project_id))
+
+    @app.get("/api/v1/projects/{project_id}/colour")
+    def project_colour(project_id: str):
+        """Neighbouring shots of the cut from different sources, to match in colour: which side changes, to what, how, how far
+        apart they sit now (each as its recipe makes it look), and whether it is done."""
+        need_project(project_id)
+        pairs = colour_pairs(system.projects, system.vq_reader, system.vi, project_id)
+        for p in pairs:
+            try:
+                p["gap"] = system.vq.colour_gap(p["change"]["asset_id"], p["change"]["t"], p["reference"]["asset_id"], p["reference"]["t"], mode=p["mode"]) if p["ready"] else None
+            except AdapterError:
+                p["gap"] = None                                  # a source away (its drive unplugged): the pair is still shown
+        return {"pairs": pairs}
+
+    @app.post("/api/v1/projects/{project_id}/colour/match")
+    def project_colour_match(project_id: str, body: dict):
+        """Match one pair (`after`: the position of its first shot): a `match` step proposed in Visual Quality for the side that
+        changes, to preview and approve there."""
+        need_project(project_id)
+        pair = next((p for p in colour_pairs(system.projects, system.vq_reader, system.vi, project_id) if p["after"] == body.get("after")), None)
+        if pair is None:
+            raise HTTPException(404, "no such pair of shots")
+        try:
+            rid = system.vq.match_at(pair["change"]["asset_id"], pair["change"]["t"], pair["reference"]["asset_id"], pair["reference"]["t"], mode=pair["mode"])
+        except AdapterError as e:
+            raise HTTPException(409 if e.code == ErrorCode.UNAVAILABLE else 422, str(e))
+        return {"recipe_id": rid, "subject": pair["change"]["asset_id"]}
 
     @app.put("/api/v1/projects/{project_id}/script")
     def save_script(project_id: str, body: dict):

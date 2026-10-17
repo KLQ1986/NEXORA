@@ -139,6 +139,19 @@ def distance(a: np.ndarray, b: np.ndarray) -> float:
 MODES = ("look", "scene")
 
 
+def gap(a: np.ndarray, b: np.ndarray, *, mode: str = "look") -> float:
+    """How far apart two pictures' colours sit, as the match in `mode` sees them (the `before` of `fit`, without fitting)."""
+    a, b = _sample(a), _sample(b)
+    if mode == "scene":
+        fa, fb = features(a), features(b)
+    else:
+        ga, gb = neutrals(a), neutrals(b)
+        if ga is None or gb is None:
+            ga = gb = None
+        fa, fb = look(a, ga), look(b, gb)
+    return float(np.sqrt(np.mean((fa - fb) ** 2)) * 100)
+
+
 def fit(source: np.ndarray, reference: np.ndarray, *, mode: str = "look", iterations: int = 40) -> dict:
     """The controls that bring `source`'s colours to `reference`'s (both display RGB, any shape ending in 3, 0..1), with the
     distance before and after. Levenberg–Marquardt on a numeric Jacobian, every control held within its bounds. `look` matches
