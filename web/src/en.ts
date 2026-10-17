@@ -2403,6 +2403,11 @@ const en: Record<string, string> = {
   "Nhà cung cấp {0}": "Provider: {0}",
   "Model (ghi chú)": "Model (note)",
   "Chưa có nhà cung cấp ảnh nào (RunPod, Pollinations…): cấu hình trong nexora.toml.": "No image provider yet (RunPod, Pollinations…): set one in nexora.toml.",
+  "Ẩn/hiện menu bên (phím [)": "Show or hide the side menu ([ key)",
+  "Về trang dự án": "Back to the project",
+  "Ẩn danh sách shot và ý tưởng": "Hide the shot list and the idea",
+  "Hiện danh sách shot và ý tưởng": "Show the shot list and the idea",
+  "Danh sách shot": "Shot list",
 };
 
 export default en;

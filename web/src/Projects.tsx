@@ -514,7 +514,7 @@ function ProjectSide({ current, place, lamps, onView, filter }: { current?: stri
   );
 }
 
-function StepTabs({ view, step, reviewing, renderReview, packaged, onChange }: { view: View; step: number; reviewing: boolean; renderReview: boolean; packaged: boolean; onChange: (v: View) => void }) {
+function StepTabs({ id, view, step, reviewing, renderReview, packaged, onChange }: { id: string; view: View; step: number; reviewing: boolean; renderReview: boolean; packaged: boolean; onChange: (v: View) => void }) {
   const state = (k: View) => stepState(k, step, reviewing, renderReview, packaged);
   const dot = { done: "border-proof/40 bg-proof/15 text-proof", now: "border-accent/60 bg-accent/15 text-accent", wait: "border-cue/60 bg-cue/15 text-cue", later: "border-line text-faint" };
   const tab = (k: View, label: string, inner: React.ReactNode) => (
@@ -532,6 +532,8 @@ function StepTabs({ view, step, reviewing, renderReview, packaged, onChange }: {
             {i > 0 && <span className={`mx-0.5 hidden h-px w-5 sm:block ${state(FLOW[i - 1][0]) === "done" ? "bg-proof/40" : "bg-line"}`} aria-hidden="true" />}
             {tab(k, label, <span className={`relative grid h-6 w-6 place-items-center rounded-full border text-[11px] ${dot[st]}`} title={{ done: tr("Đã xong"), now: tr("Đang ở bước này"), wait: tr("Chờ bạn"), later: tr("Chưa tới") }[st]}>
               <Icon name={st === "done" ? "check" : icon} size={13} />{st === "wait" && <span className="ping absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-cue" />}</span>)}
+            {k === "script" && <button type="button" onClick={() => goTo(`/du-an/${id}/storyboard`)} className="flex h-11 shrink-0 items-center gap-2 whitespace-nowrap px-2.5 text-[13.5px] text-mute hover:text-ink">
+              <span className="grid h-6 w-6 place-items-center rounded-full border border-line"><Icon name="layers" size={13} /></span>{tr("Storyboard")}</button>}
           </span>
         );
       })}
@@ -727,9 +729,8 @@ function Detail({ id, back }: { id: string; back: () => void }) {
             [latest ? timecode(latest.qc.duration) : "–", tr("thời lượng")],
           ]} extra={<>{FORMATS[p.format] ?? p.format}{p.template ? <span className="ml-3">{p.template}</span> : null}</>} />}
           side={<ProjectSide current={id} place={view} lamps={{ step, reviewing: !!reviewing, renderReview: !!renderReview, packaged: !!latest?.package }} onView={setView} />}
-          tabs={<div className="lg:hidden"><StepTabs view={view} step={step} reviewing={!!reviewing} renderReview={!!renderReview} packaged={!!latest?.package} onChange={setView} /></div>}
-          actions={<><Button onClick={() => goTo(`/du-an/${id}/storyboard`)} title={tr("Từ ý tưởng hoặc kịch bản này thành cảnh và shot có đặc tả, mặt bằng máy, liền mạch; sửa bằng hội thoại.")}>
-            <Icon name="layers" size={15} />{tr("Storyboard")}</Button><Button onClick={() => setSettings(true)} title={tr("Mẫu, khung hình, nhạc, lời dẫn, kênh, ngày đăng")}><Icon name="sliders" size={15} />{tr("Thiết lập")}</Button>{next && <Button kind="primary" busy={busy} disabled={next.label === tr("Lưu kịch bản") && !(text ?? "").trim()} onClick={next.go}>{!busy && <Icon name={next.icon} />}{next.label}</Button>}</>}>
+          tabs={<div className="lg:hidden"><StepTabs id={id} view={view} step={step} reviewing={!!reviewing} renderReview={!!renderReview} packaged={!!latest?.package} onChange={setView} /></div>}
+          actions={<><Button onClick={() => setSettings(true)} title={tr("Mẫu, khung hình, nhạc, lời dẫn, kênh, ngày đăng")}><Icon name="sliders" size={15} />{tr("Thiết lập")}</Button>{next && <Button kind="primary" busy={busy} disabled={next.label === tr("Lưu kịch bản") && !(text ?? "").trim()} onClick={next.go}>{!busy && <Icon name={next.icon} />}{next.label}</Button>}</>}>
       {p.trashed_at && <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-cue/40 bg-cue/10 px-4 py-3 text-cue"><Icon name="trash" />
         <span className="min-w-0 flex-1">{tr("Dự án này đang ở Thùng rác. Nó không hiện trong danh sách và trợ lý không làm tiếp cho tới khi bạn khôi phục.")}</span>
         <Button size="sm" disabled={busy} onClick={() => run(() => post("/api/v1/trash/restore", { projects: [id] }))}><Icon name="undo" size={14} />{tr("Khôi phục")}</Button></div>}

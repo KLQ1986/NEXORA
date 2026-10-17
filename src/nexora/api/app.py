@@ -2041,14 +2041,25 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         return {"ok": True}
 
     @app.get("/api/v1/vq/subjects/{subject}/frame")
-    def vq_subject_frame(subject: str, t: float = 0.0, graded: int = 0):
-        """A frame of the source at `t`, as it is or with its colour transform, for the viewer and for marking a region."""
+    def vq_subject_frame(subject: str, t: float = 0.0, graded: int = 0, width: int = 0):
+        """A frame of the source at `t`, as it is or with its colour transform, for the viewer and for marking a region; with
+        `width`, a smaller copy (kept beside it) for a card, so a storyboard of many shots does not fetch full frames."""
         if system.vq_reader.subject(subject) is None:
             raise HTTPException(404, "no such subject")
         try:
-            return FileResponse(system.vq.frame(subject, t, graded=bool(graded)))
+            frame = system.vq.frame(subject, t, graded=bool(graded))
         except AdapterError as e:
             raise HTTPException(422, str(e))
+        if 0 < width < 1280:
+            small = frame.with_name(f"{frame.stem}_w{width}.jpg")
+            if not small.is_file():
+                from PIL import Image
+                with Image.open(frame) as im:
+                    im = im.convert("RGB")
+                    im.thumbnail((width, width * 4))
+                    im.save(small, quality=82)
+            frame = small
+        return FileResponse(frame, headers={"cache-control": "private, max-age=86400"})
 
     @app.get("/api/v1/vq/exports/{subject}/{name}")
     def vq_export_file(subject: str, name: str):

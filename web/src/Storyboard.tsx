@@ -1,7 +1,7 @@
 import { t as tr, tv } from "./i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { call, post, usePoll } from "./api";
-import { Button, Empty, goTo, Icon, Spinner, toast } from "./parts";
+import { Button, Empty, goTo, Icon, Spinner, toast, toggleSide } from "./parts";
 
 /* The project's storyboard (design 2026-10-17): from an idea or the script to scenes and shots whose specs are contracts, the
    Director carrying them to acceptance, continuity at every cut and on a camera plan, and the conversation that changes it by
@@ -76,6 +76,9 @@ export default function Storyboard({ projectId, back }: { projectId: string; bac
   const [tab, setTab] = useState<"goal" | "source" | "gen" | "cont" | "crit" | "hist">("goal");
   const [busy, setBusy] = useState<string | null>(null);
   const [sharedOpen, setSharedOpen] = useState(false);
+  // The shot list repeats the board in words: folded by default so the board has the width, opened for a long storyboard.
+  const [outline, setOutlineState] = useState(() => { try { return localStorage.getItem("nx.sb.outline") === "1"; } catch { return false; } });
+  const setOutline = (v: boolean) => { setOutlineState(v); try { localStorage.setItem("nx.sb.outline", v ? "1" : "0"); } catch { /* private window */ } };
   const shots = data?.shots ?? [];
   const cur = shots.find((s) => s.shot_id === sel) ?? shots[0];
   const act = async (key: string, fn: () => Promise<unknown>, done?: string) => {
@@ -94,20 +97,22 @@ export default function Storyboard({ projectId, back }: { projectId: string; bac
   const curSeam = data.seams.find((x) => `${x.a}-${x.b}` === seam);
   const cap = data.project.budget_cap;
   const stages: [string, string, () => void][] = [
-    [tr("Kịch bản"), tv`${shots.filter((s) => s.spec.line).length} câu`, () => goTo(`/du-an/${projectId}`)],
+    [tr("Kịch bản"), tv`${shots.filter((s) => s.spec.line).length} câu`, () => goTo(`/du-an/${projectId}?tab=script`)],
     [tr("Storyboard"), tv`${data.scenes.length} cảnh · ${shots.length} shot`, () => setView("board")],
     [tr("Shot plan"), tv`${shots.reduce((n, s) => n + s.spec.criteria.length, 0)} tiêu chí`, () => { setView("board"); setTab("crit"); }],
     [tr("Gán asset"), tv`${counts.accepted ?? 0}/${shots.length} đạt`, () => { setView("board"); setTab("source"); }],
     [tr("Timeline nháp"), `${data.seconds}s`, () => setView("time")],
-    [tr("Render"), tr("ở trang dự án"), () => goTo(`/du-an/${projectId}?tab=render`)],
+    [tr("Render"), tr("ở trang dự án"), () => goTo(`/du-an/${projectId}?tab=cut`)],
   ];
   const stageNow = view === "time" ? 4 : tab === "crit" ? 2 : tab === "source" ? 3 : 1;
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line px-4 py-2.5">
-        <button type="button" onClick={back} className="flex h-8 items-center gap-1.5 rounded-md border border-line px-2.5 text-[13px] text-mute hover:text-ink"><Icon name="back" size={14} />{tr("Dự án")}</button>
-        <h1 className="display min-w-0 truncate text-[16px]">{data.project.title}</h1>
+        <button type="button" onClick={toggleSide} className="hidden h-8 w-8 shrink-0 place-items-center rounded-md text-faint hover:bg-raised hover:text-ink lg:grid" title={tr("Ẩn/hiện menu bên (phím [)")} aria-label={tr("Ẩn/hiện menu bên (phím [)")}><Icon name="collapse" size={16} /></button>
+        <button type="button" onClick={back} title={tr("Về trang dự án")} className="flex min-w-0 shrink items-center gap-1 text-[13px] text-mute transition-colors hover:text-ink"><Icon name="back" size={16} /><span className="truncate">{data.project.title}</span></button>
+        <span className="text-edge">/</span>
+        <h1 className="display shrink-0 text-[16px]">{tr("Storyboard")}</h1>
         <span className="mono rounded border border-line px-1.5 text-[11px] text-faint">{({ landscape: "16:9", portrait: "9:16", square: "1:1" } as Record<string, string>)[data.project.format] ?? data.project.format} · {data.seconds}s / {data.shared.seconds}s</span>
         <span className="flex-1" />
         <span className="flex items-center gap-2 text-[12px] text-mute">{tr("Chi phí")}
@@ -142,7 +147,7 @@ export default function Storyboard({ projectId, back }: { projectId: string; bac
       <Shared board={data} url={url} open={sharedOpen} setOpen={setSharedOpen} onSaved={reload} />
 
       <div className="flex min-h-0 flex-1 gap-2 p-2 max-lg:flex-col">
-        <aside aria-label={tr("Cảnh và shot")} className="flex w-[230px] shrink-0 flex-col overflow-hidden rounded-xl border border-line bg-surface max-lg:hidden">
+        {outline && <aside aria-label={tr("Cảnh và shot")} className="flex w-[230px] shrink-0 flex-col overflow-hidden rounded-xl border border-line bg-surface max-lg:hidden">
           <div className="border-b border-line p-3"><Field label={tr("Ý tưởng")} area value={data.shared.idea} onSave={(v) => act("idea", () => call(`${url}/shared`, { method: "PATCH", body: JSON.stringify({ idea: v }) }))} /></div>
           <div className="min-h-0 flex-1 overflow-y-auto p-2">
             {data.scenes.map((sc) => (
@@ -159,10 +164,12 @@ export default function Storyboard({ projectId, back }: { projectId: string; bac
           <div className="grid grid-cols-2 gap-1.5 border-t border-line px-3 py-2.5 text-[11.5px] text-mute">
             {(["accepted", "needs", "running", "planned", "stale"] as const).filter((k) => counts[k]).map((k) => <span key={k}>{STATE[k][0]} {counts[k]}</span>)}
           </div>
-        </aside>
+        </aside>}
 
         <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-surface">
           <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2">
+            <button type="button" onClick={() => setOutline(!outline)} aria-pressed={outline} title={outline ? tr("Ẩn danh sách shot và ý tưởng") : tr("Hiện danh sách shot và ý tưởng")}
+                    className={`hidden h-8 items-center gap-1.5 rounded-md border px-2.5 text-[12.5px] lg:flex ${outline ? "border-accent/40 bg-accent/10 text-ink" : "border-line text-mute hover:text-ink"}`}><Icon name="list" size={14} />{tr("Danh sách shot")}</button>
             <div className="seg" role="radiogroup" aria-label={tr("Cách xem")}>
               {([["board", tr("Storyboard")], ["time", tr("Timeline nháp")], ["plan", tr("Mặt bằng máy")]] as const).map(([k, l]) =>
                 <button key={k} type="button" role="radio" aria-checked={view === k} onClick={() => setView(k)}>{l}</button>)}
@@ -271,7 +278,9 @@ function BoardView({ board, cur, seam, tone, pick, pickSeam }: { board: Board; c
         <section key={sc.scene_id} className="grid gap-2.5">
           <div className="flex flex-wrap items-baseline gap-2.5"><h2 className="text-[14px] font-semibold">{sc.title}</h2><span className="text-[12px] text-faint">{sc.purpose}</span><span className="mono text-[11px] text-mute">{sc.seconds}s</span></div>
           {sc.script && <p className="border-l-2 border-line pl-2.5 text-[12.5px] leading-relaxed text-mute"><span className="text-faint">{tr("Kịch bản cảnh · ")}</span>{sc.script}</p>}
-          <div className="scroll-x flex items-stretch pb-1">
+          {/* The scene's shots wrap onto rows as wide as the board, so a scene is seen whole without scrolling sideways; a seam
+              stays on the left of the shot it leads into, also when that shot begins a row. */}
+          <div className="flex flex-wrap items-stretch gap-y-3 pb-1">
             {board.shots.filter((s) => s.scene_id === sc.scene_id).map((s) => {
               const sm = seamBefore.get(s.shot_id);
               return (
@@ -289,13 +298,25 @@ function BoardView({ board, cur, seam, tone, pick, pickSeam }: { board: Board; c
   );
 }
 
+/** A shot's picture: a sweeping placeholder until the frame has arrived, then the frame faded in over the scene's colour. */
+function Frame({ src, className = "absolute inset-0 h-full w-full object-cover" }: { src: string; className?: string }) {
+  const [state, setState] = useState<"wait" | "ok" | "gone">("wait");
+  return (
+    <>
+      {state === "wait" && <span className="skeleton absolute inset-0 rounded-none opacity-60" aria-hidden="true" />}
+      {state !== "gone" && <img src={src} alt="" loading="lazy" decoding="async" onLoad={() => setState("ok")} onError={() => setState("gone")}
+                                 className={`${className} transition-opacity duration-300 ${state === "ok" ? "opacity-100" : "opacity-0"}`} />}
+    </>
+  );
+}
+
 function ShotCard({ s, on, tone, pick }: { s: SbShot; on: boolean; tone: string; pick: () => void }) {
   const passed = s.checks.filter((c) => c.st === "pass").length, of = s.checks.length || s.spec.criteria.length;
   const [label, t] = STATE[s.state];
   return (
     <button type="button" onClick={pick} className={`flex w-[214px] flex-col overflow-hidden rounded-xl border bg-raised/30 text-left ${on ? "border-accent shadow-[0_0_0_1px_var(--color-accent)]" : "border-line hover:border-edge"}`}>
       <span className="relative block aspect-video" style={{ background: tone }}>
-        {s.frame_url && <img src={s.frame_url} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-cover" />}
+        {s.frame_url && <Frame src={s.frame_url} />}
         <span className="mono absolute left-1.5 top-1.5 rounded bg-black/60 px-1.5 text-[11px]">{s.code}</span>
         <span className="absolute right-1.5 top-1.5 rounded px-1.5 text-[11px] font-semibold text-canvas" style={{ background: SRC[s.spec.source.policy][1] }}>{SRC[s.spec.source.policy][0]}</span>
         <span className="mono absolute bottom-1.5 right-1.5 rounded bg-black/60 px-1.5 text-[11px]">{s.spec.duration.target}s</span>
@@ -538,7 +559,7 @@ function Inspector({ shot: s, board, url, tab, setTab, set, ops, act, busy }: {
 function SeamPanel({ seam, board, tone, close, fix }: { seam: Seam; board: Board; tone: (s: SbShot) => string; close: () => void; fix: (ops: object[], text: string) => void }) {
   const a = board.shots.find((s) => s.shot_id === seam.a)!, b = board.shots.find((s) => s.shot_id === seam.b)!;
   const pic = (s: SbShot, label: string) => (
-    <div className="grid gap-1"><div className="relative aspect-video overflow-hidden rounded-md" style={{ background: tone(s) }}>{s.frame_url && <img src={s.frame_url} alt="" className="absolute inset-0 h-full w-full object-cover" />}</div>
+    <div className="grid gap-1"><div className="relative aspect-video overflow-hidden rounded-md" style={{ background: tone(s) }}>{s.frame_url && <Frame src={s.frame_url} />}</div>
       <span className="truncate text-[11px] text-faint">{label} {s.code} · {s.spec.intent}</span></div>);
   return (
     <section aria-label={tr("Mối nối")} className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-surface">
