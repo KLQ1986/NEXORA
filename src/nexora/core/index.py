@@ -148,6 +148,11 @@ class MomentIndex:
             if row is not None:
                 c.execute("UPDATE moments SET data = ? WHERE moment_id = ?", (json.dumps({**json.loads(row["data"]), **data}, ensure_ascii=False), moment_id))
 
+    def assets_with(self, level: str) -> list[tuple[str, int, float]]:
+        """Each asset that has moments of this level: how many, and how long they last together, longest first."""
+        rows = self._conn.execute("SELECT asset_id, COUNT(*), SUM(t_end - t_start) FROM moments WHERE level = ? GROUP BY asset_id ORDER BY 3 DESC", (level,))
+        return [(r[0], int(r[1]), round(float(r[2] or 0), 1)) for r in rows]
+
     def moments(self, asset_id: str, *, level: str | None = None) -> list[Moment]:
         rows = self._conn.execute("SELECT * FROM moments WHERE asset_id = ? AND (? IS NULL OR level = ?) ORDER BY t_start, level",
                                   (asset_id, level, level))

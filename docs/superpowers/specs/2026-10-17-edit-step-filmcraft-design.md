@@ -41,6 +41,25 @@ SHA-256 and upgraded only on purpose; the web build is single-threaded and reads
 | Building again | a fresh project each time (`file.newProject`), so nothing is imported twice; a file already fetched is only added (`file.import`) | verified (v4: one sequence, 13 files, none renamed) |
 | A file FilmCraft cannot read | 0.8.0 can wait forever drawing its slate in an export: nothing unreadable is sent, and a render past 15 min is stopped | worked around |
 
+## The Copilot (phase 1d, a mode of the storyboard)
+
+`agents/copilot.py`, the Copilot spec's P0. The operator picks recordings someone speaks in, presets (shorten to N seconds,
+stronger opening, remove repetition, vertical) or a sentence of their own; the answer is one decision per stretch of speech:
+KEEP, REMOVE or MOVE (to the front), with its reasons, its evidence (the transcript, the range, what was **measured** and what
+the writer model **read**, kept apart), its confidence, and `needs_review` where a person must look. Measured: fillers and
+retakes (the rough cut), repetition by closeness of meaning (embeddings ≥ 0.9; 0.8 asks), silences. Read by the model: each
+sentence's role and weight, the key points. Never cut alone: a number, a name, a disclaimer, a call to action. The length is
+reached with the hook, the conclusion and each key point kept first; when they cannot fit, the proposal says what it would
+take instead of dropping a point. Applied with the operator's own ticks, the kept stretches become the storyboard's shots, each
+holding its range with its own sound, so the Edit step builds and renders them like any storyboard (no narration over them,
+captions from what is said).
+
+Measured on DJI_…0002 (129 s of speech, 21 transcribed sentences, local Qwen3): 90 s to propose. Whisper lets a word swallow
+the silence beside it (one word lasting 20 s), so a word longer than 1 s is taken to hold silence and its sentence waits for
+review, and speech is split at every pause over 1 s: the proposal went from 62 s required (it could not reach 45 s, and said
+so) to 45.1 s for a 45 s target, the longest stretch 6.1 s. The transcript of this footage is poor (half-sentences), which is
+why most decisions wait for review: the Copilot is as good as the transcript it reads.
+
 ## Who holds what
 
 - **The Storyboard is the plan**: shots, pictures, treatments, seams. "Approve storyboard → Edit" builds a new sequence from it.

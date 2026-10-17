@@ -668,6 +668,8 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     system.storyboard = Storyboard(db_path)
     system.cuts, system.cut = cuts, cut
     system.storyboard_planner = StoryboardPlanner(system.storyboard, projects, adapters, inventory=planning.inventory)
+    from nexora.agents.copilot import Copilot
+    system.copilot = Copilot(system.storyboard, system.storyboard_planner, index, assets, adapters)
     mid = lambda a: (float(a["t_in"]) + float(a["t_out"])) / 2
     system.director = Director(system.storyboard, system.storyboard_planner, index, vi, vq_reader, assets, projects,
                                colour_gap=lambda a, b: vq.colour_gap(a["asset_id"], mid(a), b["asset_id"], mid(b)),

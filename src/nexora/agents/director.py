@@ -361,6 +361,8 @@ class Director:
             raise LookupError(message_id)
         p = m["proposal"]
         done = []
+        if apply and p["kind"] == "copilot":
+            raise ValueError("a Copilot proposal is applied with the decisions the operator kept")
         if apply:
             if p["kind"] == "storyboard":
                 n = self._planner.apply_storyboard(m["project_id"], p)

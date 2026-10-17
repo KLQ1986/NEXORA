@@ -1040,6 +1040,49 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         done = board_call(lambda: system.director.approve(project_id))
         return {**done, "storyboard": storyboard_view(project_id)}
 
+    @app.get("/api/v1/projects/{project_id}/storyboard/copilot/sources")
+    def copilot_sources(project_id: str):
+        """The recordings someone speaks in, for the Copilot."""
+        need_project(project_id)
+        return {"sources": system.copilot.sources()}
+
+    @app.post("/api/v1/projects/{project_id}/storyboard/copilot")
+    def copilot_propose(project_id: str, body: dict):
+        """The operator's goal over some recordings, answered with one decision per sentence (keep, remove, move to the
+        front), each with its reason, evidence and confidence. Nothing changes until it is applied."""
+        need_project(project_id)
+        goal = str(body.get("goal") or "").strip()
+        presets = tuple(p for p in body.get("presets") or [] if p in ("shorten", "opening", "repetition", "vertical"))
+        target = float(body["target_seconds"]) if body.get("target_seconds") not in (None, "") else None
+        if not goal:
+            goal = ", ".join({"shorten": f"rút còn {target:g} giây" if target else "rút ngắn", "opening": "mở đầu mạnh hơn", "repetition": "bỏ lặp ý",
+                              "vertical": "bản dọc"}[p] for p in presets) or "giữ ý chính"
+        try:
+            proposal = system.copilot.propose(project_id, [str(a) for a in body.get("assets") or []], goal=goal, target_seconds=target, presets=presets)
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        system.storyboard.say(project_id, "you", f"Copilot: {goal}")
+        s = proposal["summary"]
+        mid = system.storyboard.say(project_id, "director", f"Copilot đề xuất: giữ {s['keep'] + s['move']} câu, bỏ {s['remove']}, "
+                                                            f"{s['source_seconds']:g}s → {s['kept_seconds']:g}s; {s['review']} quyết định chờ bạn xem.", proposal=proposal)
+        return {"message": system.storyboard.message(mid)}
+
+    @app.post("/api/v1/projects/{project_id}/storyboard/copilot/{message_id}/apply")
+    def copilot_apply(project_id: str, message_id: str, body: dict | None = None):
+        """The Copilot's decisions, as the operator left them, made into the storyboard."""
+        need_project(project_id)
+        m = system.storyboard.message(message_id)
+        if m is None or m["project_id"] != project_id or m["status"] != "open" or (m.get("proposal") or {}).get("kind") != "copilot":
+            raise HTTPException(404, "no open Copilot proposal")
+        keep = (body or {}).get("keep")
+        try:
+            n = system.copilot.apply(project_id, m["proposal"], keep=[str(k) for k in keep] if isinstance(keep, list) else None)
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        system.storyboard.settle(message_id, "applied")
+        system.storyboard.say(project_id, "director", f"Đã áp dụng Copilot: {n} shot, mỗi shot là một đoạn của bản ghi với tiếng của chính nó.")
+        return storyboard_view(project_id)
+
     @app.post("/api/v1/projects/{project_id}/storyboard/say")
     def storyboard_say(project_id: str, body: dict):
         """The operator's words to the Director: answered with a proposal of typed operations, or with why there is none."""

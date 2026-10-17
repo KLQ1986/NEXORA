@@ -74,7 +74,7 @@ export default function Storyboard({ projectId, back }: { projectId: string; bac
   const { data, reload, set: show } = usePoll<Board>(url, 5000);
   const [sel, setSel] = useState<string | null>(null);
   const [seam, setSeam] = useState<string | null>(null);
-  const [view, setView] = useState<"board" | "time" | "plan">("board");
+  const [view, setView] = useState<"board" | "time" | "plan" | "copilot">("board");
   const [tab, setTab] = useState<"goal" | "source" | "gen" | "cont" | "crit" | "hist">("source");
   const [busy, setBusy] = useState<string | null>(null);
   const [sharedOpen, setSharedOpen] = useState(false);
@@ -193,7 +193,7 @@ export default function Storyboard({ projectId, back }: { projectId: string; bac
             <button type="button" onClick={() => setOutline(!outline)} aria-pressed={outline} title={outline ? tr("Ẩn danh sách shot và ý tưởng") : tr("Hiện danh sách shot và ý tưởng")}
                     className={`hidden h-8 items-center gap-1.5 rounded-md border px-2.5 text-[12.5px] lg:flex ${outline ? "border-accent/40 bg-accent/10 text-ink" : "border-line text-mute hover:text-ink"}`}><Icon name="list" size={14} />{tr("Danh sách shot")}</button>
             <div className="seg" role="radiogroup" aria-label={tr("Cách xem")}>
-              {([["board", tr("Storyboard")], ["time", tr("Timeline nháp")], ["plan", tr("Mặt bằng máy")]] as const).map(([k, l]) =>
+              {([["board", tr("Storyboard")], ["time", tr("Timeline nháp")], ["plan", tr("Mặt bằng máy")], ["copilot", "Copilot"]] as const).map(([k, l]) =>
                 <button key={k} type="button" role="radio" aria-checked={view === k} onClick={() => setView(k)}>{l}</button>)}
             </div>
             <span className="text-[12px] text-faint">{tv`${shots.length} shot · ${data.seconds}s / mục tiêu ${data.shared.seconds}s`}</span>
@@ -203,6 +203,7 @@ export default function Storyboard({ projectId, back }: { projectId: string; bac
           {view === "board" && <BoardView board={data} cur={cur} seam={seam} tone={tone} pick={(id) => { setSel(id); setSeam(null); }} pickSeam={setSeam}
                                           move={(o) => ops([{ op: "move", ...o }], tr("đổi thứ tự"))} />}
           {view === "time" && <TimeView board={data} cur={cur} tone={tone} pick={(id) => { setSel(id); setSeam(null); }} pickSeam={setSeam} />}
+          {view === "copilot" && <CopilotView url={url} board={data} shots={shots.length} onApplied={() => { reload(); setView("board"); }} />}
           {view === "plan" && <PlanView board={data} cur={cur} pick={(id) => { setSel(id); setSeam(null); }} flip={(id) => ops([{ op: "flip_camera", shot: id }], tr("lật sang bên kia trục"))} />}
         </main>
 
@@ -219,7 +220,7 @@ export default function Storyboard({ projectId, back }: { projectId: string; bac
 /* ---------------------------------------------------------------------------------------------------- an empty storyboard */
 function Start({ url, title, back, onMade, messages }: { url: string; title: string; back: () => void; onMade: () => void; messages: Msg[] }) {
   const [idea, setIdea] = useState(""), [seconds, setSeconds] = useState(60), [busy, setBusy] = useState<string | null>(null);
-  const open = [...messages].reverse().find((m) => m.proposal && m.status === "open");
+  const open = [...messages].reverse().find((m) => m.proposal && m.status === "open" && m.proposal.kind !== "copilot");
   const run = async (key: string, fn: () => Promise<unknown>) => { setBusy(key); try { await fn(); onMade(); } catch (e) { toast((e as Error).message, { tone: "tally" }); } setBusy(null); };
   return (
     <div className="flex flex-1 flex-col">
@@ -241,7 +242,12 @@ function Start({ url, title, back, onMade, messages }: { url: string; title: str
               <Button busy={busy === "script"} onClick={() => run("script", () => post(`${url}/from-script`))}>{tr("Từ kịch bản dự án")}</Button>
             </div>
           </div>
-          {open && <Proposal m={open} url={url} onDone={onMade} />}
+          <details className="group rounded-xl border border-line p-4" open={messages.some((m) => m.proposal?.kind === "copilot" && m.status === "open")}>
+            <summary className="flex cursor-pointer list-none items-center gap-2 text-[13px]"><Icon name="sparkles" size={14} className="text-ai" />
+              <span className="font-medium">{tr("Copilot: dựng từ bản ghi có người nói")}</span><span className="text-faint">{tr("(phỏng vấn, nói trước máy: rút ngắn, giữ luận điểm, bỏ lặp)")}</span></summary>
+            <div className="mt-3 -mx-3"><CopilotView url={url} board={{ messages }} onApplied={onMade} /></div>
+          </details>
+          {open && open.proposal?.kind !== "copilot" && <Proposal m={open} url={url} onDone={onMade} />}
           {!open && messages.length > 0 && <p className="text-[12.5px] text-faint">{messages[messages.length - 1].text}</p>}
         </div>
       </div>
@@ -336,6 +342,142 @@ function BoardView({ board, cur, seam, tone, pick, pickSeam, move }: { board: Bo
               {tr("Thả vào cuối cảnh")}</div>}
           </div>
         </section>))}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------------------------------- the Copilot (a mode) */
+type Decision = { decision_id: string; sentence: number; asset_id: string; text: string; t_in: number; t_out: number; seconds: number;
+  action: "KEEP" | "REMOVE" | "MOVE"; reasons: string[]; confidence: number; review: "proposed" | "needs_review"; required?: boolean; protect: string[];
+  evidence: { transcript: string; range: [number, number]; observed: string[]; inferred: { role?: string; weight?: number; why?: string } } };
+type CopilotProposal = { kind: "copilot"; goal: string; target_seconds: number | null; decisions: Decision[]; notes: string[];
+  coverage: { point: string; sentences: number[]; kept: boolean }[]; summary: { source_seconds: number; kept_seconds: number; keep: number; move: number; remove: number; review: number } };
+type Source = { asset_id: string; name: string; sentences: number; spoken_seconds: number; duration: number | null; media_url: string };
+const PRESET_NAMES: [string, string][] = [["shorten", tr("Rút ngắn")], ["opening", tr("Mở đầu mạnh hơn")], ["repetition", tr("Bỏ lặp ý")], ["vertical", tr("Bản dọc")]];
+
+/** The Semantic Editing Copilot: a goal over recordings someone speaks in, answered with a decision per sentence (keep,
+    remove, move to the front), each with its reason, what was measured and what the model read, and how sure it is; the
+    operator turns any of them over, then applies, and the kept sentences become the storyboard's shots with their own sound. */
+function CopilotView({ url, board, onApplied, shots = 0 }: { url: string; board: { messages: Msg[] }; onApplied: () => void; shots?: number }) {
+  const { data: src } = usePoll<{ sources: Source[] }>(`${url}/copilot/sources`, 60000);
+  const [chosen, setChosen] = useState<string[]>([]);
+  const [presets, setPresets] = useState<string[]>(["shorten", "repetition"]);
+  const [target, setTarget] = useState("45");
+  const [goal, setGoal] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [keep, setKeep] = useState<Record<string, boolean>>({});
+  const [onlyReview, setOnlyReview] = useState(false);
+  const player = useRef<HTMLVideoElement>(null);
+  const open = [...board.messages].reverse().find((m) => m.proposal?.kind === "copilot" && m.status === "open");
+  const p = open?.proposal as unknown as CopilotProposal | undefined;
+  useEffect(() => { if (p) setKeep(Object.fromEntries(p.decisions.map((d) => [d.decision_id, d.action !== "REMOVE"]))); }, [open?.message_id]);
+  useEffect(() => { if (src?.sources.length && !chosen.length) setChosen([src.sources[0].asset_id]); }, [src]);
+  const sources = src?.sources ?? [];
+  const urlOf = Object.fromEntries(sources.map((x) => [x.asset_id, x.media_url]));
+  const kept = p ? p.decisions.filter((d) => keep[d.decision_id]) : [];
+  const seconds = kept.reduce((t, d) => t + d.seconds, 0);
+  const propose = async () => {
+    setBusy("propose");
+    try { await post(`${url}/copilot`, { assets: chosen, presets, target_seconds: presets.includes("shorten") ? Number(target) || null : null, goal }); }
+    catch (e) { toast((e as Error).message, { tone: "tally" }); }
+    setBusy(null);
+  };
+  const apply = async () => {
+    if (!open) return;
+    if (shots && !window.confirm(tv`Thay storyboard hiện tại (${shots} shot) bằng ${kept.length} câu của Copilot? Bản dựng đã lưu ở bước Dựng vẫn giữ nguyên.`)) return;
+    setBusy("apply");
+    try { await post(`${url}/copilot/${open.message_id}/apply`, { keep: Object.keys(keep).filter((k) => keep[k]) }); toast(tv`Đã áp dụng: ${kept.length} shot từ bản ghi.`, { tone: "proof" }); onApplied(); }
+    catch (e) { toast((e as Error).message, { tone: "tally" }); }
+    setBusy(null);
+  };
+  const hear = (d: Decision) => {
+    const v = player.current;
+    const media = urlOf[d.asset_id];
+    if (!v || !media) return;
+    if (!v.src.endsWith(media)) v.src = media;
+    v.currentTime = d.t_in;
+    void v.play();
+    const stop = () => { if (v.currentTime >= d.t_out) { v.pause(); v.removeEventListener("timeupdate", stop); } };
+    v.addEventListener("timeupdate", stop);
+  };
+  const tone = (d: Decision) => d.action === "REMOVE" ? "text-tally" : d.action === "MOVE" ? "text-ai" : "text-proof";
+  return (
+    <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_300px] gap-3 overflow-y-auto p-3 max-xl:grid-cols-1">
+      <div className="grid min-w-0 content-start gap-3">
+        <div className="grid gap-2 rounded-xl border border-line bg-raised/30 p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[12px] text-faint">{tr("Bản ghi có lời nói")}</span>
+            {sources.length === 0 && <span className="text-[12.5px] text-mute">{tr("Thư viện chưa có bản ghi nào được chép lời.")}</span>}
+            {sources.map((x) => (
+              <button key={x.asset_id} type="button" onClick={() => setChosen(chosen.includes(x.asset_id) ? chosen.filter((a) => a !== x.asset_id) : [...chosen, x.asset_id])}
+                      className={`rounded-full border px-2.5 py-0.5 text-[12px] ${chosen.includes(x.asset_id) ? "border-accent bg-accent/10 text-ink" : "border-line text-mute hover:text-ink"}`}
+                      title={tv`${x.sentences} câu, ${x.spoken_seconds}s lời nói`}>{x.name} · {Math.round(x.spoken_seconds)}s</button>))}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {PRESET_NAMES.map(([k, l]) => (
+              <button key={k} type="button" onClick={() => setPresets(presets.includes(k) ? presets.filter((x) => x !== k) : [...presets, k])}
+                      className={`rounded-md border px-2.5 py-1 text-[12.5px] ${presets.includes(k) ? "border-accent bg-accent/10 text-ink" : "border-line text-mute hover:text-ink"}`}>{l}</button>))}
+            {presets.includes("shorten") && <label className="flex items-center gap-1.5 text-[12.5px] text-mute">{tr("còn")}
+              <input value={target} onChange={(e) => setTarget(e.target.value)} inputMode="numeric" className="h-7 w-14 rounded border border-line bg-canvas px-1.5 text-ink" />{tr("giây")}</label>}
+          </div>
+          <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); void propose(); }}>
+            <input value={goal} onChange={(e) => setGoal(e.target.value)} placeholder={tr("Ví dụ: rút còn 45 giây, giữ luận điểm, mở đầu mạnh hơn, bỏ lặp, giữ nguyên ý nghĩa")}
+                   className="h-9 min-w-0 flex-1 rounded-md border border-line bg-canvas px-2.5 text-[13px] outline-none focus:border-accent" />
+            <Button kind="primary" type="submit" busy={busy === "propose"} disabled={!chosen.length}><Icon name="sparkles" size={14} />{tr("Đề xuất")}</Button>
+          </form>
+          {busy === "propose" && <p className="text-[12px] text-ai">{tr("Copilot đang đọc lời nói và cân từng câu (mô hình trên máy, khoảng một phút)…")}</p>}
+        </div>
+
+        {p && <div className="grid gap-2">
+          <div className="flex flex-wrap items-center gap-2 text-[12.5px]">
+            <span className="font-semibold">{tr("Quyết định dựng")}</span>
+            <span className="text-faint">{tv`giữ ${p.summary.keep + p.summary.move} · bỏ ${p.summary.remove} · chờ bạn xem ${p.summary.review}`}</span>
+            <span className="flex-1" />
+            <label className="flex items-center gap-1.5 text-mute"><input type="checkbox" checked={onlyReview} onChange={(e) => setOnlyReview(e.target.checked)} />{tr("chỉ những câu chờ xem")}</label>
+          </div>
+          <ul className="grid gap-1.5">
+            {p.decisions.filter((d) => !onlyReview || d.review === "needs_review").map((d) => (
+              <li key={d.decision_id} className={`grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-2.5 rounded-lg border p-2 ${keep[d.decision_id] ? "border-line" : "border-line/50 opacity-60"}`}>
+                <input type="checkbox" checked={!!keep[d.decision_id]} onChange={(e) => setKeep({ ...keep, [d.decision_id]: e.target.checked })} aria-label={tr("Giữ câu này")} className="mt-1" />
+                <span className="grid min-w-0 gap-1">
+                  <span className="flex flex-wrap items-center gap-2 text-[11.5px]">
+                    <span className={`mono font-semibold ${tone(d)}`}>{d.action}</span>
+                    <span className="mono text-faint">{`${d.t_in.toFixed(1)}–${d.t_out.toFixed(1)}s`}</span>
+                    {d.evidence.inferred.role && <span className="rounded bg-ai/10 px-1.5 text-ai" title={tr("Mô hình đọc ra, không phải số đo")}>{d.evidence.inferred.role}{d.evidence.inferred.weight != null ? ` · ${d.evidence.inferred.weight}` : ""}</span>}
+                    {d.required && <span className="rounded bg-proof/15 px-1.5 text-proof">{tr("bắt buộc giữ")}</span>}
+                    {d.review === "needs_review" && <span className="rounded bg-cue/15 px-1.5 text-cue">{tr("chờ bạn xem")}</span>}
+                    <span className="text-faint">{tv`tin cậy ${Math.round(d.confidence * 100)}%`}</span>
+                  </span>
+                  <span className="text-[13px] leading-snug text-ink">{d.text}</span>
+                  <span className="text-[11.5px] text-mute">{d.reasons.join(" · ")}</span>
+                  {(d.evidence.observed.length > 0 || d.evidence.inferred.why) && <span className="text-[11px] text-faint">
+                    {d.evidence.observed.length > 0 && <>{tr("Đo được: ")}{d.evidence.observed.join("; ")}</>}{d.evidence.observed.length > 0 && d.evidence.inferred.why ? " · " : ""}
+                    {d.evidence.inferred.why && <>{tr("Mô hình: ")}{d.evidence.inferred.why}</>}</span>}
+                </span>
+                <button type="button" onClick={() => hear(d)} className="grid h-8 w-8 place-items-center rounded-md border border-line text-mute hover:text-ink" title={tr("Nghe đoạn này")} aria-label={tr("Nghe đoạn này")}><Icon name="play" size={13} /></button>
+              </li>))}
+          </ul>
+        </div>}
+      </div>
+
+      <aside className="grid content-start gap-3">
+        <video ref={player} className="aspect-video w-full rounded-lg bg-black" controls playsInline />
+        {p && <>
+          <div className="grid gap-1.5 rounded-xl border border-line p-3">
+            <span className="text-[12px] text-faint">{tr("Thời lượng dự kiến")}</span>
+            <span className="mono text-[20px]">{`${Math.round(p.summary.source_seconds)}s → ${Math.round(seconds)}s`}{p.target_seconds ? <span className="text-[13px] text-faint">{tv` / mục tiêu ${p.target_seconds}s`}</span> : null}</span>
+            <span className="h-1.5 overflow-hidden rounded bg-white/[0.08]"><span className="block h-full bg-accent" style={{ width: `${Math.min(100, (seconds / Math.max(1, p.summary.source_seconds)) * 100)}%` }} /></span>
+            {p.notes.map((n) => <p key={n} className="rounded-md bg-cue/10 px-2 py-1.5 text-[12px] text-cue">{n}</p>)}
+          </div>
+          {p.coverage.length > 0 && <div className="grid gap-1 rounded-xl border border-line p-3">
+            <span className="text-[12px] text-faint">{tr("Luận điểm (mô hình đọc ra)")}</span>
+            {p.coverage.map((c) => { const held = c.sentences.some((k) => keep[p.decisions[k - 1]?.decision_id]); return (
+              <span key={c.point} className={`flex items-start gap-1.5 text-[12.5px] ${held ? "text-ink" : "text-tally"}`}><Icon name={held ? "check" : "x"} size={13} className="mt-0.5" />{c.point}</span>); })}
+          </div>}
+          <Button kind="primary" busy={busy === "apply"} disabled={!kept.length} onClick={() => void apply()}
+                  title={tr("Thay storyboard bằng các câu được giữ: mỗi câu một shot, đúng đoạn của bản ghi, tiếng của chính nó")}><Icon name="check" size={14} />{tv`Áp dụng ${kept.length} câu vào storyboard`}</Button>
+        </>}
+      </aside>
     </div>
   );
 }
@@ -699,6 +841,14 @@ function Proposal({ m, url, onDone }: { m: Msg; url: string; onDone: () => void 
   const [busy, setBusy] = useState(false);
   const settle = async (verdict: "apply" | "drop") => { setBusy(true); try { await post(`${url}/messages/${m.message_id}/${verdict}`); onDone(); } catch (e) { toast((e as Error).message, { tone: "tally" }); } setBusy(false); };
   const p = m.proposal!;
+  if (p.kind === "copilot") {
+    // Its decisions are reviewed one by one in the Copilot mode; here it can only be set aside.
+    return (
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-ai/40 bg-ai/[0.05] p-2.5 text-[12.5px]">
+        <Icon name="sparkles" size={14} className="text-ai" /><span className="min-w-0 flex-1 text-mute">{tr("Đề xuất của Copilot: mở chế độ Copilot để xem từng quyết định và áp dụng.")}</span>
+        <Button size="sm" kind="quiet" busy={busy} onClick={() => settle("drop")}>{tr("Bỏ")}</Button>
+      </div>);
+  }
   return (
     <div className="grid gap-1.5 rounded-xl border border-accent/40 bg-raised/40 p-2.5">
       <span className="text-[12px] text-faint">{tv`Đề xuất · ${p.scope} · ${p.diff.length} thay đổi`}{p.summary ? ` · ${p.summary}` : ""}</span>
