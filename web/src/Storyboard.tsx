@@ -183,7 +183,7 @@ export default function Storyboard({ projectId, back }: { projectId: string; bac
           {view === "plan" && <PlanView board={data} cur={cur} pick={(id) => { setSel(id); setSeam(null); }} flip={(id) => ops([{ op: "flip_camera", shot: id }], tr("lật sang bên kia trục"))} />}
         </main>
 
-        <aside className="flex w-[440px] shrink-0 flex-col gap-2 max-lg:w-auto">
+        <aside className="flex w-[480px] shrink-0 flex-col gap-2 max-lg:w-auto">
           {curSeam ? <SeamPanel seam={curSeam} board={data} tone={tone} close={() => setSeam(null)} fix={(list, text) => { ops(list, text); setSeam(null); }} />
             : cur && <Inspector shot={cur} board={data} url={url} tab={tab} setTab={setTab} set={set} ops={ops} act={act} busy={busy} />}
           <Chat board={data} url={url} cur={cur} onDone={reload} />
@@ -278,19 +278,21 @@ function BoardView({ board, cur, seam, tone, pick, pickSeam }: { board: Board; c
         <section key={sc.scene_id} className="grid gap-2.5">
           <div className="flex flex-wrap items-baseline gap-2.5"><h2 className="text-[14px] font-semibold">{sc.title}</h2><span className="text-[12px] text-faint">{sc.purpose}</span><span className="mono text-[11px] text-mute">{sc.seconds}s</span></div>
           {sc.script && <p className="border-l-2 border-line pl-2.5 text-[12.5px] leading-relaxed text-mute"><span className="text-faint">{tr("Kịch bản cảnh · ")}</span>{sc.script}</p>}
-          {/* The scene's shots wrap onto rows as wide as the board, so a scene is seen whole without scrolling sideways; a seam
-              stays on the left of the shot it leads into, also when that shot begins a row. */}
-          <div className="flex flex-wrap items-stretch gap-y-3 pb-1">
+          {/* Three shots a row, each as wide as its column, so a scene reads as a sheet and a long scene wraps onto rows. A seam that is
+              clean stays out of the way; one that needs a look (or is broken) flags the shot it leads into, and opens its panel. */}
+          <div className="grid grid-cols-3 items-start gap-x-4 gap-y-5 pb-1 max-md:grid-cols-2 max-[480px]:grid-cols-1">
             {board.shots.filter((s) => s.scene_id === sc.scene_id).map((s) => {
               const sm = seamBefore.get(s.shot_id);
+              const flagged = sm && sm.worst !== "pass";
               return (
-                <span key={s.shot_id} className="flex shrink-0">
-                  {sm && <button type="button" onClick={() => pickSeam(`${sm.a}-${sm.b}`)} title={tv`Mối nối ${sm.a_code} → ${sm.b_code}: ${SEAM[sm.worst][0]}`} aria-label={tv`Mối nối ${sm.a_code} → ${sm.b_code}: ${SEAM[sm.worst][0]}`}
-                                 className={`mx-1 flex w-7 flex-col items-center justify-center gap-1.5 rounded-lg border ${seam === `${sm.a}-${sm.b}` ? "border-accent" : "border-transparent hover:border-line"}`}>
-                    <span className="h-3 w-3 rounded-full" style={{ background: SEAM[sm.worst][1], boxShadow: `0 0 0 3px ${SEAM[sm.worst][1]}33` }} />
-                    <span className="text-[10px] text-faint [writing-mode:vertical-rl] rotate-180">{SEAM[sm.worst][0]}</span></button>}
+                <div key={s.shot_id} className="grid min-w-0 content-start gap-2">
+                  {sm && flagged && <button type="button" onClick={() => pickSeam(`${sm.a}-${sm.b}`)} title={tv`Mối nối ${sm.a_code} → ${sm.b_code}: ${SEAM[sm.worst][0]}`}
+                                            className={`flex h-[22px] items-center justify-self-start rounded-full border px-2 text-[11px] ${seam === `${sm.a}-${sm.b}` ? "border-accent" : ""}`}
+                                            style={{ color: SEAM[sm.worst][1], background: `${SEAM[sm.worst][1]}1f`, borderColor: seam === `${sm.a}-${sm.b}` ? undefined : `${SEAM[sm.worst][1]}66` }}>
+                    {tv`Mối nối ${sm.a_code} → ${sm.b_code}: ${SEAM[sm.worst][0]}`}</button>}
+                  {!flagged && <span className="h-[22px]" aria-hidden="true" />}{/* the chip's line kept, so the cards of a row stay level */}
                   <ShotCard s={s} on={s.shot_id === cur?.shot_id && !seam} tone={tone(s)} pick={() => pick(s.shot_id)} />
-                </span>);
+                </div>);
             })}
           </div>
         </section>))}
@@ -311,26 +313,21 @@ function Frame({ src, className = "absolute inset-0 h-full w-full object-cover" 
 }
 
 function ShotCard({ s, on, tone, pick }: { s: SbShot; on: boolean; tone: string; pick: () => void }) {
-  const passed = s.checks.filter((c) => c.st === "pass").length, of = s.checks.length || s.spec.criteria.length;
   const [label, t] = STATE[s.state];
+  const dot = ({ proof: "bg-proof", ai: "bg-ai", accent: "bg-accent", cue: "bg-cue", mute: "bg-faint" } as Record<string, string>)[t] ?? "bg-faint";
+  const f = s.spec.framing;
   return (
-    <button type="button" onClick={pick} className={`flex w-[214px] flex-col overflow-hidden rounded-xl border bg-raised/30 text-left ${on ? "border-accent shadow-[0_0_0_1px_var(--color-accent)]" : "border-line hover:border-edge"}`}>
-      <span className="relative block aspect-video" style={{ background: tone }}>
+    <button type="button" onClick={pick} className="grid w-full min-w-0 gap-2 text-left">
+      <span className={`relative block aspect-video overflow-hidden rounded-lg ${on ? "outline outline-2 outline-offset-2 outline-accent" : "outline outline-1 outline-line"}`} style={{ background: tone }}>
         {s.frame_url && <Frame src={s.frame_url} />}
-        <span className="mono absolute left-1.5 top-1.5 rounded bg-black/60 px-1.5 text-[11px]">{s.code}</span>
+        <span className="mono absolute left-1.5 top-1.5 rounded bg-black/70 px-1.5 text-[11px] font-semibold ring-1 ring-white/25">{s.code}</span>
         <span className="absolute right-1.5 top-1.5 rounded px-1.5 text-[11px] font-semibold text-canvas" style={{ background: SRC[s.spec.source.policy][1] }}>{SRC[s.spec.source.policy][0]}</span>
-        <span className="mono absolute bottom-1.5 right-1.5 rounded bg-black/60 px-1.5 text-[11px]">{s.spec.duration.target}s</span>
         {s.version > 1 && <span className="mono absolute bottom-1.5 left-1.5 rounded bg-black/60 px-1.5 text-[11px] text-mute">v{s.version}</span>}
       </span>
-      <span className="grid gap-1.5 px-2.5 pb-2.5 pt-2">
-        <span className="text-[13px] leading-snug text-ink">{s.spec.intent}</span>
-        {s.spec.line && <span className="border-l-2 border-accent/40 pl-2 text-[12px] italic leading-snug text-mute">“{s.spec.line}”</span>}
-        <span className="mono text-[11px] text-faint">{[s.spec.framing.lens, s.spec.framing.size, s.spec.framing.angle, s.spec.framing.move].join(" · ")}</span>
-        <span className="flex flex-wrap items-center gap-2">
-          <span className={`rounded-full px-2 text-[11px] ${chip(t)}`}>{label}</span>
-          <span className={`text-[11px] ${of && passed === of ? "text-proof" : passed ? "text-cue" : "text-faint"}`}>{tv`nghiệm thu ${passed}/${of}`}</span>
-        </span>
-      </span>
+      <span className="text-[11px] font-semibold uppercase leading-snug tracking-wide text-ink">{`${s.code}: ${f.lens} | ${s.spec.duration.target}s | ${f.move} | ${f.size} · ${f.angle}`}</span>
+      <span className="text-[12.5px] leading-relaxed text-mute">{s.spec.intent}</span>
+      {s.spec.line && <span className="border-l-2 border-accent/40 pl-2 text-[12px] italic leading-snug text-mute">“{s.spec.line}”</span>}
+      <span className="flex items-center gap-1.5 text-[11px] text-faint"><span className={`h-1.5 w-1.5 rounded-full ${dot}`} aria-hidden="true" />{label}</span>
     </button>
   );
 }
