@@ -305,7 +305,6 @@ function RunBar({ run, state }: { run: Run | null; state: string }) {
 function Viewer({ subject, view, shot, shotIndex, onRemove }: { subject: string; view: View; shot: Shot; shotIndex: number; onRemove?: () => void }) {
   const info = view.info;
   const preview = view.previews.find((p) => p.t >= shot.t_start - 0.01 && p.t <= Math.max(shot.t_end, shot.t_start) + 0.01) ?? (info.still ? view.previews[0] : undefined);
-  const [mode, setMode] = useState<"wipe" | "side" | "video">("wipe");
   const [split, setSplit] = useState(50);
   const [marking, setMarking] = useState(false);
   const [box, setBox] = useState<[number, number, number, number] | null>(null);
@@ -331,8 +330,6 @@ function Viewer({ subject, view, shot, shotIndex, onRemove }: { subject: string;
   return (
     <div className="grid gap-2">
       <div className="flex flex-wrap items-center gap-2">
-        <Seg label={tr("Cách so sánh")} value={mode} onChange={setMode}
-             items={[["wipe", tr("Trượt")], ["side", tr("Cạnh nhau")], ...(preview?.urls.before_video ? [["video", tr("Video")] as const] : [])] as readonly (readonly ["wipe" | "side" | "video", string])[]} />
         <span className="text-[12px] text-faint">
           {preview ? tv`xem trước tại ${timecode(preview.t)} · ${preview.seconds}s` : tr("chưa xem trước shot này: đang hiện khung gốc đã chuyển màu")}</span>
         <span className="flex-1" />
@@ -343,32 +340,15 @@ function Viewer({ subject, view, shot, shotIndex, onRemove }: { subject: string;
           </select>)}
         {!info.still && <Button size="sm" kind={marking ? "primary" : "quiet"} onClick={() => { setMarking((v) => !v); setBox(null); }}><Icon name="scissors" size={14} />{marking ? tr("Đang chọn vùng xoá") : tr("Xoá vật")}</Button>}
       </div>
-      {mode === "video" && preview?.urls.before_video ? (
-        <SyncedVideos before={preview.urls.before_video} after={preview.urls.after_video} />
-      ) : mode === "side" ? (
-        <div className="grid grid-cols-2 gap-2">
-          <Figure label={tr("trước")}><img src={before} alt="" className="w-full" /></Figure>
-          <Figure label={tr("sau")}>{after ? <img src={after} alt="" className="w-full" /> : <NoAfter />}</Figure>
-        </div>
-      ) : (
-        <div className="relative select-none overflow-hidden rounded-lg border border-line bg-black"
-             onMouseDown={(e) => { if (!marking) return; const [x, y] = toSource(e); drag.current = { x, y }; setBox([x, y, 0, 0]); }}
-             onMouseMove={(e) => { if (!marking || !drag.current) return; const [x, y] = toSource(e); const o = drag.current; setBox([Math.min(o.x, x), Math.min(o.y, y), Math.abs(x - o.x), Math.abs(y - o.y)]); }}
-             onMouseUp={() => { drag.current = null; }}>
-          <img src={before} alt="" draggable={false} className="block w-full" />
-          {after && !marking && <img src={after} alt="" draggable={false} className="absolute inset-0 block h-full w-full" style={{ clipPath: `inset(0 0 0 ${split}%)` }} />}
-          {after && !marking && <>
-            <div className="pointer-events-none absolute inset-y-0 w-0.5 bg-white/80 shadow-[0_0_8px_rgba(0,0,0,0.6)]" style={{ left: `${split}%` }} />
-            <input type="range" min={0} max={100} value={split} onChange={(e) => setSplit(Number(e.target.value))} aria-label={tr("Vị trí so sánh")}
-                   className="absolute inset-0 h-full w-full cursor-ew-resize opacity-0" />
-            <span className="chip absolute left-2 top-2">{tr("trước")}</span><span className="chip absolute right-2 top-2">{tr("sau")}</span>
-          </>}
-          {!after && !marking && <span className="chip absolute left-2 top-2">{preview ? tr("trước") : tr("khung gốc (đã chuyển màu)")}</span>}
-          {region && <Heat grid={region} kind={heat!} />}
-          {marking && <div className="absolute inset-0 cursor-crosshair bg-black/10" />}
-          {box && box[2] > 0 && <div className="pointer-events-none absolute border-2 border-tally bg-tally/10" style={{ left: `${box[0] / W * 100}%`, top: `${box[1] / H * 100}%`, width: `${box[2] / W * 100}%`, height: `${box[3] / H * 100}%` }} />}
-        </div>
-      )}
+      <Compare before={before} after={after} beforeVideo={marking ? undefined : preview?.urls.before_video} afterVideo={marking ? undefined : preview?.urls.after_video}
+               split={split} onSplit={setSplit} label={preview ? undefined : tr("khung gốc (đã chuyển màu)")}
+               onMouseDown={(e) => { if (!marking) return; const [x, y] = toSource(e); drag.current = { x, y }; setBox([x, y, 0, 0]); }}
+               onMouseMove={(e) => { if (!marking || !drag.current) return; const [x, y] = toSource(e); const o = drag.current; setBox([Math.min(o.x, x), Math.min(o.y, y), Math.abs(x - o.x), Math.abs(y - o.y)]); }}
+               onMouseUp={() => { drag.current = null; }} marking={marking}>
+        {region && <Heat grid={region} kind={heat!} />}
+        {marking && <div className="absolute inset-0 cursor-crosshair bg-black/10" />}
+        {box && box[2] > 0 && <div className="pointer-events-none absolute border-2 border-tally bg-tally/10" style={{ left: `${box[0] / W * 100}%`, top: `${box[1] / H * 100}%`, width: `${box[2] / W * 100}%`, height: `${box[3] / H * 100}%` }} />}
+      </Compare>
       {marking && (
         <div className="flex flex-wrap items-center gap-2 rounded-lg border border-tally/30 bg-tally/[0.06] px-3 py-2 text-[12.5px]">
           <span className="flex-1 text-mute">{box && box[2] > 8 ? tv`Vùng ${Math.round(box[2])}×${Math.round(box[3])} px tại (${Math.round(box[0])}, ${Math.round(box[1])}), giữ cho cả shot. ProPainter lấp từ các khung lân cận.` : tr("Kéo một khung quanh vật cần xoá. Khung được giữ cho cả shot.")}</span>
@@ -378,13 +358,6 @@ function Viewer({ subject, view, shot, shotIndex, onRemove }: { subject: string;
       )}
     </div>
   );
-}
-
-function Figure({ label, children }: { label: string; children: React.ReactNode }) {
-  return <figure className="relative overflow-hidden rounded-lg border border-line bg-black">{children}<figcaption className="chip absolute left-2 top-2">{label}</figcaption></figure>;
-}
-function NoAfter() {
-  return <div className="grid aspect-video place-items-center text-[12.5px] text-faint">{tr("Bấm “Xem trước shot” để thấy bản sau")}</div>;
 }
 
 /* Where in the picture a defect is: its 4×4 measure, worst cells strongest. Darkness is worse where lower; the rest where higher. */
@@ -400,9 +373,27 @@ function Heat({ grid, kind }: { grid: number[][]; kind: string }) {
   );
 }
 
-function SyncedVideos({ before, after }: { before: string; after?: string }) {
+/* Before and after in one frame, divided by a line that can be dragged: video when the preview has it (both played together,
+   the after following the before's time), the stills otherwise. Marking a region always shows the still, to draw on it. */
+function Compare({ before, after, beforeVideo, afterVideo, split, onSplit, label, marking, children, onMouseDown, onMouseMove, onMouseUp }: {
+  before: string; after?: string; beforeVideo?: string; afterVideo?: string; split: number; onSplit: (v: number) => void; label?: string; marking: boolean;
+  children?: React.ReactNode; onMouseDown: (e: React.MouseEvent<HTMLDivElement>) => void; onMouseMove: (e: React.MouseEvent<HTMLDivElement>) => void; onMouseUp: () => void }) {
   const a = useRef<HTMLVideoElement>(null), b = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(false);
+  const [now, setNow] = useState(0);
+  const [length, setLength] = useState(0);
+  const video = !!beforeVideo;
+  const both = video && !!afterVideo;
+  const shownAfter = video ? afterVideo : after;
+  useEffect(() => {
+    const x = a.current, y = b.current;
+    if (!x) return;
+    const tick = () => { setNow(x.currentTime); if (y && Math.abs(x.currentTime - y.currentTime) > 0.06) y.currentTime = x.currentTime; };
+    const meta = () => setLength(x.duration || 0);
+    x.addEventListener("timeupdate", tick); x.addEventListener("seeked", tick); x.addEventListener("loadedmetadata", meta);
+    return () => { x.removeEventListener("timeupdate", tick); x.removeEventListener("seeked", tick); x.removeEventListener("loadedmetadata", meta); };
+  }, [beforeVideo, afterVideo]);
+  useEffect(() => { setPlaying(false); setNow(0); }, [beforeVideo]);
   const toggle = () => {
     const x = a.current, y = b.current;
     if (!x) return;
@@ -410,20 +401,32 @@ function SyncedVideos({ before, after }: { before: string; after?: string }) {
     if (y) y.currentTime = x.currentTime;
     x.play(); y?.play(); setPlaying(true);
   };
-  useEffect(() => {
-    const x = a.current, y = b.current;
-    if (!x || !y) return;
-    const keep = () => { if (Math.abs(x.currentTime - y.currentTime) > 0.08) y.currentTime = x.currentTime; };
-    x.addEventListener("seeked", keep); x.addEventListener("timeupdate", keep);
-    return () => { x.removeEventListener("seeked", keep); x.removeEventListener("timeupdate", keep); };
-  }, []);
+  const seek = (t: number) => { if (a.current) a.current.currentTime = t; if (b.current) b.current.currentTime = t; setNow(t); };
   return (
     <div className="grid gap-2">
-      <div className="grid grid-cols-2 gap-2">
-        <Figure label={tr("trước")}><video ref={a} src={before} muted loop playsInline className="w-full" onEnded={() => setPlaying(false)} /></Figure>
-        <Figure label={tr("sau")}>{after ? <video ref={b} src={after} muted loop playsInline className="w-full" /> : <NoAfter />}</Figure>
+      <div className="relative select-none overflow-hidden rounded-lg border border-line bg-black" onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp}>
+        {video ? <video ref={a} src={beforeVideo} muted loop playsInline className="block w-full" />
+          : <img src={before} alt="" draggable={false} className="block w-full" />}
+        {shownAfter && !marking && (video
+          ? <video ref={b} src={afterVideo} muted loop playsInline className="absolute inset-0 block h-full w-full" style={{ clipPath: `inset(0 0 0 ${split}%)` }} />
+          : <img src={after} alt="" draggable={false} className="absolute inset-0 block h-full w-full" style={{ clipPath: `inset(0 0 0 ${split}%)` }} />)}
+        {shownAfter && !marking && <>
+          <div className="pointer-events-none absolute inset-y-0 w-0.5 bg-white/80 shadow-[0_0_8px_rgba(0,0,0,0.6)]" style={{ left: `${split}%` }} />
+          <input type="range" min={0} max={100} value={split} onChange={(e) => onSplit(Number(e.target.value))} aria-label={tr("Vị trí so sánh")}
+                 className="absolute inset-0 h-full w-full cursor-ew-resize opacity-0" />
+          <span className="chip absolute left-2 top-2">{tr("trước")}</span><span className="chip absolute right-2 top-2">{tr("sau")}</span>
+        </>}
+        {!shownAfter && !marking && <span className="chip absolute left-2 top-2">{label ?? tr("trước")}</span>}
+        {children}
       </div>
-      <div><Button size="sm" onClick={toggle}><Icon name={playing ? "pause" : "play"} size={14} />{playing ? tr("Dừng") : tr("Phát cả hai")}</Button></div>
+      {video && !marking && (
+        <div className="flex items-center gap-2">
+          <Button size="sm" onClick={toggle}><Icon name={playing ? "pause" : "play"} size={14} />{playing ? tr("Dừng") : both ? tr("Phát cả hai") : tr("Phát")}</Button>
+          <input type="range" min={0} max={length || 1} step={0.01} value={now} onChange={(e) => seek(Number(e.target.value))} aria-label={tr("Tua")} className="min-w-0 flex-1 accent-[#30afff]" />
+          <span className="mono w-[86px] text-right text-[12px] text-faint">{`${now.toFixed(2)} / ${length.toFixed(2)}s`}</span>
+        </div>
+      )}
+      {!shownAfter && !marking && <p className="text-[12px] text-faint">{tr("Bấm “Xem trước shot” để thấy bản sau")}</p>}
     </div>
   );
 }

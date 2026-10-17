@@ -2077,6 +2077,7 @@ const en: Record<string, string> = {
   "Bản xem trước gần nhất không qua kiểm tra": "The latest preview failed its checks",
   "Lý do: {0}. Duyệt thì công thức này sẽ được dùng khi dựng và trích xuất.": "Why: {0}. Once approved, this recipe is used for cuts and extracts.",
   "Vẫn duyệt": "Approve anyway",
+  "Tua": "Seek",
 };
 
 export default en;
