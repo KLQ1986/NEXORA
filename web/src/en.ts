@@ -2408,6 +2408,21 @@ const en: Record<string, string> = {
   "Ẩn danh sách shot và ý tưởng": "Hide the shot list and the idea",
   "Hiện danh sách shot và ý tưởng": "Show the shot list and the idea",
   "Danh sách shot": "Shot list",
+  "Lịch sử · {0} tin đã xử lý": "History · {0} settled",
+  " · {0} áp dụng": " · {0} applied",
+  " · {0} bỏ": " · {0} rejected",
+  "Tiếp: viết kịch bản": "Next: write the script",
+  "Tiếp: xuất bản": "Next: publish",
+  "Chờ bạn: duyệt bản dựng": "Waiting for you: review the cut",
+  "Chờ bạn: xem lỗi ở bước dựng": "Waiting for you: an error at the cut",
+  "Chờ bạn: xem lỗi ở bước chọn clip": "Waiting for you: an error at clip selection",
+  "Chờ bạn: bước dựng đang dừng": "Waiting for you: the cut is paused",
+  "Chờ bạn: bước chọn clip đang dừng": "Waiting for you: clip selection is paused",
+  "Đang dựng, chưa cần bạn": "Rendering, nothing needed from you",
+  "Chờ bạn: duyệt clip": "Waiting for you: review the clips",
+  "Đang tìm clip, chưa cần bạn": "Finding clips, nothing needed from you",
+  "Tiếp: render video": "Next: render the video",
+  "Tiếp: tìm clip cho kịch bản": "Next: find clips for the script",
 };
 
 export default en;

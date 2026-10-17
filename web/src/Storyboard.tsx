@@ -599,7 +599,21 @@ function Proposal({ m, url, onDone }: { m: Msg; url: string; onDone: () => void 
 function Chat({ board, url, cur, onDone }: { board: Board; url: string; cur?: SbShot; onDone: () => void }) {
   const [scope, setScope] = useState<"shot" | "scene" | "all">("scene"), [text, setText] = useState(""), [busy, setBusy] = useState(false);
   const end = useRef<HTMLDivElement>(null);
+  const [past, setPast] = useState(false);
   useEffect(() => { end.current?.scrollIntoView({ block: "nearest" }); }, [board.messages.length]);
+  // What needs the operator stays in view: the latest exchange, and any proposal still waiting to be applied or dropped.
+  // Everything settled before them folds into one line, opened on demand.
+  const msgs = board.messages;
+  const lastYou = msgs.map((m) => m.role).lastIndexOf("you");
+  const cut = lastYou < 0 ? Math.max(0, msgs.length - 1) : lastYou;
+  const settled = msgs.slice(0, cut).filter((m) => !(m.proposal && m.status === "open"));
+  const live = [...msgs.slice(0, cut).filter((m) => m.proposal && m.status === "open"), ...msgs.slice(cut)];
+  const bubble = (m: Msg) => (
+    <div key={m.message_id} className="grid gap-1.5">
+      <div className={m.role === "you" ? "max-w-[85%] justify-self-end rounded-[10px_10px_2px_10px] bg-accent/10 px-2.5 py-1.5 text-[13px] leading-relaxed" : "max-w-[92%] text-[13px] leading-relaxed text-mute"}>{m.text}</div>
+      {m.proposal && m.status === "open" && <Proposal m={m} url={url} onDone={onDone} />}
+      {m.proposal && m.status !== "open" && <span className={`text-[11px] ${m.status === "applied" ? "text-proof" : "text-faint"}`}>{m.status === "applied" ? tr("đã áp dụng") : tr("đã bỏ")}</span>}
+    </div>);
   const send = async () => {
     if (!text.trim()) return;
     setBusy(true);
@@ -616,12 +630,16 @@ function Chat({ board, url, cur, onDone }: { board: Board; url: string; cur?: Sb
       </div>
       <div className="grid min-h-0 flex-1 content-start gap-2.5 overflow-y-auto px-3 py-2.5">
         {board.messages.length === 0 && <p className="text-[12.5px] text-faint">{tr("Nói với Director điều cần đổi, ví dụ: \"cảnh 2 hơi dài, rút còn 20 giây và thêm một shot cận tay bổ dừa\". Director trả lời bằng một đề xuất; chưa có gì thay đổi cho tới khi bạn áp dụng.")}</p>}
-        {board.messages.map((m) => (
-          <div key={m.message_id} className="grid gap-1.5">
-            <div className={m.role === "you" ? "max-w-[85%] justify-self-end rounded-[10px_10px_2px_10px] bg-accent/10 px-2.5 py-1.5 text-[13px] leading-relaxed" : "max-w-[92%] text-[13px] leading-relaxed text-mute"}>{m.text}</div>
-            {m.proposal && m.status === "open" && <Proposal m={m} url={url} onDone={onDone} />}
-            {m.proposal && m.status !== "open" && <span className="text-[11px] text-faint">{m.status === "applied" ? tr("đã áp dụng") : tr("đã bỏ")}</span>}
-          </div>))}
+        {settled.length > 0 && (
+          <button type="button" onClick={() => setPast(!past)} aria-expanded={past}
+                  className="flex items-center gap-1.5 justify-self-start rounded-md px-1.5 py-0.5 text-[11.5px] text-faint hover:bg-raised hover:text-ink">
+            <Icon name={past ? "down" : "next"} size={12} />
+            {tv`Lịch sử · ${settled.length} tin đã xử lý`}
+            {(() => { const a = settled.filter((m) => m.status === "applied").length, d = settled.filter((m) => m.status && m.status !== "applied" && m.status !== "open").length;
+              return <span className="text-faint">{a ? tv` · ${a} áp dụng` : ""}{d ? tv` · ${d} bỏ` : ""}</span>; })()}
+          </button>)}
+        {past && <div className="grid gap-2.5 border-l border-line pl-2.5 opacity-75">{settled.map(bubble)}</div>}
+        {live.map(bubble)}
         <div ref={end} />
       </div>
       <form className="flex gap-1.5 border-t border-line p-2" onSubmit={(e) => { e.preventDefault(); send(); }}>

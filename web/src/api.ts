@@ -170,6 +170,24 @@ export function projectState(p: Project): { label: string; tone: "mute" | "cue" 
   return { label: p.match ? tr("Cần tìm lại clip") : tr("Có kịch bản"), tone: "mute", step: 1 };
 }
 
+/** What the project waits for next and on which of its screens: `you` when it is the operator's turn, else what the machine
+    is doing or what comes after. The tab is where the project page opens for it. */
+export function projectNext(p: Project): { text: string; you: boolean; tab: "script" | "clips" | "cut" | "publish" } | null {
+  const busy = (r: Run | null) => !!r && ["queued", "running"].includes(r.status);
+  if (!p.script) return { text: tr("Tiếp: viết kịch bản"), you: true, tab: "script" };
+  if (p.render?.status === "succeeded") return { text: tr("Tiếp: xuất bản"), you: true, tab: "publish" };
+  if (p.render?.status === "waiting_review") return { text: tr("Chờ bạn: duyệt bản dựng"), you: true, tab: "cut" };
+  if (p.render?.status === "failed") return { text: tr("Chờ bạn: xem lỗi ở bước dựng"), you: true, tab: "cut" };
+  if (p.match?.status === "failed") return { text: tr("Chờ bạn: xem lỗi ở bước chọn clip"), you: true, tab: "clips" };
+  if (p.render?.status === "blocked") return { text: tr("Chờ bạn: bước dựng đang dừng"), you: true, tab: "cut" };
+  if (p.match?.status === "blocked") return { text: tr("Chờ bạn: bước chọn clip đang dừng"), you: true, tab: "clips" };
+  if (busy(p.render)) return { text: tr("Đang dựng, chưa cần bạn"), you: false, tab: "cut" };
+  if (p.match?.status === "waiting_review") return { text: tr("Chờ bạn: duyệt clip"), you: true, tab: "clips" };
+  if (busy(p.match)) return { text: tr("Đang tìm clip, chưa cần bạn"), you: false, tab: "clips" };
+  if (p.script.match_approved) return { text: tr("Tiếp: render video"), you: true, tab: "cut" };
+  return { text: tr("Tiếp: tìm clip cho kịch bản"), you: true, tab: "clips" };
+}
+
 export type TrashView = {
   days: number;
   assets: { asset_id: string; name: string; kind: string; trashed_at: number; days_left: number }[];

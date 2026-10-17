@@ -1,7 +1,7 @@
 import { t as tr, tv, locale } from "./i18n";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { call, post, projectState, scriptText, stageName, timecode, usePoll, type Idea, type Source, type AgentTask, type Asset, type Settings, type Candidate, type Project, type RenderItem, type Shot, type BibleEntry, type GapPlan, type Op, type Rights, type Publishing, type Channel } from "./api";
+import { call, post, projectNext, projectState, scriptText, stageName, timecode, usePoll, type Idea, type Source, type AgentTask, type Asset, type Settings, type Candidate, type Project, type RenderItem, type Shot, type BibleEntry, type GapPlan, type Op, type Rights, type Publishing, type Channel } from "./api";
 import Board from "./Board";
 import { ask, Button, Empty, Filmstrip, goTo, Icon, Meter, Page, Section, Seg, SideFrame, SideGroup, SideLink, SkeletonCards, StageRail, Steps, Tabs, Tag, TimeChip, toast, Readout } from "./parts";
 import Timeline from "./Timeline";
@@ -1256,9 +1256,10 @@ export default function Projects({ sub, go }: { sub: string | null; go: (to: str
       {data && view === "grid" ? (
         <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           {shown.map((p) => {
-            const st = projectState(p); const task = working.get(p.project_id); const latest = p.renders[0];
+            const st = projectState(p); const task = working.get(p.project_id); const latest = p.renders[0]; const nx = projectNext(p);
+            const to = nx ? `/du-an/${p.project_id}?tab=${nx.tab}` : `/du-an/${p.project_id}`;
             return (
-              <li key={p.project_id} className="group/card relative"><a href={`/du-an/${p.project_id}`} onClick={(e) => { e.preventDefault(); go(`/du-an/${p.project_id}`); }}
+              <li key={p.project_id} className="group/card relative"><a href={to} onClick={(e) => { e.preventDefault(); go(to); }}
                  className="panel group block overflow-hidden transition-[border-color,transform] duration-200 hover:-translate-y-0.5 hover:border-edge">
                 <div className="relative"><Filmstrip shots={p.shots} height={150} />
                   <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-surface via-surface/10 to-transparent" />
@@ -1269,6 +1270,7 @@ export default function Projects({ sub, go }: { sub: string | null; go: (to: str
                 <div className="px-4 pb-4 pt-1.5">
                   <p className="display truncate text-[15.5px] leading-snug">{p.title}</p>
                   <p className="mt-0.5 flex gap-3 truncate text-[12.5px] text-mute"><span>{p.shots.length ? tv`${p.shots.length} câu` : tr("Chưa có kịch bản")}</span><span>{FORMATS[p.format] ?? p.format}</span></p>
+                  {nx && !task && <p className={`mt-2 flex items-center gap-1.5 truncate text-[12.5px] ${nx.you ? "text-cue" : "text-faint"}`}><Icon name={nx.you ? "next" : "clock"} size={13} />{nx.text}</p>}
                   <div className="mt-3 flex items-center justify-between pr-10"><Steps step={st.step} tone={st.tone} /><span className="mono text-[11px] text-faint">{new Date(p.created_at * 1000).toLocaleDateString(locale)}</span></div>
                 </div>
               </a>{bin(p, "absolute bottom-3 right-3")}</li>
@@ -1278,15 +1280,17 @@ export default function Projects({ sub, go }: { sub: string | null; go: (to: str
       ) : (
         <ul className="panel rows overflow-hidden">
           {shown.map((p) => {
-            const st = projectState(p); const task = working.get(p.project_id); const latest = p.renders[0];
+            const st = projectState(p); const task = working.get(p.project_id); const latest = p.renders[0]; const nx = projectNext(p);
+            const to = nx ? `/du-an/${p.project_id}?tab=${nx.tab}` : `/du-an/${p.project_id}`;
             return (
               <li key={p.project_id} className="group/card relative">
-                <a href={`/du-an/${p.project_id}`} onClick={(e) => { e.preventDefault(); go(`/du-an/${p.project_id}`); }}
+                <a href={to} onClick={(e) => { e.preventDefault(); go(to); }}
                    className="grid items-center gap-x-6 gap-y-3 p-3 transition-colors hover:bg-white/[0.02] sm:grid-cols-[220px_minmax(0,1fr)_auto]">
                   <Filmstrip shots={p.shots} height={56} className="rounded-md" />
                   <div className="min-w-0">
                     <p className="truncate text-[15px] font-medium">{p.title}</p>
                     <p className="truncate text-[13px] text-mute">{p.shots.length ? tv`${p.shots.length} câu` : tr("Chưa có kịch bản")}, {FORMATS[p.format] ?? p.format}{latest ? <span className="mono">, {timecode(latest.qc.duration)}</span> : ""}{task ? <span className="text-ai">{tr(", trợ lý đang làm")}</span> : ""}</p>
+                    {nx && !task && <p className={`mt-0.5 flex items-center gap-1.5 truncate text-[12.5px] ${nx.you ? "text-cue" : "text-faint"}`}><Icon name={nx.you ? "next" : "clock"} size={13} />{nx.text}</p>}
                   </div>
                   <div className="flex items-center gap-4 sm:justify-end sm:pr-12"><Steps step={st.step} tone={st.tone} /><span className="sm:w-40 sm:text-right"><Tag tone={st.tone}>{st.label}</Tag></span></div>
                 </a>{bin(p, "absolute right-3 top-3 sm:top-1/2 sm:-translate-y-1/2")}
