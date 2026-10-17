@@ -767,7 +767,7 @@ class VisualQualityService:
         free = shutil.disk_usage(self._work if self._work.exists() else self._work.parent).free
         if free < need:
             raise AdapterError(ErrorCode.INSUFFICIENT_STORAGE, f"cần khoảng {need / 1e9:.1f} GB trống cho việc này, ổ chỉ còn {free / 1e9:.1f} GB "
-                               "(bấm Dọn ở màn Chất lượng hình, hoặc giải phóng ổ)", retryable=False)
+                               "(bấm Dọn ở mục VQ trong Thư viện, hoặc giải phóng ổ)", retryable=False)
 
     def _process(self, step: dict, source: Path, out: Path, *, t_in: float, seconds: float | None) -> Path:
         """One step that is not an FFmpeg filter, by the tool its tier names; the result is a picture-only intermediate."""

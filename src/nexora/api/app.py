@@ -1031,7 +1031,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             return {"run_id": system.library.enhance(asset_id, upscale=int(body.get("upscale") or 1), smooth_fps=body.get("smooth_fps"))}
         except ValueError as e:
             if body.get("vq"):
-                raise HTTPException(409, "Chưa có công thức chất lượng hình nào được duyệt") from e
+                raise HTTPException(409, "Chưa có công thức VQ nào được duyệt") from e
             raise HTTPException(422, "Chỉ nâng chất lượng được cho video, và phải chọn phóng to hoặc làm mượt")
 
     @app.post("/api/v1/projects/{project_id}/preview", status_code=202)

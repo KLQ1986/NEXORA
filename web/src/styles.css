@@ -260,10 +260,10 @@ html[lang="vi"] .display { letter-spacing: -0.015em; }
    backgrounds the type is drawn at its full weight (no thinning by greyscale smoothing). Unlayered, so it
    wins over the utilities without touching every screen. ── */
 :where(.text-faint, .text-mute):not([class*="font-"]) { font-weight: 450; }
-.text-\[9\.5px\], .text-\[10px\], .text-\[10\.5px\], .text-\[11px\], .text-\[11\.5px\], .chip { font-size: 11px; font-weight: 550; }
-.lab .lab-tag { font-size: 11px; font-weight: 550; }
-.lab-svgcap { font-size: 11px; font-weight: 550; }
-.lab-svgtag, .lab-svgnum { font-size: 11px; font-weight: 550; }
+.text-\[9\.5px\], .text-\[10px\], .text-\[10\.5px\], .text-\[11px\], .text-\[11\.5px\], .chip { font-size: 11px; font-weight: 500; }
+.lab .lab-tag { font-size: 11px; font-weight: 500; }
+.lab-svgcap { font-size: 11px; font-weight: 500; }
+.lab-svgtag, .lab-svgnum { font-size: 11px; font-weight: 500; }
 .lab { --color-mute: #aabdb3; --color-faint: #93a79e; }
 .lab.lab-amber { --color-mute: #c9b89d; --color-faint: #ad9c82; }
 .studio { --color-faint: #94a0b6; }

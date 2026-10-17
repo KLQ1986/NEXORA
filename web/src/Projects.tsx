@@ -299,7 +299,7 @@ function ColourPairs({ id }: { id: string }) {
   if (!pairs.length) return null;
   const match = async (p: ColourPair) => {
     setBusy(p.after);
-    try { await post(`/api/v1/projects/${id}/colour/match`, { after: p.after }); toast(tr("Đã đề xuất khớp màu; xem trước rồi duyệt ở Chất lượng hình.")); reload(); }
+    try { await post(`/api/v1/projects/${id}/colour/match`, { after: p.after }); toast(tr("Đã đề xuất khớp màu; xem trước rồi duyệt ở VQ.")); reload(); }
     catch (e) { toast((e as Error).message, { tone: "tally" }); }
     setBusy(null);
   };
@@ -314,7 +314,7 @@ function ColourPairs({ id }: { id: string }) {
             <span className="text-faint">{` · ${p.mode === "scene" ? tv`cùng nơi (${p.place ?? ""})` : tr("tông máy quay")}${p.gap != null ? tv` · lệch ${p.gap.toFixed(1)}` : ""}`}</span></span>
           {p.state === "approved" ? <Tag tone="proof">{tr("đã khớp")}</Tag>
             : p.state === "proposed" ? <button type="button" className="link" onClick={() => goTo(`/thu-vien?mo=${p.change.asset_id}&tab=vq`)}>{tr("Xem trước & duyệt")}</button>
-            : !p.ready ? <span className="text-faint">{tr("chưa phân tích chất lượng hình")}</span>
+            : !p.ready ? <span className="text-faint">{tr("chưa phân tích VQ")}</span>
             : <Button size="sm" busy={busy === p.after} onClick={() => match(p)}>{tr("Khớp màu")}</Button>}
         </li>))}</ul>
     </div>

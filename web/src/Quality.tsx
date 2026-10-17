@@ -148,7 +148,7 @@ function Tidy() {
 
 /* --------------------------------------------------------------------------------------------------------- one source */
 /* One source's Visual Quality, read and acted on: shared by the Library (its picture beside the player, its panel in the
-   viewer's "Chất lượng hình" tab) and by the whole workspace a file outside the library opens in. An empty subject asks
+   viewer's "VQ" tab) and by the whole workspace a file outside the library opens in. An empty subject asks
    for nothing. */
 export type VQ = ReturnType<typeof useVQ>;
 export function useVQ(subject: string) {
@@ -218,7 +218,7 @@ export function VQPanel({ vq }: { vq: VQ }) {
       </div>
       <RunBar run={data.run} state={data.state} />
       {!r && !running && (
-        <Empty icon="sparkles" title={tr("Chưa phân tích chất lượng hình")} action={<Button kind="primary" busy={busy === "plan"} onClick={() => act("plan", `${base}/plan`, {}, tr("Đã xếp việc phân tích."))}>{tr("Phân tích chất lượng hình")}</Button>}>
+        <Empty icon="sparkles" title={tr("Chưa phân tích VQ")} action={<Button kind="primary" busy={busy === "plan"} onClick={() => act("plan", `${base}/plan`, {}, tr("Đã xếp việc phân tích."))}>{tr("Phân tích VQ")}</Button>}>
           {tr("Hệ thống sẽ nhận diện profile màu, đo từng shot và đề xuất công thức sửa. Chưa áp gì cho tới khi bạn duyệt.")}
         </Empty>
       )}

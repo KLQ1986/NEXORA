@@ -287,7 +287,7 @@ const VQ_DOT: Record<string, string> = { mute: "border border-faint", cue: "bg-c
 function VQMark({ row }: { row: VQRow }) {
   const [label, tone] = VQ_STATE[row.state] ?? [row.state, "mute"];
   return <span className="mt-1 flex items-center gap-1.5 text-[11.5px] text-mute"><span className={`h-1.5 w-1.5 rounded-full ${VQ_DOT[tone] ?? VQ_DOT.mute}`} />
-    {tr("Chất lượng hình")}: {label}{row.recipe && row.state !== "none" ? ` v${row.recipe.version}` : ""}</span>;
+    {tr("VQ")}: {label}{row.recipe && row.state !== "none" ? ` v${row.recipe.version}` : ""}</span>;
 }
 
 function Row({ item, on, chosen, choosing, pick, choose }: { item: Item; on: boolean; chosen: boolean; choosing: boolean; pick: () => void; choose: () => void }) {
@@ -709,7 +709,7 @@ function Viewer({ item, items, start, assets, close, reload, similar, pick, comp
     { key: "notes", label: tr("Ghi chú"), icon: "comment", count: notes.filter((n) => !n.resolved).length || undefined },
     // Visual Quality of a recording or a picture of the library: its recipe beside its before and after.
     ...(asset && (item.kind === "video" || item.kind === "image") && !asset.duplicate_of
-      ? [{ key: "vq" as const, label: tr("Chất lượng"), icon: "sparkles", count: vqRow?.state === "proposed" ? 1 : undefined }] : []),     // 1: a recipe waits for approval
+      ? [{ key: "vq" as const, label: "VQ", icon: "sparkles", count: vqRow?.state === "proposed" ? 1 : undefined }] : []),     // 1: a recipe waits for approval
   ];
   const [tab, setTab] = useState<Tab>("board");
   const vq = useVQ(tab === "vq" && asset ? asset.asset_id : "");
@@ -765,7 +765,7 @@ function Viewer({ item, items, start, assets, close, reload, similar, pick, comp
           <Seg label={tr("Phát")} value={play} onChange={setPlay} items={[["original", tr("Gốc")], ["proxy", tr("Proxy")]] as const} /></span>}
         {better && !other && <span className="flex shrink-0 items-center gap-1.5">
           <Seg label={tr("Bản xem")} value={look} onChange={setLook} items={[["original", tr("Gốc")], ["enhanced", tr("Enhanced")], ["both", tr("Cả hai")]] as const} />
-          {asset?.enhanced_stale && <span title={tr("Bản enhanced này làm từ một công thức chất lượng hình cũ; bản dựng dùng bản gốc với công thức đang duyệt.")} className="rounded bg-cue/12 px-1.5 text-[11px] text-cue">{tr("cũ")}</span>}
+          {asset?.enhanced_stale && <span title={tr("Bản enhanced này làm từ một công thức VQ cũ; bản dựng dùng bản gốc với công thức đang duyệt.")} className="rounded bg-cue/12 px-1.5 text-[11px] text-cue">{tr("cũ")}</span>}
         </span>}
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
           {playable(item) && compareTo.length > 0 && (other
@@ -1009,7 +1009,7 @@ export default function Library() {
           ? <form key={g} className="px-1 py-0.5" onSubmit={(e) => { e.preventDefault(); regroup(g, nameDraft); }}><input autoFocus value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} onBlur={() => setRenaming(null)} onKeyDown={(e) => { if (e.key === "Escape") setRenaming(null); }} aria-label={tr("Tên bộ sưu tập")} className="h-8 w-full px-2.5 text-[13px]" /></form>
           : <Node key={g} on={group === g} icon="board" label={g} n={count((i) => i.collections.includes(g))} click={() => { place(""); setGroup(g); }}
               more={<More acts={[[tr("Đổi tên"), "edit", () => { setRenaming(g); setNameDraft(g); }], [tr("Xoá bộ sưu tập"), "trash", () => regroup(g, ""), true]]} />} />)}
-        <div className="mt-4"><Head title={tr("Chất lượng hình")} /></div>
+        <div className="mt-4"><Head title={tr("VQ")} /></div>
         {([["none", "sparkles"], ["proposed", "eye"], ["approved", "check"], ["running", "pulse"], ["failed", "alert"]] as const).map(([k, icon]) => {
           const n = vqRows.filter((r) => r.in_library && r.state === k).length;
           return n || vqState === k ? <Node key={k} on={vqState === k} icon={icon} label={VQ_STATE[k][0]} n={n} click={() => { const was = vqState === k; place(""); setVqState(was ? "" : k); }} /> : null;
@@ -1117,9 +1117,9 @@ export default function Library() {
   const wide = (theater && !!current) || !!fileJob;
 
   const viewer = fileJob ? (
-    <section className="flex h-full min-h-0 flex-col" aria-label={tr("Chất lượng hình")}>
+    <section className="flex h-full min-h-0 flex-col" aria-label={tr("VQ")}>
       <div className="flex h-10 shrink-0 items-center gap-2 border-b border-line px-3 text-[12.5px] text-faint">
-        <span className="flex-1">{tr("File ngoài thư viện: chỉ sửa chất lượng hình")}</span>
+        <span className="flex-1">{tr("File ngoài thư viện: chỉ sửa VQ")}</span>
         <button type="button" onClick={() => { setFileJob(null); window.history.replaceState({}, "", "/thu-vien"); }} aria-label={tr("Đóng")} className="grid h-7 w-7 place-items-center rounded-md hover:bg-raised hover:text-ink"><Icon name="x" size={15} /></button>
       </div>
       <Workspace key={fileJob} subject={fileJob} />

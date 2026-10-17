@@ -64,15 +64,15 @@ export function AssetVQ({ assetId, seek }: { assetId: string; seek?: (t: number)
   const p = data.profile, r = data.recipe, shown = data.previews[0];
   return (
     <details className="rounded-lg border border-line bg-raised/30 p-2.5 text-[12.5px]">
-      <summary className="cursor-pointer list-none"><span className="eyebrow">{tr("Chất lượng hình")}</span>
+      <summary className="cursor-pointer list-none"><span className="eyebrow">{tr("VQ")}</span>
         <span className="ml-2 text-faint">{p ? `${p.encoding_name ?? tr("profile màu chưa rõ")} · ${CONTENT[p.content] ?? p.content}` : tr("chưa phân tích")}
           {r ? ` · ${tv`công thức v${r.version}`} ${r.status === "approved" ? tr("đã duyệt") : r.status === "rejected" ? tr("đã bỏ") : tr("chờ duyệt")}` : ""}</span></summary>
       <div className="mt-2 flex flex-wrap items-center gap-2">
-        <Button size="sm" onClick={() => act(`/api/v1/assets/${assetId}/vq/plan`, {}, tr("Đã xếp việc phân tích chất lượng hình."))}>{p ? tr("Phân tích lại") : tr("Phân tích chất lượng hình")}</Button>
+        <Button size="sm" onClick={() => act(`/api/v1/assets/${assetId}/vq/plan`, {}, tr("Đã xếp việc phân tích VQ."))}>{p ? tr("Phân tích lại") : tr("Phân tích VQ")}</Button>
         {r && <Button size="sm" kind="quiet" onClick={() => act(`/api/v1/assets/${assetId}/vq/preview`, { recipe_id: r.recipe_id }, tr("Đã xếp việc xem trước."))}>{tr("Xem trước")}</Button>}
         {r && r.status !== "approved" && <Button size="sm" kind="primary" onClick={() => act(`/api/v1/vq/recipes/${r.recipe_id}/approve`)}>{tr("Duyệt công thức")}</Button>}
         {r && r.status !== "rejected" && <Button size="sm" kind="quiet" onClick={() => act(`/api/v1/vq/recipes/${r.recipe_id}/reject`)}>{tr("Bỏ")}</Button>}
-        <Button size="sm" kind="quiet" onClick={() => window.dispatchEvent(new CustomEvent("nx-tab", { detail: "vq" }))}>{tr("Mở tab Chất lượng hình")}</Button>
+        <Button size="sm" kind="quiet" onClick={() => window.dispatchEvent(new CustomEvent("nx-tab", { detail: "vq" }))}>{tr("Mở tab VQ")}</Button>
         {note && <span className="text-faint">{note}</span>}
       </div>
       {p && p.warnings.length > 0 && <ul className="mt-2 grid gap-0.5">{p.warnings.map((w) => <li key={w} className="text-cue">{w}</li>)}</ul>}

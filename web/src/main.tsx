@@ -23,7 +23,7 @@ const PAGES = [
   { path: "/du-an", label: tr("Dự án"), icon: "clapper", view: null, group: 0 },
   { path: "/phong-chieu", label: tr("Phòng chiếu"), icon: "screen", view: Review, group: 0 },
   { path: "/thu-vien", label: tr("Thư viện"), icon: "film", view: Library, group: 0 },
-  { path: "/chat-luong-hinh", label: tr("Chất lượng hình"), icon: "eye", view: Quality, group: 0, hidden: true },     // now a tab of the Library; the address forwards there
+  { path: "/chat-luong-hinh", label: tr("VQ"), icon: "eye", view: Quality, group: 0, hidden: true },     // now a tab of the Library; the address forwards there
   { path: "/ke-hoach", label: tr("Kế hoạch"), icon: "calendar", view: Plan, group: 0 },
   { path: "/phong-may", label: tr("Phòng máy"), icon: "gauge", view: Control, group: 1 },
   { path: "/tien-trinh", label: tr("Tiến trình"), icon: "pulse", view: Runs, group: 1 },
