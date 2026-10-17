@@ -21,14 +21,13 @@ RISKY = frozenset({"deblock", "deband", "denoise", "sharpen"})
 ORDER = ("deinterlace", "ivtc", "constant_rate", "deblock", "restore", "remove", "deband", "denoise", "tonemap", "color_transform", "levels", "relight",
          "deflicker", "stabilise", "deblur", "sharpen", "upscale", "faces", "interpolate")
 VERSION = "1"
-# Real-ESRGAN works ×4: above this many pixels in the source its intermediate is too big to be worth it.
-AI_PIXELS = 4_000_000
+# Every picture is worked at its own size: Real-ESRGAN restores an 8.8-megapixel photo at full size in about 194 s and 1.5 GB
+# (×4, then back), measured 2026-10-17. This is only a guard against a picture so large its ×4 intermediate would not fit.
+AI_PIXELS = 50_000_000
 AI_MODEL = "realesrgan-x4plus"
 RELIGHT_MIDDLE = 0.3       # a median luma below this ...
 RELIGHT_TOP = 0.85         # ... under a 99th percentile above this calls for light where it is
 DEBLUR_SEVERITY = 0.15     # less blurred than this, sharpening is enough (a model is still checked against sharpening)
-DEBLUR_STILL_PIXELS = 24_000_000
-DEBLUR_VIDEO_PIXELS = 1280 * 720   # NAFNet takes about 5 s a 720p frame here; a 4K frame about a minute
 FACE_SIDES = (48, 400)     # pixels: smaller has too little to align on, larger is already detailed enough to lose by a redraw
 TARGET_MIDTONE = 0.45
 
@@ -181,17 +180,19 @@ def plan_shot(shot: dict, *, profile: dict, colour: list[dict], have: set[str], 
             steps.append({"op": "stabilise", "tier": "vidstab", "params": {"smoothing": 15, "zoom": 0}, "why": f"rung {shot['scores']['shake']}px"})
     if camera_like and sev.get("soft", 0) > 0 and options.get("sharpen", True) and "ffmpeg:cas" in have:
         classic = {"op": "sharpen", "tier": "ffmpeg", "params": {"strength": round(0.15 + 0.2 * sev["soft"], 2)}, "why": f"mềm (độ nét {shot['scores']['sharpness']})"}
-        # Blur that sharpening cannot undo is taken to a model, beside the sharpening it must beat: NAFNet here for stills and
-        # video up to 720p; VRT on a rented GPU for larger video, only when the operator has let this recording leave the machine.
-        if sev["soft"] >= DEBLUR_SEVERITY and options.get("deblur", True):
+        # Blur that sharpening cannot undo is taken to a model, beside the sharpening it must beat, at the picture's own size:
+        # NAFNet on this Mac's GPU for stills and video of any size; VRT on a rented GPU instead only when the operator has let
+        # this recording leave the machine (it uses the frames around each one, which NAFNet cannot).
+        blur = shot["scores"].get("blur", shot["scores"].get("sharpness"))
+        if sev["soft"] >= DEBLUR_SEVERITY and options.get("deblur", True) and ("nafnet" in have or "vrt_remote" in have):
             if not still and options.get("allow_cloud") and "vrt_remote" in have:
                 steps.append({"op": "deblur", "tier": "vrt_remote", "params": {}, "generative": True, "remote": True,
-                              "why": f"mờ ({shot['scores']['sharpness']}): VRT trên GPU thuê, đã được phép gửi footage"})
-            elif "nafnet" in have and (pixels <= (DEBLUR_STILL_PIXELS if still else DEBLUR_VIDEO_PIXELS)):
+                              "why": f"mờ ({blur}): VRT trên GPU thuê, đã được phép gửi footage"})
+            elif "nafnet" in have:
                 steps.append({"op": "deblur", "tier": "nafnet", "params": {}, "generative": True, "classic": classic,
-                              "why": f"mờ ({shot['scores']['sharpness']}): khử mờ bằng NAFNet (AI)"})
+                              "why": f"mờ ({blur}): khử mờ bằng NAFNet ở đúng độ phân giải của nguồn (AI)"})
             else:
-                steps.append({**classic, "why": classic["why"] + ("; khử mờ AI cho video lớn cần GPU thuê và sự cho phép gửi footage" if not still else "")})
+                steps.append(classic)
         else:
             steps.append(classic)
     target_h = options.get("target_height")

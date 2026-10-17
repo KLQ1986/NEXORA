@@ -233,4 +233,19 @@ Mọi thứ đưa về phải qua bộ đo lỗi giả lập trước khi thành
   - Đo trên cảnh lia: nguồn tự dự đoán sai 0,70, chỉnh màu ×1,1 sai 0,77, hình nhấp nháy từng khung 4,33, vân sôi 3,37.
   - Ngưỡng: hỏng khi gấp 2 lần nguồn cộng 2, cảnh báo khi gấp 1,3 lần cộng 0,5. Trên footage thật (0002 4K, clip 720p) đều đạt, không báo hỏng nhầm.
 
+### Theo góp ý của người dùng (2026-10-17): đúng độ phân giải gốc, và dùng Qwen3-VL đang có
+
+- **Mọi bước xử lý chạy ở độ phân giải của chính file đó**, chia ô khi thiếu bộ nhớ, không thu nhỏ để xử lý:
+  - Khử mờ chuyển sang NAFNet bản MLX trên GPU Apple (`scripts/setup-deblur.sh`). Ô 512 mất 0,64 giây; khoảng 6 giây một khung 1080p, 25 giây một khung 4K.
+  - Bản MLX vừa nhanh gấp đôi vừa tốt hơn bản ONNX: PSNR 23,7 so với 22,0, SSIM 0,66 so với 0,52 trên cùng ảnh mờ.
+  - Video mọi cỡ đều khử mờ được trên máy. RunPod VRT chỉ còn là lựa chọn khi người dùng cho phép gửi footage.
+  - Real-ESRGAN bỏ giới hạn 4 MP: ảnh 8,8 MP phục hồi nguyên cỡ trong 194 giây, 1,5 GB RAM. Chỉ còn giới hạn an toàn 50 MP.
+  - ProPainter: trước hết thu hẹp vùng ngữ cảnh quanh vật (tối thiểu 0,5 lần cỡ vật) để giữ độ phân giải gốc; chỉ thu nhỏ khi vật quá lớn. Đo lại trên GPU trống: vùng 560×720 mất 60 giây cho 30 khung; 920×1080 quá 10 phút. Lần treo trước là do còn tiến trình cũ chiếm GPU.
+  - Đo đạc (không phải xử lý) vẫn lấy ở khổ tối đa 960 cho nhanh, và không bao giờ phóng to.
+- **Qwen3-VL (`qwen3-vl:8b-instruct`, qua Ollama) là giám khảo thứ hai cho bước AI:**
+  - Chỉ hỏi sau khi NIQE đã cho bước AI thắng. Hai lần nhìn, đảo vị trí hai ảnh.
+  - Chỉ chặn khi cả hai lần đều thấy bản cổ điển rõ hơn, hoặc bản AI bịa chi tiết. Không bao giờ tự đưa bước AI vào.
+  - Qwen3-VL không thay được model phục hồi: nó nhìn ảnh rồi trả lời bằng chữ, không tạo ra ảnh.
+  - Trên ảnh mặt VOA: cả hai lần đều chọn bản CodeFormer. Trên ảnh JPEG nén nặng: hai lần không đồng ý, nên không chặn và ghi lại.
+
 Cả ba phần của đợt 3 nay đã xong. Phần làm trên GPU thuê có sẵn, chờ người dùng thuê endpoint và cho phép gửi footage.

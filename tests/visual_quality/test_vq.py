@@ -479,7 +479,9 @@ def test_ai_is_offered_for_a_small_still_only_beside_the_classic_step_it_must_be
     without = P.plan_shot(shot, profile=profile, colour=[], have=have - {"realesrgan"}, options={"exposure": False})
     assert [s["op"] for s in without] == ["deblock"]
     big = P.plan_shot(shot, profile={**profile, "technical": {"kind": "still", "width": 4000, "height": 3000}}, colour=[], have=have, options={"exposure": False})
-    assert [s["op"] for s in big] == ["deblock"]                              # too large for ×4: the classic step
+    assert [s["op"] for s in big] == ["restore"]                              # a 12 MP photo too, at its own size
+    huge = P.plan_shot(shot, profile={**profile, "technical": {"kind": "still", "width": 12000, "height": 8000}}, colour=[], have=have, options={"exposure": False})
+    assert [s["op"] for s in huge] == ["deblock"]                             # only past what ×4 can hold
 
 
 @pytest.mark.skipif(not (ESRGAN / "realesrgan-ncnn-vulkan").is_file(), reason="Real-ESRGAN is not set up")
@@ -612,7 +614,8 @@ def system_frames(path: Path) -> list[np.ndarray]:
     return list(np.frombuffer(raw, np.uint8).reshape(-1, 180, 320, 3).astype(np.float32) / 255.0)
 
 
-DEBLUR_MODEL = FACES / "models" / "nafnet_deblur.onnx"
+NAFNET = Path("data/tools/nafnet").resolve()
+DEBLUR_MODEL = NAFNET / "models" / "gopro_width64.safetensors"
 
 
 def _pan(seconds_frames: int = 8) -> list[np.ndarray]:
@@ -648,10 +651,10 @@ def test_deblur_goes_to_a_model_beside_sharpening_and_to_the_cloud_only_when_the
                                                                         colour=[], have=have | {"ffmpeg:cas"}, options={"exposure": False, **o})}
     still = plan({"kind": "still", "width": 1200, "height": 800}, {"nafnet"})
     assert still["deblur"]["tier"] == "nafnet" and still["deblur"]["classic"]["op"] == "sharpen" and "sharpen" not in still
-    small = plan({"width": 1280, "height": 720}, {"nafnet"})
-    assert small["deblur"]["tier"] == "nafnet"
     big = plan({"width": 3840, "height": 2160}, {"nafnet", "vrt_remote"})
-    assert "deblur" not in big and big["sharpen"]["tier"] == "ffmpeg"           # 4K: too slow here, and the footage may not leave
+    assert big["deblur"]["tier"] == "nafnet"                                   # 4K too, at its own size, on this Mac
+    nothing = plan({"width": 3840, "height": 2160}, set())
+    assert "deblur" not in nothing and nothing["sharpen"]["tier"] == "ffmpeg"
     allowed = plan({"width": 3840, "height": 2160}, {"nafnet", "vrt_remote"}, allow_cloud=True)
     assert allowed["deblur"]["tier"] == "vrt_remote" and allowed["deblur"]["remote"]
 
@@ -691,7 +694,7 @@ def test_a_remote_deblur_goes_out_marked_as_allowed_and_privacy_mode_still_stops
 def test_a_motion_blurred_still_is_deblurred_by_nafnet_only_because_it_beats_sharpening(tmp_path):
     from nexora.adapters.deblur import Deblur
     system = vq_system(tmp_path)
-    system.adapters.register(Deblur(FACES))
+    system.adapters.register(Deblur(NAFNET))
     frame = np.asarray(Image.open(texture(tmp_path / "t.png", size=(480, 320), seed=6)).convert("RGB"), np.float32) / 255.0
     src = tmp_path / "in" / "blur.png"
     src.parent.mkdir(parents=True)
@@ -706,7 +709,7 @@ def test_a_motion_blurred_still_is_deblurred_by_nafnet_only_because_it_beats_sha
     else:
         assert any(d["op"] == "deblur" for d in shot["dropped"]) and ops["sharpen"]["tier"] == "ffmpeg"
     out = tmp_path / "out" / "fixed.png"
-    done = Deblur(FACES).submit(__import__("nexora.core.adapter", fromlist=["Request"]).Request("deblur", inputs={"path": str(src)}, params={"out": str(out), "kind": "still"}))
+    done = Deblur(NAFNET).submit(__import__("nexora.core.adapter", fromlist=["Request"]).Request("deblur", inputs={"path": str(src)}, params={"out": str(out), "kind": "still"}))
     assert out.is_file() and done.outputs["pictures"] == 1
 
 
@@ -740,3 +743,49 @@ def test_a_backlit_picture_has_its_shadows_lifted_where_they_are_and_kept_by_wha
     lit = np.asarray(Image.open(out).convert("RGB"), np.float32) / 255.0
     assert M.luma(lit)[300:].mean() > M.luma(backlit)[300:].mean() * 1.5       # the shade is brighter
     assert abs(M.luma(lit)[:100].mean() - M.luma(backlit)[:100].mean()) < 0.15 # the bright part is about where it was
+
+
+class _Eyes:
+    """A stand-in vision model: answers each look from a script, and records the order the two pictures came in."""
+    def __init__(self, answers):
+        self.answers, self.seen = list(answers), []
+
+    def describe(self):
+        from nexora.core.adapter import Capability
+        return Capability(name="model", operations=("describe", "chat", "embed"), runs="local")
+
+    def available(self):
+        return True
+
+    def environment(self):
+        return {"available": True}
+
+    def submit(self, request):
+        from nexora.core.adapter import Result
+        self.seen.append([Path(p).name for p in request.inputs["images"]])
+        return Result(outputs={"json": self.answers.pop(0)})
+
+
+def _judge_case(tmp_path, answers):
+    system = vq_system(tmp_path)
+    eyes = _Eyes(answers or [])
+    if answers is not None:
+        system.adapters.register(eyes)
+    work = tmp_path / "w"
+    work.mkdir()
+    for name in ("x_ai.png", "x_classic.png"):
+        Image.open(texture(tmp_path / "t.png", size=(400, 300), seed=2)).save(work / name)
+    seen = system.vq._look_judge(work, {"op": "restore"}, picture_ai=work / "x_ai.png", picture_classic=work / "x_classic.png", shot={})
+    return seen, eyes
+
+
+def test_the_vision_model_can_stop_an_ai_step_only_when_both_looks_agree_it_is_worse(tmp_path):
+    # The AI picture is shown first, then second: "second" then "first" both mean the classic one.
+    seen, eyes = _judge_case(tmp_path / "a", [{"better": "second", "invented": "none", "why": "less smeared"}, {"better": "first", "invented": "none", "why": "cleaner"}])
+    assert seen["veto"] and eyes.seen == [["restore_judge_ai.jpg", "restore_judge_classic.jpg"], ["restore_judge_classic.jpg", "restore_judge_ai.jpg"]]
+    seen, _ = _judge_case(tmp_path / "b", [{"better": "second", "invented": "none"}, {"better": "second", "invented": "none"}])
+    assert not seen["veto"]                                                    # the side it favours, not the picture: no veto
+    seen, _ = _judge_case(tmp_path / "c", [{"better": "first", "invented": "first", "why": "face changed"}, {"better": "second", "invented": "second"}])
+    assert seen["veto"]                                                        # made up in both looks: stopped though "clearer"
+    seen, _ = _judge_case(tmp_path / "d", None)
+    assert seen is None                                                        # no vision model: NIQE alone decides

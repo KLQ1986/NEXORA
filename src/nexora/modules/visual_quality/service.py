@@ -42,6 +42,10 @@ STILL_TIERS = frozenset({"ffmpeg", "realesrgan", "codeformer", "nafnet", "local_
 # Opening a shade shows texture NIQE had not seen: measured on a backlit picture (2026-10-17), a clean relight cost 0.37 and
 # one with a halo along the edge 0.63 (on a real backlit frame NIQE improved, 5.75 → 5.46). Between the two.
 RELIGHT_NIQE_SLACK = 0.5
+LOOK_PROMPT = ("Two versions of the same part of a photo. Which one looks clearer and more like a real, natural photograph? Also: does "
+               "either version show something made up that is not believable (a face that looks like a different person, warped or "
+               "garbled letters, painted or plastic texture, smeared shapes)? Answer JSON only: {\"better\": \"first\" or \"second\" or "
+               "\"same\", \"invented\": \"first\" or \"second\" or \"none\", \"why\": \"a few words\"}")
 AI_ABSORBS = {"restore": frozenset({"deblock", "deband", "denoise"})}
 AI_MARGIN = 0.5            # how much more natural (NIQE) an AI step must make a picture than the classic step to be kept
 NIQE_SLACK = 0.3           # how much less natural a step may make a frame before it is dropped
@@ -422,6 +426,39 @@ class VisualQualityService:
                 step["checked"] = {"niqe_without": round(b, 3), "niqe_with": round(a, 3)}
         return kept
 
+    def _look_judge(self, work: Path, step: dict, *, picture_ai: Path, picture_classic: Path, shot: dict) -> dict | None:
+        """A second judge with eyes, after NIQE: the local vision model (Qwen3-VL) sees the same part of the picture with the AI
+        step and with the classic one, twice with the two swapped (small models favour a side), and says which is clearer and
+        whether the AI made up something false: a face turned into someone else, letters that are not there, texture painted
+        over what was. It can only stop an AI step NIQE let through, when both looks agree; never put one in. None when no
+        vision model is here."""
+        if "model" not in {c.name for c in self._adapters.describe()}:
+            return None
+        try:
+            a, b = _load_rgb(picture_ai), _load_rgb(picture_classic)
+        except OSError:
+            return None
+        crops_a = _regions(a, shot) if step["op"] == "faces" else [_centre(a, 768)]
+        crops_b = _regions(b, shot) if step["op"] == "faces" else [_centre(b, 768)]
+        if not crops_a or len(crops_a) != len(crops_b):
+            return None
+        fa, fb = work / f"{step['op']}_judge_ai.jpg", work / f"{step['op']}_judge_classic.jpg"
+        Image.fromarray((np.clip(crops_a[0], 0, 1) * 255).round().astype(np.uint8)).save(fa, quality=95)
+        Image.fromarray((np.clip(crops_b[0], 0, 1) * 255).round().astype(np.uint8)).save(fb, quality=95)
+        answers = []
+        for first, second, ai_is in ((fa, fb, "first"), (fb, fa, "second")):
+            try:
+                out = self._adapters.submit("model", Request("describe", inputs={"images": [str(first), str(second)]},
+                                                                params={"prompt": LOOK_PROMPT, "task": "judge", "max_tokens": 200})).outputs["json"]
+            except (AdapterError, KeyError):
+                return None
+            better = str(out.get("better", "")).lower()
+            invented = str(out.get("invented", "")).lower()
+            answers.append({"ai_better": better == ai_is, "classic_better": better in ("first", "second") and better != ai_is,
+                            "ai_invented": invented == ai_is, "why": str(out.get("why", ""))[:200]})
+        veto = all(x["classic_better"] or x["ai_invented"] for x in answers)
+        return {"veto": veto, "ai_better_both": all(x["ai_better"] for x in answers), "why": "; ".join(x["why"] for x in answers if x["why"])[:400]}
+
     @staticmethod
     def _judge_relight(with_it: Path, without: Path, niqe_with: float | None, niqe_without: float | None) -> tuple[bool, dict | str]:
         """A relight is kept when it brings a quarter or more of the near-black picture into sight, clips no more highlights,
@@ -490,8 +527,14 @@ class VisualQualityService:
                     kept = other
                     shot.setdefault("dropped", []).append({"op": step["op"], "why": f"không làm lộ thêm vùng tối đủ rõ ({note})"})
                 continue
+            seen = self._look_judge(work, step, picture_ai=work / f"{step['op']}_ai.png", picture_classic=work / f"{step['op']}_classic.png", shot=shot) \
+                if ai is not None and base is not None and ai < base - AI_MARGIN else None
+            if seen and seen.get("veto"):
+                kept = other
+                shot.setdefault("dropped", []).append({"op": step["op"], "why": f"Qwen3-VL thấy bản AI kém hơn: {seen['why']}", "judge": seen})
+                continue
             if ai is not None and base is not None and ai < base - AI_MARGIN:
-                step["checked"] = {"niqe_classic": round(base, 3), "niqe_ai": round(ai, 3)}
+                step["checked"] = {"niqe_classic": round(base, 3), "niqe_ai": round(ai, 3), **({"judge": seen} if seen else {"judge": None})}
                 kept = [{k: v for k, v in s.items() if k != "classic"} if s is step else s for s in kept if s is step or s["op"] not in absorbed]
             else:
                 kept = other

@@ -50,7 +50,7 @@ class ShotScore:
         lk = self.look
         return {"exposure": round(lk.luma_p50, 3), "contrast": round(lk.contrast, 3), "saturation": round(lk.saturation, 3),
                 "clipped_high": round(lk.clipped_high, 4), "clipped_low": round(lk.clipped_low, 4), "noise": round(lk.noise, 2),
-                "sharpness": round(lk.sharpness, 1), "blockiness": round(lk.blockiness, 3), "banding": round(lk.banding, 3),
+                "sharpness": round(lk.sharpness, 1), "blur": round(lk.blur, 3), "blockiness": round(lk.blockiness, 3), "banding": round(lk.banding, 3),
                 "white_balance": [round(lk.cast_r, 3), round(lk.cast_b, 3)], "flicker": round(self.flicker, 2), "shake": round(self.shake, 2),
                 "niqe": None if self.niqe is None else round(self.niqe, 2)}
 

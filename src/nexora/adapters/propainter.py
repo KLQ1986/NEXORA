@@ -4,9 +4,9 @@ ProPainter fills a masked region from what the neighbouring frames show of it (f
 pixels first, a transformer only for what no frame shows), which is why the design chose it over generating the region.
 It runs in its own environment on the Apple GPU (MPS), set up by `scripts/setup-propainter.sh` into `data/tools/propainter/`.
 
-ProPainter needs a lot of memory per pixel, so the span is processed at most `PROCESS_WIDTH` wide; only the masked region of
-its result is laid back on the original, through a feathered mask at full size, so every other pixel of a 4K frame stays
-the camera's own. The result is picture only, ProRes 422 HQ, like the other frame tools; the service puts the sound back.
+Only the region around the object is worked on, at the picture's own resolution whenever it fits what this GPU runs
+(`PROCESS_PIXELS`); only the masked region of the result is laid back on the original, through a feathered mask at full size,
+so every other pixel of a 4K frame stays the camera's own. The result is picture only, ProRes 422 HQ, like the other frame tools; the service puts the sound back.
 """
 import json
 import shutil
@@ -18,12 +18,13 @@ from PIL import Image, ImageDraw, ImageFilter
 
 from nexora.core.adapter import Adapter, AdapterError, Capability, ErrorCode, Request, Result
 
-PROCESS_PIXELS = 640 * 360
-# Measured on an M4 with 24 GB (2026-10-17), 30 frames at 640×360: 196 s with RAFT at its 20 iterations, 74 s at 10 (36 s for
-# the whole step once warm), with no difference to see in the fill. At 960×544, and at 640×752, the same span stalled on the
-# GPU past ten minutes: it is the area that matters, so the area is held to what was measured to run. Half precision on MPS.
+PROCESS_PIXELS = 560 * 720
+# Measured on an M4 with 24 GB (2026-10-17), 30 frames, half precision on MPS, RAFT at 10 iterations (20 cost 2.6 times as long
+# with no difference to see): 640×360 in 36–74 s, 560×720 in 60 s with nothing else on the GPU, 920×1080 still running after
+# ten minutes. Earlier stalls at 960×544 came with other runs still on the GPU. The area is held to what was measured to run.
 RAFT_ITER = 10
 CONTEXT = 1.0               # of the regions' larger side, on each side: what ProPainter sees around what it fills
+MIN_CONTEXT = 0.5           # the least it is given, to stay at the picture's own resolution
 FEATHER = 0.15              # of the region's smaller side: how softly the filled region meets the original
 
 
@@ -64,10 +65,15 @@ class ProPainter(Adapter):
         # object of a 4K frame is then filled near its own resolution, not at a sixth of it.
         x0, y0 = min(r[0] for r in regions), min(r[1] for r in regions)
         x1, y1 = max(r[0] + r[2] for r in regions), max(r[1] + r[3] for r in regions)
-        margin = max(x1 - x0, y1 - y0) * CONTEXT
-        cx0, cy0 = int(max(0, x0 - margin)) // 2 * 2, int(max(0, y0 - margin)) // 2 * 2
-        cx1, cy1 = min(W, int(x1 + margin)), min(H, int(y1 + margin))
-        cw, ch = (cx1 - cx0) // 2 * 2, (cy1 - cy0) // 2 * 2
+        # The picture's own resolution comes first: the context is narrowed (to half the object's size a side at least) before
+        # the work is ever scaled down; only an object too large for that is filled smaller than it is.
+        for context in (CONTEXT, 0.75, MIN_CONTEXT):
+            margin = max(x1 - x0, y1 - y0) * context
+            cx0, cy0 = int(max(0, x0 - margin)) // 2 * 2, int(max(0, y0 - margin)) // 2 * 2
+            cx1, cy1 = min(W, int(x1 + margin)), min(H, int(y1 + margin))
+            cw, ch = (cx1 - cx0) // 2 * 2, (cy1 - cy0) // 2 * 2
+            if cw * ch <= PROCESS_PIXELS:
+                break
         k = min(1.0, (PROCESS_PIXELS / (cw * ch)) ** 0.5)
         pw, ph = max(64, int(cw * k) // 8 * 8), max(64, int(ch * k) // 8 * 8)
         span = ["-ss", f"{t_in:.3f}"] if t_in > 0 else []

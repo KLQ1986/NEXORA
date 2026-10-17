@@ -526,7 +526,7 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     from nexora.adapters.local_tone import LocalTone
     adapters.register(LocalTone(ffmpeg_binary or "ffmpeg"))
     from nexora.adapters.deblur import Deblur
-    adapters.register(Deblur(data_dir / "tools" / "faces", ffmpeg_binary or "ffmpeg"))
+    adapters.register(Deblur(data_dir / "tools" / "nafnet", ffmpeg_binary or "ffmpeg"))
     from nexora.adapters.propainter import ProPainter
     adapters.register(ProPainter(data_dir / "tools" / "propainter", ffmpeg_binary or "ffmpeg"))
     from nexora.adapters.stills import Stills

@@ -1,11 +1,9 @@
-"""Deblurring on this Mac, for Visual Quality (design 2026-10-16, wave 3): NAFNet (GoPro motion blur), the ONNX export of
-OpenCV's model zoo, run by `deblur_helper.py` in the ONNX environment that `scripts/setup-faces.sh` sets up.
+"""Deblurring on this Mac, for Visual Quality (design 2026-10-16, wave 3): NAFNet (GoPro motion blur) in its MLX port on the
+Apple GPU, run by `deblur_helper.py` in the environment `scripts/setup-deblur.sh` sets up.
 
-On a still, or a video span frame by frame (written to ProRes 422 HQ, picture only, like the other frame tools). Measured
-on an M4 (2026-10-17): about 1.3 s for each 512-pixel tile on the CPU (CoreML was no faster), so a 900×600 picture in 6 s,
-a 720p frame in about 5 s, a 4K frame in about a minute: video is worked here only up to 720p, larger goes to VRT on a rented
-GPU when the operator allows it (adapters/runpod.py, RunPodRestore). On motion blur of 11 pixels added to a frame of
-foliage: PSNR 21.4 → 22.0, SSIM 0.46 → 0.52, NIQE 7.0 → 5.4.
+On a still, or a video span frame by frame, always at the picture's own size (in tiles), written to ProRes 422 HQ, picture
+only, like the other frame tools. Measured on an M4 (2026-10-17): about 6 s a 1080p frame, 25 s a 4K one. On motion blur of
+11 pixels added to a frame of foliage: PSNR 21.4 → 23.7, SSIM 0.46 → 0.66.
 """
 import json
 import subprocess
@@ -20,7 +18,7 @@ HELPER = Path(__file__).with_name("deblur_helper.py")
 class Deblur(Adapter):
     def __init__(self, env: str | Path, ffmpeg: str = "ffmpeg"):
         self._env, self._ffmpeg = Path(env).resolve(), ffmpeg
-        self._python, self._model = self._env / "bin" / "python", self._env / "models" / "nafnet_deblur.onnx"
+        self._python, self._model = self._env / "bin" / "python", self._env / "models" / "gopro_width64.safetensors"
 
     def describe(self) -> Capability:
         return Capability(name="deblur", operations=("deblur",), runs="local")
@@ -29,7 +27,7 @@ class Deblur(Adapter):
         return self._python.is_file() and self._model.is_file()
 
     def environment(self) -> dict:
-        return {"available": True, "deblur": True} if self.available() else {"available": False, "fix": "sh scripts/setup-faces.sh"}
+        return {"available": True, "deblur": True} if self.available() else {"available": False, "fix": "sh scripts/setup-deblur.sh"}
 
     def _ff(self, args: list[str], what: str) -> None:
         done = subprocess.run([self._ffmpeg, "-hide_banner", "-loglevel", "error", "-y", *args], capture_output=True, text=True)
@@ -39,7 +37,7 @@ class Deblur(Adapter):
     def _helper(self, src: Path, dst: Path, frames: int) -> dict:
         try:
             done = subprocess.run([str(self._python), "-I", str(HELPER), str(src), str(dst), json.dumps({"model": str(self._model)})],
-                                  capture_output=True, text=True, timeout=120 + 90 * frames)
+                                  capture_output=True, text=True, timeout=120 + 60 * frames)
         except subprocess.TimeoutExpired:
             raise AdapterError(ErrorCode.TIMEOUT, "deblurring took too long", retryable=True) from None
         line = next((l for l in reversed(done.stdout.splitlines()) if l.startswith("{")), None)
@@ -50,7 +48,7 @@ class Deblur(Adapter):
 
     def submit(self, request: Request) -> Result:
         if not self.available():
-            raise AdapterError(ErrorCode.UNAVAILABLE, "deblurring is not set up (sh scripts/setup-faces.sh)", retryable=False)
+            raise AdapterError(ErrorCode.UNAVAILABLE, "deblurring is not set up (sh scripts/setup-deblur.sh)", retryable=False)
         if request.operation != "deblur":
             raise AdapterError(ErrorCode.INVALID_REQUEST, f"unknown operation {request.operation}")
         p = request.params
