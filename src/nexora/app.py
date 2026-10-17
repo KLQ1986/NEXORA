@@ -632,6 +632,15 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     generation = Generation(orch, projects, assets, adapters, data_dir / "media", judge=model is not None,
                             prefer=lambda kind: json.loads(orch.setting(f"providers:{kind}", "[]")))
     generation.register(registry)
+    # The Edit step on FilmCraft: the storyboard built into a sequence in the browser, the cut kept in versions, rendered here.
+    from nexora.adapters.filmcraft import FilmCraft
+    from nexora.core.cuts import CutStore
+    from nexora.core.storyboard import Storyboard as _Board
+    from nexora.modules.edit.cut import Cut
+    adapters.register(FilmCraft(data_dir))
+    cuts = CutStore(db_path)
+    cut = Cut(orch, projects, assets, _Board(db_path), cuts, adapters, data_dir / "media", source=edit.final_source)
+    cut.register(registry)
     distribution = Distribution(projects, assets, adapters, data_dir / "exports")
     (data_dir / "logs").mkdir(exist_ok=True)
 
@@ -656,6 +665,7 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     from nexora.core.storyboard import Storyboard
     from nexora.modules.planning.storyboard import StoryboardPlanner
     system.storyboard = Storyboard(db_path)
+    system.cuts, system.cut = cuts, cut
     system.storyboard_planner = StoryboardPlanner(system.storyboard, projects, adapters, inventory=planning.inventory)
     mid = lambda a: (float(a["t_in"]) + float(a["t_out"])) / 2
     system.director = Director(system.storyboard, system.storyboard_planner, index, vi, vq_reader, assets, projects,

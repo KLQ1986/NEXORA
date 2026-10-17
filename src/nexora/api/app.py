@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -747,6 +747,19 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
     def latest_run(subject: str, pipeline: str):
         return next((run_view(system, r) for r in system.orch.runs_for_subject(subject) if system.orch.pipeline_of(r) == pipeline), None)
 
+    def latest_cut_run(project_id: str, script_id: str | None):
+        """What stands for the project's cut now: the newer of a render from the script and an export of the newest saved cut
+        (the Edit step), so the review, the Screening room and Publish follow whichever was made last."""
+        runs = []
+        if script_id:
+            runs += [r for r in system.orch.runs_for_subject(script_id) if system.orch.pipeline_of(r) == "edit.render"]
+        cut = system.cuts.latest(project_id) if hasattr(system, "cuts") else None
+        if cut:
+            runs += [r for r in system.orch.runs_for_subject(cut["cut_id"]) if system.orch.pipeline_of(r) == "edit.cut"]
+        if not runs:
+            return None
+        return run_view(system, max(runs, key=lambda r: system.orch.run_info(r).get("created_at") or 0))
+
     def project_view(project: dict) -> dict:
         script = system.projects.current_script(project["project_id"])
         shots = []
@@ -774,7 +787,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
                    for r in system.projects.renders(project["project_id"])]
         return {**project, "script": {"script_id": script["script_id"], "version": script["version"], "match_approved": script["match_approved"], "critique": script["critique"]} if script else None,
                 "shots": shots, "match": latest_run(script["script_id"], "sourcing.match") if script else None,
-                "render": latest_run(script["script_id"], "edit.render") if script else None, "renders": renders,
+                "render": latest_cut_run(project["project_id"], script["script_id"] if script else None), "renders": renders,
                 "generate": latest_run(script["script_id"], "sourcing.generate") if script else None, "generators": system.generation.available(),
                 "preview": latest_run(script["script_id"], "edit.preview") if script else None, "options": json.loads(project.get("options") or "{}"),
                 "previews": [{"render_id": r["render_id"], "created_at": r["created_at"], "script_id": r["script_id"], "url": f"/api/v1/renders/{r['render_id']}/file", "duration": r["qc"]["duration"], "gaps": r["qc"]["gaps"]}
@@ -1510,7 +1523,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
 
     @app.post("/api/v1/projects/{project_id}/render/decision")
     def decide_render(project_id: str, body: dict):
-        run = latest_run(current_script_id(project_id), "edit.render")
+        run = latest_cut_run(project_id, current_script_id(project_id))
         if run is None or run["status"] != "waiting_review":
             raise HTTPException(409, "Chưa có bản dựng nào đang chờ duyệt")
         stage = next(s for s in run["stages"] if s["status"] == "waiting_review")
@@ -2387,6 +2400,80 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
     add_notes(app, system.data_dir)                  # notes pinned to a moment of a recording or a cut
     from nexora.api.catalog import add_catalog
     add_catalog(app, system)                         # one code and one name for every item in the library
+
+    # ------------------------------------------------------------------ the Edit step (FilmCraft)
+    def cut_view(project_id: str) -> dict:
+        from nexora.adapters.pinned import FILMCRAFT_VERSION
+        ready = (system.data_dir / "tools" / "filmcraft-web" / FILMCRAFT_VERSION / "index.html").is_file()
+        versions = system.cuts.versions(project_id)
+        exports = {}
+        for c in versions[:20]:
+            r = next((run_view(system, x) for x in system.orch.runs_for_subject(c["cut_id"]) if system.orch.pipeline_of(x) == "edit.cut"), None)
+            if r:
+                exports[c["cut_id"]] = {"run_id": r["run_id"], "status": r["status"]}
+        return {"editor": {"ready": ready, "version": FILMCRAFT_VERSION, "url": "/filmcraft/?empty&norecover&fresh",
+                           "native": (system.data_dir / "tools" / "filmcraft-cli" / FILMCRAFT_VERSION / "filmcraft-cli").is_file(),
+                           "fix": None if ready else "sh scripts/setup-filmcraft.sh"},
+                "versions": [{**c, "document_url": f"/api/v1/projects/{project_id}/cut/{c['cut_id']}/document", "export": exports.get(c["cut_id"])} for c in versions],
+                "storyboard": bool(system.storyboard.shots(project_id))}
+
+    @app.get("/api/v1/projects/{project_id}/cut")
+    def cut_get(project_id: str):
+        """The project's cut: the editor, the saved versions (newest first) and whether there is a storyboard to build from."""
+        need_project(project_id)
+        return cut_view(project_id)
+
+    @app.get("/api/v1/projects/{project_id}/cut/plan")
+    def cut_plan(project_id: str):
+        """The FilmCraft commands that build the storyboard as a sequence, with the media they need."""
+        need_project(project_id)
+        try:
+            return system.cut.plan(project_id)
+        except ValueError as e:
+            raise HTTPException(409, str(e))
+
+    @app.post("/api/v1/projects/{project_id}/cut")
+    def cut_save(project_id: str, body: dict):
+        """The cut as the editor saved it (the .fcproj document), kept as the project's next version."""
+        need_project(project_id)
+        document = body.get("document")
+        if not isinstance(document, str) or not document.strip():
+            raise HTTPException(422, "need the project document")
+        try:
+            saved = system.cuts.save(project_id, document, made_by=str(body.get("made_by") or "operator"), note=body.get("note"), source=body.get("source"))
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        return {"saved": saved, **cut_view(project_id)}
+
+    @app.get("/api/v1/projects/{project_id}/cut/{cut_id}/document")
+    def cut_document(project_id: str, cut_id: str):
+        need_project(project_id)
+        c = system.cuts.get(cut_id)
+        if c is None or c["project_id"] != project_id:
+            raise HTTPException(404, "no such cut")
+        return Response(system.cuts.document(cut_id), media_type="application/json",
+                        headers={"content-disposition": f'attachment; filename="cut-v{c["version"]}.fcproj"', "cross-origin-resource-policy": "same-origin"})
+
+    @app.post("/api/v1/projects/{project_id}/cut/{version}/restore")
+    def cut_restore(project_id: str, version: int):
+        need_project(project_id)
+        try:
+            saved = system.cuts.restore(project_id, version, made_by="operator")
+        except LookupError:
+            raise HTTPException(404, "no such version")
+        return {"saved": saved, **cut_view(project_id)}
+
+    @app.post("/api/v1/projects/{project_id}/cut/{cut_id}/export", status_code=202)
+    def cut_export(project_id: str, cut_id: str):
+        """The saved cut rendered on this Mac (FilmCraft's engine, the originals, the hardware encoder), then reviewed."""
+        need_project(project_id)
+        c = system.cuts.get(cut_id)
+        if c is None or c["project_id"] != project_id:
+            raise HTTPException(404, "no such cut")
+        _, unread = system.cut.relinked(system.cuts.document(cut_id))
+        if unread:
+            raise HTTPException(409, f"Bản dựng dùng file không đọc được trên máy này: {', '.join(unread)}")
+        return {"run_id": system.cut.start_export(cut_id)}
 
     @app.get("/filmcraft/{name:path}", include_in_schema=False)
     def filmcraft_file(name: str = ""):

@@ -194,6 +194,20 @@ class Edit:
             ctx.record_cost(provider=name, units=result.usage.units, cost=result.usage.cost)
         return str(out), None
 
+    def final_source(self, asset_id: str) -> str | None:
+        """The file a final render of this recording reads, in the original's times: the enhanced copy that stands for it
+        now (Visual Quality's approved recipe, or a plain larger copy), else the original while its drive is here, else the
+        proxy; None when none of them can be read."""
+        versions = {v.role: v for v in self._assets.versions(asset_id)}
+        original = versions.get("original")
+        if original is None:
+            return None
+        if self._assets.path_of(original).is_file():
+            enhanced = [v for v in self._assets.versions(asset_id) if v.role == "enhanced" and self._assets.path_of(v).is_file() and self._current(asset_id, v)]
+            return str(self._assets.path_of(enhanced[-1] if enhanced else original))
+        proxy = versions.get("proxy")
+        return str(self._assets.path_of(proxy)) if proxy and self._assets.path_of(proxy).is_file() else None
+
     def _source(self, asset_id: str, t_in: float, need: float, *, proxy: bool = False, exact: bool = False) -> tuple[str, str, float]:
         """The file to cut from (the original when its volume is online, else the proxy) and a start that leaves room for `need` seconds.
         `proxy` asks for the small copy outright; `exact` keeps the start as given, for a range chosen to the word."""

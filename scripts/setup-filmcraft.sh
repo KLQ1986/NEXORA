@@ -17,4 +17,16 @@ cp -R "$TMP/u/filmcraft-web-$VERSION/." "$DEST/"
 rm -rf "$TMP"
 # The files the server will hand out, as checked when this version was taken in (the server checks them again at start).
 printf "eb7882f9e8c17a5d28be4d287265a8f2029d4f1fe860eb3bcb3cf1664281399e  $DEST/filmcraft_web_bg.wasm\n8892fadd3f0a25f414259781316e95b6bb788b587afb9dbb645c0fb3648f38ce  $DEST/filmcraft_web.js\nbd87b647b9a99a5dc19c843d809f088b161238a122854af2698a24ba03515799  $DEST/index.html\ne3d3272a30eafe34505e5676eb3543d7248870835a5569f314f388c89b807524  $DEST/audio-worklet.js\n" | shasum -a 256 -c -
-echo "ready $DEST"
+# The command-line engine, for the final render on this Mac (all cores, VideoToolbox): signed with a Developer ID and
+# notarized (spctl: "Notarized Developer ID", Learning Machines LLC).
+CLI="$DATA/tools/filmcraft-cli/$VERSION"
+TMP="$(mktemp -d)"
+curl -fsSL -o "$TMP/c.zip" "https://github.com/storytold/filmcraft/releases/download/v$VERSION/filmcraft-cli-$VERSION-macos-universal.zip"
+printf "54cb2d572c24cd5e32a54bedd8fdd15df86eaa66bf188a75c2de81fbd99ed90d  $TMP/c.zip\n" | shasum -a 256 -c -
+mkdir -p "$CLI"
+unzip -q -o "$TMP/c.zip" -d "$TMP/u"
+cp -R "$TMP/u/filmcraft-cli-$VERSION-macos-universal/." "$CLI/"
+rm -rf "$TMP"
+printf "42d938393a1139db205df0222dfa871be5eb46632aff2fddcfd7c6378c884c6b  $CLI/filmcraft-cli\n" | shasum -a 256 -c -
+"$CLI/filmcraft-cli" --version
+echo "ready $DEST and $CLI"

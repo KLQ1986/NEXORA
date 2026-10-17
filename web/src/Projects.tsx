@@ -5,6 +5,7 @@ import { call, post, projectNext, projectState, scriptText, stageName, timecode,
 import Board from "./Board";
 import { ask, Button, Empty, Filmstrip, goTo, Icon, Meter, Page, Section, Seg, SideFrame, SideGroup, SideLink, SkeletonCards, StageRail, Steps, Tabs, Tag, TimeChip, toast, Readout } from "./parts";
 import Timeline from "./Timeline";
+import EditStep from "./EditStep";
 import Storyboard from "./Storyboard";
 
 const VERDICT: Record<string, [string, "proof" | "tally" | "cue"]> = { supported: [tr("Nguồn xác nhận"), "proof"], contradicted: [tr("Trái với nguồn"), "tally"], not_found: [tr("Chưa có căn cứ"), "cue"] };
@@ -310,7 +311,7 @@ function Replace({ to }: { to: string }) {
   return null;
 }
 const VIEWS: View[] = ["script", "clips", "cut", "publish", "timeline", "board"];
-const FLOW: [View, string, string][] = [["script", tr("Kịch bản"), "edit"], ["cut", tr("Dựng và duyệt"), "scissors"], ["publish", tr("Xuất bản"), "globe"]];
+const FLOW: [View, string, string][] = [["script", tr("Kịch bản"), "edit"], ["cut", tr("Dựng video"), "scissors"], ["publish", tr("Xuất bản"), "globe"]];
 
 /** The steps of a video as the page's own navigation: each one is a screen. A step lights amber when it waits for the operator,
     green when it is behind, white where the work stands; the selected one carries the underline. Beside them, the two views of the whole. */
@@ -490,7 +491,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
     : !p.script ? null
     : reviewing || (!approved && !rendering) ? { label: tr("Chọn hình trên Storyboard"), icon: "layers", go: () => goTo(`/du-an/${id}/storyboard`) }
     : renderReview ? { label: tr("Duyệt bản dựng"), icon: "check", go: () => run(() => post(`/api/v1/projects/${id}/render/decision`, { approve: true })) }
-    : approved && !latest && !rendering ? { label: tr("Dựng video"), icon: "scissors", go: () => run(() => post(`/api/v1/projects/${id}/render`)) }
+    : approved && !latest && !rendering && view !== "cut" ? { label: tr("Sang bước Dựng video"), icon: "scissors", go: () => setView("cut") }
     : null;
   const field = "field-label";
   const card = "panel grid gap-4 p-4";
@@ -498,7 +499,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
   const previewing = !!p?.preview && ["queued", "running"].includes(p.preview.status);
   const facts = (p?.shots ?? []).filter((s) => s.is_fact);
   return (
-    <Page title={p.title} back={{ label: tr("Tất cả dự án"), onClick: back }} wide
+    <Page title={p.title} back={{ label: tr("Tất cả dự án"), onClick: back }} wide full={view === "cut"}
           note={<Slate state={<Tag tone={st.tone}>{st.label}</Tag>} items={[
             [String(p.shots.length), tr("câu")],
             [String(new Set(p.shots.map((s) => s.scene).filter(Boolean)).size || "–"), tr("cảnh")],
@@ -595,7 +596,10 @@ function Detail({ id, back }: { id: string; back: () => void }) {
       )}
 
 
+      {view === "cut" && <div className="mb-8"><EditStep projectId={id} approved={approved || !!p.script} onChanged={reload} /></div>}
       {view === "cut" && (
+        <details className="group" open={!!renderReview || !!rendering}>
+        <summary className="mb-4 flex cursor-pointer list-none items-center gap-2 text-[13px] text-mute hover:text-ink"><Icon name="next" size={13} className="transition-transform group-open:rotate-90" />{tr("Bản render và duyệt")}</summary>
         <div className="rise grid min-w-0 gap-10">
           {!approved && <Empty icon="check" title={tr("Duyệt clip trước khi dựng")} action={<Button kind="primary" onClick={() => goTo(`/du-an/${id}/storyboard`)}>{tr("Chọn hình trên Storyboard")}</Button>}>{tr("Khi storyboard đã được duyệt, hệ thống mới đọc lời dẫn, vẽ phụ đề và ghép thành video.")}</Empty>}
           {approved && (
@@ -685,6 +689,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
             </Section>
           )}
         </div>
+        </details>
       )}
 
       {view === "publish" && (

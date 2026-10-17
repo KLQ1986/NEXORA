@@ -30,11 +30,12 @@ SHA-256 and upgraded only on purpose; the web build is single-threaded and reads
 | Vietnamese text | captions drawn with every diacritic | verified |
 | Playback | 8 s at Half and at Full (1080p): 239 frames shown, 0 dropped; render p95 0.26 ms, decode p95 0.17 ms | verified |
 | Ripple trim and undo | SC2 out −15 frames: SC2 105 → 90, SC3 moved 195 → 180; undo restores it | verified |
-| Ripple and the caption track | the caption track did not follow the ripple (sequence 668 → 667, not 653) | **to fix in the bridge**: sync-lock the caption track, or move captions with the edit |
+| Ripple and the caption track | FilmCraft moves sync-locked captions on insert and extract, not on a ripple trim (its `edit` crate) | worked around: before each save the bridge lays each caption over its shot again while the cut keeps one line a shot (SC2 −15 frames: SC3 at 180, its caption at 181) |
 | Export in the browser | H.264 1080p, 668 frames, AAC, plays clean in ffmpeg; **160 s for 22 s (4.2 fps)** | verified, too slow for the final render |
-| Native export (`filmcraft-cli`), originals instead of proxies, HEVC 10-bit D-Log M | not run | unverified |
-| Saving `.fcproj` into NEXORA, reopening it | not run | unverified |
-| Inside the project page (iframe) | not run | unverified |
+| Native export (`filmcraft-cli` 0.8.0, signed and notarized), originals (4K HEVC 10-bit 4:2:0) | 22 s of 1080p in **10–11 s** with VideoToolbox (19 s from the proxies in software); 4K fitted to the frame; captions burned in; loudness −16.1 LUFS | verified |
+| Saving into NEXORA and reopening | saved to the browser's private storage (`/opfs/`, never a download), sent to NEXORA as a version; reopened with its media brought in again | verified |
+| Inside the project page | the Edit step shows the editor; first visit builds v1 from the storyboard; Save version; Render the cut → a render waiting for review (QC passed, 14 s in all) | verified on "Thử ghép A-G" |
+| Narration, music and sound effects on A1–A3 | not built yet | open |
 
 ## Who holds what
 
@@ -75,7 +76,7 @@ a draft to CapCut.
 
 ## Phases
 
-1. **Use FilmCraft** (about a week)
+1. **Use FilmCraft** (a–c done 2026-10-18: `core/cuts.py`, `modules/edit/cut.py`, `adapters/filmcraft.py`, `web/src/EditStep.tsx`)
    a. The Edit step shows FilmCraft (same origin, pinned), the tree's "Cut and review" becoming "Edit".
    b. The bridge above; save and reopen through NEXORA's versions; captions kept in step with ripples.
    c. Native export with `filmcraft-cli`; QC; Screening room as today.

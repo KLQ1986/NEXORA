@@ -32,6 +32,9 @@ PINS = {
     "filmcraft_web_bg.wasm": "eb7882f9e8c17a5d28be4d287265a8f2029d4f1fe860eb3bcb3cf1664281399e",
     "filmcraft_web.js": "8892fadd3f0a25f414259781316e95b6bb788b587afb9dbb645c0fb3648f38ce",
     "audio-worklet.js": "e3d3272a30eafe34505e5676eb3543d7248870835a5569f314f388c89b807524",
+    # Its command-line engine (same release), for the final render: zip as in SHA256SUMS and GitHub's digest; the binary is
+    # signed with a Developer ID and notarized.
+    "filmcraft-cli": "42d938393a1139db205df0222dfa871be5eb46632aff2fddcfd7c6378c884c6b",
 }
 FILMCRAFT_VERSION = "0.8.0"
 FILMCRAFT_INDEX = "bd87b647b9a99a5dc19c843d809f088b161238a122854af2698a24ba03515799"
