@@ -1,0 +1,5 @@
+{
+ "_": "SHA-256 of each workflow template; a template whose bytes differ is refused (adapters/comfy.py)",
+ "img2vid_svd.json": "609cf3c6d53d6227cc87d8a414d59b020f9ce32fe688e7a649f7ccbfc5079f86",
+ "txt2img.json": "e1b7147b884921b8bfcdf07311b0c061ee0f0ef012fbb2b50d637c518a282361"
+}

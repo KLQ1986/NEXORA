@@ -135,3 +135,25 @@ def test_the_conversation_proposes_operations_within_its_scope_and_an_idea_becom
     assert [s["title"] for s in board["scenes"]] == ["Mở", "Kết"] and board["shots"][0]["spec"]["source"]["policy"] == "generate"
     assert board["shared"]["palette"] == [{"name": "Xanh lá dừa", "hex": "#3f6b4f"}] and board["shared"]["fingerprint"] == "vườn dừa nhiều tầng tán"
     assert [m["role"] for m in board["messages"]][-1] == "director"
+
+
+def test_a_character_is_checked_against_the_bible_s_reference_and_without_a_face_it_is_not_passed(tmp_path):
+    import json
+    system, _, client = _system(tmp_path)
+    market = taken_in(system, film(tmp_path / "market.mp4", [("testsrc2", 4)]))
+    project = _project(system, ["Chợ rau củ buổi sáng."])
+    system.projects.update_project(project, bible=json.dumps([{"name": "Chú Tư", "kind": "character", "asset_id": market}, {"name": "Vườn", "kind": "place"}]))
+    client.post(f"/api/v1/projects/{project}/storyboard/from-script")
+    client.post(f"/api/v1/projects/{project}/storyboard/ops", json={"ops": [{"op": "set", "shot": "S1", "field": "continuity.entities", "value": ["Chú Tư", "Vườn"]},
+                                                                           {"op": "add_criterion", "shot": "S1", "criterion": {"check": "character"}}]})
+    character = lambda: next(c for c in client.get(f"/api/v1/projects/{project}/storyboard").json()["shots"][0]["checks"] if c["check"] == "character")
+    asked = []
+    system.director._likeness = lambda a, ref: asked.append(ref) or 0.94
+    client.post(f"/api/v1/projects/{project}/storyboard/run", json={})
+    assert character()["st"] == "pass" and character()["value"] == "0.94" and asked == [market]       # the place has no likeness to take
+    system.director._likeness = lambda a, ref: 0.86
+    client.post(f"/api/v1/projects/{project}/storyboard/run", json={})
+    assert character()["st"] == "fail"
+    system.director._likeness = lambda a, ref: None                                                  # no face in the picture
+    client.post(f"/api/v1/projects/{project}/storyboard/run", json={})
+    assert character()["st"] == "unmeasured" and character()["value"] == "không thấy khuôn mặt"

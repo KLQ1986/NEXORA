@@ -154,10 +154,23 @@ apply. Every card says the shot's state, its source, its duration, its criteria 
 3. **Director loop on footage.** Done: `agents/director.py`; candidates from the library's search, measured against the
    automatic criteria (search score, duration, VI fields only while released, VQ defects, colour gap to the shot before),
    accepted alone at level 2+, else brought to the operator; the colour gap is kept with the picture for the seam.
-4. **Generation.** Through the project's existing generation (keyframe first), reached by writing the storyboard to the
-   script; the shot chooses its keyframe and video providers among those configured. **Not done:** a fal backend and the
-   continuity checks that need it (character likeness by SigLIP against the Bible).
-5. **Not done:** ComfyUI on RunPod with pinned workflow templates.
+4. **Generation.** Done (code-ready): through the project's existing generation (keyframe first), reached by writing the
+   storyboard to the script; the shot chooses its keyframe and video providers among those configured. fal
+   (`adapters/fal.py`: its queue, pictures sent as data URIs, cancelled past the deadline) for `image_gen.fal` and
+   `video_gen.fal`, with the models and prices in nexora.toml. Character likeness (`character` criterion, ≥ 0.90): the
+   largest face of the candidate's middle frame (Apple Vision, 25 % margin) against each Bible character the shot names, by
+   SigLIP 2 cosine; the threshold was set on public-domain portraits (same person 0.92–0.96, different people ≤ 0.87) and is
+   to be checked again on a real Bible. No face, no reference or no SigLIP: "unmeasured", never a guess.
+5. **ComfyUI on RunPod.** Done (code-ready): `adapters/comfy.py` with templates in `adapters/comfy_workflows/` (ComfyUI core
+   nodes only: `txt2img.json`, `img2vid_svd.json`), each read only when its SHA-256 is the one in `manifest.json`; `{{places}}`
+   filled from the request (a value alone keeps its type), sent in worker-comfyui's input (`workflow`, `images`), its output
+   read as base64 or an https address, an animated WEBP made an MP4. The shot's provider chooses the template
+   (`image_gen.comfy` a still, `video_gen.comfy` a clip); the checkpoint and the template's hash are kept as the generation's
+   model. Config: `runpod_comfy_endpoint`, `comfy_checkpoint`, `comfy_video_checkpoint`.
+
+Still to do, and each costs money: a real fal run and a real ComfyUI endpoint (worker-comfyui with the two checkpoints) run
+once, on the operator's word. Not done: ComfyUI on the Mac, inpaint / character swap / upscale templates, LoRA from the Bible
+inside a ComfyUI graph.
 
 ## Testing
 

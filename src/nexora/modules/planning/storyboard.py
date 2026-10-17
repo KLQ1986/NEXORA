@@ -36,6 +36,10 @@ CHECKS = {
     "no_shake": ("Không rung", "auto", "<", 0.3),                   # Visual Quality's defects at the stretch
     "no_blur": ("Không mờ", "auto", "<", 0.3),
     "colour_continuity": ("Màu nối với shot trước", "auto", "<=", 4.0),
+    # SigLIP 2 on the largest face of the picture against the character's reference in the Bible. Measured on public-domain
+    # official portraits (2026-10-17): the same person 0.922–0.955, different people at most 0.873; a picture without a face
+    # is unmeasured, never passed. Two same-person pairs only: to be checked again once a Bible has real references.
+    "character": ("Giống nhân vật trong Bible", "auto", ">=", 0.90),
     "human": ("Người duyệt", "human", "", None),
 }
 

@@ -10,6 +10,8 @@ the storyboard is written to the script, and are accepted by the operator (or at
 """
 from __future__ import annotations
 
+import json
+
 from nexora.core.adapter import AdapterError
 from nexora.core.assets import AssetStore
 from nexora.core.index import MomentIndex
@@ -24,9 +26,9 @@ CANDIDATES = 8
 
 class Director:
     def __init__(self, store: Storyboard, planner: StoryboardPlanner, index: MomentIndex, vi: VideoIntelligence, vq: VisualQuality,
-                 assets: AssetStore, projects: ProjectStore, *, colour_gap=None):
+                 assets: AssetStore, projects: ProjectStore, *, colour_gap=None, likeness=None):
         self._store, self._planner, self._index, self._vi, self._vq = store, planner, index, vi, vq
-        self._assets, self._projects, self._gap = assets, projects, colour_gap
+        self._assets, self._projects, self._gap, self._likeness = assets, projects, colour_gap, likeness
 
     # ---------------------------------------------------------------------------------------------------- the loop
     def run(self, project_id: str, *, only: str | None = None) -> dict:
@@ -144,7 +146,31 @@ class Director:
             except (AdapterError, Exception):
                 return "unmeasured", "không đo được"
             return ("pass" if gap <= float(want or CHECKS[check][3]) else "fail"), f"{gap:.1f}"
+        if check == "character":
+            return self._character(s, a, float(want or CHECKS["character"][3]))
         return "unmeasured", "—"
+
+    def _character(self, s: Shot, a: dict, want: float) -> tuple[str, str]:
+        """Each character the shot names that the project's Bible shows (a reference picture): the face in the shot's picture
+        most like it, held against `want`; the least alike of them decides."""
+        bible = json.loads((self._projects.project(s.project_id) or {}).get("bible") or "[]")
+        named = {e.lower() for e in s.spec["continuity"]["entities"]}
+        refs = [e for e in bible if e.get("kind", "character") == "character" and e.get("asset_id") and e["name"].lower() in named]
+        if not refs:
+            return "unmeasured", "Bible chưa có ảnh nhân vật"
+        if not self._likeness:
+            return "unmeasured", "chưa có SigLIP"
+        scores = []
+        for e in refs:
+            try:
+                v = self._likeness(a, e["asset_id"])
+            except Exception:
+                v = None
+            if v is None:
+                return "unmeasured", "không thấy khuôn mặt"
+            scores.append(v)
+        worst = min(scores)
+        return ("pass" if worst >= want else "fail"), f"{worst:.2f}"
 
     def decide(self, shot_id: str, *, accept: bool) -> None:
         """The operator's word on a shot: accepted (its human criteria with it), or sent back."""

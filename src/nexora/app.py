@@ -100,6 +100,60 @@ def fill_gap_from_stock(system: "System", shot_id: str, query: str) -> dict:
     return {"found": True, "asset_id": asset_id, "run_id": run_id, "rights": rights}
 
 
+_FACES: dict = {}
+
+
+def face_likeness(system: "System", asset_id: str, t: float, reference: str) -> float | None:
+    """How alike the largest face in a picture (an asset at `t`) and the largest in a reference asset are: SigLIP 2 on the two
+    faces, cut out with a margin by Apple Vision. None when either has no face, or the tools are not set up. Lives here because
+    it joins the library, Apple's frames and the picture model."""
+    names = {c.name for c in system.adapters.describe()}
+    if "restore_faces" not in names or "picture_text" not in names:
+        return None
+
+    def picture(aid: str, at: float | None) -> Path | None:
+        asset = system.assets.asset(aid)
+        if not asset:
+            return None
+        path = system.assets.path_of(system.assets.original(aid))
+        if asset.get("kind") == "image" or path.suffix.lower() in (".jpg", ".jpeg", ".png", ".heic", ".tif", ".tiff"):
+            return path if path.is_file() else None
+        versions = {v.role: v for v in system.assets.versions(aid)}
+        if not path.is_file() and "proxy" in versions:
+            path = system.assets.path_of(versions["proxy"])
+        if not path.is_file():
+            return None
+        out = system.data_dir / "tmp" / "likeness" / f"{aid}_{(at or 0):.2f}.jpg"
+        if not out.is_file():
+            out.parent.mkdir(parents=True, exist_ok=True)
+            system.adapters.submit("ffmpeg", Request("thumbnail", inputs={"path": str(path)}, params={"out": str(out), "at": float(at or 1.0)}))
+        return out
+
+    def face(path: Path | None):
+        if path is None:
+            return None
+        if str(path) in _FACES:
+            return _FACES[str(path)]
+        from PIL import Image
+        found = system.adapters.submit("restore_faces", Request("find", inputs={"path": str(path)})).outputs.get("faces", [])
+        vector = None
+        if found:
+            x, y, w, h = max(found, key=lambda f: f["box"][2] * f["box"][3])["box"]
+            crop = system.data_dir / "tmp" / "likeness" / f"face_{abs(hash(str(path)))}.png"
+            crop.parent.mkdir(parents=True, exist_ok=True)
+            with Image.open(path) as im:
+                m = 0.25 * max(w, h)
+                im.convert("RGB").crop((max(0, x - m), max(0, y - m), min(im.width, x + w + m), min(im.height, y + h + m))).save(crop)
+            vector = system.adapters.submit("picture_text", Request("images", inputs={"images": [str(crop)]})).outputs["vectors"][0]
+        _FACES[str(path)] = vector
+        return vector
+
+    a, b = face(picture(asset_id, t)), face(picture(reference, None))
+    if a is None or b is None:
+        return None
+    return round(float(sum(x * y for x, y in zip(a, b))), 3)
+
+
 def remove_asset(system: "System", asset_id: str, *, discard_file: bool = False, trash: str | Path | None = None) -> dict:
     """Take an asset out of the library for good. Work still running on it is stopped; the lines that showed it are without a
     picture again; what was said about it, measured in it and kept as an answer for it is forgotten; and everything made
@@ -589,7 +643,8 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     system.storyboard_planner = StoryboardPlanner(system.storyboard, projects, adapters, inventory=planning.inventory)
     mid = lambda a: (float(a["t_in"]) + float(a["t_out"])) / 2
     system.director = Director(system.storyboard, system.storyboard_planner, index, vi, vq_reader, assets, projects,
-                               colour_gap=lambda a, b: vq.colour_gap(a["asset_id"], mid(a), b["asset_id"], mid(b)))
+                               colour_gap=lambda a, b: vq.colour_gap(a["asset_id"], mid(a), b["asset_id"], mid(b)),
+                               likeness=lambda a, ref: face_likeness(system, a["asset_id"], mid(a), ref))
     system.viewer = Viewer(projects, adapters, data_dir / "media") if model is not None else None
     def measured_boundaries(asset_id: str):
         made = analysis.as_measured(asset_id) if assets.asset(asset_id) else None
@@ -632,6 +687,14 @@ def build_from_config(config, **overrides) -> System:
     runpod_key = _os.environ.get("RUNPOD_API_KEY") or config.runpod_api_key
     rented_image = [RunPodImage(runpod_key, config.runpod_image_endpoint, price_per_second=config.runpod_price_per_second)] if runpod_key and config.runpod_image_endpoint else []
     rented = [RunPodVideo(runpod_key, config.runpod_video_endpoint, price_per_second=config.runpod_price_per_second)] if runpod_key and config.runpod_video_endpoint else []
+    from nexora.adapters.fal import FalImage, FalVideo
+    from nexora.adapters.comfy import Comfy, ComfyVideo
+    comfy = [Comfy(runpod_key, config.runpod_comfy_endpoint, checkpoint=config.comfy_checkpoint, price_per_second=config.runpod_price_per_second),
+             ComfyVideo(runpod_key, config.runpod_comfy_endpoint, checkpoint=config.comfy_video_checkpoint, price_per_second=config.runpod_price_per_second)] \
+        if runpod_key and config.runpod_comfy_endpoint else []
+    fal_key = _os.environ.get("FAL_KEY") or config.fal_api_key
+    fal = ([FalImage(fal_key, config.fal_image_model, price=config.fal_image_price)] if config.fal_image_model else []) + \
+          ([FalVideo(fal_key, config.fal_video_model, price=config.fal_video_price_per_second)] if config.fal_video_model else []) if fal_key else []
     from nexora.adapters.speech import WhisperCpp
     from nexora.adapters.apple import AppleSound, AppleTool, AppleVision
     from nexora.adapters.voice import SayVoice
@@ -645,7 +708,7 @@ def build_from_config(config, **overrides) -> System:
                  pictures=_pictures(config),
                  recognisers=[AppleVision(AppleTool(Path(config.data_dir) / "tools")), AppleSound(AppleTool(Path(config.data_dir) / "tools"))] if AppleTool(Path(config.data_dir) / "tools").available() else [],
                  speech=WhisperCpp(config.speech_model, language=config.speech_language, vad_model=config.speech_vad_model or None) if config.speech_model else None,
-                 generators=[*rented_image, *([PollinationsImage(token=config.pollinations_token)] if config.pollinations else []), *rented, StillMotion()],
+                 generators=[*rented_image, *fal, *comfy[:1], *([PollinationsImage(token=config.pollinations_token)] if config.pollinations else []), *rented, *comfy[1:], StillMotion()],
                  shot_models=[cls(runpod_key, endpoint, price_per_second=config.runpod_price_per_second) for cls, endpoint in
                               ((RunPodLipSync, config.runpod_lipsync_endpoint), (RunPodUpscale, config.runpod_upscale_endpoint), (RunPodTrainer, config.runpod_train_endpoint))
                               if runpod_key and endpoint]
