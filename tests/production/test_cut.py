@@ -22,9 +22,13 @@ class FakeFilmCraft(Adapter):
         self.documents = []
 
     def describe(self):
-        return Capability(name="filmcraft", operations=("export", "inspect"), runs="local")
+        return Capability(name="filmcraft", operations=("export", "inspect", "build"), runs="local")
 
     def submit(self, request: Request) -> Result:
+        if request.operation == "build":                               # a headless build: a project naming each medium given
+            self.built = request.inputs
+            return Result(outputs={"document": document([m["name"].split(".")[0] for m in request.inputs["media"] if m["name"].startswith("ver_")]),
+                                   "commands": len(request.inputs["commands"])})
         self.documents.append(request.inputs["document"])
         out = Path(request.params["out"])
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -126,3 +130,31 @@ def test_the_sequence_carries_the_narration_the_music_and_its_ducking(tmp_path):
     doc["project"]["items"]["50"] = {"id": 50, "name": music_name, "kind": {"Media": {"media": {"File": {"path": f"/files/{music_name}"}}}}}
     relinked, unread = system.cut.relinked(json.dumps(doc), project)
     assert not unread and str(music) in relinked and "/files/" not in relinked
+
+
+def test_a_spoken_clip_carries_its_transcript_and_the_cut_can_be_built_without_a_browser(tmp_path):
+    system = build(tmp_path / "data", model=FakeModel(), segment_seconds=15.0)
+    fake = FakeFilmCraft()
+    system.adapters.register(fake)
+    client = TestClient(create_app(system))
+    asset_id = taken_in(system, film(tmp_path / "talk.mp4", [("testsrc2", 6)]))
+    system.index.upsert(asset_id, "speech", 0.5, 3.0, "Vườn dừa này đẹp lắm.", data={"words": [
+        {"text": "Vườn", "start": 0.5, "end": 0.9, "p": 0.9}, {"text": "dừa", "start": 0.9, "end": 3.0, "p": 0.9}], "speaker": {"value": 0}})
+    project = system.projects.create_project("Vườn dừa")
+    system.projects.save_script(project, ["Vườn dừa lúc bình minh."])
+    url = f"/api/v1/projects/{project}/storyboard"
+    client.post(f"{url}/from-script")
+    shot = client.post(f"{url}/run", json={}).json()["storyboard"]["shots"][0]
+    if shot["assignment"] is None or shot["assignment"].get("asset_id") != asset_id:     # the one recording there is
+        system.storyboard.set_state(shot["shot_id"], "needs", assignment={"kind": "footage", "asset_id": asset_id, "t_in": 0.0, "t_out": 3.0, "score": None, "text": ""})
+    client.patch(f"{url}/shots/{shot['shot_id']}/treatment", json={"live_sound": True})
+    plan = client.get(f"/api/v1/projects/{project}/cut/plan").json()
+    sets = [c["params"] for c in plan["commands"] if c["id"] == "transcript.set"]
+    assert len(sets) == 1 and sets[0]["item"].startswith("$item:ver_") and sets[0]["transcript"]["language"] == "vi"
+    words = sets[0]["transcript"]["words"]
+    assert words[0] == {"text": "Vườn", "start": round(0.5 * TICKS), "end": round(0.9 * TICKS), "speaker": 0}
+    assert words[1]["end"] - words[1]["start"] == round(0.6 * TICKS)             # a word stretched over a silence keeps its end
+    assert not any(c.get("tag") == "voice" for c in plan["commands"])            # the clip speaks: no narration over it
+    built = client.post(f"/api/v1/projects/{project}/cut/build").json()
+    assert built["saved"]["version"] == 1 and built["saved"]["note"].startswith("lắp từ storyboard")
+    assert fake.built["commands"] == plan["commands"] and all(Path(m["path"]).is_file() for m in fake.built["media"])

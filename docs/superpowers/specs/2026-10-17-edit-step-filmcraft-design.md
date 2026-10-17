@@ -41,6 +41,22 @@ SHA-256 and upgraded only on purpose; the web build is single-threaded and reads
 | Building again | a fresh project each time (`file.newProject`), so nothing is imported twice; a file already fetched is only added (`file.import`) | verified (v4: one sequence, 13 files, none renamed) |
 | A file FilmCraft cannot read | 0.8.0 can wait forever drawing its slate in an export: nothing unreadable is sent, and a render past 15 min is stopped | worked around |
 
+## From the reverse-engineering report (2026-10-18, `~/H/filmcraft-rea.html`)
+
+- **The caption bug is upstream.** `ripple_trim_group` (`crates/edit/src/lib.rs:781`) moves video and audio tracks but not
+  caption tracks, where insert (`:296`) and extract (`:365`) do. A fix and its test are on the branch
+  `nexora/ripple-trim-captions` of `reference/filmcraft` (the same closing range on sync-locked caption tracks, `extract_range`
+  when shorter, `insert_gap` when longer). Not yet compiled: the Rust toolchain is not on this Mac. The bridge keeps laying
+  captions over their shots until a FilmCraft release carries it and is pinned.
+- **G19 confirmed on the pinned binary:** `transcript.models` answers `available: false`, `transcript.generate` is disabled.
+  NEXORA now carries its own transcript into the editor (`transcript.set`, media ticks, speakers; a word Whisper stretched over a
+  silence keeps its last 0.6 s) for every clip that plays its own sound, so FilmCraft's Transcript panel works on it: 164
+  Vietnamese words of DJI_…0002 stored as sent.
+- **Headless build:** `POST /api/v1/projects/{id}/cut/build` builds the storyboard into a new version without the browser,
+  driving FilmCraft's engine over MCP (stdio), one command at a time so each can name what an earlier one made, the media named
+  `/files/<name>` in the saved document as the browser does. On "Thử ghép A-G": 0.2 s; it opens in the browser with no media
+  missing and renders like any version.
+
 ## The Copilot (phase 1d, a mode of the storyboard)
 
 `agents/copilot.py`, the Copilot spec's P0. The operator picks recordings someone speaks in, presets (shorten to N seconds,

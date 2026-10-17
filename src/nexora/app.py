@@ -640,7 +640,9 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     adapters.register(FilmCraft(data_dir))
     cuts = CutStore(db_path)
     cut = Cut(orch, projects, assets, _Board(db_path), cuts, adapters, data_dir / "media", source=edit.final_source,
-              narrate=lambda project, text, position: edit.line_audio(project, text, position))
+              narrate=lambda project, text, position: edit.line_audio(project, text, position),
+              words=lambda asset_id: [{**w, "speaker": ((m.data.get("speaker") or {}).get("value") if isinstance(m.data.get("speaker"), dict) else None)}
+                                      for m in index.moments(asset_id, level="speech") for w in m.data.get("words", [])])
     cut.register(registry)
     distribution = Distribution(projects, assets, adapters, data_dir / "exports")
     (data_dir / "logs").mkdir(exist_ok=True)

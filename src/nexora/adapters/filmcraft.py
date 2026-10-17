@@ -21,7 +21,7 @@ class FilmCraft(Adapter):
         self._bin = Path(data_dir) / "tools" / "filmcraft-cli" / FILMCRAFT_VERSION / "filmcraft-cli"
 
     def describe(self) -> Capability:
-        return Capability(name="filmcraft", operations=("export", "inspect"), runs="local")
+        return Capability(name="filmcraft", operations=("export", "inspect", "build"), runs="local")
 
     def available(self) -> bool:
         return self._bin.is_file()
@@ -44,7 +44,88 @@ class FilmCraft(Adapter):
         except ValueError:
             raise AdapterError(ErrorCode.OUTPUT_INVALID, "FilmCraft answered with something that is not JSON") from None
 
+    def _build(self, request: Request) -> Result:
+        """A sequence built without a browser: FilmCraft's engine headless over MCP (stdio), one command at a time so each
+        can name what an earlier one made ("$item:<name>" an imported file, "$clip" the clips just placed, "$tag:<t>" every
+        clip placed under that tag), as the Edit step's page does. The media are imported from their files here and the
+        saved document names them `/files/<name>`, as the browser editor does, so it opens there as it is."""
+        verify(self._bin, fix="sh scripts/setup-filmcraft.sh")
+        media = request.inputs["media"]                             # [{name, path}]
+        commands = request.inputs["commands"]
+        proc = subprocess.Popen([str(self._bin), "mcp"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1)
+        n = 0
+
+        def call(method: str, params: dict | None = None) -> dict:
+            nonlocal n
+            n += 1
+            proc.stdin.write(json.dumps({"jsonrpc": "2.0", "id": n, "method": method, "params": params or {}}) + "\n")
+            proc.stdin.flush()
+            while True:
+                line = proc.stdout.readline()
+                if not line:
+                    raise AdapterError(ErrorCode.INTERNAL, "FilmCraft stopped while building", retryable=False)
+                reply = json.loads(line)
+                if reply.get("id") == n:
+                    break
+            if "error" in reply:
+                raise AdapterError(ErrorCode.INVALID_REQUEST, f"FilmCraft refused {params.get('arguments', {}).get('id') if params else method}: {reply['error'].get('message')}", retryable=False)
+            content = (reply.get("result") or {}).get("content") or [{}]
+            text = content[0].get("text") or "null"
+            if (reply.get("result") or {}).get("isError"):
+                raise AdapterError(ErrorCode.INVALID_REQUEST, f"FilmCraft refused {params['arguments']['id']}: {text[:300]}", retryable=False)
+            try:
+                return json.loads(text)
+            except ValueError:
+                return {"text": text}
+
+        def run(cid: str, params: dict) -> dict:
+            return call("tools/call", {"name": "command_run", "arguments": {"id": cid, "params": params}})
+
+        try:
+            call("initialize", {"protocolVersion": "2024-11-05", "capabilities": {}, "clientInfo": {"name": "nexora", "version": "1"}})
+            proc.stdin.write(json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n")
+            run("file.newProject", {"name": "cut"})
+            items = {}
+            for m in media:
+                made = run("file.import", {"paths": [str(m["path"])]})
+                if made.get("errors"):
+                    raise AdapterError(ErrorCode.MISSING_INPUT, f"FilmCraft could not import {m['name']}: {made['errors']}", retryable=False)
+                items[m["name"]] = items[m["name"].split(".")[0]] = made["items"][0]
+            clips, tags = [], {}
+
+            def resolve(v):
+                if isinstance(v, str) and v.startswith("$item:"):
+                    return items[v[6:]]
+                if isinstance(v, str) and v.startswith("$tag:"):
+                    return tags.get(v[5:], [])
+                if v == "$clip" or v == ["$clip"]:
+                    return clips
+                return v
+
+            for c in commands:
+                out = run(c["id"], {k: resolve(v) for k, v in c["params"].items()})
+                if c["id"] == "timeline.place":
+                    clips = list((out or {}).get("clips") or [])
+                if c.get("tag"):
+                    tags[c["tag"]] = tags.get(c["tag"], []) + clips
+            with tempfile.TemporaryDirectory(prefix="nexora_cut_") as tmp:
+                path = Path(tmp) / "cut.fcproj"
+                run("file.saveAs", {"path": str(path)})
+                document = path.read_text()
+        finally:
+            try:
+                proc.stdin.close()
+            except OSError:
+                pass
+            proc.terminate()
+            proc.wait(timeout=10)
+        for m in media:                                             # the names the browser editor uses for these files
+            document = document.replace(json.dumps(str(m["path"])), json.dumps(f"/files/{m['name']}"))
+        return Result(outputs={"document": document, "commands": len(commands)})
+
     def submit(self, request: Request) -> Result:
+        if request.operation == "build":
+            return self._build(request)
         document = request.inputs["document"]                       # the cut, its media already pointing at files on this Mac
         with tempfile.TemporaryDirectory(prefix="nexora_cut_") as tmp:
             project = Path(tmp) / "cut.fcproj"

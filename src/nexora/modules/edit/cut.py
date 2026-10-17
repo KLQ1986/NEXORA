@@ -36,15 +36,38 @@ def ticks(seconds: float) -> int:
 
 class Cut:
     def __init__(self, orch: Orchestrator, projects: ProjectStore, assets: AssetStore, storyboard: Storyboard, cuts: CutStore,
-                 adapters: AdapterRegistry, media_dir: str | Path, source=None, narrate=None):
+                 adapters: AdapterRegistry, media_dir: str | Path, source=None, narrate=None, words=None):
         self._orch, self._projects, self._assets, self._board, self._cuts = orch, projects, assets, storyboard, cuts
         self._adapters, self._media = adapters, Path(media_dir)
         self._source = source or (lambda asset_id: None)        # asset id -> the file a final cut reads (the edit module's choice)
         # (project, text, position) -> {"audio", "duration", "own_voice"?}: a line said the way the render says it
         self._narrate = narrate or (lambda project, text, position: {"audio": None, "duration": 0.0})
+        # asset id -> its transcribed words [{text, start, end, speaker?}] in the recording's own time (Video Intelligence)
+        self._words = words or (lambda asset_id: [])
 
     def register(self, registry: PipelineRegistry) -> None:
         registry.register(EXPORT, {"export": self._export})
+
+    def _transcript(self, asset_id: str) -> dict | None:
+        """A recording's words as a FilmCraft transcript, in media ticks. A word Whisper stretched over a silence (longer than
+        a second) keeps only its last 0.6 s, so the editor does not select a silence as a word."""
+        words, speakers = [], []
+        for w in self._words(asset_id):
+            try:
+                a, b = float(w["start"]), float(w["end"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            if b - a > 1.0:
+                a = b - 0.6
+            item = {"text": str(w.get("text") or "").strip(), "start": ticks(a), "end": ticks(b)}
+            who = w.get("speaker")
+            if isinstance(who, int):
+                while len(speakers) <= who:
+                    speakers.append({"name": f"Người nói {len(speakers) + 1}"})
+                item["speaker"] = who
+            if item["text"] and item["end"] > item["start"]:
+                words.append(item)
+        return {"language": "vi", "speakers": speakers or [{"name": "Người nói 1"}], "words": words} if words else None
 
     # ---------------------------------------------------------------------------------------------------- sound files
     def music_name(self, project: dict) -> str | None:
@@ -83,7 +106,7 @@ class Cut:
         media, commands, missing = {}, [], []
         commands.append({"id": "file.newSequence", "params": {"name": f"{project['title']} · từ Storyboard", "width": width, "height": height,
                                                            "fps": round(FPS, 3), "video": 3, "audio": 4}})
-        at, lines, said, sfx, notes = 0.0, [], [], [], []
+        at, lines, said, sfx, notes, spoken = 0.0, [], [], [], [], {}
         for k, s in enumerate(shots, 1):
             code, line = f"SC{k}", s.spec["line"] or s.spec["intent"]
             a = s.assignment or {}
@@ -102,6 +125,8 @@ class Cut:
                                                                   "audio": bool(treat.get("live_sound"))}})
                 if treat.get("sfx"):
                     sfx.append((code, at, treat["sfx"]))
+                if treat.get("live_sound"):
+                    spoken[version.version_id] = a["asset_id"]
                 speed = float(treat.get("speed") or 1.0)
                 if abs(speed - 1.0) > 1e-6:
                     commands.append({"id": "clip.speedDuration", "params": {"clips": ["$clip"], "speed": round(speed * 100, 2), "ripple": True}})
@@ -147,6 +172,12 @@ class Cut:
             commands.append({"id": "essentialSound.setType", "params": {"clips": "$tag:music", "type": "music"}})
             if any(c.get("tag") == "voice" for c in commands):
                 commands.append({"id": "essentialSound.generateDucking", "params": {"clips": "$tag:music"}})
+        # Each recording someone speaks in carries NEXORA's own transcript into the editor (FilmCraft 0.8.0's own speech
+        # recognition is off in its release builds), so its Transcript panel can find and cut by the words.
+        for version_id, asset_id in spoken.items():
+            words = self._transcript(asset_id)
+            if words:
+                commands.append({"id": "transcript.set", "params": {"item": f"$item:{version_id}", "transcript": words}})
         commands.append({"id": "captions.newTrack", "params": {"format": "Subtitle", "name": "Lời dẫn", "language": "vi"}})
         frame = 1 / FPS
         for start, length, line in lines:
@@ -158,6 +189,24 @@ class Cut:
         return {"media": list(media.values()), "commands": commands, "missing": missing, "notes": notes, "seconds": round(at, 2),
                 "size": [width, height], "shots": len(shots), "sound": {"voice": sum(c.get("tag") == "voice" for c in commands), "music": bool(music and at > 0),
                                                                         "sfx": sum(c.get("tag") == "sfx" for c in commands)}}
+
+    def build(self, project_id: str, *, note: str = "lắp từ storyboard (không cần trình duyệt)") -> dict:
+        """The storyboard built into a new version of the cut here, with FilmCraft's engine headless: the same plan the Edit
+        step's page runs, on the same proxies, so the version opens in the browser as it is."""
+        plan = self.plan(project_id)
+        media = []
+        for m in plan["media"]:
+            if m["version"]:
+                version = self._assets.version(m["version"])
+                path = self._assets.path_of(version) if version else None
+            else:
+                path = self.sound_file(project_id, m["name"])
+            if not path or not Path(path).is_file():
+                raise ValueError(f"không đọc được {m['name']}")
+            media.append({"name": m["name"], "path": str(path)})
+        made = self._adapters.submit("filmcraft", Request("build", inputs={"media": media, "commands": plan["commands"]})).outputs
+        saved = self._cuts.save(project_id, made["document"], made_by="director", note=note, source="storyboard")
+        return {"saved": saved, "missing": plan["missing"], "notes": plan["notes"]}
 
     # ---------------------------------------------------------------------------------------------- the final render
     def relinked(self, document: str, project_id: str) -> tuple[str, list[str]]:

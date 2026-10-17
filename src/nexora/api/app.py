@@ -2488,6 +2488,18 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             raise HTTPException(422, str(e))
         return {"saved": saved, **cut_view(project_id)}
 
+    @app.post("/api/v1/projects/{project_id}/cut/build")
+    def cut_build(project_id: str):
+        """The storyboard built into a new version of the cut on this Mac, without the browser (FilmCraft's engine headless)."""
+        need_project(project_id)
+        try:
+            done = system.cut.build(project_id)
+        except ValueError as e:
+            raise HTTPException(409, str(e))
+        except AdapterError as e:
+            raise HTTPException(503, str(e))
+        return {**done, **cut_view(project_id)}
+
     @app.get("/api/v1/projects/{project_id}/cut/{cut_id}/document")
     def cut_document(project_id: str, cut_id: str):
         need_project(project_id)
