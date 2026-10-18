@@ -4,7 +4,7 @@ import re
 import time
 import unicodedata
 
-from nexora.core.adapter import AdapterRegistry, PrivacyClass, Request
+from nexora.core.adapter import AdapterError, AdapterRegistry, ErrorCode, PrivacyClass, Request
 
 TEXT_ONLY = PrivacyClass.CLOUD_ALLOWED       # a prompt of words alone: it may be served by a cloud model if the operator routes it there
 from nexora.core.assets import AssetStore
@@ -459,7 +459,16 @@ class Planning:
                 continue
             result = {"verdict": "not_found", "source": None, "quote": "", "note": "Dự án chưa có nguồn tham khảo nào.", "checked_at": time.time()}
             if sources:
-                out = self._adapters.submit("model", Request("chat", privacy_class=TEXT_ONLY, params={"prompt": CHECK_FACT_PROMPT.format(line=shot.text, sources=listing), "json": True, "max_tokens": 300, "task": "check"})).outputs["json"]
+                # A quote copied word for word from a Vietnamese passage, and a sentence on it, take room: 300 tokens cut them short.
+                try:
+                    out = self._adapters.submit("model", Request("chat", privacy_class=TEXT_ONLY, params={"prompt": CHECK_FACT_PROMPT.format(line=shot.text, sources=listing), "json": True, "max_tokens": 800, "task": "check"})).outputs["json"]
+                except AdapterError as err:
+                    if err.code is not ErrorCode.OUTPUT_INVALID:
+                        raise                                  # the checker itself is down: said, not passed over line by line
+                    result = {**result, "note": "Chưa kiểm được câu này: câu trả lời của mô hình kiểm chứng bị hỏng."}
+                    self._projects.set_fact_check(shot.shot_id, result)
+                    results.append({"shot_id": shot.shot_id, "text": shot.text, **result})
+                    continue
                 verdict = VERDICTS.get(str(out.get("ket_luan", "")).strip().lower(), "not_found")
                 try:
                     source = sources[int(out.get("nguon") or 0) - 1] if int(out.get("nguon") or 0) >= 1 else None
