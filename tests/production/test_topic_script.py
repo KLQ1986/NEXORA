@@ -48,6 +48,11 @@ def test_a_package_is_checked_before_anything_is_written():
     assert lines[2]["illustration"] == {"mode": "associative", "evokes": "hối tiếc"}
 
 
+def test_a_date_the_writer_could_not_give_is_no_date():
+    p = check_package({**PACKAGE, "sources": [{**PACKAGE["sources"][0], "date": "không rõ"}, {**PACKAGE["sources"][0], "id": "S4", "url": "https://example.org/c", "date": "2019"}]})
+    assert [s["date"] for s in p["sources"]] == [None, "2019"]
+
+
 def test_a_package_with_nothing_usable_is_refused():
     with pytest.raises(ValueError):
         check_package({"title": "x", "sources": [], "lines": [{"text": " "}]})

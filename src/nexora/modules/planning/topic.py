@@ -5,6 +5,7 @@ package with no line is refused before anything is written."""
 from __future__ import annotations
 
 import json
+import re
 import time
 from pathlib import Path
 from typing import Callable
@@ -63,6 +64,12 @@ def topic_prompt(topic: str, *, goal: str = "", lines: int = 8, structure: list[
     return system, "\n".join(parts)
 
 
+def _date(value) -> str | None:
+    """A date as the writer gave it, when it is one: "không rõ" and the like are no date."""
+    text = str(value or "").strip()
+    return text if re.match(r"^\d{4}(-\d{2}){0,2}$", text) else None
+
+
 def check_package(raw: dict) -> dict:
     sources, seen_ids, seen_urls = [], set(), set()
     for s in raw.get("sources") or []:
@@ -74,7 +81,7 @@ def check_package(raw: dict) -> dict:
         seen_ids.add(sid)
         seen_urls.add(url)
         sources.append({"id": sid, "url": url, "title": str(s.get("title") or url).strip(), "publisher": str(s.get("publisher") or "").strip() or None,
-                        "date": str(s.get("date") or "").strip() or None, "passage": passage[:PASSAGE]})
+                        "date": _date(s.get("date")), "passage": passage[:PASSAGE]})
     by_id = {s["id"]: s for s in sources}
     lines = []
     for l in raw.get("lines") or []:
