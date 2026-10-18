@@ -81,6 +81,18 @@ STYLES = {"direct": "Phần lớn các câu minh hoạ trực tiếp.", "associa
           "mixed": "Pha trộn: câu nêu dữ kiện minh hoạ trực tiếp, câu cảm xúc hay chuyển ý minh hoạ liên tưởng."}
 
 
+def scaled_structure(structure: list[dict], seconds: float) -> list[dict]:
+    """A template's parts for a script read in `seconds`. A template's timings are for its own short videos: its parts keep
+    their weight and share out the length asked, each within 30% of its share. Used for the writer's prompt and for the
+    editor's measure alike, so the two never disagree."""
+    weights = [max(0.0, (float(p.get("min") or 0) + float(p.get("max") or 0)) / 2) or 1.0 for p in structure]
+    out = []
+    for i, (p, w) in enumerate(zip(structure, weights), 1):
+        share = seconds * w / sum(weights)
+        out.append({**p, "label": p.get("label") or p.get("name") or p.get("role") or f"Phần {i}", "min": round(share * 0.7), "max": round(share * 1.3)})
+    return out
+
+
 def topic_prompt(topic: str, *, goal: str = "", seconds: int = DEFAULT_SECONDS, form: str = DEFAULT_FORM, structure: list[dict] | None = None,
                  voice: str = "", style: str = "mixed", siblings: list[str] | None = None) -> tuple[str, str]:
     name, how = FORMS.get(form, FORMS[DEFAULT_FORM])
@@ -92,10 +104,8 @@ def topic_prompt(topic: str, *, goal: str = "", seconds: int = DEFAULT_SECONDS, 
     parts.append(f"Độ dài: lời dẫn đọc hết khoảng {minutes} phút ({seconds} giây), tức khoảng {round(seconds * WORDS_PER_SECOND)} chữ khi đọc 2,6 chữ mỗi giây. "
                  "Đừng ngắn hơn hay dài hơn nhiều: chủ đề cần bao nhiêu ý thì tìm đủ nguồn cho bấy nhiêu ý.")
     if structure:
-        # A template's timings are for its own short videos: its parts keep their weight, and share out the length asked.
-        weights = [max(0.0, (float(p.get("min") or 0) + float(p.get("max") or 0)) / 2) or 1.0 for p in structure]
-        named = [f"{p.get('label') or p.get('name') or p.get('role') or f'Phần {i}'} (khoảng {round(seconds * w / sum(weights))} giây)"
-                 + (f": {p['goal']}" if p.get("goal") else "") for i, (p, w) in enumerate(zip(structure, weights), 1)]
+        named = [f"{p['label']} (khoảng {round((p['min'] + p['max']) / 2)} giây)" + (f": {p['goal']}" if p.get("goal") else "")
+                 for p in scaled_structure(structure, seconds)]
         parts.append("Chia lời dẫn theo đúng các phần sau, theo thứ tự, ghi tên phần vào part: " + "; ".join(named) + ".")
     else:
         parts.append("Ghi part là Mở đầu, Thân bài hoặc Kết.")

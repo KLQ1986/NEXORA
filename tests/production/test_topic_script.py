@@ -310,3 +310,27 @@ def test_a_writer_is_told_the_angles_its_productions_other_videos_took(tmp_path)
     system.topics.start(first, "rừng")
     drain(system)
     assert topic_context(system, second)["siblings"] == ["Video một (góc: Vì sao một cây ngoại lai thành bài toán)"]
+
+
+def test_the_editor_measures_a_script_from_a_topic_against_the_length_asked(tmp_path):
+    system, client = _topic_system(tmp_path)
+    project = system.planning.create_project("Rừng")
+    system.projects.update_project(project, template="Video ngang có lời dẫn")
+    run_id = system.topics.start(project, "rừng", seconds=600)
+    drain(system)
+    apply_topic(system, project, run_id)
+    parts = client.get(f"/api/v1/projects/{project}").json()["structure"]["segments"]
+    assert parts[1]["max"] > 400                                       # the body of ten minutes, not of a short video's 90 seconds
+
+
+def test_a_stopped_writer_is_listed_for_approval_under_its_video(tmp_path):
+    system, client = _topic_system(tmp_path, answer=lambda request: (_ for _ in ()).throw(KeyError("name")))
+    project = system.planning.create_project("Rừng bạch đàn")
+    client.post(f"/api/v1/projects/{project}/draft-from-topic", json={"topic": "rừng"})
+    drain(system)
+    with system.orch._conn:
+        system.orch._conn.execute("UPDATE stages SET next_retry_at = 0 WHERE status = 'retry_wait'")
+    drain(system)
+    item = next(a for a in client.get("/api/v1/approvals").json()["approvals"] if a["pipeline"] == "planning.topic_script")
+    assert item["project_id"] == project and "Rừng bạch đàn" in item["title"] and "Viết kịch bản theo chủ đề" in item["title"]
+    assert item["link"] == f"/du-an/{project}" and "name" in item["why"]

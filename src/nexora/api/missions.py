@@ -70,6 +70,8 @@ def add_missions(app: FastAPI, system, *, health) -> None:
         if subject.startswith("cut_") and getattr(system, "cuts", None) is not None:
             cut = system.cuts.get(subject)                    # an exported cut of the Edit step names its project
             return system.projects.project(cut["project_id"]) if cut else None
+        if subject.startswith("prj_"):
+            return system.projects.project(subject)             # work asked for the video itself, as a script from a topic is
         for p in system.projects.projects():
             if subject in system.projects.script_ids(p["project_id"]):
                 return p

@@ -415,7 +415,7 @@ function TopicDraft({ id, topic, done, fill }: { id: string; topic: string; done
   const [got, setGot] = useState<TopicState | null>(null), [waiting, setWaiting] = useState(false);
   const read = useCallback(async () => { try { const r = await call<TopicState>(`/api/v1/projects/${id}/draft-from-topic`); setGot(r); return r; } catch (e) { setErr((e as Error).message); return null; } }, [id]);
   // An empty editor of a video with no script yet takes the draft at once: there is nothing of the operator's to replace.
-  useEffect(() => { read().then((r) => { if (fill && r?.state === "offered" && r.lines) done(r.lines); }); }, [read]);  // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { read().then((r) => { if (fill && r?.state === "offered" && r.lines) done(r.lines); }); }, [read]);
   const running = got?.state === "asked" && !["failed", "blocked", "cancelled"].includes(got.status ?? "");
   useEffect(() => {
     if (!running) return;

@@ -816,7 +816,12 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
                     "url": f"/api/v1/renders/{r['render_id']}/file", "package": system.distribution.package(r["render_id"])}
                    for r in system.projects.renders(project["project_id"])]
         template = template_named(system, project.get("template"))
-        structure = system.planning.structure(project["project_id"], template["structure"]) if script and template and template.get("structure") else None
+        parts = template and template.get("structure")
+        written = system.topics.latest(project["project_id"]) if parts else None
+        if written and written["state"] == "applied" and written.get("seconds"):          # a script from a topic is as long as was asked
+            from nexora.modules.planning.topic import scaled_structure
+            parts = scaled_structure(parts, written["seconds"])
+        structure = system.planning.structure(project["project_id"], parts) if script and parts else None
         return {**project, "script": {"script_id": script["script_id"], "version": script["version"], "match_approved": script["match_approved"], "critique": script["critique"],
                                       "label": script.get("label")} if script else None,
                 "idea": json.loads(project["idea"]) if project.get("idea") else None, "structure": structure,

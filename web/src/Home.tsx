@@ -1,3 +1,4 @@
+import { PIPE } from "./Notices";
 import { t as tr, tv, locale } from "./i18n";
 import { useState } from "react";
 import { megabytes, post, projectState, REASONS, stageName, timecode, usePoll, type AgentTask, type Asset, type CalendarRow, type Channel, type Project, type Publishing, type Radar, type Stage } from "./api";
@@ -13,8 +14,7 @@ type HomeData = {
   recent: { project_id: string; title: string; created_at: number; renders: number }[];
 };
 
-const WORK: Record<string, string> = { "library.ingest": tr("Nhập footage"), "library.ingest_image": tr("Nhập ảnh"), "library.ingest_audio": tr("Nhập nhạc"), "library.understand": tr("Xem và mô tả"),
-  "sourcing.match": tr("Chọn clip"), "sourcing.generate": tr("Sinh hình bằng AI"), "edit.render": tr("Dựng video") };
+const WORK = PIPE;
 const WORK_ICON: Record<string, string> = { "library.ingest": "film", "library.ingest_image": "image", "library.ingest_audio": "music", "library.understand": "eye",
   "sourcing.match": "sparkles", "sourcing.generate": "spark", "edit.render": "scissors" };
 const ASK: Record<string, (i: Item) => string> = {

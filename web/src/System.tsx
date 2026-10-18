@@ -1,3 +1,4 @@
+import { PIPE } from "./Notices";
 import { t as tr, tv, locale } from "./i18n";
 import { useState } from "react";
 import { call, megabytes, post, usePoll, type EvalRun, type Settings, type Template, type Segment } from "./api";
@@ -72,8 +73,7 @@ function NoticePrefs() {
   );
 }
 
-const WORK: Record<string, string> = { "library.ingest": tr("Nhập footage"), "library.ingest_image": tr("Nhập ảnh"), "library.ingest_audio": tr("Nhập nhạc"), "library.understand": tr("Xem và mô tả footage"),
-  "sourcing.match": tr("Chọn clip cho kịch bản"), "sourcing.generate": tr("Sinh hình bằng AI"), "edit.render": tr("Dựng video") };
+const WORK = PIPE;
 const NEED: Record<string, string> = { model: tr("mô hình thị giác"), voice: tr("giọng đọc"), image_gen: tr("nhà cung cấp sinh ảnh"), video_gen: tr("nhà cung cấp sinh video"), ffmpeg: "FFmpeg", ffprobe: "FFprobe", graphics: tr("bộ vẽ phụ đề") };
 
 function Capabilities() {

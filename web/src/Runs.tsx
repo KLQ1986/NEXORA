@@ -1,9 +1,10 @@
+import { PIPE } from "./Notices";
 import { t as tr, tv, locale } from "./i18n";
 import { useState } from "react";
 import { call, post, REASONS, stageName, STATUS_NAMES, usePoll, type Asset, type Project, type Run } from "./api";
 import { Button, Empty, Icon, OpsSide, Page, StageRail, Tag, Readout } from "./parts";
 
-const PIPELINES: Record<string, string> = { "library.ingest": tr("Nhập footage"), "library.ingest_image": tr("Nhập ảnh"), "library.ingest_audio": tr("Nhập nhạc"), "sourcing.generate": tr("Sinh hình bằng AI"), "library.understand": tr("Xem và mô tả video"), "sourcing.match": tr("Chọn clip cho kịch bản"), "edit.render": tr("Dựng video") };
+const PIPELINES = PIPE;
 const ICONS: Record<string, string> = { "library.ingest": "film", "library.ingest_image": "image", "library.ingest_audio": "music", "sourcing.generate": "spark", "library.understand": "eye", "sourcing.match": "sparkles", "edit.render": "scissors" };
 
 type Detail = Run & { attempts: { stage_key: string; number: number; outcome: string | null; worker: string; started_at: number; seconds: number | null; error_code: string | null; error_message: string | null }[];

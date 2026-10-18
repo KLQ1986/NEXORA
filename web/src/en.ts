@@ -2601,6 +2601,16 @@ const en: Record<string, string> = {
   "Tự nhận biết": "Work it out",
   "Video theo chủ đề": "Video on a topic",
   "Ví dụ: video về cuộc khủng hoảng rừng bạch đàn của Israel, khung ngang, không dùng dịch vụ trả tiền": "For example: a video on Israel's eucalyptus forest crisis, landscape, no paid services",
+  "Nghe lời nói trong footage": "Hear the speech in footage",
+  "Đo và nhận diện footage": "Measure and recognise footage",
+  "Đo và chia footage thành cú máy, nhịp": "Measure footage and divide it into shots and beats",
+  "Tìm chỗ chuyển cảnh": "Find the cuts",
+  "Nâng chất lượng clip": "Enhance a clip",
+  "Đo chất lượng hình": "Measure picture quality",
+  "Xem thử chỉnh hình": "Preview a picture fix",
+  "Chỉnh chất lượng hình": "Fix picture quality",
+  "Viết kịch bản theo chủ đề": "Write a script on a topic",
+  "Huấn luyện mô hình nhân vật": "Train a character model",
 };
 
 export default en;
