@@ -406,11 +406,12 @@ type TopicState = { state: "asked" | "written" | "offered" | "applied" | null; s
 
 /** A script from a topic, written by Claude Code from what it reads on the web, in the background (minutes); the result goes into
     the editor like a draft, and its sources reach the project when the script is saved. */
-function TopicDraft({ id, topic, done }: { id: string; topic: string; done: (lines: string[]) => void }) {
+function TopicDraft({ id, topic, done, fill }: { id: string; topic: string; done: (lines: string[]) => void; fill: boolean }) {
   const [subject, setSubject] = useState(topic), [goal, setGoal] = useState(""), [n, setN] = useState(10), [err, setErr] = useState<string | null>(null);
   const [got, setGot] = useState<TopicState | null>(null), [waiting, setWaiting] = useState(false);
   const read = useCallback(async () => { try { const r = await call<TopicState>(`/api/v1/projects/${id}/draft-from-topic`); setGot(r); return r; } catch (e) { setErr((e as Error).message); return null; } }, [id]);
-  useEffect(() => { read(); }, [read]);
+  // An empty editor of a video with no script yet takes the draft at once: there is nothing of the operator's to replace.
+  useEffect(() => { read().then((r) => { if (fill && r?.state === "offered" && r.lines) done(r.lines); }); }, [read]);  // eslint-disable-line react-hooks/exhaustive-deps
   const running = got?.state === "asked" && !["failed", "blocked", "cancelled"].includes(got.status ?? "");
   useEffect(() => {
     if (!running) return;
@@ -438,6 +439,9 @@ function TopicDraft({ id, topic, done }: { id: string; topic: string; done: (lin
           <div className="flex flex-wrap items-center gap-2"><span className="font-medium">{got.title || got.topic}</span>{got.angle && <span className="text-faint">· {got.angle}</span>}
             <span className="mono text-[12px] text-faint">{tv`${got.lines.filter((l) => !l.startsWith("#")).length} câu · ${got.sources?.length ?? 0} nguồn`}{got.api_equivalent ? ` · ≈$${got.api_equivalent.toFixed(2)} API` : ""}</span>
             <span className="ml-auto"><Button size="sm" onClick={() => done(got.lines!)}><Icon name="edit" size={13} />{tr("Đưa vào ô soạn")}</Button></span></div>
+          <ol className="grid max-h-80 gap-1 overflow-y-auto rounded-lg border border-line bg-surface/60 px-3 py-2">{got.lines.map((l, i) => l.startsWith("#")
+            ? <li key={i} className="mt-1.5 text-[12px] font-semibold uppercase tracking-wide text-ai first:mt-0">{l.replace(/^#\s*/, "")}</li>
+            : <li key={i} className="leading-relaxed">{l}</li>)}</ol>
           {!!got.warnings?.length && <p className="text-cue">{got.warnings.join(" · ")}</p>}
           {!!got.sources?.length && <ul className="grid gap-1">{got.sources.map((src) => (
             <li key={src.url} className="truncate text-[12.5px]"><a href={src.url} target="_blank" rel="noreferrer" className="link">{src.title}</a>
@@ -969,7 +973,7 @@ function Detail({ id, back }: { id: string; back: (to?: string) => void }) {
                   {fromSpeech && <SpeechDraft id={id} topic={topic} done={async (lines) => {
                     if (dirty && (text ?? "").trim() && !(await ask(tr("Thay kịch bản đang soạn?"), { body: tr("Ô soạn có thay đổi chưa lưu; kịch bản mới sẽ thay chỗ nó."), confirm: tr("Thay") }))) return;
                     setText(lines.join("\n")); setFromSpeech(false); }} />}
-                  {fromTopic && <TopicDraft id={id} topic={topic.trim() || p.title} done={async (lines) => {
+                  {fromTopic && <TopicDraft id={id} topic={topic.trim() || p.title} fill={!p.script && !(text ?? "").trim()} done={async (lines) => {
                     if (dirty && (text ?? "").trim() && !(await ask(tr("Thay kịch bản đang soạn?"), { body: tr("Ô soạn có thay đổi chưa lưu; kịch bản mới sẽ thay chỗ nó."), confirm: tr("Thay") }))) return;
                     setText(lines.join("\n")); }} />}
                 </div>
