@@ -1234,6 +1234,33 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             raise HTTPException(502, "Mô hình không đưa ra phương án nào khác đoạn đang có. Thử lại hoặc nói rõ hơn.")
         return {"proposals": proposals, "first": int(body["first"]), "last": int(body["last"])}
 
+    @app.get("/api/v1/speech/recordings")
+    def recordings_with_speech():
+        """The recordings a script can be written from: those where people say something worth quoting."""
+        return {"recordings": system.planning.recordings_with_speech()}
+
+    @app.post("/api/v1/projects/{project_id}/draft-from-speech")
+    def draft_from_speech(project_id: str, body: dict):
+        """A script written from what people say in the chosen recordings: quotes word for word with their stretch, narration
+        between them. For the editor, like a draft: nothing is saved; a quote saved as it was written keeps its stretch."""
+        from nexora.app import illustration_style
+        project = need_project(project_id)
+        asset_ids = [a for a in body.get("asset_ids") or [] if system.assets.asset(str(a))]
+        if not asset_ids:
+            raise HTTPException(422, "Hãy chọn ít nhất một bản ghi có lời nói")
+        template = template_named(system, project.get("template"))
+        try:
+            written = system.planning.draft_from_speech(asset_ids, goal=str(body.get("goal") or ""), lines=max(3, min(20, int(body.get("lines") or 8))),
+                                                        channel=channel_named(system, project.get("channel")), structure=(template or {}).get("structure"),
+                                                        style=illustration_style(system, project))
+        except ValueError as err:
+            raise HTTPException(422, {"these recordings have nothing said to quote": "Các bản ghi này chưa có câu nói nào đủ dài để trích.",
+                                      "the model chose nothing that was said": "Mô hình không chọn được câu nói nào. Thử lại hoặc nói rõ mục tiêu hơn."}.get(str(err), str(err)))
+        except AdapterError as err:
+            raise HTTPException(503, f"Mô hình không trả lời được: {err.message or err.code.value}")
+        system.projects.keep_draft(project_id, written)
+        return {"lines": [l if isinstance(l, str) else l["text"] for l in written]}
+
     @app.post("/api/v1/projects/{project_id}/draft")
     def draft_script(project_id: str, body: dict):
         need_project(project_id)

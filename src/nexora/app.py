@@ -646,6 +646,12 @@ def watch_health(system: "System", *, min_free_bytes: int = 5 * 1024**3) -> list
     return raised
 
 
+# Text tasks with names of their own, answered as the kind of work the operator routes on the System screen: writing a script
+# in any form is "write" (before, a choice for "write" never reached the draft, which asked as "draft").
+TASK_GROUPS = {"draft": "write", "draft_speech": "write", "rewrite": "write", "variant": "write", "idea_angle": "write", "mission_plan": "write",
+               "storyboard_idea": "write", "storyboard_ops": "command", "copilot_read": "write"}
+
+
 def capabilities(system: "System") -> list[dict]:
     """The capability matrix: for each pipeline, whether this installation can run every stage, and what is missing if not."""
     have = {c.name for c in system.adapters.describe()}
@@ -685,7 +691,8 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
         if name != "model" or request.operation != "chat":
             return name
         routes = json.loads(orch.setting("model_routes", "{}"))
-        return routes.get(request.params.get("task") or "write") or routes.get("*") or name
+        task = request.params.get("task") or "write"
+        return routes.get(task) or routes.get(TASK_GROUPS.get(task, "")) or routes.get("*") or name
     adapters.router = route
 
     def routed_model_failed(chosen: str, err) -> None:

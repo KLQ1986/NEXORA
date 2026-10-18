@@ -59,6 +59,14 @@ def test_text_goes_to_the_model_chosen_for_the_task_and_footage_and_privacy_mode
     system.adapters.submit("model", Request("chat", params={"prompt": "x", "json": True}, privacy_class=PrivacyClass.CLOUD_ALLOWED))
     assert len(cloud.asked) == 2
 
+    # Writing tasks with names of their own follow the route chosen for writing ("write"), the others theirs.
+    system.orch.set_setting("model_routes", json.dumps({"write": "model.cloud"}))
+    for task in ("draft", "draft_speech", "rewrite", "variant", "idea_angle", "mission_plan"):
+        system.adapters.submit("model", Request("chat", params={"prompt": "x", "json": True, "task": task}, privacy_class=PrivacyClass.CLOUD_ALLOWED))
+    assert len(cloud.asked) == 8
+    system.adapters.submit("model", Request("chat", params={"prompt": "x", "json": True, "task": "critique"}, privacy_class=PrivacyClass.CLOUD_ALLOWED))
+    assert len(cloud.asked) == 8
+
 
 def test_the_claude_adapter_speaks_the_messages_api_counts_cost_and_names_its_errors():
     seen, answers, headers_seen = [], [], []

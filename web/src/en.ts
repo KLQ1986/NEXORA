@@ -2535,6 +2535,18 @@ const en: Record<string, string> = {
   "Đã lưu giọng văn.": "Writing voice saved.",
   "Đã trở về giọng mặc định.": "Back to the default voice.",
   "Trở về giọng mặc định (miền Nam, tự nhiên, liền mạch)": "Back to the default voice (Southern, natural, flowing)",
+  "Từ lời nói…": "From speech…",
+  "Soạn kịch bản từ lời người nói trong các bản ghi": "Write a script from what people say in the recordings",
+  "Thay kịch bản đang soạn?": "Replace the script being edited?",
+  "Ô soạn có thay đổi chưa lưu; kịch bản mới sẽ thay chỗ nó.": "The editor has unsaved changes; the new script will take their place.",
+  "Thay": "Replace",
+  "Kịch bản từ lời nói": "Script from speech",
+  "máy chọn câu người trong footage nói (nguyên văn) và viết lời dẫn nối giữa các đoạn": "the model picks what people say (word for word) and writes the narration between",
+  "Chưa có bản ghi nào có câu nói đủ dài để trích. Vào Thư viện, tab Lời thoại, bấm Nghe lời nói.": "No recording has sentences long enough to quote yet. In the Library, open the Speech tab and press Listen.",
+  "{0} câu · {1}": "{0} sentences · {1}",
+  "Mục tiêu (không bắt buộc), ví dụ: chuyến đi chơi của hai vợ chồng": "Goal (optional), e.g. a couple's day out",
+  "Khoảng": "About",
+  "Đang soạn…": "Writing…",
 };
 
 export default en;

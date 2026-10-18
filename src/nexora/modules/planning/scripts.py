@@ -63,6 +63,24 @@ VARIANT_PROMPT = (
     "Chỉ trả về JSON với khoá phuong_an: danh sách các mục có ten (vài chữ nói cách này khác gì) và cau (các câu thay cho phần đó)."
 )
 PARTS = {"opening": ("phần mở bài", "Mở bài"), "ending": ("phần kết", "Kết")}
+# A script from what people say in the footage: the model picks sentences by number (so their words are never retyped, never
+# invented) and writes the narration that carries the story between them.
+SPEECH_PROMPT = (
+    "Bạn là người viết kịch bản cho video ngắn dựng từ lời người nói trong footage. {voice}{channel}{goal}\n"
+    "Đây là lời nói đã nghe được trong các bản ghi, mỗi câu có số thứ tự trong ngoặc vuông:\n{transcript}\n\n"
+    "Soạn kịch bản khoảng {n} câu xen kẽ hai loại: trích lời (người trong footage tự nói, chọn câu theo số thứ tự, không chép lại chữ, không sửa, "
+    "chỉ chọn câu rõ nghĩa và đáng nghe) và lời dẫn (câu ngắn nối mạch câu chuyện giữa các đoạn trích, không lặp lại điều người nói vừa nói, không bịa điều họ không nói). "
+    "Câu chuyện phải có đầu có cuối; trích lời giữ nhịp chính, lời dẫn chỉ đủ để người xem theo kịp. {style}\n{shape}"
+)
+SPEECH_ITEM = ("Mỗi mục của kịch bản là một đối tượng JSON. Trích lời: {\"loai\": \"trich\", \"so\": số thứ tự của câu}. "
+               "Lời dẫn: {\"loai\": \"dan\", \"cau\": câu lời dẫn (BẮT BUỘC, chính câu văn sẽ được đọc), \"kieu\", \"hinh\", \"goi\", \"cam_giac\"} "
+               "(kieu, hinh, goi, cam_giac như đã nói ở trên). Mục lời dẫn thiếu cau là sai. ")
+SPEECH_FLAT = "Chỉ trả về JSON với khoá cau: danh sách các mục theo thứ tự."
+SPEECH_PARTS = ("Chia kịch bản thành các phần theo đúng thứ tự sau: {parts}. Chỉ trả về JSON với khoá phan: danh sách các mục có ten (tên phần như trên) "
+                "và cau (danh sách các mục của phần đó, theo thứ tự).")
+ECHO = 0.5              # narration that shares this much of its words with the quote before it only says it again
+JOIN_GAP = 1.2           # speech fragments closer than this, in one recording, are one sentence to choose from
+MIN_WORDS = 3            # a sentence of fewer words is too short to quote on its own
 # Writing with the model on a stretch of the script: what each request asks, and how many lines each answer should have.
 REWRITE_PROMPT = (
     "{voice}{channel}Đây là lời dẫn của một video về {topic}, mỗi câu có số thứ tự:\n{lines}\n\n"
@@ -82,6 +100,13 @@ WORDS_PER_SECOND = 2.6
 MIN_LINE = 3.0
 VERDICTS = {"dung": "supported", "sai": "contradicted", "khong_thay": "not_found"}
 PASSAGE_CHARS = 1500
+
+
+def _speaker(who) -> str:
+    """Who says a sentence, for the model: a numbered speaker as "người nói 1", a named one by name."""
+    if who in (None, ""):
+        return ""
+    return f", người nói {who}" if isinstance(who, int) or str(who).isdigit() else f", {who}"
 
 
 def _numbered(shots) -> str:
@@ -114,7 +139,8 @@ class Planning:
         """The next version of a project's script. A line saved word for word as the writer drafted it brings the writer's
         notes on it (what to see, how to illustrate)."""
         drafted = self._projects.drafted(project_id)
-        return self._projects.save_script(project_id, [l if isinstance(l, dict) or str(l).strip() not in drafted else {"text": str(l).strip(), **drafted[str(l).strip()]} for l in lines])
+        key = lambda l: str(l).strip().lstrip("> ").strip()
+        return self._projects.save_script(project_id, [l if isinstance(l, dict) or key(l) not in drafted else {**drafted[key(l)], "text": str(l).strip()} for l in lines])
 
     def inventory(self) -> list[str]:
         """What the library holds, one line per understood video: the basis for footage-aware scripting."""
@@ -283,6 +309,98 @@ class Planning:
             flags = [f"Có cụm từ kênh không dùng: “{w}”." for w in (channel or {}).get("banned") or [] if w and any(_fold(w) in _fold(x) for x in said)]
             proposals.append({"label": str(raw.get("ten") or "").strip() or f"Phương án {len(proposals) + 1}", "lines": said, "flags": flags})
         return proposals
+
+    # ------------------------------------------------------------------ a script from what people say
+    def speech_sentences(self, asset_ids: list[str]) -> list[dict]:
+        """What people say in these recordings, as sentences to quote: the speech heard, fragments a short pause apart joined,
+        each with its recording, its stretch and its speaker when known; too short a sentence is left out."""
+        out = []
+        for asset_id in asset_ids:
+            name = self._assets.path_of(self._assets.original(asset_id)).name if self._assets.asset(asset_id) else asset_id
+            run = None
+            for m in sorted(self._index.moments(asset_id, level="speech"), key=lambda m: m.t_start):
+                speaker = m.data.get("speaker")
+                speaker = speaker.get("value") if isinstance(speaker, dict) else speaker
+                if run and m.t_start - run["t_out"] <= JOIN_GAP and speaker == run["speaker"]:
+                    run.update(t_out=m.t_end, text=f"{run['text']} {m.text.strip()}".strip())
+                    continue
+                if run:
+                    out.append(run)
+                run = {"asset_id": asset_id, "moment_id": m.moment_id, "name": name, "t_in": m.t_start, "t_out": m.t_end, "text": m.text.strip(), "speaker": speaker}
+            if run:
+                out.append(run)
+        return [s for s in out if len(s["text"].split()) >= MIN_WORDS]
+
+    def recordings_with_speech(self) -> list[dict]:
+        """The recordings a script can be written from: those with sentences to quote, the most said first."""
+        rows = []
+        for asset in self._assets.assets():
+            if asset.get("rejected") or asset.get("trashed_at"):
+                continue
+            said = self.speech_sentences([asset["asset_id"]])
+            if said:
+                rows.append({"asset_id": asset["asset_id"], "name": said[0]["name"], "sentences": len(said), "seconds": round(sum(x["t_out"] - x["t_in"] for x in said), 1)})
+        return sorted(rows, key=lambda r: -r["sentences"])
+
+    def draft_from_speech(self, asset_ids: list[str], *, goal: str = "", lines: int = 8, channel: dict | None = None, structure: list[dict] | None = None,
+                          style: str = "mixed") -> list:
+        """A script written from what people say in these recordings: quotes chosen from their sentences, word for word with their
+        stretch, and the narration that carries the story between them. Lines come as in `draft`: scene headings as strings,
+        narration as {text, brief, illustration}, quotes as {text: "> …", quote}."""
+        said = self.speech_sentences(asset_ids)
+        if not said:
+            raise ValueError("these recordings have nothing said to quote")
+        transcript = "\n".join(f"[{i}] ({s['name']} {int(s['t_in']) // 60}:{int(s['t_in']) % 60:02d}{_speaker(s['speaker'])}) {s['text']}" for i, s in enumerate(said, 1))
+        parts = "; ".join(f"{seg['label']} ({seg['min']:g}–{seg['max']:g} giây{': ' + seg['goal'] if seg.get('goal') else ''})" for seg in structure or [])
+        style = style if style in ILL.STYLES else "mixed"
+        shape = SPEECH_ITEM + (SPEECH_PARTS.format(parts=parts) if structure else SPEECH_FLAT)
+        out = self._adapters.submit("model", Request("chat", privacy_class=TEXT_ONLY, params={"task": "draft_speech", "json": True, "max_tokens": 1600,
+            "prompt": SPEECH_PROMPT.format(voice=self._voice(), channel=channel_text(channel), goal=f"Mục tiêu: {goal.strip()}." if goal.strip() else "",
+                                           transcript=transcript, n=lines, style=ILL.style_prompt(style), shape=shape)})).outputs["json"]
+        used: set[int] = set()
+
+        def line(item):
+            if not isinstance(item, dict):
+                return None
+            if str(item.get("loai") or "").strip().lower() in ("trich", "trích", "quote"):
+                try:
+                    k = int(item.get("so"))
+                except (TypeError, ValueError):
+                    return None
+                if not 1 <= k <= len(said) or k in used:                # a number that is not a sentence, or one quoted twice
+                    return None
+                used.add(k)
+                s = said[k - 1]
+                return {"text": f"> {s['text']}", "quote": {"asset_id": s["asset_id"], "moment_id": s["moment_id"], "t_in": s["t_in"], "t_out": s["t_out"]}}
+            text = str(item.get("cau") or "").strip()
+            if not text:
+                return None
+            feel = item.get("cam_giac") if isinstance(item.get("cam_giac"), dict) else {}
+            ill = ILL.normalise({"kieu": "truc_tiep" if style == "direct" else item.get("kieu"), "goi": item.get("goi"), "cam_giac": dict(list(feel.items())[:3])})
+            return {"text": text, "brief": str(item.get("hinh") or "").strip() or None, "illustration": ill or None}
+        def kept(items: list) -> list:
+            """Narration that only says again the quote before it is dropped (a local model does it however it is told not to)."""
+            out_, before = [], None
+            for l in (line(c) for c in items):
+                if not l:
+                    continue
+                if not l.get("quote") and before and _overlap(l["text"], before) >= ECHO:
+                    continue
+                before = l["text"].lstrip("> ") if l.get("quote") else None
+                out_.append(l)
+            return out_
+        if structure and out.get("phan"):
+            written = []
+            for seg, part in zip(structure, out.get("phan") or []):
+                got = kept((part.get("cau") if isinstance(part, dict) else []) or [])
+                if got:
+                    written += [f"# {seg['label']}", *got]
+            if any(isinstance(l, dict) and l.get("quote") for l in written):
+                return written
+        written = kept(out.get("cau") or [])
+        if not any(l.get("quote") for l in written):
+            raise ValueError("the model chose nothing that was said")
+        return written
 
     # ------------------------------------------------------------------ research and fact checking
     def research(self, project_id: str) -> list[dict]:

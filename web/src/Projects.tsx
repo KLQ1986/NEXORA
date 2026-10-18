@@ -381,6 +381,38 @@ function QuotePicker({ insert, close }: { insert: (hit: SpeechHit) => void; clos
   );
 }
 
+type Recording = { asset_id: string; name: string; sentences: number; seconds: number };
+
+/** A script from what people say in the recordings chosen: the model picks sentences to quote, word for word, and writes the
+    narration between them; the result goes into the editor like a draft. */
+function SpeechDraft({ id, topic, done }: { id: string; topic: string; done: (lines: string[]) => void }) {
+  const { data } = usePoll<{ recordings: Recording[] }>("/api/v1/speech/recordings", 60000);
+  const [chosen, setChosen] = useState<string[]>([]), [goal, setGoal] = useState(topic), [n, setN] = useState(8), [busy, setBusy] = useState(false), [err, setErr] = useState<string | null>(null);
+  const write = async () => {
+    setBusy(true); setErr(null);
+    try { const r = await post<{ lines: string[] }>(`/api/v1/projects/${id}/draft-from-speech`, { asset_ids: chosen, goal, lines: n }); done(r.lines); }
+    catch (e) { setErr((e as Error).message); }
+    setBusy(false);
+  };
+  return (
+    <div className="border-t border-line bg-ai/[0.04] px-4 py-3 text-[13px]">
+      <p className="mb-2 flex items-center gap-2"><Icon name="mic" size={15} className="text-ai" /><span className="font-medium">{tr("Kịch bản từ lời nói")}</span>
+        <span className="text-faint">{tr("máy chọn câu người trong footage nói (nguyên văn) và viết lời dẫn nối giữa các đoạn")}</span></p>
+      {!data ? <Spinner /> : data.recordings.length === 0 ? <p className="text-faint">{tr("Chưa có bản ghi nào có câu nói đủ dài để trích. Vào Thư viện, tab Lời thoại, bấm Nghe lời nói.")}</p> : (
+        <ul className="mb-2.5 grid max-h-48 gap-1 overflow-y-auto">{data.recordings.map((r) => (
+          <li key={r.asset_id}><label className="flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 hover:bg-white/[0.03]">
+            <input type="checkbox" checked={chosen.includes(r.asset_id)} onChange={(e) => setChosen(e.target.checked ? [...chosen, r.asset_id] : chosen.filter((x) => x !== r.asset_id))} />
+            <span className="mono min-w-0 flex-1 truncate text-[12.5px]">{r.name}</span><span className="mono shrink-0 text-[12px] text-faint">{tv`${r.sentences} câu · ${timecode(r.seconds)}`}</span></label></li>))}</ul>)}
+      <div className="flex flex-wrap items-center gap-2">
+        <input value={goal} onChange={(e) => setGoal(e.target.value)} placeholder={tr("Mục tiêu (không bắt buộc), ví dụ: chuyến đi chơi của hai vợ chồng")} aria-label={tr("Mục tiêu")} className="h-8 min-w-0 flex-1 px-2.5" />
+        <label className="flex items-center gap-1.5 text-[12.5px] text-mute">{tr("Khoảng")}<input type="number" min={3} max={20} value={n} onChange={(e) => setN(Number(e.target.value))} className="mono h-8 w-16 px-2" />{tr("câu")}</label>
+        <Button size="sm" kind="ai" busy={busy} disabled={busy || !chosen.length} onClick={write}>{busy ? <Spinner /> : <Icon name="sparkles" size={13} />}{busy ? tr("Đang soạn…") : tr("Viết kịch bản")}</Button>
+      </div>
+      {err && <p className="mt-2 text-tally">{err}</p>}
+    </div>
+  );
+}
+
 /** The lines a selection in the editor covers (a cursor alone: its line), when they are lines of the script (not empty, not
     a scene heading); null otherwise. */
 function span_of(el: HTMLTextAreaElement): { first: number; last: number } | null {
@@ -672,7 +704,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
   const editor = useRef<HTMLTextAreaElement>(null);
   const [span, setSpan] = useState<{ first: number; last: number } | null>(null);       // the lines the cursor or the selection is on
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});                      // quotes picked in this editor, by their words, until saved
-  const [quoting, setQuoting] = useState(false);
+  const [quoting, setQuoting] = useState(false), [fromSpeech, setFromSpeech] = useState(false);
   // A "> " line the operator picked from what the footage says goes with its stretch of the recording; any other line as written.
   const toSave = () => (text ?? "").split("\n").map((l) => { const w = l.trim().replace(/^>\s*/, ""); return l.trim().startsWith(">") && quotes[w] ? { text: `> ${w}`, quote: quotes[w] } : l; });
   const [note, setNote] = useState<string | null>(null);
@@ -795,7 +827,11 @@ function Detail({ id, back }: { id: string; back: () => void }) {
                     <label htmlFor="topic" className="sr-only">{tr("Chủ đề để viết nháp")}</label>
                     <input id="topic" value={topic} onChange={(e) => setTopic(e.target.value)} placeholder={tr("Viết nháp từ kho footage — nhập chủ đề, ví dụ: một buổi sáng ở chợ")} className="bare h-8 min-w-0 flex-1 px-1" />
                     <Button kind="ai" size="sm" disabled={busy || !topic.trim()} onClick={() => run(async () => { const r = await post<{ lines: string[] }>(`/api/v1/projects/${id}/draft`, { topic }); if (r.lines.length) setText(r.lines.join("\n")); else setNote(tr("Mô hình không viết được câu nào. Hãy thử chủ đề khác.")); })}>{tr("Viết nháp")}</Button>
+                    <Button kind={fromSpeech ? "ai" : "quiet"} size="sm" onClick={() => setFromSpeech(!fromSpeech)} title={tr("Soạn kịch bản từ lời người nói trong các bản ghi")}><Icon name="mic" size={14} />{tr("Từ lời nói…")}</Button>
                   </form>
+                  {fromSpeech && <SpeechDraft id={id} topic={topic} done={async (lines) => {
+                    if (dirty && (text ?? "").trim() && !(await ask(tr("Thay kịch bản đang soạn?"), { body: tr("Ô soạn có thay đổi chưa lưu; kịch bản mới sẽ thay chỗ nó."), confirm: tr("Thay") }))) return;
+                    setText(lines.join("\n")); setFromSpeech(false); }} />}
                 </div>
                 {dirty && p.script && <p className="mt-2 text-[12.5px] text-mute">{tr("Lưu sẽ tạo phiên bản kịch bản mới; các clip đã chọn cho phiên bản cũ không áp dụng nữa.")}</p>}
                 {p.script && !dirty && (

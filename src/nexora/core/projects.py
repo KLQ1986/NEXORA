@@ -135,7 +135,7 @@ class ProjectStore:
     def keep_draft(self, project_id: str, lines: list) -> None:
         """What the writer said about each line of a draft it wrote (what to see, how to illustrate), kept until the draft is
         saved, so lines the operator keeps word for word bring their notes with them."""
-        notes = {str(l["text"]).strip(): {k: l[k] for k in ("brief", "illustration") if l.get(k)} for l in lines if isinstance(l, dict) and l.get("text")}
+        notes = {str(l["text"]).strip().lstrip("> ").strip(): {k: l[k] for k in ("brief", "illustration", "quote") if l.get(k)} for l in lines if isinstance(l, dict) and l.get("text")}
         with db.write(self._conn) as c:
             c.execute("INSERT OR REPLACE INTO script_drafts (project_id, notes, at) VALUES (?,?,?)", (project_id, json.dumps(notes, ensure_ascii=False), time.time()))
 
