@@ -146,7 +146,9 @@ export type RenderItem = { render_id: string; created_at: number; url: string; p
 export type BoardEvent = { at: number; kind: string; pipeline: string; stage_key: string | null; actor: string; payload: Record<string, unknown> };
 export type Notice = { notification_id: number; kind: string; run_id: string; stage_key: string | null; reason: string | null; created_at: number; read_at: number | null; pipeline: string | null; subject_name: string | null; link: string | null };
 export type Production = { production_id: string; title: string; channel: string | null; template: string | null; voice: string | null; music_path: string | null;
-  budget_cap: number | null; notes: string | null; videos: string[]; spent: number; created_at: number };
+  budget_cap: number | null; notes: string | null; videos: string[]; spent: number; created_at: number; missions?: ProductionMission[] };
+/** A mission given for a production, as its page lists it; the whole of it is in Mission Control. */
+export type ProductionMission = { mission_id: string; text: string; title: string | null; kind_name: string | null; status: string; count: number; done: number; spent: number; created_at: number };
 export type Project = { production?: { production_id: string; title: string } | null; production_id?: string | null; channel: string | null; project_id: string; title: string; trashed_at: number | null; created_at: number; format: string; music_path: string | null;
   due_date: string | null; script: { script_id: string; version: number; match_approved: boolean; critique: Critique[] | null; label: string | null } | null;
   idea: { idea_id: string; title: string; angle: string | null; shots: IdeaShot[]; gaps: string[]; seconds: number; risk: string | null; reason: string | null } | null; structure: StructureCheck | null; shots: Shot[]; match: Run | null; render: Run | null; renders: RenderItem[];

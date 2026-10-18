@@ -2571,6 +2571,13 @@ const en: Record<string, string> = {
   "{0} đang làm": "{0} in progress",
   "Xoá video": "Delete video",
   "Xoá video {0}": "Delete video {0}",
+  "Theo dự án": "By project",
+  "Mọi dự án": "All projects",
+  "một dự án mới, khi xác nhận": "a new project, once confirmed",
+  "Nhiệm vụ đã giao": "Missions given",
+  "Xem trong Mission Control": "See in Mission Control",
+  "{0} đang mở · {1} tất cả": "{0} open · {1} in all",
+  "{0} nhiệm vụ": "{0} missions",
 };
 
 export default en;

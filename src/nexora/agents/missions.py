@@ -156,7 +156,8 @@ class Missions:
         if plan["kind"] == "video":
             cap = round(plan["budget"] / plan["count"], 2) if plan["paid"] and plan["budget"] else 0.0       # no paid service without the permission
             # One production holds the mission's videos: the one it was given from, else a new one of its title.
-            production = plan.get("production_id") or self._new_production(plan["title"] or short_title(plan["goal"]))
+            production = m.get("production_id") or self._new_production(plan["title"] or short_title(plan["goal"]))
+            self.store.set_production(mission_id, production)
             for n in range(plan["count"]):
                 goal = plan["goal"] if plan["count"] == 1 else f"{plan['goal']} (video {n + 1} trên {plan['count']}; khác các video còn lại)"
                 title = plan["title"] or short_title(plan["goal"])
@@ -284,5 +285,5 @@ class Missions:
         return {**m, "kind_name": KINDS.get(m["plan"]["kind"], {}).get("name"), "status": self.derive(m["state"], children), "children": children,
                 "spent": round(sum(self._orch.run_cost(r) for r in runs), 4), "run_ids": runs}
 
-    def missions(self) -> list[dict]:
-        return [self.view(m["mission_id"]) for m in self.store.missions()]
+    def missions(self, *, production_id: str | None = None) -> list[dict]:
+        return [self.view(m["mission_id"]) for m in self.store.missions(production_id=production_id)]

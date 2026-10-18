@@ -1,7 +1,7 @@
 import { t as tr, tv, locale } from "./i18n";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { call, post, projectNext, projectState, scriptText, stageName, timecode, usePoll, type Idea, type Source, type AgentTask, type Asset, type Settings, type Candidate, type Project, type RenderItem, type Shot, type BibleEntry, type GapPlan, type Op, type Rights, type Publishing, type Channel, type Variant, type Illustration, type Quote, type Production, type Template } from "./api";
+import { call, post, projectNext, projectState, scriptText, stageName, timecode, usePoll, type Idea, type Source, type AgentTask, type Asset, type Settings, type Candidate, type Project, type RenderItem, type Shot, type BibleEntry, type GapPlan, type Op, type Rights, type Publishing, type Channel, type Variant, type Illustration, type Quote, type Production, type ProductionMission, type Template } from "./api";
 import Board from "./Board";
 import { ask, Button, Empty, Filmstrip, goTo, Icon, Meter, Page, Section, Seg, SideFrame, SideGroup, SideLink, SkeletonCards, Spinner, StageRail, Steps, Tabs, Tag, TimeChip, toast, Readout } from "./parts";
 import Timeline from "./Timeline";
@@ -1306,6 +1306,31 @@ function VideoCards({ list, view, go, working, reload }: { list: Project[]; view
   );
 }
 
+const MISSION_STATUS: Record<string, [string, "mute" | "cue" | "accent" | "ai" | "proof" | "tally"]> = {
+  draft: [tr("Nháp"), "mute"], planned: [tr("Chờ xác nhận"), "cue"], queued: [tr("Trong hàng đợi"), "accent"], running: [tr("Đang chạy"), "ai"],
+  awaiting_approval: [tr("Chờ bạn duyệt"), "cue"], completed: [tr("Hoàn thành"), "proof"], blocked: [tr("Bị chặn"), "tally"], failed: [tr("Lỗi"), "tally"],
+  cancelled: [tr("Đã huỷ"), "mute"], partially_completed: [tr("Xong một phần"), "cue"], paused: [tr("Tạm dừng"), "mute"],
+};
+
+/** The missions given for a production, newest first: what each is doing, opened in Mission Control. */
+function GivenMissions({ list, production, go }: { list: ProductionMission[]; production: string; go: (to: string) => void }) {
+  const open = list.filter((m) => !["completed", "partially_completed", "failed", "cancelled"].includes(m.status)).length;
+  return (
+    <Section title={tr("Nhiệm vụ đã giao")} icon="bolt" note={open ? tv`${open} đang mở · ${list.length} tất cả` : tv`${list.length} nhiệm vụ`}
+             actions={<button type="button" className="link text-[12.5px]" onClick={() => go(`/phong-may?tab=missions&prd=${production}`)}>{tr("Xem trong Mission Control")}</button>}>
+      <ul className="grid max-w-4xl gap-2">{list.slice(0, 6).map((m) => {
+        const [label, tone] = MISSION_STATUS[m.status] ?? [m.status, "mute"];
+        return (
+          <li key={m.mission_id}><button type="button" onClick={() => go(`/phong-may?tab=missions&nv=${m.mission_id}`)} className="tile flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5 text-left">
+            <span className="min-w-0 flex-1"><span className="block truncate text-[13.5px]">{m.title || m.text}</span>
+              <span className="block truncate text-[12px] text-faint">{m.kind_name ?? tr("Chưa rõ loại việc")} · {new Date(m.created_at * 1000).toLocaleDateString(locale)}{m.count ? ` · ${tv`${m.done}/${m.count} xong`}` : ""}</span></span>
+            {m.spent > 0 && <span className="mono text-[12px] text-faint">${m.spent.toFixed(2)}</span>}
+            <Tag tone={tone}>{label}</Tag></button></li>);
+      })}</ul>
+    </Section>
+  );
+}
+
 /** A production: its videos, what they share, a way to add a video or hand work to the machine; removed once empty. */
 function ProductionPage({ id, go }: { id: string; go: (to: string) => void }) {
   const { data, reload } = usePoll<Production & { projects: Project[] }>(`/api/v1/productions/${id}`, 5000);
@@ -1371,6 +1396,7 @@ function ProductionPage({ id, go }: { id: string; go: (to: string) => void }) {
           <button type="button" role="radio" aria-checked={view === "grid"} onClick={() => { setView("grid"); try { localStorage.setItem("nx.projects.view", "grid"); } catch { /* fine */ } }} aria-label={tr("Lưới")}><Icon name="grid" size={15} /></button>
           <button type="button" role="radio" aria-checked={view === "list"} onClick={() => { setView("list"); try { localStorage.setItem("nx.projects.view", "list"); } catch { /* fine */ } }} aria-label={tr("Danh sách")}><Icon name="list" size={15} /></button></div></div>
         <VideoCards list={data.projects} view={view} go={go} working={working} reload={reload} /></>)}
+      {!!data.missions?.length && <div className="mt-8"><GivenMissions list={data.missions} production={id} go={go} /></div>}
     </Page>
   );
 }

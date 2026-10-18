@@ -61,6 +61,10 @@ def add_missions(app: FastAPI, system, *, health) -> None:
     def project_title(pid: str | None) -> str:
         return ((system.projects.project(pid) if pid else None) or {}).get("title", "")
 
+    def with_production(m: dict) -> dict:
+        d = system.productions.get(m.get("production_id"))
+        return {**m, "production": {"production_id": d["production_id"], "title": d["title"]} if d else None}
+
     def subject_project(subject: str) -> dict | None:
         if subject.startswith("cut_") and getattr(system, "cuts", None) is not None:
             cut = system.cuts.get(subject)                    # an exported cut of the Edit step names its project
@@ -86,7 +90,8 @@ def add_missions(app: FastAPI, system, *, health) -> None:
 
     # ------------------------------------------------------------------------------------------------------ missions
     @app.get("/api/v1/missions")
-    def list_missions():
+    def list_missions(production: str = ""):
+        """Every mission (or a production's), each with the production it works for; the work no mission started."""
         owned = system.missions.store.owner()
         system_work = []
         for run_id in system.orch.runs():
@@ -100,7 +105,9 @@ def add_missions(app: FastAPI, system, *, health) -> None:
                     continue                                  # made by a mission's producer task: listed under that mission
                 system_work.append({"run_id": run_id, "pipeline": info["pipeline_id"], "name": PIPELINE_NAMES.get(info["pipeline_id"], info["pipeline_id"]),
                                     "status": status, "created_at": info["created_at"], "project_id": project and project["project_id"], "title": project and project["title"]})
-        return {"missions": missions.missions(), "system": sorted(system_work, key=lambda r: -r["created_at"])[:60],
+        every = [with_production(m) for m in missions.missions(production_id=production.strip() or None)]
+        named = {m["production"]["production_id"]: m["production"] for m in every if m["production"]}
+        return {"missions": every, "productions": sorted(named.values(), key=lambda d: d["title"].lower()), "system": sorted(system_work, key=lambda r: -r["created_at"])[:60],
                 "kinds": [{"kind": k, "name": v["name"]} for k, v in KINDS.items()], "channels": [c["name"] for c in channels()], "templates": [t["name"] for t in templates(system)]}
 
     @app.post("/api/v1/missions", status_code=201)
@@ -129,7 +136,7 @@ def add_missions(app: FastAPI, system, *, health) -> None:
                          "status": system.orch.run_status(run_id).value, "created_at": info["created_at"], "cost": system.orch.run_cost(run_id), "stalled": system.orch.stalled(run_id),
                          "stages": stages, "events": [{"at": e.occurred_at, "kind": e.kind, "actor": e.actor} for e in system.orch.events(run_id)][-40:]})
         tasks = [t for t in (system.producer.task(t) for t in m["links"]["tasks"]) if t]
-        return {**m, "runs": runs, "tasks": tasks, "projects": [{"project_id": p, "title": project_title(p)} for p in m["links"]["projects"]]}
+        return {**with_production(m), "runs": runs, "tasks": tasks, "projects": [{"project_id": p, "title": project_title(p)} for p in m["links"]["projects"]]}
 
     @app.patch("/api/v1/missions/{mission_id}")
     def edit_mission(mission_id: str, body: dict):

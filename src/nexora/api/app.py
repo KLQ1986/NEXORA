@@ -1801,7 +1801,10 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
     @app.get("/api/v1/productions/{production_id}")
     def get_production(production_id: str):
         d = production_view(need_production(production_id))
-        return {**d, "projects": [project_view(system.projects.project(v)) for v in d["videos"]]}
+        given = [{"mission_id": m["mission_id"], "text": m["text"], "title": m["plan"].get("title"), "kind_name": m["kind_name"], "status": m["status"],
+                  "count": len(m["children"]), "done": sum(c["state"] == "done" for c in m["children"]), "spent": m["spent"], "created_at": m["created_at"]}
+                 for m in system.missions.missions(production_id=production_id)]
+        return {**d, "projects": [project_view(system.projects.project(v)) for v in d["videos"]], "missions": given}
 
     @app.patch("/api/v1/productions/{production_id}")
     def change_production(production_id: str, body: dict):

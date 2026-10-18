@@ -12,14 +12,15 @@ type Plan = { kind: string; goal: string; title: string; count: number; format: 
 type Child = { kind: "task" | "run"; id: string; project_id?: string; pipeline?: string; status: string; state: string; step?: string; note: string | null };
 type MissionEvent = { at: number; kind: string; text: string | null };
 type Mission = { mission_id: string; text: string; plan: Plan; problems: string[]; state: string; status: string; kind_name: string | null; children: Child[];
-  links: { projects: string[]; tasks: string[]; runs: string[] }; events: MissionEvent[]; spent: number; created_at: number; updated_at: number };
+  links: { projects: string[]; tasks: string[]; runs: string[] }; events: MissionEvent[]; spent: number; created_at: number; updated_at: number;
+  production_id: string | null; production: { production_id: string; title: string } | null };
 type Attempt = { number: number; outcome: string | null; started_at: number; seconds: number | null; error_code: string | null; error_message: string | null };
 type RunDetail = { run_id: string; pipeline: string; name: string; status: string; created_at: number; cost: number; stalled: boolean;
   stages: { stage_id: string; stage_key: string; status: string; blocked_reason: string | null; attempts: Attempt[] }[]; events: { at: number; kind: string; actor: string }[] };
 type Task = { task_id: string; project_id: string; goal: string; status: string; step: string; log: { at: number; role: string; text: string }[] };
 type Detail = Mission & { runs: RunDetail[]; tasks: Task[]; projects: { project_id: string; title: string }[] };
 type SystemRun = { run_id: string; pipeline: string; name: string; status: string; created_at: number; project_id: string | null; title: string | null };
-type MissionList = { missions: Mission[]; system: SystemRun[]; kinds: { kind: string; name: string }[]; channels: string[]; templates: string[] };
+type MissionList = { missions: Mission[]; productions: { production_id: string; title: string }[]; system: SystemRun[]; kinds: { kind: string; name: string }[]; channels: string[]; templates: string[] };
 type Approval = { key: string; kind: string; id: string; title: string; asked_by: string; why: string; touches: string; cost: number | null; next: string; at: number; actions: string[]; link: string | null };
 type Unit = { key: string; name: string; group: string; role?: string; state: string; detail: string; fix?: string | null; queue?: Record<string, number> };
 type Fleet = { agents: Unit[]; workers: Unit[]; engines: Unit[]; live_pipelines: string[] };
@@ -274,7 +275,7 @@ function MissionRow({ m, onOpen }: { m: Mission; onOpen: () => void }) {
   return (
     <li><button type="button" onClick={onOpen} className="tile flex w-full flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2.5 text-left">
       <span className="min-w-0 flex-1"><span className="block truncate text-[13.5px]">{m.text}</span>
-        <span className="block truncate text-[12px] text-faint">{m.kind_name ?? tr("Chưa rõ loại việc")} · {clock(m.created_at)}{m.children.length ? ` · ${tv`${done}/${m.children.length} xong`}` : ""}</span></span>
+        <span className="block truncate text-[12px] text-faint">{m.production && <span className="text-mute">{m.production.title} · </span>}{m.kind_name ?? tr("Chưa rõ loại việc")} · {clock(m.created_at)}{m.children.length ? ` · ${tv`${done}/${m.children.length} xong`}` : ""}</span></span>
       {m.spent > 0 && <span className="mono text-[12px] text-faint">{usd(m.spent)}</span>}
       <State map={STATUS} value={m.status} />
     </button></li>
@@ -284,13 +285,18 @@ function MissionRow({ m, onOpen }: { m: Mission; onOpen: () => void }) {
 function MissionsTab({ show }: { show: (id: string) => void }) {
   const { data } = usePoll<MissionList>("/api/v1/missions", 4000);
   const [filter, setFilter] = useState("");
+  const [production, setProductionState] = useState(() => new URLSearchParams(window.location.search).get("prd") ?? "");
+  const setProduction = (v: string) => { setProductionState(v); window.history.replaceState(null, "", v ? `?tab=missions&prd=${v}` : "?tab=missions"); };
   const all = data?.missions ?? [];
-  const shown = all.filter((m) => !filter || (filter === "active" ? ["queued", "running", "awaiting_approval", "blocked", "paused"].includes(m.status) : filter === "plan" ? ["draft", "planned"].includes(m.status) : ["completed", "partially_completed", "failed", "cancelled"].includes(m.status)));
+  const shown = all.filter((m) => !production || m.production_id === production).filter((m) => !filter || (filter === "active" ? ["queued", "running", "awaiting_approval", "blocked", "paused"].includes(m.status) : filter === "plan" ? ["draft", "planned"].includes(m.status) : ["completed", "partially_completed", "failed", "cancelled"].includes(m.status)));
   return (
     <div className="grid gap-4 xl:grid-cols-12">
       <Bento label={tr("Giao nhiệm vụ")} code="CMP.01" className="xl:col-span-4"><Composer onPlanned={(m) => show(m.mission_id)} autonomy={all[0]?.plan.autonomy ?? 0} /></Bento>
       <Bento label={tr("Hàng đợi nhiệm vụ")} code="MSN.Q" className="xl:col-span-8"
-             end={<Seg items={[["", tr("Tất cả")], ["active", tr("Đang chạy")], ["plan", tr("Kế hoạch")], ["done", tr("Đã xong")]] as const} value={filter} onChange={setFilter} label={tr("Lọc")} />}>
+             end={<div className="flex flex-wrap items-center gap-2">
+               {!!data?.productions.length && <select value={production} onChange={(e) => setProduction(e.target.value)} aria-label={tr("Theo dự án")} className="h-8 max-w-[200px] pl-2.5 text-[12.5px]">
+                 <option value="">{tr("Mọi dự án")}</option>{data.productions.map((d) => <option key={d.production_id} value={d.production_id}>{d.title}</option>)}</select>}
+               <Seg items={[["", tr("Tất cả")], ["active", tr("Đang chạy")], ["plan", tr("Kế hoạch")], ["done", tr("Đã xong")]] as const} value={filter} onChange={setFilter} label={tr("Lọc")} /></div>}>
         {!data ? <Spinner /> : shown.length ? <ul className="grid gap-2">{shown.map((m) => <MissionRow key={m.mission_id} m={m} onOpen={() => show(m.mission_id)} />)}</ul>
           : <p className="text-[13px] text-mute">{tr("Chưa có nhiệm vụ nào ở đây.")}</p>}
       </Bento>
@@ -353,6 +359,8 @@ const EVENT: Record<string, string> = { created: tr("Giao việc"), planned: tr(
 function PlanFacts({ m }: { m: Mission }) {
   const p = m.plan;
   const rows: [string, React.ReactNode][] = [[tr("Loại việc"), m.kind_name ?? p.kind], [tr("Mục tiêu"), p.goal], ...(p.kind === "video" && p.title ? [[tr("Tên video"), p.title] as [string, React.ReactNode]] : [])];
+  if (p.kind === "video") rows.push([tr("Dự án"), m.production ? <button type="button" className="link" onClick={() => goTo(`/du-an/${m.production!.production_id}`)}>{m.production.title}</button>
+    : <span className="text-mute">{tr("một dự án mới, khi xác nhận")}</span>]);
   if (p.kind === "video") rows.push([tr("Video"), tv`${p.count} video · ${FORMATS.find((f) => f[0] === p.format)?.[1] ?? p.format} · ${p.lines} câu`], [tr("Kênh / mẫu"), [p.channel, p.template].filter(Boolean).join(" · ") || "–"]);
   rows.push([tr("Ngân sách"), p.budget != null ? usd(p.budget) : tr("theo hạn mức chung")], [tr("Dịch vụ trả tiền"), p.paid ? tr("được dùng") : tr("không")], [tr("Đã tiêu"), usd(m.spent)]);
   return (
