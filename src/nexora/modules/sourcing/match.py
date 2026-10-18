@@ -2,6 +2,7 @@
 
 Every shot ends with a selection or a reported gap; nothing is filled silently. The operator reviews before anything is cut.
 """
+from nexora.core import illustration as ILL
 from nexora.core.adapter import AdapterError, AdapterRegistry, Request
 from nexora.core.index import MomentIndex
 from nexora.core.intelligence import VideoIntelligence
@@ -29,6 +30,7 @@ LOCATE_PROMPT = (
 MATCH = PipelineDefinition("sourcing.match", "1", [StageDef("match", gate=True, requires=("model",))])
 WORDS_PER_SECOND = 2.6
 MIN_SECONDS = 2.5
+FEEL_FLOOR = 0.7         # a stretch with none of the wanted feel keeps 70% of its meaning's score; one with all of it, 100%
 AUTO_ACCEPT = 8          # judge points (0-10) every selection must reach for a match to be accepted without review
 
 
@@ -192,7 +194,7 @@ class Sourcing:
         t_in = max(hit.moment.t_start, min(centre - need / 2, hit.moment.t_end - need))
         return round(t_in, 2), round(t_in + need, 2)
 
-    def find(self, wanted: str, need: float, *, line: str | None = None, limit: int = 6, exclude: frozenset[str] = frozenset()) -> list[dict]:
+    def find(self, wanted: str, need: float, *, line: str | None = None, limit: int = 6, exclude: frozenset[str] = frozenset(), illustration: dict | None = None) -> list[dict]:
         """Footage for some words without a script line to fill: the same search, the measured fields the words ask for, one hit
         per stretch, and the operator's past verdicts on these words (a clip turned down is not offered, one chosen goes first),
         each placed for `need` seconds inside its shot. For the storyboard, which asks per shot; the frames are not judged here."""
@@ -202,7 +204,10 @@ class Sourcing:
         asks = asked(wanted)
         fits = {h.moment.moment_id: (self._intel.fit(h.moment.asset_id, (h.moment.t_start, h.moment.t_end), asks) if self._intel and asks else (0.0, []))
                 for h in hits}
-        hits = spread(sorted(hits, key=lambda h: h.score + fits[h.moment.moment_id][0], reverse=True), limit + judged)
+        evokes = (illustration or {}).get("mode") in ("associative", "contrast")
+        feel = {h.moment.moment_id: ILL.feel_match((illustration or {}).get("feel"), h.moment.data) for h in hits}
+        rank = (lambda h: h.score * (FEEL_FLOOR + (1 - FEEL_FLOOR) * feel[h.moment.moment_id][0]) + fits[h.moment.moment_id][0]) if evokes else (lambda h: h.score + fits[h.moment.moment_id][0])
+        hits = spread(sorted(hits, key=rank, reverse=True), limit + judged)
         told = {h.moment.moment_id: self._said(line, h.moment) for h in hits}
         hits = sorted((h for h in hits if told[h.moment.moment_id] != "rejected"), key=lambda h: told.get(h.moment.moment_id) != "accepted")[:limit]
         out = []
@@ -211,6 +216,9 @@ class Sourcing:
             why = fits[h.moment.moment_id][1]
             if why:
                 c["reason"] = f"Khớp {', '.join(why)}. {c['reason']}"
+            felt = feel[h.moment.moment_id][1]
+            if felt:
+                c["reason"] = f"Cảm giác {felt}. {c['reason']}"
             c["chosen_before"] = told.get(h.moment.moment_id) == "accepted"
             out.append(c)
         return out
@@ -226,7 +234,10 @@ class Sourcing:
         confident: list[int] = []
         for shot in self._projects.script(ctx.subject_ref)["shots"]:
             need = needed_seconds(shot.text)
-            wanted = f"{shot.text} {shot.brief}" if shot.brief else shot.text            # what is said, plus what the operator asked to see
+            # A direct line: what is said, plus what the operator asked to see. A line that evokes: what is to be seen and what it
+            # evokes, never its words (they say an idea the picture does not show).
+            wanted = ILL.query(shot.text, shot.brief, shot.illustration)
+            evokes = (shot.illustration or {}).get("mode") in ("associative", "contrast")
             # What the operator said before about clips for these very words: a clip they turned down is not offered again,
             # and one they chose goes first.
             judged = len(self._projects.feedback(shot.text))
@@ -235,7 +246,12 @@ class Sourcing:
             asks = asked(wanted)
             fits = {h.moment.moment_id: (self._intel.fit(h.moment.asset_id, (h.moment.t_start, h.moment.t_end), asks) if self._intel and asks else (0.0, []))
                     for h in hits}
-            hits = sorted(hits, key=lambda h: h.score + fits[h.moment.moment_id][0], reverse=True)
+            # The wanted feel (motion, light, colour, framing, people), measured on each stretch, scales the meaning of a line that
+            # evokes: it chooses among stretches that mean the right thing, it never lifts one that does not (a first real run
+            # put "a man stirring soil in a bucket" on "a quiet garden" because the feel was added, not multiplied).
+            feel = {h.moment.moment_id: ILL.feel_match((shot.illustration or {}).get("feel"), h.moment.data) for h in hits}
+            rank = (lambda h: h.score * (FEEL_FLOOR + (1 - FEEL_FLOOR) * feel[h.moment.moment_id][0]) + fits[h.moment.moment_id][0]) if evokes else (lambda h: h.score + fits[h.moment.moment_id][0])
+            hits = sorted(hits, key=rank, reverse=True)
             hits = spread(hits, self._alternates + 1 + judged)
             told = {h.moment.moment_id: self._said(shot.text, h.moment) for h in hits}
             hits = [h for h in hits if told[h.moment.moment_id] != "rejected"]
@@ -243,7 +259,7 @@ class Sourcing:
             verdicts: dict[str, tuple[int, str]] = {}
             if self._judge and hits:
                 for hit in hits:
-                    verdicts[hit.moment.moment_id] = self._look(shot.brief or shot.text, hit)
+                    verdicts[hit.moment.moment_id] = self._look(ILL.judged_line(shot.text, shot.brief, shot.illustration), hit)
                     ctx.heartbeat()
                 hits = sorted((h for h in hits if verdicts[h.moment.moment_id][0] >= self._judge_pass or told.get(h.moment.moment_id) == "accepted"),
                               key=lambda h: (told.get(h.moment.moment_id) == "accepted", verdicts[h.moment.moment_id][0], h.score), reverse=True)
@@ -257,8 +273,11 @@ class Sourcing:
                 why = fits.get(cand["moment_id"], (0.0, []))[1]
                 if why:
                     cand["reason"] = f"Khớp {', '.join(why)}. {cand['reason']}"
+                felt = feel.get(cand["moment_id"], (0.0, None))[1]
+                if felt:
+                    cand["reason"] = f"Cảm giác {felt}. {cand['reason']}"
             if self._judge:
-                best["t_in"], best["t_out"] = self._whole_shot(best["asset_id"], *self._locate(shot.text, hits[0], need))
+                best["t_in"], best["t_out"] = self._whole_shot(best["asset_id"], *self._locate(ILL.judged_line(shot.text, shot.brief, shot.illustration) if evokes else shot.text, hits[0], need))
                 confident.append(verdicts[best["moment_id"]][0])
                 for cand in [best, *rest]:
                     points, why = verdicts[cand["moment_id"]]

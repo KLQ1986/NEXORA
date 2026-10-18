@@ -175,6 +175,7 @@ CREATE TABLE IF NOT EXISTS shots (
     is_fact   INTEGER NOT NULL DEFAULT 0,
     source    TEXT
 );
+CREATE TABLE IF NOT EXISTS script_drafts (project_id TEXT PRIMARY KEY, notes TEXT NOT NULL, at REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS selections (
     shot_id    TEXT PRIMARY KEY REFERENCES shots(shot_id),
     status     TEXT NOT NULL,
@@ -276,6 +277,7 @@ MIGRATIONS = [
     ("projects", "due_date", "TEXT"),
     ("assets", "rejected", "INTEGER NOT NULL DEFAULT 0"),
     ("shots", "gen", "TEXT"),
+    ("shots", "illustration", "TEXT"),
     ("projects", "options", "TEXT"),
     ("projects", "channel", "TEXT"),
     ("projects", "bible", "TEXT"),

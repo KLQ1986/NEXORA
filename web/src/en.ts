@@ -2484,6 +2484,21 @@ const en: Record<string, string> = {
   "Đã lập kế hoạch": "Planned",
   "Thành phẩm": "Finished",
   "Đã duyệt, chưa đăng": "Approved, not yet out",
+  "Liên tưởng": "Associative",
+  "Tương phản": "Contrast",
+  "Minh hoạ từng câu": "How each line is illustrated",
+  "Câu trực tiếp tìm hình theo lời; câu liên tưởng và tương phản tìm theo hình cần thấy và điều nó gợi, rồi xếp theo cảm giác đo được của footage. Đổi ở đây không tạo phiên bản kịch bản mới; tìm clip lại để áp dụng.": "A direct line is matched by its words; an associative or contrast line by what is to be seen and what it evokes, then ranked by the footage's measured feel. Changes here make no new script version; match the clips again to apply them.",
+  "Cách minh hoạ": "Illustration",
+  "gợi": "evokes",
+  "Hình cần thấy": "What is seen",
+  "Hình gợi điều gì": "What the picture evokes",
+  "ví dụ: chậm lại, bắt đầu lại": "e.g. slowing down, starting over",
+  "Cảm giác của hình (so với số đo của footage)": "Feel of the picture (held against the footage's measurements)",
+  "Hình cho thấy điều câu nói; tìm theo lời và mục tiêu.": "The picture shows what the line says; matched by the words and the intent.",
+  "Hình gợi ý của câu, không tả lại lời; tìm theo mục tiêu và điều hình gợi, xếp theo cảm giác đo được.": "The picture evokes the line's idea instead of repeating it; matched by the intent and what it evokes, ranked by measured feel.",
+  "Cảm giác cần có": "Wanted feel",
+  "Theo mẫu video": "As the template says",
+  "Pha trộn (máy chọn từng câu)": "Mixed (chosen per line)",
 };
 
 export default en;

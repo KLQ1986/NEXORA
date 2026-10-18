@@ -1,7 +1,7 @@
 import { t as tr, tv } from "./i18n";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { call, post, usePoll } from "./api";
-import { Button, Empty, goTo, Icon, Spinner, toast, toggleSide } from "./parts";
+import { Button, Empty, goTo, Icon, Seg, Spinner, toast, toggleSide } from "./parts";
 
 /* The project's storyboard (design 2026-10-17): from an idea or the script to scenes and shots whose specs are contracts, the
    Director carrying them to acceptance, continuity at every cut and on a camera plan, and the conversation that changes it by
@@ -14,6 +14,7 @@ type Spec = {
   source: { policy: string; query: string };
   generation: { provider: string; provider_video: string; model: string; prompt: Record<string, string>; seed: number | null };
   continuity: { entities: string[]; time_of_day: string; match_previous: boolean }; criteria: Crit[];
+  illustration?: { mode?: "direct" | "associative" | "contrast"; evokes?: string; feel?: Record<string, string> };
 };
 type Check = { check: string; text: string; by: string; required: boolean; st: "pass" | "fail" | "wait" | "unmeasured"; value: string };
 type Cand = { asset_id: string; moment_id?: string | null; t_in: number; t_out: number; score: number | null; text: string; passed: number; of: number; failed: string[]; name: string; frame_url: string; chosen_before?: boolean };
@@ -750,6 +751,12 @@ function Inspector({ shot: s, board, url, tab, setTab, set, ops, act, busy }: {
           <Field label={tr("Mục tiêu nội dung")} area value={s.spec.intent} onSave={(x) => set(s, "intent", x)} />
           <Field label={tr("Lời dẫn / thoại của shot")} area value={s.spec.line} onSave={(x) => set(s, "line", x)} />
           <span className="-mt-1.5 text-[11px] text-faint">{tr("Câu này hiện trên thẻ shot và làn Lời dẫn của timeline; ghi vào kịch bản thì thành câu của dự án.")}</span>
+          <div className="grid gap-1.5"><span className="text-[12px] text-mute">{tr("Cách minh hoạ")}</span>
+            <Seg items={[["direct", tr("Trực tiếp")], ["associative", tr("Liên tưởng")], ["contrast", tr("Tương phản")]] as const} value={s.spec.illustration?.mode ?? "direct"}
+                 onChange={(m) => set(s, "illustration.mode", m)} label={tr("Cách minh hoạ")} />
+            <span className="text-[11px] text-faint">{(s.spec.illustration?.mode ?? "direct") === "direct" ? tr("Hình cho thấy điều câu nói; tìm theo lời và mục tiêu.") : tr("Hình gợi ý của câu, không tả lại lời; tìm theo mục tiêu và điều hình gợi, xếp theo cảm giác đo được.")}</span></div>
+          {(s.spec.illustration?.mode ?? "direct") !== "direct" && <Field label={tr("Hình gợi điều gì")} value={s.spec.illustration?.evokes ?? ""} onSave={(x) => set(s, "illustration.evokes", x)} />}
+          {s.spec.illustration?.feel && Object.keys(s.spec.illustration.feel).length > 0 && <p className="text-[12px] text-faint">{tr("Cảm giác cần có")}: {Object.values(s.spec.illustration.feel).join(", ")}</p>}
           <div className="grid grid-cols-3 gap-2">
             {(["target", "min", "max"] as const).map((k) => <Field key={k} label={{ target: tr("Thời lượng (s)"), min: tr("Tối thiểu"), max: tr("Tối đa") }[k]} value={String(s.spec.duration[k])} onSave={(x) => set(s, `duration.${k}`, Number(x))} />)}
           </div>

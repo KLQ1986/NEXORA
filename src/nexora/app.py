@@ -501,6 +501,7 @@ def templates(system: "System") -> list[dict]:
     for t in out:                                    # a template kept before templates had a structure takes the default one
         if "structure" not in t:
             t["structure"] = SHORT_STRUCTURE if t.get("format") == "portrait" else DEFAULT_STRUCTURE
+        t.setdefault("illustration", "mixed")        # how its pictures illustrate the words: mixed lets the writer choose per line
     return out
 
 
@@ -510,6 +511,17 @@ def channel_named(system: "System", name: str | None) -> dict | None:
 
 def template_named(system: "System", name: str | None) -> dict | None:
     return next((t for t in templates(system) if t["name"] == name), None) if name else None
+
+
+def illustration_style(system: "System", project: dict | None) -> str:
+    """How a project's pictures illustrate its words: its channel's choice when the channel makes one, else its template's, else
+    mixed (the writer chooses per line)."""
+    project = project or {}
+    channel = channel_named(system, project.get("channel")) or {}
+    if channel.get("illustration") in ("direct", "associative", "mixed"):
+        return channel["illustration"]
+    template = template_named(system, project.get("template")) or {}
+    return template.get("illustration") if template.get("illustration") in ("direct", "associative", "mixed") else "mixed"
 
 
 def apply_template(system: "System", project_id: str, chosen: dict) -> None:
@@ -813,7 +825,7 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
                                colour_gap=lambda a, b: vq.colour_gap(a["asset_id"], mid(a), b["asset_id"], mid(b)),
                                likeness=lambda a, ref: face_likeness(system, a["asset_id"], mid(a), ref),
                                # the storyboard chooses pictures with the clip step's search and teaches it the operator's verdicts
-                               find=lambda words, need, line: system.sourcing.find(words, need, line=line),
+                               find=lambda words, need, line, illustration=None: system.sourcing.find(words, need, line=line, illustration=illustration),
                                remember=lambda line, moment_id, verdict, **kw: system.sourcing.remember(line, moment_id, verdict, **kw))
     system.viewer = Viewer(projects, adapters, data_dir / "media") if model is not None else None
     def measured_boundaries(asset_id: str):
@@ -839,7 +851,8 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
                                publish=(lambda render_id: system.publishing.publish(render_id, "publish.folder")) if has_folder else None)
     system.producer = Producer(db_path, orch=orch, projects=projects, planning=planning, sourcing=sourcing, edit=edit, adapters=adapters,
                                fill_gap=lambda shot_id, query: fill_gap_from_stock(system, shot_id, query),
-                               to_storyboard=lambda project_id: lay_out_storyboard(system, project_id))
+                               to_storyboard=lambda project_id: lay_out_storyboard(system, project_id),
+                               style=lambda project_id: illustration_style(system, projects.project(project_id)))
     from nexora.agents.missions import Missions
     from nexora.core.missions import MissionStore
 

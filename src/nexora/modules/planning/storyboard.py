@@ -11,6 +11,7 @@ import json
 import math
 import re
 
+from nexora.core import illustration as ILL
 from nexora.core.adapter import AdapterError, AdapterRegistry, ErrorCode, PrivacyClass, Request
 from nexora.core.projects import ProjectStore
 from nexora.core.storyboard import Shot, Storyboard
@@ -49,7 +50,8 @@ LABEL = {"intent": "mục tiêu", "line": "lời dẫn", "duration.target": "th�
          "generation.model": "model",
          "generation.prompt.subject": "chủ thể (prompt)", "generation.prompt.action": "hành động (prompt)", "generation.prompt.setting": "bối cảnh (prompt)",
          "generation.prompt.light": "ánh sáng (prompt)", "generation.prompt.camera": "máy quay (prompt)", "generation.seed": "seed",
-         "continuity.entities": "thực thể", "continuity.time_of_day": "thời điểm", "continuity.match_previous": "nối với shot trước"}
+         "continuity.entities": "thực thể", "continuity.time_of_day": "thời điểm", "continuity.match_previous": "nối với shot trước",
+         "illustration.mode": "cách minh hoạ", "illustration.evokes": "hình gợi", "illustration.feel": "cảm giác"}
 FIELDS = frozenset(LABEL)
 
 
@@ -121,6 +123,8 @@ def normalise(raw: dict, *, camera: tuple[float, float] | None = None) -> dict:
         "continuity": {"entities": [str(e).strip()[:60] for e in (c.get("entities") or []) if str(e).strip()][:12],
                        "time_of_day": _pick(c.get("time_of_day"), TIMES, ""), "match_previous": bool(c.get("match_previous", True))},
         "criteria": [x for x in (criterion(r) for r in (raw.get("criteria") or default_criteria(policy)) if isinstance(r, dict)) if x],
+        # How the picture illustrates the words (direct, associative, contrast): an evoking shot is searched by what is to be seen.
+        "illustration": ILL.normalise(raw.get("illustration")),
     }
     if spec["duration"]["min"] > spec["duration"]["target"]:
         spec["duration"]["min"] = spec["duration"]["target"]
@@ -244,7 +248,8 @@ class StoryboardPlanner:
             if name not in scenes:
                 scenes[name] = self._store.add_scene(project_id, {"title": name, "purpose": "", "subject": {"x": 300, "y": AXIS, "label": ""}})
             spec = normalise({"intent": line.brief or line.text, "line": line.text, "duration": line.target_seconds or max(3.0, round(len(line.text.split()) / 2.6, 1)),
-                              "source": "any", "query": line.brief or line.text}, camera=camera_row(k, len(lines)))
+                              "source": "any", "query": ILL.query(line.text, line.brief, line.illustration) if line.illustration.get("mode") in ("associative", "contrast") else (line.brief or line.text),
+                              "illustration": line.illustration}, camera=camera_row(k, len(lines)))
             sid = self._store.add_shot(project_id, scenes[name], spec, position=k, made_by="script", note="từ kịch bản")
             self._store.link_script(sid, line.shot_id)
             sel = self._projects.selection(line.shot_id)
@@ -518,7 +523,7 @@ class StoryboardPlanner:
         shots = self._store.shots(project_id)
         if not shots:
             raise AdapterError(ErrorCode.INVALID_REQUEST, "the storyboard has no shots", retryable=False)
-        lines = [s.spec["line"] or s.spec["intent"] for s in shots]
+        lines = [{"text": s.spec["line"] or s.spec["intent"], "brief": s.spec["intent"] or None, "illustration": s.spec.get("illustration") or None} for s in shots]
         script_id = self._projects.save_script(project_id, lines)
         made = self._projects.script(script_id)["shots"]
         for s, line in zip(shots, made):

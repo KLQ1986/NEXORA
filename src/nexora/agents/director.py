@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 
+from nexora.core import illustration as ILL
 from nexora.core.adapter import AdapterError
 from nexora.core.assets import AssetStore
 from nexora.core.index import MomentIndex
@@ -67,7 +68,9 @@ class Director:
             return self._generated(s, autonomy)
         if policy == "stock":
             return "needs", s.assignment, [{"check": "source", "text": "Footage stock: chọn trong kho stock (OpenMontage) ở phần dựng", "by": "human", "st": "wait", "value": "—"}]
-        query = s.spec["source"]["query"] or s.spec["intent"]
+        ill = s.spec.get("illustration") or {}
+        # A shot that evokes is searched by what is to be seen and what it evokes, never by its narration.
+        query = ILL.query(s.spec["line"], s.spec["source"]["query"] or s.spec["intent"], ill) if ill.get("mode") in ("associative", "contrast") else (s.spec["source"]["query"] or s.spec["intent"])
         tried = []
         for a in self._candidates(s, query):
             asset = self._assets.asset(a["asset_id"])
@@ -97,7 +100,7 @@ class Director:
         d = s.spec["duration"]
         if self._find is not None:
             try:
-                found = self._find(query, d["target"], self._line(s))
+                found = self._find(query, d["target"], self._line(s), s.spec.get("illustration") or None)
             except Exception:
                 found = []
             return [{"kind": "footage", "asset_id": c["asset_id"], "moment_id": c.get("moment_id"), "t_in": round(float(c["t_in"]), 2),

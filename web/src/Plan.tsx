@@ -116,6 +116,9 @@ function Profile({ channel: c, save }: { channel: Channel; save: (change: Partia
         <input aria-label={tr("Nhịp")} placeholder={tr("Nhịp: chậm, nhiều khoảng lặng…")} defaultValue={c.pacing ?? ""} onBlur={blur("pacing")} className={field} />
         <textarea aria-label={tr("Cụm từ không bao giờ dùng, mỗi dòng một cụm")} rows={2} placeholder={tr("Cụm từ không bao giờ dùng, mỗi dòng một cụm")} defaultValue={(c.banned ?? []).join("\n")}
                   onBlur={(e) => { const banned = e.target.value.split("\n").map((x) => x.trim()).filter(Boolean); if (banned.join("\n") !== (c.banned ?? []).join("\n")) save({ banned }); }} className="p-2 text-[12.5px]" />
+        <label className="flex items-center gap-2 text-[12.5px] text-mute">{tr("Cách minh hoạ")}
+          <select value={c.illustration ?? ""} onChange={(e) => save({ illustration: (e.target.value || null) as Channel["illustration"] })} className="h-8 pl-2.5 text-ink">
+            <option value="">{tr("Theo mẫu video")}</option><option value="mixed">{tr("Pha trộn (máy chọn từng câu)")}</option><option value="associative">{tr("Liên tưởng")}</option><option value="direct">{tr("Trực tiếp")}</option></select></label>
         <textarea aria-label={tr("Ghi chú cho người viết")} rows={2} placeholder={tr("Ghi chú cho người viết: điều kênh luôn làm, điều nên tránh")} defaultValue={c.notes ?? ""} onBlur={blur("notes")} className="p-2 text-[12.5px]" />
       </div>
     </details>

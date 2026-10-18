@@ -1,7 +1,7 @@
 import { t as tr, tv, locale } from "./i18n";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { call, post, projectNext, projectState, scriptText, stageName, timecode, usePoll, type Idea, type Source, type AgentTask, type Asset, type Settings, type Candidate, type Project, type RenderItem, type Shot, type BibleEntry, type GapPlan, type Op, type Rights, type Publishing, type Channel, type StructureCheck, type Variant } from "./api";
+import { call, post, projectNext, projectState, scriptText, stageName, timecode, usePoll, type Idea, type Source, type AgentTask, type Asset, type Settings, type Candidate, type Project, type RenderItem, type Shot, type BibleEntry, type GapPlan, type Op, type Rights, type Publishing, type Channel, type StructureCheck, type Variant, type Illustration } from "./api";
 import Board from "./Board";
 import { ask, Button, Empty, Filmstrip, goTo, Icon, Meter, Page, Section, Seg, SideFrame, SideGroup, SideLink, SkeletonCards, StageRail, Steps, Tabs, Tag, TimeChip, toast, Readout } from "./parts";
 import Timeline from "./Timeline";
@@ -301,6 +301,49 @@ function StructureCheck({ s }: { s: StructureCheck }) {
 }
 
 /** Two or three other ways to open or to end the script; choosing one saves it as the next version, the rest stay. */
+/* How each line's picture illustrates its words: shown it (direct), evokes it (associative), or runs against it (contrast).
+   The writer chose; the operator changes it here. These are notes on a line, so changing them makes no new script version. */
+const WAYS: [NonNullable<Illustration["mode"]>, string][] = [["direct", tr("Trực tiếp")], ["associative", tr("Liên tưởng")], ["contrast", tr("Tương phản")]];
+const FEELS: [string, string, string[]][] = [
+  ["chuyen_dong", tr("Chuyển động"), ["tĩnh", "chậm", "nhanh"]], ["anh_sang", tr("Ánh sáng"), ["sáng", "vừa", "tối"]], ["mau", tr("Màu"), ["ấm", "trung tính", "lạnh"]],
+  ["khung", tr("Khung hình"), ["rộng", "trung", "cận"]], ["nguoi", tr("Người"), ["không người", "một người", "vài người", "đông người"]],
+];
+function Illustrations({ shots, busy, run }: { shots: Shot[]; busy: boolean; run: (fn: () => Promise<unknown>) => void }) {
+  const [open, setOpen] = useState<string | null>(null);
+  const [brief, setBrief] = useState<Record<string, string>>({}), [evokes, setEvokes] = useState<Record<string, string>>({});
+  const save = (s: Shot, change: { brief?: string; illustration?: Illustration }) => run(() => post(`/api/v1/shots/${s.shot_id}`, change, "PATCH"));
+  const ill = (s: Shot): Illustration => s.illustration ?? {};
+  const counts = WAYS.map(([m, label]) => [label, shots.filter((s) => (ill(s).mode ?? "direct") === m).length] as const);
+  return (
+    <details className="mt-3 rounded-xl border border-line bg-raised/30 px-4 py-3 text-[13px]">
+      <summary className="flex cursor-pointer list-none flex-wrap items-center gap-2"><Icon name="image" size={15} className="text-accent" /><span className="font-medium">{tr("Minh hoạ từng câu")}</span>
+        <span className="text-faint">{counts.filter(([, n]) => n).map(([l, n]) => `${n} ${l.toLowerCase()}`).join(" · ")}</span></summary>
+      <p className="mt-2 text-[12.5px] text-faint">{tr("Câu trực tiếp tìm hình theo lời; câu liên tưởng và tương phản tìm theo hình cần thấy và điều nó gợi, rồi xếp theo cảm giác đo được của footage. Đổi ở đây không tạo phiên bản kịch bản mới; tìm clip lại để áp dụng.")}</p>
+      <ol className="mt-2 grid gap-2">{shots.map((s, n) => { const i = ill(s), mode = i.mode ?? "direct"; return (
+        <li key={s.shot_id} className="rounded-lg border border-line bg-surface/60 px-3 py-2.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="mono w-6 shrink-0 text-faint">{n + 1}</span><span className="min-w-0 flex-1 truncate">{s.text}</span>
+            <Seg items={WAYS} value={mode} onChange={(m) => save(s, { illustration: { ...i, mode: m } })} label={tr("Cách minh hoạ")} disabled={busy} />
+            <button type="button" className="link text-[12px]" onClick={() => setOpen(open === s.shot_id ? null : s.shot_id)}>{open === s.shot_id ? tr("Thu gọn") : tr("Chi tiết")}</button>
+          </div>
+          {open !== s.shot_id && (s.brief || i.evokes) && <p className="mt-1 truncate pl-8 text-[12px] text-faint">{s.brief}{i.evokes ? ` · ${tr("gợi")}: ${i.evokes}` : ""}</p>}
+          {open === s.shot_id && <div className="mt-2 grid gap-2 pl-8">
+            <label className="grid gap-1"><span className="text-[12px] text-mute">{tr("Hình cần thấy")}</span>
+              <input value={brief[s.shot_id] ?? s.brief ?? ""} onChange={(e) => setBrief({ ...brief, [s.shot_id]: e.target.value })} onBlur={() => brief[s.shot_id] !== undefined && brief[s.shot_id] !== (s.brief ?? "") && save(s, { brief: brief[s.shot_id] })} className="h-8 px-2.5 text-[13px]" /></label>
+            {mode !== "direct" && <label className="grid gap-1"><span className="text-[12px] text-mute">{tr("Hình gợi điều gì")}</span>
+              <input value={evokes[s.shot_id] ?? i.evokes ?? ""} onChange={(e) => setEvokes({ ...evokes, [s.shot_id]: e.target.value })} onBlur={() => evokes[s.shot_id] !== undefined && evokes[s.shot_id] !== (i.evokes ?? "") && save(s, { illustration: { ...i, evokes: evokes[s.shot_id] } })} placeholder={tr("ví dụ: chậm lại, bắt đầu lại")} className="h-8 px-2.5 text-[13px]" /></label>}
+            <div className="grid gap-1.5"><span className="text-[12px] text-mute">{tr("Cảm giác của hình (so với số đo của footage)")}</span>
+              {FEELS.map(([key, name, values]) => <div key={key} className="flex flex-wrap items-center gap-1.5"><span className="w-24 shrink-0 text-[12px] text-faint">{name}</span>
+                {values.map((v) => { const on = i.feel?.[key] === v; return <button key={v} type="button" aria-pressed={on} disabled={busy}
+                  onClick={() => { const feel = { ...(i.feel ?? {}) }; if (on) delete feel[key]; else feel[key] = v; save(s, { illustration: { ...i, mode, feel } }); }}
+                  className={`h-6 rounded-full border px-2.5 text-[12px] ${on ? "border-accent/60 bg-accent/12 text-accent" : "border-line text-mute hover:text-ink"}`}>{v}</button>; })}</div>)}
+            </div>
+          </div>}
+        </li>); })}</ol>
+    </details>
+  );
+}
+
 function Variants({ id, p, busy, run }: { id: string; p: Project; busy: boolean; run: (fn: () => Promise<unknown>) => void }) {
   const { data, reload } = usePoll<{ variants: Variant[] }>(`/api/v1/projects/${id}/variants`, 60000);
   const current = new Set(p.shots.map((s) => s.text));
@@ -662,6 +705,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
                 )}
                 {p.script && !dirty && p.structure && <StructureCheck s={p.structure} />}
                 {p.script && !dirty && <Variants id={id} p={p} busy={busy} run={run} />}
+                {p.script && !dirty && p.shots.length > 0 && <Illustrations shots={p.shots} busy={busy} run={run} />}
               </Section>
           </div>
           <aside className="grid gap-4 xl:sticky xl:top-0" aria-label={tr("Nguồn tham khảo")}>

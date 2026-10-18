@@ -61,7 +61,8 @@ The data already separates the two: a line has its words (`text`) and what shoul
   - emotion (where it was labelled).
 - **Ranking:**
   - direct: unchanged;
-  - associative: meaning of the brief 0.6, feel 0.4;
+  - associative: the meaning of the brief, scaled by the feel (meaning × (0.7 + 0.3 × feel)), so the feel chooses among
+    stretches that mean the right thing and never lifts one that does not (see the real run below);
   - contrast: meaning of the brief, with feel as asked (contrast is in the brief, not inverted by code).
   - Each candidate keeps its feel match, said in words ("chậm, sáng ấm, khung trống: khớp 3/3").
 - **The judge:** for associative and contrast lines, the frames are judged against `evokes` and `hinh`: "does this picture call
@@ -98,3 +99,17 @@ The fake model returns ways, briefs, evoked phrases and feels:
 
 Then one real run with the local model: the same goal as "Buổi sáng dạo biển" written mixed, its narration and picks compared
 with the first run's.
+
+## Measured on the library (qwen local model, 2026-10-18)
+
+- **The narration now tells instead of describing.** The first run of "Buổi sáng dạo biển" had lines like "Cảnh hoa vàng cam
+  rực rỡ…"; the mixed draft has lines like "Một ngày mới bắt đầu không phải bằng tốc độ, mà bằng sự trân trọng từng khoảnh
+  khắc." It chose five associative lines and one direct line (the cup of coffee, a concrete object), as the rule says.
+- **Three corrections from that run:**
+  - The model repeated one brief for three lines, so the prompt now asks for a different picture for each line.
+  - It wrote whole sentences as what a line evokes, so the prompt now asks for two to five words ("chậm lại", "bắt đầu lại").
+  - It filled all five feel keys for every line, so the prompt asks for one to three and the code keeps the first three.
+- **Feel added to meaning chose the wrong picture.** With feel added (0.6 meaning + 0.4 feel), "a quiet garden with orange
+  flowers / chữa lành" went to "a man stirring soil in a bucket", because the bucket shot matched the feel 4/5. Multiplied, the
+  same line goes to the garden. A test keeps that.
+- **After the corrections:** six lines, six different pictures, each meaning the right thing.

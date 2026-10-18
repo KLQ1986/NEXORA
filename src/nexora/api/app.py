@@ -45,7 +45,7 @@ def run_view(system, run_id: str) -> dict:
     }
 
 
-PROFILE_KEYS = ("platform", "audience", "tone", "pacing", "banned", "notes", "template")      # a change to these is a new version of a channel's profile
+PROFILE_KEYS = ("platform", "audience", "tone", "pacing", "banned", "notes", "template", "illustration")      # a change to these is a new version of a channel's profile
 TEXT_TASKS = {"write": "Viết nháp kịch bản và gợi ý ý tưởng", "critique": "Phản biện kịch bản", "revise": "Viết lại theo nhận xét", "facts": "Tìm câu nêu dữ kiện",
               "check": "Đối chiếu dữ kiện với nguồn", "titles": "Gợi ý tiêu đề", "translate": "Dịch phụ đề", "command": "Chỉnh sửa bằng lời"}
 
@@ -349,7 +349,8 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
                       "logo_path": str(Path(str(t["logo_path"])).expanduser()) if t.get("logo_path") else "",
                       "pronounce": {str(k).strip(): str(v).strip() for k, v in (t.get("pronounce") or {}).items() if str(k).strip() and str(v).strip()},
                       **({"style": t["style"]} if isinstance(t.get("style"), dict) else {}),
-                      **({"structure": clean_structure(t["structure"])} if "structure" in t else {})} for t in body["templates"] if str(t.get("name", "")).strip()]
+                      **({"structure": clean_structure(t["structure"])} if "structure" in t else {}),
+                      "illustration": t.get("illustration") if t.get("illustration") in ("direct", "associative", "mixed") else "mixed"} for t in body["templates"] if str(t.get("name", "")).strip()]
             system.orch.set_setting("templates", json.dumps(clean, ensure_ascii=False))
         return get_settings()
 
@@ -774,7 +775,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         shots = []
         for shot in (script["shots"] if script else []):
             sel = system.projects.selection(shot.shot_id)
-            item = {"shot_id": shot.shot_id, "position": shot.position, "text": shot.text, "scene": shot.scene, "brief": shot.brief, "screen_text": shot.screen_text, "target_seconds": shot.target_seconds, "sound_cue": shot.sound_cue,
+            item = {"shot_id": shot.shot_id, "position": shot.position, "text": shot.text, "scene": shot.scene, "brief": shot.brief, "screen_text": shot.screen_text, "illustration": shot.illustration, "target_seconds": shot.target_seconds, "sound_cue": shot.sound_cue,
                     "is_fact": shot.is_fact, "source": shot.source, "fact_check": shot.fact_check, "gen": shot.gen, "selection": None, "keyframe_url": None, "generation": None}
             keys = system.projects.generations(shot.shot_id, kind="keyframe")
             if keys:
@@ -1197,7 +1198,9 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         try:
             project = need_project(project_id)
             template = template_named(system, project.get("template"))
+            from nexora.app import illustration_style
             return {"lines": system.planning.draft_script(str(body.get("topic", "")), lines=int(body.get("lines", 6)), channel=channel_named(system, project.get("channel")),
+                                                          style=illustration_style(system, project), project_id=project_id,
                                                           structure=(template or {}).get("structure"))}
         except Exception as err:
             raise HTTPException(503, f"Không viết nháp được: {err}")
@@ -1289,8 +1292,10 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
 
     @app.patch("/api/v1/shots/{shot_id}")
     def annotate_shot(shot_id: str, body: dict):
+        from nexora.core import illustration as ILL
         system.projects.annotate_shot(shot_id, brief=body.get("brief"), screen_text=body.get("screen_text"),
-                                      **{k: body[k] for k in ("target_seconds", "sound_cue", "is_fact", "source") if k in body})
+                                      **{k: body[k] for k in ("target_seconds", "sound_cue", "is_fact", "source") if k in body},
+                                      **({"illustration": ILL.normalise(body["illustration"])} if "illustration" in body else {}))
         if isinstance(body.get("gen"), dict):        # the operator's choices for a generated picture
             system.projects.annotate_shot(shot_id, gen={k: (str(v).strip() if v is not None else None) for k, v in body["gen"].items() if k in ("subject", "shot_size", "camera", "provider_image", "provider_video")})
         return {"ok": True}
@@ -1528,7 +1533,8 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             banned = [b.strip() for b in (banned.split("\n") if isinstance(banned, str) else banned) if isinstance(b, str) and b.strip()]
             channel = {"name": name, "platform": str(raw.get("platform") or "").strip(), "audience": str(raw.get("audience") or "").strip(), "per_week": cadence,
                        "template": raw.get("template") if raw.get("template") in names else None, "tone": str(raw.get("tone") or "").strip(),
-                       "pacing": str(raw.get("pacing") or "").strip(), "banned": list(dict.fromkeys(banned)), "notes": str(raw.get("notes") or "").strip()}
+                       "pacing": str(raw.get("pacing") or "").strip(), "banned": list(dict.fromkeys(banned)), "notes": str(raw.get("notes") or "").strip(),
+                       "illustration": raw.get("illustration") if raw.get("illustration") in ("direct", "associative", "mixed") else None}
             before = before_by.get(name)
             same = before is not None and all(before.get(k) == channel[k] for k in PROFILE_KEYS)
             channel["version"] = (before or {}).get("version", 0) if same else (before or {}).get("version", 0) + 1     # the profile changed: a new version

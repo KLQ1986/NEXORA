@@ -1,5 +1,6 @@
 """Planning: projects and scripts (design v4.0, section 16)."""
 import json
+import re
 import time
 import unicodedata
 
@@ -8,6 +9,7 @@ from nexora.core.adapter import AdapterRegistry, PrivacyClass, Request
 TEXT_ONLY = PrivacyClass.CLOUD_ALLOWED       # a prompt of words alone: it may be served by a cloud model if the operator routes it there
 from nexora.core.assets import AssetStore
 from nexora.core.index import MomentIndex
+from nexora.core import illustration as ILL
 from nexora.core.ideas import IdeaStore
 from nexora.core.projects import ProjectStore
 from nexora.modules.planning.ideas import OVERLAP, IdeaFinder, channel_text
@@ -15,7 +17,7 @@ from nexora.modules.planning.ideas import OVERLAP, IdeaFinder, channel_text
 DRAFT_PROMPT = (
     "Bạn là người viết lời dẫn cho video ngắn. {channel}Chủ đề: {topic}.\n"
     "Dưới đây là những gì có trong kho footage của người làm video:\n{inventory}\n\n"
-    "Hãy viết lời dẫn tiếng Việt gồm {n} câu ngắn, mỗi câu nói về một hình ảnh CÓ trong kho footage ở trên để có hình minh hoạ. "
+    "Hãy viết lời dẫn tiếng Việt gồm {n} câu ngắn. {style}\n"
     "{shape}"
 )
 
@@ -42,9 +44,9 @@ REVISE_PROMPT = (
     "Viết lại lời dẫn để xử lý các điểm đó. Giữ số câu gần như cũ, giữ nguyên những câu không bị nhận xét, không thêm dữ kiện mới. "
     "Chỉ trả về JSON với khoá cau (danh sách các câu)."
 )
-FLAT_SHAPE = "Chỉ trả về JSON với khoá cau (danh sách các câu)."
+FLAT_SHAPE = "Chỉ trả về JSON với khoá cau: danh sách các mục như trên, theo thứ tự."
 PARTS_SHAPE = ("Chia lời dẫn thành các phần theo đúng thứ tự sau: {parts}. "
-               "Chỉ trả về JSON với khoá phan: danh sách các mục có ten (tên phần như trên) và cau (danh sách các câu của phần đó).")
+               "Chỉ trả về JSON với khoá phan: danh sách các mục có ten (tên phần như trên) và cau (danh sách các mục như trên của phần đó).")
 VARIANT_PROMPT = (
     "{channel}Đây là lời dẫn của một video về {topic}, mỗi câu có số thứ tự:\n{lines}\n\n"
     "Viết lại riêng {part} (câu {first} đến câu {last}) theo {n} cách khác nhau rõ rệt; phần còn lại giữ nguyên, không thêm dữ kiện mới. "
@@ -55,6 +57,12 @@ WORDS_PER_SECOND = 2.6
 MIN_LINE = 3.0
 VERDICTS = {"dung": "supported", "sai": "contradicted", "khong_thay": "not_found"}
 PASSAGE_CHARS = 1500
+
+
+def _overlap(a: str, b: str) -> float:
+    """The share of the shorter text's words that the other has too: how much a line repeats what is to be seen."""
+    wa, wb = {w for w in re.findall(r"\w+", _fold(a)) if len(w) > 1}, {w for w in re.findall(r"\w+", _fold(b)) if len(w) > 1}
+    return len(wa & wb) / min(len(wa), len(wb)) if wa and wb else 0.0
 
 
 def _fold(text: str) -> str:
@@ -70,8 +78,11 @@ class Planning:
     def create_project(self, title: str, *, format: str = "landscape") -> str:
         return self._projects.create_project(title, format=format)
 
-    def save_script(self, project_id: str, lines: list[str]) -> str:
-        return self._projects.save_script(project_id, lines)
+    def save_script(self, project_id: str, lines: list) -> str:
+        """The next version of a project's script. A line saved word for word as the writer drafted it brings the writer's
+        notes on it (what to see, how to illustrate)."""
+        drafted = self._projects.drafted(project_id)
+        return self._projects.save_script(project_id, [l if isinstance(l, dict) or str(l).strip() not in drafted else {"text": str(l).strip(), **drafted[str(l).strip()]} for l in lines])
 
     def inventory(self) -> list[str]:
         """What the library holds, one line per understood video: the basis for footage-aware scripting."""
@@ -108,23 +119,45 @@ class Planning:
         return self.ideas.ideas(status=("new", "blocked"))
 
     # ------------------------------------------------------------------ writing
-    def draft_script(self, topic: str, *, lines: int = 6, channel: dict | None = None, structure: list[dict] | None = None) -> list[str]:
-        """Ask the model for a script that only calls for footage that exists. With a template's structure, the script comes in
-        one scene per segment (`# <label>`), in the segments' order."""
+    def draft(self, topic: str, *, lines: int = 6, channel: dict | None = None, structure: list[dict] | None = None, style: str = "mixed") -> list:
+        """Ask the model for a script that only calls for footage that exists, each line with what is to be seen and how the
+        picture illustrates it (`style`: direct, associative or mixed). With a template's structure, one scene per segment
+        (`# <label>`), in the segments' order. Lines come as {text, brief, illustration}; scene headings as strings."""
         inventory = "\n".join(self.inventory()) or "(kho đang trống)"
         parts = "; ".join(f"{seg['label']} ({seg['min']:g}–{seg['max']:g} giây{': ' + seg['goal'] if seg.get('goal') else ''})" for seg in structure or [])
         shape = PARTS_SHAPE.format(parts=parts) if structure else FLAT_SHAPE
-        out = self._adapters.submit("model", Request("chat", privacy_class=TEXT_ONLY, params={"prompt": DRAFT_PROMPT.format(topic=topic, inventory=inventory, n=lines, channel=channel_text(channel), shape=shape),
-                                                                    "json": True, "max_tokens": 700, "task": "draft"})).outputs["json"]
+        style = style if style in ILL.STYLES else "mixed"
+        out = self._adapters.submit("model", Request("chat", privacy_class=TEXT_ONLY, params={
+            "prompt": DRAFT_PROMPT.format(topic=topic, inventory=inventory, n=lines, channel=channel_text(channel), shape=shape, style=ILL.style_prompt(style)),
+            "json": True, "max_tokens": 1400, "task": "draft"})).outputs["json"]
+
+        def line(item) -> dict | None:
+            if isinstance(item, str):
+                return {"text": item.strip()} if item.strip() else None
+            if not isinstance(item, dict) or not str(item.get("cau") or "").strip():
+                return None
+            feel = item.get("cam_giac") if isinstance(item.get("cam_giac"), dict) else {}
+            feel = dict(list(feel.items())[:3])                 # the few qualities that matter for the line: a small model fills every key
+            ill = ILL.normalise({"kieu": "truc_tiep" if style == "direct" else item.get("kieu"), "goi": item.get("goi"), "cam_giac": feel})
+            return {"text": str(item["cau"]).strip(), "brief": str(item.get("hinh") or "").strip() or None, "illustration": ill or None}
         if structure and out.get("phan"):
             written = []
             for seg, part in zip(structure, out.get("phan") or []):
-                said = [str(c).strip() for c in (part.get("cau") if isinstance(part, dict) else []) or [] if str(c).strip()]
+                said = [l for l in (line(c) for c in (part.get("cau") if isinstance(part, dict) else []) or []) if l]
                 if said:
                     written += [f"# {seg['label']}", *said]
             if written:
                 return written
-        return [str(c).strip() for c in out.get("cau", []) if str(c).strip()]
+        return [l for l in (line(c) for c in out.get("cau", [])) if l]
+
+    def draft_script(self, topic: str, *, lines: int = 6, channel: dict | None = None, structure: list[dict] | None = None, style: str = "mixed",
+                     project_id: str | None = None) -> list[str]:
+        """The draft's words alone, as the script editor shows them; with `project_id` the notes of each line are kept, so saving
+        the draft with a line unchanged brings them back."""
+        written = self.draft(topic, lines=lines, channel=channel, structure=structure, style=style)
+        if project_id:
+            self._projects.keep_draft(project_id, written)
+        return [l if isinstance(l, str) else l["text"] for l in written]
 
     def structure(self, project_id: str, structure: list[dict]) -> dict:
         """The script measured against its template's structure: each scene's estimated length (a line's own hold time,
@@ -271,6 +304,11 @@ class Planning:
                 except (TypeError, ValueError):
                     line = 0
                 notes.append({"line": line if 0 <= line <= len(script["shots"]) else 0, "issue": str(raw["van_de"]).strip(), "fix": str(raw.get("de_xuat") or "").strip()})
+        for k, shot in enumerate(script["shots"], 1):              # a line meant to evoke that only describes what is seen
+            ill = shot.illustration or {}
+            if ill.get("mode") in ("associative", "contrast") and shot.brief and _overlap(shot.text, shot.brief) >= 0.6:
+                notes.insert(0, {"line": k, "issue": "Câu này chỉ tả lại hình, trong khi hình được chọn để gợi ý của câu.",
+                                 "fix": "Nói ý hay cảm nghĩ mà hình gợi ra, đừng tả điều đang thấy.", "measured": True})
         for k, shot in enumerate(script["shots"], 1):              # what the channel never says is measured, not judged
             for phrase in (channel or {}).get("banned") or []:
                 if phrase and _fold(phrase) in _fold(shot.text):
@@ -290,14 +328,14 @@ class Planning:
         new = [str(c).strip() for c in out.get("cau") or [] if str(c).strip()]
         if not new or new == [s.text for s in script["shots"]]:
             return None
-        if len(new) == len(script["shots"]):                     # same shape: keep each line under its scene
+        if len(new) == len(script["shots"]):                     # same shape: keep each line under its scene, with its notes
             with_scenes, scene = [], None
             for shot, text in zip(script["shots"], new):
                 if shot.scene != scene:
                     scene = shot.scene
                     if scene:
                         with_scenes.append(f"# {scene}")
-                with_scenes.append(text)
+                with_scenes.append({"text": text, "brief": shot.brief, "illustration": shot.illustration or None})
             new = with_scenes
         return self._projects.save_script(project_id, new)
 

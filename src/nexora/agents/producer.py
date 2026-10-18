@@ -43,10 +43,11 @@ def short_title(text: str, limit: int = 60) -> str:
 
 
 class Producer:
-    def __init__(self, db_path, *, orch, projects, planning, sourcing, edit, adapters, fill_gap, to_storyboard=None):
+    def __init__(self, db_path, *, orch, projects, planning, sourcing, edit, adapters, fill_gap, to_storyboard=None, style=None):
         self._db = db.LocalConnections(db_path)
         self._orch, self._projects, self._planning, self._sourcing, self._edit, self._adapters = orch, projects, planning, sourcing, edit, adapters
         self._fill_gap = fill_gap                    # (shot_id, query) -> {"found": bool, ...}; given by the composition root
+        self._style = style or (lambda project_id: "mixed")     # (project_id) -> how its pictures illustrate the words
         self._to_storyboard = to_storyboard          # (project_id) -> None: the chosen clips laid out on the storyboard, where they are approved
         with db.write(self._conn) as c:
             c.execute(SCHEMA)
@@ -183,13 +184,16 @@ class Producer:
             return True
 
         if step == "write":
-            lines = self._planning.draft_script(task["goal"], lines=task["options"]["lines"])
+            lines = self._planning.draft(task["goal"], lines=task["options"]["lines"], style=self._style(project_id))
             if not lines:
                 self._say(task_id, WRITER, "Không viết được kịch bản từ kho footage hiện có.")
                 self._move(task_id, status="failed")
                 return True
             self._planning.save_script(project_id, lines)
-            self._say(task_id, WRITER, f"Viết {len(lines)} câu, chỉ dùng những gì kho footage đang có.")
+            said = [l for l in lines if isinstance(l, dict)]
+            ways = {m: sum(1 for l in said if (l.get("illustration") or {}).get("mode") == m) for m in ("direct", "associative", "contrast")}
+            self._say(task_id, WRITER, f"Viết {len(said)} câu, chỉ dùng những gì kho footage đang có"
+                      + (f": {ways['direct']} câu minh hoạ trực tiếp, {ways['associative']} câu liên tưởng" + (f", {ways['contrast']} câu tương phản" if ways["contrast"] else "") + "." if any(ways.values()) else "."))
             self._move(task_id, step="critique" if task["options"].get("critique", True) else "facts")
             return True
 
