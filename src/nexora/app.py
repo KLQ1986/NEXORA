@@ -9,7 +9,7 @@ from pathlib import Path
 from nexora.adapters.graphics import CaptionAdapter
 from nexora.adapters.media import FFmpegAdapter, FFprobeAdapter
 from nexora.core.adapter import AdapterRegistry
-from nexora.core.adapter import Adapter, PrivacyClass, Request
+from nexora.core.adapter import Adapter, AdapterError, PrivacyClass, Request
 from nexora.core.assets import AssetStore
 from nexora.core.index import MomentIndex
 from nexora.core.orchestrator import Orchestrator
@@ -19,7 +19,7 @@ from nexora.agents.producer import Producer
 from nexora.core.pipeline import PipelineRegistry
 from nexora.core.schedule import in_window
 from nexora.core.projects import ProjectStore
-from nexora.core.states import RunStatus
+from nexora.core.states import RunStatus, StageStatus
 from nexora.core.worker import Worker
 from nexora.modules.library.ingest import Library
 from nexora.core.intelligence import VideoIntelligence
@@ -670,6 +670,36 @@ def apply_topic(system: "System", project_id: str, run_id: str) -> str:
     return script_id
 
 
+def cut_gate(system: "System", project_id: str) -> str | None:
+    """The stage of the project's cut waiting for review, if one is: the newer of a render from its script and an export of
+    its newest saved cut (the Edit step), as the review screen shows it."""
+    script = system.projects.current_script(project_id)
+    runs = [r for r in system.orch.runs_for_subject(script["script_id"]) if system.orch.pipeline_of(r) == "edit.render"] if script else []
+    cut = system.cuts.latest(project_id) if getattr(system, "cuts", None) is not None else None
+    if cut:
+        runs += [r for r in system.orch.runs_for_subject(cut["cut_id"]) if system.orch.pipeline_of(r) == "edit.cut"]
+    if not runs:
+        return None
+    newest = max(runs, key=lambda r: system.orch.run_info(r).get("created_at") or 0)
+    return next((s.stage_id for s in system.orch.stages(newest) if s.status is StageStatus.WAITING_REVIEW), None)
+
+
+def approve_clips_by_policy(system: "System", project_id: str, run_id: str) -> None:
+    """A clip match approved by the operator's switch, as the storyboard approves it: a storyboard laid out for the video is
+    written back to the script with its pictures first; with none, the selections are taken as they stand."""
+    if system.storyboard is not None and system.storyboard.shots(project_id) and system.director is not None:
+        try:
+            system.director.approve(project_id)
+        except (ValueError, LookupError, AdapterError):
+            pass                                                    # the storyboard could not be written back; the clips still stand
+        for script_id in system.projects.script_ids(project_id):
+            for waiting, stage_id in system.orch.waiting_review("sourcing.match"):
+                if system.orch.run_info(waiting)["subject_ref"] == script_id:
+                    system.orch.decide_review(stage_id, approve=True, actor="policy")
+        return
+    system.sourcing.approve(run_id, actor="policy")
+
+
 def lay_out_storyboard(system: "System", project_id: str) -> int:
     """The clips chosen for a script laid out on the project's storyboard, where the operator looks at them and approves. A
     storyboard the project already has is never replaced. Returns how many shots were laid out."""
@@ -968,7 +998,10 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
         return distribution.annotate_package(render_id, rights={**render_rights(system, render_id), "override_reason": None}, checks=package_checks(package))
     has_folder = any(c.name == "publish.folder" for c in adapters.describe())
     system.autonomy = Autonomy(orch, projects, package=package_for_policy, rights=lambda render_id: render_rights(system, render_id),
-                               publish=(lambda render_id: system.publishing.publish(render_id, "publish.folder")) if has_folder else None)
+                               publish=(lambda render_id: system.publishing.publish(render_id, "publish.folder")) if has_folder else None,
+                               approve_clips=lambda project_id, run_id: approve_clips_by_policy(system, project_id, run_id),
+                               cut_gate=lambda project_id: cut_gate(system, project_id),
+                               approve_pictures=lambda run_id: system.generation.approve(run_id, actor="policy"))
     from nexora.modules.planning.topic import TopicWriter
     system.topics = TopicWriter(db_path, adapters, context=lambda project_id: topic_context(system, project_id), submit=orch.submit_run)
     system.topics.register(registry)

@@ -2,7 +2,7 @@ import { PIPE } from "./Notices";
 import { t as tr, tv, locale } from "./i18n";
 import { useState } from "react";
 import { call, megabytes, post, usePoll, type EvalRun, type Settings, type Template, type Segment } from "./api";
-import { Button, Icon, LangSwitch, Meter, OpsSide, Page, SideLink, Tag, ask, toast } from "./parts";
+import { Button, Icon, LangSwitch, Meter, OpsSide, Page, Seg, SideLink, Tag, ask, toast } from "./parts";
 import { FieldAccuracy, PeopleCard, ReviewQueue } from "./Profile";
 
 type Env = { ffmpeg?: { filters: Record<string, boolean>; encoders: Record<string, boolean> }; disk: { free_bytes: number; total_bytes: number };
@@ -93,13 +93,34 @@ function Capabilities() {
 
 type Level = { level: number; name: string; does: string; earned: boolean; progress: { have: number; need: number; text: string } | null };
 /** How much the system may decide alone. A level can be chosen only once the operator's own review record has earned it. */
+type Switches = { clips: boolean; renders: boolean; pictures: boolean };
+const SWITCHES: [keyof Switches, string, string][] = [
+  ["clips", tr("Tự duyệt clip"), tr("Clip đã chọn được duyệt ngay khi mọi câu đều có hình, như khi bạn bấm duyệt Storyboard. Còn câu thiếu hình thì vẫn chờ bạn.")],
+  ["renders", tr("Tự duyệt bản dựng"), tr("Bản dựng (và bản xuất từ bước Dựng) được duyệt khi đạt mọi kiểm tra, không có điểm nghiêm trọng, không thiếu hình. Bạn từ chối một bản dựng thì công tắc này tự tắt.")],
+  ["pictures", tr("Tự duyệt hình AI (tốn tiền)"), tr("Ảnh phác và clip do dịch vụ trả tiền tạo ra được duyệt ngay, trong ngân sách của dự án.")],
+];
 function AutonomyCard() {
-  const { data, reload } = usePoll<{ level: number; levels: Level[]; log: { at: number; level: number; text: string }[] }>("/api/v1/autonomy", 8000);
+  const { data, reload } = usePoll<{ level: number; levels: Level[]; switches: Switches; log: { at: number; level: number; text: string }[] }>("/api/v1/autonomy", 8000);
   const [note, setNote] = useState<string | null>(null);
   const choose = async (level: number) => { setNote(null); try { await post("/api/v1/autonomy", { level }); } catch (e) { setNote((e as Error).message); } reload(); };
+  const flip = async (key: keyof Switches, on: boolean) => {
+    if (on && key === "pictures" && !(await ask(tr("Tự duyệt hình AI?"), { body: tr("Hình do dịch vụ trả tiền tạo ra sẽ được duyệt mà không hỏi bạn. Tiền chỉ được tiêu trong ngân sách của từng dự án."), confirm: tr("Bật") }))) return;
+    await post("/api/v1/autonomy/switches", { [key]: on }); reload();
+  };
   return (
     <Card title={tr("Mức tự chủ")} icon="bolt" tone="ai" note={tr("Mỗi mức cho hệ thống tự quyết thêm một việc. Mức cao hơn chỉ chọn được khi chính lịch sử duyệt của bạn cho thấy nó xứng đáng. Dừng khẩn cấp, ngân sách và chế độ riêng tư luôn được tuân theo trước.")}>
       {note && <p className="mb-3 rounded-lg border border-cue/30 bg-cue/[0.06] px-3 py-2 text-[13px] text-cue">{note}</p>}
+      <section className="mb-4 rounded-xl border border-line bg-raised/40 px-4 py-3" aria-label={tr("Tự duyệt")}>
+        <p className="font-medium">{tr("Tự duyệt")}</p>
+        <p className="mt-0.5 text-[12.5px] text-faint">{tr("Bạn tự bật hoặc tắt từng cổng, lúc nào cũng được, ở mọi mức. Mỗi lần tự duyệt đều được ghi lại, và không tính vào lịch sử duyệt của bạn.")}</p>
+        <ul className="mt-2 grid gap-2.5">
+          {SWITCHES.map(([key, name, does]) => (
+            <li key={key} className="flex flex-wrap items-start gap-x-4 gap-y-1 text-[13px]">
+              <span className="min-w-0 flex-1"><span className="block font-medium">{name}</span><span className="block text-mute">{does}</span></span>
+              <Seg label={name} value={data?.switches?.[key] ?? false} disabled={!data} onChange={(on) => flip(key, on)} items={[[false, tr("Tắt")], [true, tr("Bật")]] as const} />
+            </li>))}
+        </ul>
+      </section>
       <ol className="grid gap-2">
         {(data?.levels ?? []).map((l) => {
           const now = data!.level === l.level, reachable = (data?.levels ?? []).filter((x) => x.level <= l.level).every((x) => x.earned) || l.level < data!.level;

@@ -2611,6 +2611,16 @@ const en: Record<string, string> = {
   "Chỉnh chất lượng hình": "Fix picture quality",
   "Viết kịch bản theo chủ đề": "Write a script on a topic",
   "Huấn luyện mô hình nhân vật": "Train a character model",
+  "Clip đã chọn được duyệt ngay khi mọi câu đều có hình, như khi bạn bấm duyệt Storyboard. Còn câu thiếu hình thì vẫn chờ bạn.": "Chosen clips are approved as soon as every line has a picture, as when you approve the Storyboard. A line still without one waits for you.",
+  "Tự duyệt bản dựng": "Approve cuts automatically",
+  "Bản dựng (và bản xuất từ bước Dựng) được duyệt khi đạt mọi kiểm tra, không có điểm nghiêm trọng, không thiếu hình. Bạn từ chối một bản dựng thì công tắc này tự tắt.": "A cut (and an export from the Edit step) is approved when it passes every check, with no serious finding and no missing picture. Turning down a cut switches this off.",
+  "Tự duyệt hình AI (tốn tiền)": "Approve AI pictures automatically (paid)",
+  "Ảnh phác và clip do dịch vụ trả tiền tạo ra được duyệt ngay, trong ngân sách của dự án.": "Stills and clips made by paid services are approved at once, within the project's budget.",
+  "Tự duyệt hình AI?": "Approve AI pictures automatically?",
+  "Hình do dịch vụ trả tiền tạo ra sẽ được duyệt mà không hỏi bạn. Tiền chỉ được tiêu trong ngân sách của từng dự án.": "Pictures made by paid services will be approved without asking you. Money is only spent within each project's budget.",
+  "Bật": "On",
+  "Tự duyệt": "Automatic approval",
+  "Bạn tự bật hoặc tắt từng cổng, lúc nào cũng được, ở mọi mức. Mỗi lần tự duyệt đều được ghi lại, và không tính vào lịch sử duyệt của bạn.": "Turn each gate on or off yourself, at any time and at any level. Every automatic approval is logged, and none counts toward your own review record.",
 };
 
 export default en;

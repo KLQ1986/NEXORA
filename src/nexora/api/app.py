@@ -125,6 +125,11 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         except (TypeError, ValueError):
             raise HTTPException(422, "Mức tự chủ là một số từ 0 đến 4")
 
+    @app.post("/api/v1/autonomy/switches")
+    def set_autonomy_switches(body: dict):
+        """Approving switched on or off for some gates (clips, renders, pictures), by the operator, at any level."""
+        return system.autonomy.set_switches({k: v for k, v in body.items() if isinstance(v, bool)})
+
     STOCK_SOURCES = {"archive_org": "Internet Archive", "nasa": "NASA", "wikimedia": "Wikimedia Commons"}       # libraries that need no key
 
     @app.get("/api/v1/generators")

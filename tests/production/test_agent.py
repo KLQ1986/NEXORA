@@ -126,3 +126,25 @@ def test_the_clips_the_producer_chose_wait_on_the_storyboard_and_its_approval_le
     assert system.projects.current_script(project)["match_approved"]
     settle(system)
     assert system.producer.task(task_id)["step"] == "cutting"
+
+
+def test_clips_approved_by_the_operators_switch_are_approved_as_the_storyboard_approves_them(tmp_path):
+    from fastapi.testclient import TestClient
+    from nexora.api.app import create_app
+    model = FakeModel(); model.script = ["chợ rau củ", "cá tươi trên sạp"]
+    system = build(tmp_path / "data", model=model, voice=FakeVoice(), segment_seconds=2.0)
+    client = TestClient(create_app(system))
+    system.library.ingest(make_video(tmp_path / "footage.mp4", picture=20))
+    while system.worker.run_once():
+        pass
+    system.orch.set_setting("autonomy_level", "0")
+    task_id = system.producer.start("một buổi sáng ở chợ", use_stock=False)
+    settle(system)
+    project = system.producer.task(task_id)["project_id"]
+    assert system.producer.task(task_id)["step"] == "review" and system.storyboard.shots(project)
+    client.post("/api/v1/autonomy/switches", json={"clips": True})
+    assert system.autonomy.tick() == [f"clips:{project}"]
+    assert system.projects.current_script(project)["match_approved"]
+    assert all(s.state != "needs" for s in system.storyboard.shots(project))               # the storyboard written back, as its approval does
+    settle(system)
+    assert system.producer.task(task_id)["step"] == "cutting"

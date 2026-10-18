@@ -491,8 +491,8 @@ class Sourcing:
         self._projects.set_selection(shot_id, status=sel.status, asset_id=sel.asset_id, moment_id=sel.moment_id, t_in=round(t_in, 2), t_out=round(t_out, 2),
                                      score=sel.score, reason=sel.reason, alternates=sel.alternates, decided_by="operator")
 
-    def approve(self, run_id: str) -> None:
-        """The operator accepts the selections as they stand."""
+    def approve(self, run_id: str, *, actor: str = "operator") -> None:
+        """The operator (or the policy they switched on) accepts the selections as they stand."""
         script_id = self._orch.run_info(run_id)["subject_ref"]
         for sel in self._projects.selections(script_id):
             if sel.moment_id and sel.status in ("proposed", "accepted"):
@@ -501,5 +501,5 @@ class Sourcing:
                 self._projects.set_selection(sel.shot_id, status="accepted", asset_id=sel.asset_id, moment_id=sel.moment_id, t_in=sel.t_in, t_out=sel.t_out,
                                              score=sel.score, reason=sel.reason, alternates=sel.alternates, decided_by=sel.decided_by)
         stage = self._orch.stages(run_id)[0]
-        self._orch.decide_review(stage.stage_id, approve=True)
+        self._orch.decide_review(stage.stage_id, approve=True, actor=actor)
         self._projects.set_match_approved(script_id, True)

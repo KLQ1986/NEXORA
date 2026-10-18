@@ -169,6 +169,12 @@ class Orchestrator:
     def runs(self) -> list[str]:
         return [r[0] for r in self._conn.execute("SELECT run_id FROM runs ORDER BY created_at DESC, run_id DESC")]
 
+    def waiting_review(self, pipeline_id: str) -> list[tuple[str, str]]:
+        """(run_id, stage_id) of every stage of a pipeline waiting at its gate, oldest first, for what decides on its own."""
+        rows = self._conn.execute("SELECT r.run_id, s.stage_id FROM runs r JOIN stages s USING(run_id) WHERE r.pipeline_id = ? AND s.status = 'waiting_review' "
+                                  "AND r.cancel_requested = 0 ORDER BY r.created_at", (pipeline_id,))
+        return [(r[0], r[1]) for r in rows]
+
     def runs_for_subject(self, subject_ref: str) -> list[str]:
         rows = self._conn.execute("SELECT run_id FROM runs WHERE subject_ref = ? ORDER BY created_at DESC, run_id DESC", (subject_ref,))
         return [r[0] for r in rows]

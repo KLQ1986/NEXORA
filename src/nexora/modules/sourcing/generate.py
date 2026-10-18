@@ -313,10 +313,10 @@ class Generation:
             ctx.heartbeat()
         return {"clips": made}
 
-    def approve(self, run_id: str) -> None:
+    def approve(self, run_id: str, *, actor: str = "operator") -> None:
         """Approve whichever gate of the run is waiting. Approving the clips makes the script ready to render."""
         stage = next(s for s in self._orch.stages(run_id) if s.status.value == "waiting_review")
-        self._orch.decide_review(stage.stage_id, approve=True)
+        self._orch.decide_review(stage.stage_id, approve=True, actor=actor)
         if stage.stage_key == "clips":
             script_id = self._orch.run_info(run_id)["subject_ref"]
             for sel in self._projects.selections(script_id):
