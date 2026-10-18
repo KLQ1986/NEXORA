@@ -148,3 +148,43 @@ def test_clips_approved_by_the_operators_switch_are_approved_as_the_storyboard_a
     assert all(s.state != "needs" for s in system.storyboard.shots(project))               # the storyboard written back, as its approval does
     settle(system)
     assert system.producer.task(task_id)["step"] == "cutting"
+
+
+def test_a_whole_clip_brought_in_for_a_shot_is_placed_with_its_match_unmeasured(tmp_path):
+    # Stock, or a clip the operator picks, has no match score: the shot takes it, and says its match was not measured.
+    model = FakeModel(); model.script = ["cá tươi trên sạp", "bàn phím máy tính"]
+    system = build(tmp_path / "data", model=model, voice=FakeVoice(), segment_seconds=2.0)
+    asset_id, _ = system.library.ingest(make_video(tmp_path / "footage.mp4", picture=20))
+    while system.worker.run_once():
+        pass
+    task_id = system.producer.start("một buổi sáng ở chợ", use_stock=False)
+    settle(system)
+    project = system.producer.task(task_id)["project_id"]
+    shot = next(s for s in system.storyboard.shots(project) if s.assignment is None)
+    assert any(c["check"] == "match" for c in shot.spec["criteria"])
+    system.director.use_asset(shot.shot_id, asset_id, reason="Clip stock")
+    placed = system.storyboard.shot(shot.shot_id)
+    assert placed.assignment["asset_id"] == asset_id
+    assert next(c for c in placed.checks if c["check"] == "match")["st"] == "unmeasured"
+
+
+def test_the_operator_has_a_shot_looked_at_on_the_storyboard_and_nothing_is_changed(tmp_path):
+    from fastapi.testclient import TestClient
+    from nexora.api.app import create_app
+    model = FakeModel(); model.script = ["chợ rau củ", "cá tươi trên sạp"]
+    system = build(tmp_path / "data", model=model, voice=FakeVoice(), segment_seconds=2.0)
+    client = TestClient(create_app(system))
+    system.library.ingest(make_video(tmp_path / "footage.mp4", picture=20))
+    while system.worker.run_once():
+        pass
+    task_id = system.producer.start("một buổi sáng ở chợ", use_stock=False)
+    settle(system)
+    project = system.producer.task(task_id)["project_id"]
+    shot = next(s for s in system.storyboard.shots(project) if s.assignment)
+    before = model.calls["describe"]
+    view = client.post(f"/api/v1/projects/{project}/storyboard/shots/{shot.shot_id}/look").json()
+    assert view["looked"]["looked"] >= 1 and model.calls["describe"] > before
+    after = system.storyboard.shot(shot.shot_id)
+    checked = next(c for c in after.checks if c["check"] == "look")
+    assert checked["value"].endswith("/10") and checked["st"] in ("pass", "fail")
+    assert after.assignment["asset_id"] == shot.assignment["asset_id"] and after.state == shot.state       # a look chooses nothing

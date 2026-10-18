@@ -1,4 +1,5 @@
 """The worker: claims a stage, runs its handler, and reports the result to the orchestrator."""
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Callable
@@ -38,8 +39,9 @@ class StageContext:
 
 class Worker:
     def __init__(self, orch: Orchestrator, registry: PipelineRegistry, *, worker_id: str, lanes: frozenset[str] | None = None, log: Callable[[dict], None] | None = None,
-                 allowed: Callable[[], bool] | None = None):
+                 allowed: Callable[[], bool] | None = None, keep_alive: float = 30.0):
         self._orch, self._registry, self.worker_id, self._lanes, self._log = orch, registry, worker_id, lanes, log
+        self._keep_alive = keep_alive                # seconds between the worker's own renewals of a claim, while its handler runs
         self._allowed = allowed                      # asked before each claim; False means "not now" (for example outside the night window)
 
     def recover(self, *, now: float | None = None, is_alive: Callable = lambda attempt: False) -> None:
@@ -60,6 +62,19 @@ class Worker:
         ctx = StageContext(claim, {k: deps[k] for k in me.depends_on}, self._orch.run_info(claim.run_id)["subject_ref"], self._orch,
                            allowed=self._orch.time_allowed(claim.stage_id))
         began, result = time.time(), "succeeded"
+        # While the handler is in one long call (a model answering on a busy machine says nothing for minutes), the worker itself
+        # vouches that it is alive, but only within the stage's time: past it the claim runs out and the run shows as stalled.
+        done = threading.Event()
+        def vouch():
+            while not done.wait(self._keep_alive):
+                if ctx.allowed is not None and time.time() - ctx.began > ctx.allowed:
+                    return
+                try:
+                    self._orch.heartbeat(claim.attempt_id)
+                except Exception:                        # a missed renewal is only a renewal missed
+                    pass
+        if now is None:                                  # a test's fixed clock has no time passing to vouch for
+            threading.Thread(target=vouch, name=f"{self.worker_id}-vouch", daemon=True).start()
         try:
             outputs = handler(ctx)
         except AdapterError as err:
@@ -81,6 +96,7 @@ class Worker:
                 self._orch.notify("succeeded", claim.run_id)
                 if follow_up:
                     follow_up(claim.run_id, ctx.subject_ref)
+        done.set()
         if self._log:
             self._log({"at": round(began, 3), "seconds": round(time.time() - began, 3), "worker": self.worker_id, "run_id": claim.run_id,
                        "pipeline": self._orch.pipeline_of(claim.run_id), "stage": claim.stage_key, "attempt": claim.attempt_number, "result": result})

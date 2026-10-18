@@ -1065,6 +1065,13 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         """One of the shot's other options becomes a shot of its own, right after it."""
         return picture_call(project_id, shot_id, lambda: system.director.add_clip(shot_id, int(body.get("candidate", -1))))
 
+    @app.post("/api/v1/projects/{project_id}/storyboard/shots/{shot_id}/look")
+    def storyboard_look(project_id: str, shot_id: str):
+        """The model looks at the frames of the shot's picture and its first other candidates against its line."""
+        seen: dict = {}
+        view = picture_call(project_id, shot_id, lambda: seen.update(system.director.look(shot_id)))
+        return {**view, "looked": seen}
+
     @app.post("/api/v1/projects/{project_id}/storyboard/shots/{shot_id}/none-fits")
     def storyboard_none_fits(project_id: str, shot_id: str):
         return picture_call(project_id, shot_id, lambda: system.director.none_fits(shot_id))

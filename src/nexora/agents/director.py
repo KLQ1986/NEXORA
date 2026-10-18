@@ -23,6 +23,8 @@ from nexora.core.visual_quality import VisualQuality
 from nexora.modules.planning.storyboard import CHECKS, StoryboardPlanner
 
 CANDIDATES = 8
+LOOKED = 2                                       # other candidates looked at with the shot's picture: a look is most of a minute
+LOOK_PASS = 5                                    # the model's points (0-10) a picture needs to show its line
 OFFERED = 6                                      # candidates kept with a shot, shown as its "other options"
 SPEEDS = (0.5, 0.75, 1.0, 1.5, 2.0)
 TREATS = ("speed", "stabilise", "live_sound", "sfx", "lipsync", "upscale_ml")
@@ -30,12 +32,13 @@ TREATS = ("speed", "stabilise", "live_sound", "sfx", "lipsync", "upscale_ml")
 
 class Director:
     def __init__(self, store: Storyboard, planner: StoryboardPlanner, index: MomentIndex, vi: VideoIntelligence, vq: VisualQuality,
-                 assets: AssetStore, projects: ProjectStore, *, colour_gap=None, likeness=None, find=None, remember=None):
+                 assets: AssetStore, projects: ProjectStore, *, colour_gap=None, likeness=None, find=None, remember=None, look=None):
         self._store, self._planner, self._index, self._vi, self._vq = store, planner, index, vi, vq
         self._assets, self._projects, self._gap, self._likeness = assets, projects, colour_gap, likeness
         # The clip selection's own search (find: words, seconds, line -> candidates) and its memory of the operator's verdicts
         # (remember: line, moment, verdict, ...): the storyboard picks pictures the way the clip step did, and teaches it back.
         self._find, self._remember = find, remember
+        self._look = look                            # (line, asset_id, t_in, moment_id) -> (points, why) | None: the model looks at the frames
 
     # ---------------------------------------------------------------------------------------------------- the loop
     def run(self, project_id: str, *, only: str | None = None) -> dict:
@@ -152,6 +155,8 @@ class Director:
         if c["by"] == "human":
             return "wait", "—"
         if check == "match":
+            if a.get("score") is None:                       # a whole clip brought in (stock, the operator's pick): nobody scored it
+                return "unmeasured", "—"
             return ("pass" if a["score"] >= float(want or CHECKS["match"][3]) else "fail"), f"{a['score']:.2f}"
         if check == "duration":
             d, length = s.spec["duration"], a["t_out"] - a["t_in"]
@@ -301,6 +306,33 @@ class Director:
                 t[k] = bool(v)
         self._store.set_state(shot_id, s.state, assignment={**s.assignment, "treat": t}, checks=s.checks)
         return t
+
+    def look(self, shot_id: str) -> dict:
+        """The model looks at the frames of the shot's picture and of its first other candidates, against its line: the look the
+        producer's match leaves out to be quick, asked for where the operator wants it. The picture's verdict joins its checks;
+        each candidate's is kept beside it. Nothing is chosen or changed."""
+        if self._look is None:
+            raise ValueError("Máy này chưa có mô hình nhìn hình")
+        s = self._store.shot(shot_id)
+        line = s.spec.get("line") or s.spec.get("intent") or ""
+        a = dict(s.assignment or {})
+        pool = ([a] if a.get("asset_id") else []) + [dict(c) for c in a.get("candidates") or []][:LOOKED]
+        for c in pool:
+            seen = self._look(line, c["asset_id"], float(c.get("t_in") or 0.0), c.get("moment_id"))
+            c["looked"] = {"points": seen[0], "why": seen[1]} if seen else None
+        if not pool:
+            raise ValueError("Shot chưa có hình nào để xem")
+        checks = [c for c in s.checks if c.get("check") != "look"]
+        if a.get("asset_id"):
+            seen = pool[0]["looked"]
+            checks.append({"check": "look", "text": "Mô hình nhìn khung hình" + (f": {seen['why']}" if seen and seen["why"] else ""), "by": "auto", "required": False,
+                           "st": "unmeasured" if seen is None else "pass" if seen["points"] >= LOOK_PASS else "fail", "value": "—" if seen is None else f"{seen['points']}/10"})
+            a["looked"], rest = pool[0]["looked"], pool[1:]
+        else:
+            rest = pool
+        a["candidates"] = rest + [c for c in a.get("candidates") or []][len(rest):]
+        self._store.set_state(shot_id, s.state, assignment=a, checks=checks)
+        return {"looked": len(pool), "points": [c["looked"]["points"] if c["looked"] else None for c in pool]}
 
     def use_asset(self, shot_id: str, asset_id: str, *, reason: str) -> None:
         """A whole clip brought in for this shot (stock): its picture, from its start, as long as the shot."""

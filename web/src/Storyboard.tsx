@@ -757,7 +757,11 @@ function PictureTab({ shot: s, board, url, set, act, busy }: { shot: SbShot; boa
         </div>}
 
         <div className="grid gap-2 border-t border-line pt-2.5">
-          {(has || others.length > 0) && <button type="button" className="link justify-self-start text-[12.5px]" onClick={() => act("none", () => post(`${shotUrl}/none-fits`), tr("Đã ghi nhận: các clip này không hợp với shot."))}>{tr("Không clip nào hợp")}</button>}
+          {(has || others.length > 0) && <span className="flex flex-wrap gap-x-4 gap-y-1">
+            <button type="button" className="link text-[12.5px]" disabled={!!busy} title={tr("Mô hình nhìn khung hình của hình đang gán và hai phương án đầu, chấm xem có đúng câu không. Mất khoảng nửa phút mỗi hình; không đổi lựa chọn nào.")}
+                    onClick={() => act("look", () => post(`${shotUrl}/look`), tr("Đã chấm: xem điểm trong phần nghiệm thu."))}>{busy === "look" ? tr("Đang chấm…") : tr("Cho mô hình chấm hình")}</button>
+            <button type="button" className="link text-[12.5px]" onClick={() => act("none", () => post(`${shotUrl}/none-fits`), tr("Đã ghi nhận: các clip này không hợp với shot."))}>{tr("Không clip nào hợp")}</button>
+          </span>}
           <form className="flex gap-1.5" onSubmit={(e) => { e.preventDefault(); if (query.trim()) act("stock", async () => { const r = await post<{ stock: { found: boolean } }>(`${shotUrl}/stock`, { query }); if (!r.stock?.found) toast(tr("Không tìm được clip stock cho từ khoá này."), { tone: "tally" }); }); }}>
             <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={tr("Từ khoá tiếng Anh, ví dụ: fishing boat at sea")} aria-label={tr("Từ khoá tìm clip stock")}
                    className="h-8 min-w-0 flex-1 rounded-md border border-line bg-canvas px-2.5 text-[12.5px] outline-none focus:border-accent" />
@@ -858,6 +862,16 @@ function Inspector({ shot: s, board, url, tab, setTab, set, ops, act, busy }: {
                 <span className="text-[11px] text-faint">{c.by === "auto" ? tr("tự động") : tr("người duyệt")}</span>
                 <span className="mono w-[86px] truncate text-right text-[11px] text-mute">{r?.value ?? "—"}</span>
                 <button type="button" aria-label={tr("Bỏ tiêu chí")} onClick={() => ops([{ op: "remove_criterion", shot: s.shot_id, index: i }])} className="text-faint hover:text-tally"><Icon name="x" size={12} /></button>
+              </div>);
+          })}
+          {s.checks.filter((r) => !s.spec.criteria.some((c) => c.check + c.text === r.check + r.text)).map((r) => {
+            const [m, cls] = MARK[r.st ?? "wait"];                      // measured on request, beside the criteria (the model's look at the frames)
+            return (
+              <div key={r.check + r.text} className="flex items-center gap-2.5 rounded-lg border border-dashed border-line px-2.5 py-2">
+                <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full text-[11px] font-semibold text-canvas ${cls}`}>{m}</span>
+                <span className="min-w-0 flex-1 text-[13px]">{r.text}</span>
+                <span className="text-[11px] text-faint">{tr("mô hình")}</span>
+                <span className="mono w-[86px] truncate text-right text-[11px] text-mute">{r.value ?? "—"}</span>
               </div>);
           })}
           <form className="flex flex-wrap gap-1.5" onSubmit={(e) => { e.preventDefault(); ops([{ op: "add_criterion", shot: s.shot_id, criterion: { check: newCheck, text: newText.trim() || undefined } }]); setNewText(""); }}>

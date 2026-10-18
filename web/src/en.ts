@@ -2623,6 +2623,10 @@ const en: Record<string, string> = {
   "Bạn tự bật hoặc tắt từng cổng, lúc nào cũng được, ở mọi mức. Mỗi lần tự duyệt đều được ghi lại, và không tính vào lịch sử duyệt của bạn.": "Turn each gate on or off yourself, at any time and at any level. Every automatic approval is logged, and none counts toward your own review record.",
   "Làn của trợ lý": "Assistant lane",
   "Làn Claude Code": "Claude Code lane",
+  "Mô hình nhìn khung hình của hình đang gán và hai phương án đầu, chấm xem có đúng câu không. Mất khoảng nửa phút mỗi hình; không đổi lựa chọn nào.": "The model looks at the frames of the shot's picture and its first two options and marks whether they show the line. About half a minute a picture; nothing is changed.",
+  "Đã chấm: xem điểm trong phần nghiệm thu.": "Looked at: see the marks under the checks.",
+  "Đang chấm…": "Looking…",
+  "Cho mô hình chấm hình": "Have the model look",
 };
 
 export default en;

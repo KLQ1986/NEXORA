@@ -978,7 +978,8 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
                                likeness=lambda a, ref: face_likeness(system, a["asset_id"], mid(a), ref),
                                # the storyboard chooses pictures with the clip step's search and teaches it the operator's verdicts
                                find=lambda words, need, line, illustration=None: system.sourcing.find(words, need, line=line, illustration=illustration),
-                               remember=lambda line, moment_id, verdict, **kw: system.sourcing.remember(line, moment_id, verdict, **kw))
+                               remember=lambda line, moment_id, verdict, **kw: system.sourcing.remember(line, moment_id, verdict, **kw),
+                               look=(lambda line, asset_id, t_in, moment_id: system.sourcing.look(line, asset_id=asset_id, t_in=t_in, moment_id=moment_id)) if model is not None else None)
     system.viewer = Viewer(projects, adapters, data_dir / "media") if model is not None else None
     def measured_boundaries(asset_id: str):
         made = analysis.as_measured(asset_id) if assets.asset(asset_id) else None

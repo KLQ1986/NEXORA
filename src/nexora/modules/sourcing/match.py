@@ -225,6 +225,16 @@ class Sourcing:
             out.append(c)
         return out
 
+    def look(self, line: str, *, asset_id: str, t_in: float, moment_id: str | None = None) -> tuple[int, str] | None:
+        """The model's look at the frames of one picture against a line (0-10, and why), asked for by the operator on the
+        storyboard; None when the picture has no analysed frames yet (a stock clip still being understood)."""
+        moment = self._index.moment(moment_id) if moment_id else None
+        if moment is None:
+            moment = next((m for m in self._index.moments(asset_id, level="segment") if m.t_start <= t_in < m.t_end), None)
+        if moment is None or not (moment.data.get("frames") or moment.data.get("frame")):
+            return None
+        return self._look(line, type("Hit", (), {"moment": moment})())
+
     def remember(self, line: str, moment_id: str | None, verdict: str, *, asset_id: str | None = None, t_in: float | None = None, t_out: float | None = None) -> None:
         """The operator's verdict on a stretch of footage for these words ("accepted" or "rejected"), kept for every later search."""
         if moment_id:

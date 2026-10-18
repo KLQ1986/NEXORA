@@ -165,3 +165,23 @@ def test_a_run_may_be_done_in_a_lane_of_its_own(tmp_path):
     run = orch.submit_run(PIPE, lane="agent")
     assert not Worker(orch, worker._registry, worker_id="w2", lanes=frozenset({"interactive"})).run_once()
     assert Worker(orch, worker._registry, worker_id="w3", lanes=frozenset({"agent"})).run_once()
+
+
+def test_a_worker_keeps_the_claim_of_a_long_quiet_call_and_lets_it_go_past_the_stages_time(tmp_path):
+    import time
+    quiet = PipelineDefinition("t.quiet", "1", [StageDef("call", timeout_seconds=0.6)])
+    seen = {}
+    def call(ctx):                                         # one model call, saying nothing while it waits
+        start = orch._conn.execute("SELECT heartbeat_at FROM attempts WHERE attempt_id = ?", (ctx.claim.attempt_id,)).fetchone()[0]
+        time.sleep(0.35)
+        seen["kept"] = orch._conn.execute("SELECT heartbeat_at FROM attempts WHERE attempt_id = ?", (ctx.claim.attempt_id,)).fetchone()[0] > start
+        before = orch._conn.execute("SELECT heartbeat_at FROM attempts WHERE attempt_id = ?", (ctx.claim.attempt_id,)).fetchone()[0]
+        time.sleep(0.6)                                    # past the stage's time: nobody vouches for it any more
+        seen["let_go"] = orch._conn.execute("SELECT heartbeat_at FROM attempts WHERE attempt_id = ?", (ctx.claim.attempt_id,)).fetchone()[0] - before < 0.3
+        return {}
+    orch = Orchestrator(tmp_path / "n.db")
+    registry = PipelineRegistry(); registry.register(quiet, {"call": call})
+    worker = Worker(orch, registry, worker_id="w1", keep_alive=0.1)
+    orch.submit_run(quiet)
+    worker.run_once()
+    assert seen == {"kept": True, "let_go": True}
