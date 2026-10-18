@@ -132,8 +132,8 @@ class Planning:
         self.ideas = ideas
         self._finder = IdeaFinder(projects, assets, index, adapters)
 
-    def create_project(self, title: str, *, format: str = "landscape") -> str:
-        return self._projects.create_project(title, format=format)
+    def create_project(self, title: str, *, format: str = "landscape", production_id: str | None = None) -> str:
+        return self._projects.create_project(title, format=format, production_id=production_id)
 
     def save_script(self, project_id: str, lines: list) -> str:
         """The next version of a project's script. A line saved word for word as the writer drafted it brings the writer's

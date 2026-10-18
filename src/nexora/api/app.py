@@ -820,6 +820,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         return {**project, "script": {"script_id": script["script_id"], "version": script["version"], "match_approved": script["match_approved"], "critique": script["critique"],
                                       "label": script.get("label")} if script else None,
                 "idea": json.loads(project["idea"]) if project.get("idea") else None, "structure": structure,
+                "production": (lambda d: {"production_id": d["production_id"], "title": d["title"]} if d else None)(system.productions.get(project.get("production_id"))),
                 "shots": shots, "match": latest_run(script["script_id"], "sourcing.match") if script else None,
                 "render": latest_cut_run(project["project_id"], script["script_id"] if script else None), "renders": renders,
                 "generate": latest_run(script["script_id"], "sourcing.generate") if script else None, "generators": system.generation.available(),
@@ -868,7 +869,12 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         title = str(body.get("title", "")).strip()
         if not title:
             raise HTTPException(422, "Dự án cần có tên")
-        project_id = system.planning.create_project(title, format=body.get("format") if body.get("format") in ("landscape", "portrait", "square") else "landscape")
+        from nexora.app import new_video
+        if body.get("production_id") and system.productions.get(body["production_id"]) is None:
+            raise HTTPException(404, "Không có dự án này")
+        # A video, in the production named (taking what it shares), else in a new production of its own title.
+        project_id = new_video(system, title, production_id=body.get("production_id") or None,
+                               format=body.get("format") if body.get("format") in ("landscape", "portrait", "square") else "landscape")
         if body.get("lines"):
             system.planning.save_script(project_id, list(body["lines"]))
         return project_view(system.projects.project(project_id))
@@ -1769,9 +1775,71 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         system.orch.decide_review(stage["stage_id"], approve=bool(body.get("approve")))
         return project_view(need_project(project_id))
 
+    # ------------------------------------------------------------------ productions: what the interface calls a project
+    def production_view(d: dict) -> dict:
+        videos = [p for p in system.projects.projects() if p.get("production_id") == d["production_id"]]
+        return {**d, "bible": json.loads(d["bible"]) if d.get("bible") else None, "research": json.loads(d["research"]) if d.get("research") else None,
+                "videos": [p["project_id"] for p in videos], "spent": round(sum(system.generation.spent(p["project_id"]) for p in videos), 4)}
+
+    def need_production(production_id: str) -> dict:
+        d = system.productions.get(production_id)
+        if d is None:
+            raise HTTPException(404, "Không có dự án này")
+        return d
+
+    @app.get("/api/v1/productions")
+    def list_productions():
+        return {"productions": [production_view(d) for d in system.productions.productions()]}
+
+    @app.post("/api/v1/productions", status_code=201)
+    def create_production(body: dict):
+        title = str(body.get("title") or "").strip()
+        if not title:
+            raise HTTPException(422, "Dự án cần có tên")
+        return production_view(system.productions.get(system.productions.create(title)))
+
+    @app.get("/api/v1/productions/{production_id}")
+    def get_production(production_id: str):
+        d = production_view(need_production(production_id))
+        return {**d, "projects": [project_view(system.projects.project(v)) for v in d["videos"]]}
+
+    @app.patch("/api/v1/productions/{production_id}")
+    def change_production(production_id: str, body: dict):
+        """The production's name, notes, total budget and what its videos share; a shared value reaches the videos still on
+        the previous one."""
+        from nexora.app import update_production
+        need_production(production_id)
+        changes = {k: v for k, v in body.items() if k in ("title", "channel", "template", "voice", "music_path", "budget_cap", "notes")}
+        if "title" in changes and not str(changes["title"] or "").strip():
+            raise HTTPException(422, "Dự án cần có tên")
+        if changes.get("budget_cap") not in (None, ""):
+            if float(changes["budget_cap"]) < 0:
+                raise HTTPException(422, "Ngân sách không thể là số âm")
+            changes["budget_cap"] = float(changes["budget_cap"])
+        elif "budget_cap" in changes:
+            changes["budget_cap"] = None
+        if changes.get("template") and template_named(system, changes["template"]) is None:
+            raise HTTPException(422, "Không có mẫu này")
+        if changes.get("channel") and channel_named(system, changes["channel"]) is None:
+            raise HTTPException(422, "Không có kênh này")
+        if changes.get("music_path") and not Path(str(changes["music_path"])).expanduser().is_file():
+            raise HTTPException(404, "Không tìm thấy file nhạc ở đường dẫn này")
+        return production_view(update_production(system, production_id, changes))
+
+    @app.delete("/api/v1/productions/{production_id}")
+    def remove_production(production_id: str):
+        need_production(production_id)
+        try:
+            system.productions.remove(production_id)
+        except ValueError:
+            raise HTTPException(409, "Dự án còn video (kể cả trong Thùng rác). Chuyển hoặc xoá hết video trước.")
+        return {"ok": True}
+
     @app.patch("/api/v1/projects/{project_id}")
     def update_project(project_id: str, body: dict):
         need_project(project_id)
+        if "production_id" in body and system.productions.get(body["production_id"]) is None:
+            raise HTTPException(404, "Không có dự án này")
         if body.get("music_path") and not Path(str(body["music_path"])).expanduser().is_file():
             raise HTTPException(404, "Không tìm thấy file nhạc ở đường dẫn này")
         if body.get("narration_dir") and not Path(str(body["narration_dir"])).expanduser().is_dir():

@@ -53,14 +53,18 @@ class ProjectStore:
     def _conn(self):
         return self._db.get()
 
-    def create_project(self, title: str, *, format: str = "landscape") -> str:
-        project_id = new_id("prj")
+    def create_project(self, title: str, *, format: str = "landscape", production_id: str | None = None) -> str:
+        """A video. It belongs to the production named, else to a new production of its own title (design 2026-10-18)."""
+        project_id, now = new_id("prj"), time.time()
         with db.write(self._conn) as c:
-            c.execute("INSERT INTO projects (project_id, title, format, created_at) VALUES (?,?,?,?)", (project_id, title, format, time.time()))
+            if not production_id or not c.execute("SELECT 1 FROM productions WHERE production_id = ?", (production_id,)).fetchone():
+                production_id = new_id("prd")
+                c.execute("INSERT INTO productions (production_id, title, created_at) VALUES (?,?,?)", (production_id, title, now))
+            c.execute("INSERT INTO projects (project_id, title, format, created_at, production_id) VALUES (?,?,?,?,?)", (project_id, title, format, now, production_id))
         return project_id
 
     def update_project(self, project_id: str, **fields) -> None:
-        allowed = {k: v for k, v in fields.items() if k in ("title", "format", "music_path", "auto_accept", "style", "narration_dir", "budget_cap", "voice", "music_gain", "template", "profile", "research", "due_date", "bible", "options", "channel", "idea", "channel_version")}
+        allowed = {k: v for k, v in fields.items() if k in ("title", "format", "music_path", "auto_accept", "style", "narration_dir", "budget_cap", "voice", "music_gain", "template", "profile", "research", "due_date", "bible", "options", "channel", "idea", "channel_version", "production_id")}
         with db.write(self._conn) as c:
             for key, value in allowed.items():
                 c.execute(f"UPDATE projects SET {key} = ? WHERE project_id = ?", (value, project_id))
@@ -216,7 +220,7 @@ class ProjectStore:
     def clone(self, project_id: str, *, title: str, format: str) -> str:
         """The same video in another shape: a new project with this one's script, clips and settings, in another format."""
         source = self.project(project_id)
-        new = self.create_project(title, format=format)
+        new = self.create_project(title, format=format, production_id=source.get("production_id"))     # beside the video it was made from
         self.update_project(new, **{k: source.get(k) for k in ("music_path", "auto_accept", "style", "narration_dir", "voice", "music_gain", "profile", "research", "bible", "options") if source.get(k) is not None})
         script = self.current_script(project_id)
         if script:

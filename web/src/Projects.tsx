@@ -1,7 +1,7 @@
 import { t as tr, tv, locale } from "./i18n";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { call, post, projectNext, projectState, scriptText, stageName, timecode, usePoll, type Idea, type Source, type AgentTask, type Asset, type Settings, type Candidate, type Project, type RenderItem, type Shot, type BibleEntry, type GapPlan, type Op, type Rights, type Publishing, type Channel, type Variant, type Illustration, type Quote } from "./api";
+import { call, post, projectNext, projectState, scriptText, stageName, timecode, usePoll, type Idea, type Source, type AgentTask, type Asset, type Settings, type Candidate, type Project, type RenderItem, type Shot, type BibleEntry, type GapPlan, type Op, type Rights, type Publishing, type Channel, type Variant, type Illustration, type Quote, type Production, type Template } from "./api";
 import Board from "./Board";
 import { ask, Button, Empty, Filmstrip, goTo, Icon, Meter, Page, Section, Seg, SideFrame, SideGroup, SideLink, SkeletonCards, Spinner, StageRail, Steps, Tabs, Tag, TimeChip, toast, Readout } from "./parts";
 import Timeline from "./Timeline";
@@ -609,7 +609,7 @@ function IdeasPanel({ format, close, go, onTask }: { format: string; close: () =
             {it.status === "blocked" && <input aria-label={tr("Lý do vẫn làm")} value={why[it.idea_id] ?? ""} onChange={(e) => setWhy({ ...why, [it.idea_id]: e.target.value })} placeholder={tr("Lý do vẫn làm (bắt buộc với ý tưởng có rủi ro)")} className="mb-2 h-8 px-2.5 text-[12.5px]" />}
             <div className="mt-auto flex flex-wrap gap-2">
               <Button size="sm" kind="primary" disabled={it.status === "blocked" && !(why[it.idea_id] ?? "").trim()} onClick={() => accept(it)}><Icon name="check" size={14} />{tr("Nhận, mở Storyboard")}</Button>
-              <Button size="sm" kind="ai" disabled={it.status === "blocked"} onClick={async () => { const t = await post<AgentTask>("/api/v1/agent/tasks", { goal: `${it.title}. ${it.angle ?? ""}`, format }); onTask(); go(`/du-an/${t.project_id}`); }}><Icon name="sparkles" size={14} />{tr("Giao cho trợ lý")}</Button>
+              <Button size="sm" kind="ai" disabled={it.status === "blocked"} onClick={async () => { const m = await post<{ mission_id: string }>("/api/v1/missions", { text: `Làm một video ${format === "portrait" ? "dọc" : format === "square" ? "vuông" : "ngang"}: ${it.title}. ${it.angle ?? ""}` }); onTask(); go(`/phong-may?tab=missions&nv=${m.mission_id}`); }}><Icon name="sparkles" size={14} />{tr("Giao việc")}</Button>
               <Button size="sm" kind="quiet" onClick={() => drop(it)}>{tr("Bỏ")}</Button>
             </div>
           </li>
@@ -696,28 +696,33 @@ const bucket = (p: Project): Filter => { const st = projectState(p); return st.s
 
 /** The projects section's side menu, the same on every screen of it: the list's filters, then every project by where it
     stands, the open one unfolding its steps (and its storyboard) beneath it, so the menu never changes shape under the hand. */
-function ProjectSide({ current, place, lamps, onView, filter }: { current?: string; place?: Place; lamps?: Lamps; onView?: (v: View) => void; filter?: { value: Filter; set: (f: Filter) => void } }) {
+function ProjectSide({ current, place, lamps, onView, filter, production }: { current?: string; place?: Place; lamps?: Lamps; onView?: (v: View) => void;
+  filter?: { value: Filter; set: (f: Filter) => void }; production?: string }) {
   const { data } = usePoll<Project[]>("/api/v1/projects", 15000);
+  const { data: prods } = usePoll<{ productions: Production[] }>("/api/v1/productions", 15000);
   const all = data ?? [];
-  const tone = { mute: "bg-faint", cue: "bg-cue", proof: "bg-proof", tally: "bg-tally" };
   const counts = { all: all.length, active: 0, waiting: 0, done: 0 } as Record<Filter, number>;
   all.forEach((p) => { counts[bucket(p)] += 1; });
   const pick = (k: Filter) => { listFilter = k; if (filter) filter.set(k); else goTo("/du-an"); };
-  const row = (p: Project) => { const st = projectState(p); const open = p.project_id === current; return (
+  const here = production ?? all.find((p) => p.project_id === current)?.production_id ?? null;
+  const video = (p: Project) => { const st = projectState(p); const open = p.project_id === current; return (
     <SideLink key={p.project_id} small label={p.title} title={`${p.title}: ${st.label}`} on={open && !place} onClick={() => goTo(`/du-an/${p.project_id}`)}
-              lead={<Icon name={open ? "down" : "next"} size={13} className={open ? "text-ink" : "text-faint"} />}
-             >
+              lead={<span className={`h-1.5 w-1.5 shrink-0 rounded-full ${({ mute: "bg-faint", cue: "bg-cue", proof: "bg-proof", tally: "bg-tally" } as const)[st.tone]}`} />}>
       {open && <StepTree id={p.project_id} place={place ?? "script"} lamps={lamps ?? { step: st.step, reviewing: st.tone === "cue" && st.step < 3, renderReview: false, packaged: st.step === 5 }} onChange={onView} />}
     </SideLink>); };
-  const active = all.filter((p) => projectState(p).step < 5), done = all.filter((p) => projectState(p).step === 5);
-  const lit = filter?.value ?? (current ? null : listFilter);
+  const lit = filter?.value ?? (current || production ? null : listFilter);
   return (
     <>
-      <SideGroup label={tr("Dự án")}>
+      <SideGroup label={tr("Video")}>
         {FILTERS.map(([k, name]) => <SideLink key={k} small label={name} icon={({ all: "layers", active: "pulse", waiting: "bell", done: "check" } as const)[k]} on={lit === k} onClick={() => pick(k)} count={counts[k]} tone={k === "waiting" ? "cue" : undefined} />)}
       </SideGroup>
-      {active.length > 0 && <SideGroup label={tr("Đang làm")} end={<span className="mono">{active.length}</span>}>{active.map(row)}</SideGroup>}
-      {done.length > 0 && <SideGroup label={tr("Đã xong")} end={<span className="mono">{done.length}</span>}>{done.map(row)}</SideGroup>}
+      <SideGroup label={tr("Dự án")} end={<span className="mono">{prods?.productions.length ?? ""}</span>}>
+        {(prods?.productions ?? []).map((d) => { const open = d.production_id === here; const vids = all.filter((p) => p.production_id === d.production_id); return (
+          <SideLink key={d.production_id} small label={d.title} on={open && production === d.production_id && !current} onClick={() => goTo(`/du-an/${d.production_id}`)} count={vids.length}
+                    lead={<Icon name={open ? "down" : "next"} size={13} className={open ? "text-ink" : "text-faint"} />}>
+            {open && (vids.length ? vids.map(video) : <p className="px-2.5 py-1 text-[12px] text-faint">{tr("Chưa có video")}</p>)}
+          </SideLink>); })}
+      </SideGroup>
     </>
   );
 }
@@ -766,7 +771,7 @@ function Drawer({ title, close, children }: { title: string; close: () => void; 
     </div>, document.body);
 }
 
-function Detail({ id, back }: { id: string; back: () => void }) {
+function Detail({ id, back }: { id: string; back: (to?: string) => void }) {
   const { data: p, reload } = usePoll<Project>(`/api/v1/projects/${id}`, 2500);
   const [text, setText] = useState<string | null>(null);
   const [topic, setTopic] = useState("");
@@ -816,7 +821,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
     const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); };       // the browser asks before the unsaved script is lost
     window.addEventListener("beforeunload", warn); return () => window.removeEventListener("beforeunload", warn);
   }, [unsaved]);
-  if (!p) return <Page title={tr("Đang mở dự án…")} back={{ label: tr("Dự án"), onClick: back }} side={<ProjectSide current={id} />}><div className="grid gap-4" aria-busy="true"><div className="panel h-16" /><div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]"><div className="panel h-72" /><div className="panel h-72" /></div></div></Page>;
+  if (!p) return <Page title={tr("Đang mở dự án…")} back={{ label: tr("Dự án"), onClick: () => back() }} side={<ProjectSide current={id} />}><div className="grid gap-4" aria-busy="true"><div className="panel h-16" /><div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]"><div className="panel h-72" /><div className="panel h-72" /></div></div></Page>;
   const run = async (fn: () => Promise<unknown>) => { setBusy(true); setNote(null); try { await fn(); } catch (e) { setNote((e as Error).message); } setBusy(false); reload(); };
   const saved = scriptText(p.shots);
   const dirty = text !== null && text.trim() !== saved.trim();
@@ -853,7 +858,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
   const previewing = !!p?.preview && ["queued", "running"].includes(p.preview.status);
   const facts = (p?.shots ?? []).filter((s) => s.is_fact);
   return (
-    <Page title={p.title} back={{ label: tr("Tất cả dự án"), onClick: back }} wide full={view === "cut"}
+    <Page title={p.title} back={{ label: p.production?.title ?? tr("Dự án"), onClick: () => back(p.production ? `/du-an/${p.production.production_id}` : undefined) }} wide full={view === "cut"}
           note={<Slate state={<Tag tone={st.tone}>{st.label}</Tag>} items={[
             [String(p.shots.length), tr("câu")],
             [String(new Set(p.shots.map((s) => s.scene).filter(Boolean)).size || "–"), tr("cảnh")],
@@ -1137,7 +1142,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
                 </div>
                 <div className="flex flex-wrap items-center gap-3 border-t border-line pt-2">
                   <p className="min-w-0 flex-1 text-[12.5px] text-mute">{tr("Chuyển vào thùng rác: dự án biến khỏi mọi danh sách nhưng khôi phục được trong 30 ngày. Footage trong thư viện không bị ảnh hưởng.")}</p>
-                  <Button size="sm" disabled={busy} onClick={async () => { if (await trashProject(p)) { setSettings(false); back(); } }}><Icon name="trash" size={14} />{tr("Chuyển vào thùng rác")}</Button>
+                  <Button size="sm" disabled={busy} onClick={async () => { if (await trashProject(p)) { setSettings(false); back(p.production ? `/du-an/${p.production.production_id}` : undefined); } }}><Icon name="trash" size={14} />{tr("Chuyển vào thùng rác")}</Button>
                 </div>
               </div>
             </div>
@@ -1243,84 +1248,15 @@ function Gaps({ id, shots, run }: { id: string; shots: Shot[]; run: (fn: () => P
 type Filter = "all" | "active" | "waiting" | "done";
 const FILTERS: [Filter, string][] = [["all", tr("Tất cả")], ["active", tr("Đang làm")], ["waiting", tr("Chờ bạn")], ["done", tr("Đã xong")]];
 
-export default function Projects({ sub, go }: { sub: string | null; go: (to: string) => void }) {
-  const { data, reload } = usePoll<Project[]>("/api/v1/projects", 5000);
-  const [title, setTitle] = useState("");
-  const [goal, setGoal] = useState("");
-  const [format, setFormat] = useState("landscape");
-  const [mode, setMode] = useState<"none" | "new" | "agent" | "ideas">(() => { const q = new URLSearchParams(window.location.search); return q.has("moi") ? "new" : q.has("y-tuong") ? "ideas" : "none"; });
-  const [filter, setFilterState] = useState<Filter>(() => listFilter);
-  const setFilter = (f: Filter) => { listFilter = f; setFilterState(f); };
-  const [view, setView] = useState<"grid" | "list">(() => { try { return (localStorage.getItem("nx.projects.view") as "grid" | "list") ?? "grid"; } catch { return "grid"; } });
-  const { data: agent, reload: reloadAgent } = usePoll<{ tasks: AgentTask[] }>("/api/v1/agent/tasks", 4000);
-  const [agentNote, setAgentNote] = useState<string | null>(null);
-  const [urls, setUrls] = useState("");
-  const [seek, setSeek] = useState(false);
-  useEffect(() => { if (!sub && new URLSearchParams(window.location.search).has("moi")) setMode("new"); }, [sub, window.location.search]);
-  if (sub) {
-    const [pid, part] = sub.split("/");
-    if (part === "storyboard") return <SideFrame side={<ProjectSide current={pid} place="storyboard" />}><Storyboard key={pid} projectId={pid} back={() => go(`/du-an/${pid}`)} /></SideFrame>;
-    return <Detail key={pid} id={pid} back={() => go("/du-an")} />;
-  }
+/** Videos as cards (or rows): each its frames, where it stands, what is next, a way to the Trash. */
+function VideoCards({ list, view, go, working, reload }: { list: Project[]; view: "grid" | "list"; go: (to: string) => void; working: Map<string, AgentTask>; reload: () => void }) {
   const remove = async (p: Project) => { await trashProject(p); reload(); };
-  const bin = (p: Project, cls: string) => <button type="button" onClick={() => remove(p)} aria-label={tv`Xoá dự án ${p.title}`} title={tr("Xoá dự án")}
+  const bin = (p: Project, cls: string) => <button type="button" onClick={() => remove(p)} aria-label={tv`Xoá video ${p.title}`} title={tr("Xoá video")}
     className={`grid h-8 w-8 place-items-center rounded-md border border-line bg-surface/80 text-mute backdrop-blur transition hover:border-tally/50 hover:text-tally ${cls}`}><Icon name="trash" size={15} /></button>;
-  const create = async () => { const p = await post<Project>("/api/v1/projects", { title: title.trim(), format }); setTitle(""); reload(); go(`/du-an/${p.project_id}`); };
-  const assign = async () => { setAgentNote(null); try { const t = await post<AgentTask>("/api/v1/agent/tasks", { goal: goal.trim(), format, find_sources: seek, urls: urls.split("\n").map((u) => u.trim()).filter(Boolean) }); setGoal(""); setUrls(""); reloadAgent(); reload(); go(`/du-an/${t.project_id}`); } catch (err) { setAgentNote((err as Error).message); } };
-  const working = new Map((agent?.tasks ?? []).filter((t) => t.status === "working" || t.status === "waiting_operator").map((t) => [t.project_id, t]));
-  const setLook = (v: "grid" | "list") => { setView(v); try { localStorage.setItem("nx.projects.view", v); } catch { /* fine */ } };
-  const formats = <Seg label={tr("Khung hình")} value={format} onChange={setFormat} items={Object.entries(FORMATS) as [string, string][]} />;
-  const all = data ?? [];
-  const shown = all.filter((p) => filter === "all" || bucket(p) === filter);
-  const toggle = (m: typeof mode) => { setMode(mode === m ? "none" : m); if (window.location.search) window.history.replaceState({}, "", "/du-an"); };
+  const shown = list;
   return (
-    <Page eyebrow={tr("Sản xuất")} title={tr("Dự án")} note={tr("Mỗi dự án là một video, từ kịch bản tới bản dựng đã duyệt.")}
-          side={<ProjectSide filter={{ value: filter, set: setFilter }} />}
-          actions={<><Button kind="quiet" onClick={() => toggle("ideas")}><Icon name="spark" />{tr("Gợi ý ý tưởng")}</Button><Button kind="ai" onClick={() => toggle("agent")}><Icon name="sparkles" />{tr("Giao cho trợ lý")}</Button><Button kind="primary" onClick={() => toggle("new")}><Icon name="plus" />{tr("Dự án mới")}</Button></>}>
-      {mode === "new" && (
-        <form className="panel glow rise mb-6 max-w-3xl p-5" onSubmit={(e) => { e.preventDefault(); if (title.trim()) create(); }}>
-          <div className="mb-3 flex items-center gap-2.5"><span className="grid h-8 w-8 place-items-center rounded-lg bg-accent/15 text-accent"><Icon name="clapper" size={16} /></span><p className="font-semibold">{tr("Video mới")}</p>
-            <button type="button" onClick={() => toggle("new")} className="ml-auto text-faint hover:text-ink" aria-label={tr("Đóng")}><Icon name="x" /></button></div>
-          <label htmlFor="title" className="field-label">{tr("Tên video")}</label>
-          <div className="flex flex-wrap gap-2">
-            <input id="title" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder={tr("Ví dụ: Một buổi sáng ở chợ Hội An")} className="h-10 min-w-0 flex-1 px-3" />
-            {formats}<Button kind="primary" disabled={!title.trim()} onClick={create}>{tr("Tạo dự án")}</Button>
-          </div>
-        </form>
-      )}
-      {mode === "agent" && (
-        <form className="ai-card rise mb-6 max-w-3xl p-5" onSubmit={(e) => { e.preventDefault(); if (goal.trim()) assign(); }}>
-          <div className="mb-1 flex items-center gap-2.5"><span className="grid h-8 w-8 place-items-center rounded-lg bg-ai/15 text-ai"><Icon name="sparkles" size={16} /></span><label htmlFor="goal" className="font-semibold">{tr("Video bạn muốn làm")}</label>
-            <button type="button" onClick={() => toggle("agent")} className="ml-auto text-faint hover:text-ink" aria-label={tr("Đóng")}><Icon name="x" /></button></div>
-          <p className="mb-3 ml-[42px] text-[13px] text-mute">{tr("Trợ lý tự viết kịch bản từ kho footage, tìm clip, lấp chỗ thiếu bằng clip stock miễn phí rồi dựng. Nó dừng lại chờ bạn duyệt clip và duyệt bản dựng.")}</p>
-          <div className="flex flex-wrap gap-2">
-            <input id="goal" autoFocus value={goal} onChange={(e) => setGoal(e.target.value)} placeholder={tr("Ví dụ: một phút về buổi sáng ở chợ Hội An")} className="h-10 min-w-0 flex-1 px-3" />
-            {formats}<Button kind="primary" disabled={!goal.trim()} onClick={assign}>{tr("Giao việc")}</Button>
-          </div>
-          <label className="mt-3 flex items-center gap-2 text-[13px]"><input type="checkbox" checked={seek} onChange={(e) => setSeek(e.target.checked)} />{tr("Để trợ lý tự tìm nguồn trên Wikipedia rồi đối chiếu dữ kiện")}</label>
-          <details className="mt-3 text-[13px]"><summary className="cursor-pointer list-none text-accent">{tr("Cho trợ lý đọc trước vài bài viết")}</summary>
-            <textarea value={urls} onChange={(e) => setUrls(e.target.value)} rows={3} aria-label={tr("Địa chỉ các bài viết, mỗi dòng một địa chỉ")} placeholder={tr("Mỗi dòng một địa chỉ, tối đa 5\nhttps://…")} className="mono mt-2 w-full p-2.5 text-[12.5px]" />
-            <p className="mt-1 text-[12px] text-faint">{tr("Trợ lý đọc các trang này, rồi đối chiếu những câu nêu dữ kiện trong kịch bản với chúng. Chỉ địa chỉ được gửi ra ngoài máy.")}</p></details>
-          {agentNote && <p className="mt-2 text-tally">{agentNote}</p>}
-        </form>
-      )}
-      {mode === "ideas" && <IdeasPanel format={format} close={() => toggle("ideas")} go={go} onTask={() => { reloadAgent(); reload(); }} />}
-      {data && data.length === 0 && <Empty icon="clapper" title={tr("Chưa có dự án nào")} action={<Button kind="primary" onClick={() => setMode("new")}><Icon name="plus" />{tr("Dự án mới")}</Button>}>{tr("Bấm Dự án mới để tự viết kịch bản, hoặc Giao cho trợ lý để nó viết và dựng bản đầu tiên từ kho footage của bạn.")}</Empty>}
-      {all.length > 0 && (
-        <div className="mb-4 flex flex-wrap items-end gap-3">
-          <div className="grid min-w-0 flex-1 grid-cols-2 gap-3 md:grid-cols-4 lg:hidden" role="radiogroup" aria-label={tr("Lọc dự án")}>
-            {FILTERS.map(([k, name]) => { const n = k === "all" ? all.length : all.filter((p) => bucket(p) === k).length; const look = ({ all: ["layers", "ink"], active: ["pulse", "accent"], waiting: ["bell", "cue"], done: ["check", "proof"] } as const)[k]; return (
-              <Readout key={k} label={name} value={n} icon={look[0]} tone={look[1]} on={filter === k} onClick={() => setFilter(k)} />); })}
-          </div>
-          <div className="seg" role="radiogroup" aria-label={tr("Cách xem")}>
-            <button type="button" role="radio" aria-checked={view === "grid"} onClick={() => setLook("grid")} aria-label={tr("Lưới")}><Icon name="grid" size={15} /></button>
-            <button type="button" role="radio" aria-checked={view === "list"} onClick={() => setLook("list")} aria-label={tr("Danh sách")}><Icon name="list" size={15} /></button>
-          </div>
-        </div>
-      )}
-      {shown.length === 0 && all.length > 0 && <p className="panel px-5 py-6 text-mute">{tr("Không có dự án nào ở mục này.")}</p>}
-      {!data && <SkeletonCards count={6} className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4" />}
-      {data && view === "grid" ? (
+    <>
+      {view === "grid" ? (
         <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           {shown.map((p) => {
             const st = projectState(p); const task = working.get(p.project_id); const latest = p.renders[0]; const nx = projectNext(p);
@@ -1363,6 +1299,167 @@ export default function Projects({ sub, go }: { sub: string | null; go: (to: str
                 </a>{bin(p, "absolute right-3 top-3 sm:top-1/2 sm:-translate-y-1/2")}
               </li>
             );
+          })}
+        </ul>
+      )}
+    </>
+  );
+}
+
+/** A production: its videos, what they share, a way to add a video or hand work to the machine; removed once empty. */
+function ProductionPage({ id, go }: { id: string; go: (to: string) => void }) {
+  const { data, reload } = usePoll<Production & { projects: Project[] }>(`/api/v1/productions/${id}`, 5000);
+  const { data: chan } = usePoll<{ channels: Channel[] }>("/api/v1/channels", 60000);
+  const { data: settings } = usePoll<{ templates: Template[]; voices: string[] }>("/api/v1/settings", 60000);
+  const { data: agent } = usePoll<{ tasks: AgentTask[] }>("/api/v1/agent/tasks", 6000);
+  const [mode, setMode] = useState<"none" | "new" | "mission" | "shared">("none"), [title, setTitle] = useState(""), [format, setFormat] = useState("landscape");
+  const [ask_, setAsk] = useState(""), [busy, setBusy] = useState(false), [note, setNote] = useState<string | null>(null);
+  const [view, setView] = useState<"grid" | "list">(() => { try { return (localStorage.getItem("nx.projects.view") as "grid" | "list") ?? "grid"; } catch { return "grid"; } });
+  if (!data) return <Page title={tr("Đang mở dự án…")} side={<ProjectSide production={id} />}><SkeletonCards count={3} className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3" /></Page>;
+  const working = new Map((agent?.tasks ?? []).filter((t) => t.status === "working" || t.status === "waiting_operator").map((t) => [t.project_id, t]));
+  const act = async (fn: () => Promise<unknown>) => { setBusy(true); setNote(null); try { await fn(); } catch (e) { setNote((e as Error).message); } setBusy(false); reload(); };
+  const change = (body: Partial<Production>) => act(() => post(`/api/v1/productions/${id}`, body, "PATCH"));
+  const addVideo = () => act(async () => { const p = await post<Project>("/api/v1/projects", { title: title.trim(), format, production_id: id }); setTitle(""); setMode("none"); go(`/du-an/${p.project_id}`); });
+  const mission = () => act(async () => { const m = await post<{ mission_id: string }>("/api/v1/missions", { text: ask_.trim(), production_id: id }); setAsk(""); go(`/phong-may?tab=missions&nv=${m.mission_id}`); });
+  const states = data.projects.map(bucket);
+  const toggle = (m: typeof mode) => setMode(mode === m ? "none" : m);
+  return (
+    <Page title={data.title} back={{ label: tr("Dự án"), onClick: () => go("/du-an") }} side={<ProjectSide production={id} />}
+          note={<Slate state={<Tag tone="accent">{tv`${data.projects.length} video`}</Tag>} items={[[String(states.filter((x) => x === "active").length), tr("đang làm")], [String(states.filter((x) => x === "waiting").length), tr("chờ bạn")], [String(states.filter((x) => x === "done").length), tr("đã xong")]]}
+                      extra={<>{data.channel && <span className="mr-3">{data.channel}</span>}{data.template && <span>{data.template}</span>}</>} />}
+          actions={<><Button kind="quiet" onClick={() => toggle("shared")}><Icon name="sliders" />{tr("Dùng chung")}</Button><Button kind="ai" onClick={() => toggle("mission")}><Icon name="sparkles" />{tr("Giao việc")}</Button>
+                     <Button kind="primary" onClick={() => toggle("new")}><Icon name="plus" />{tr("Thêm video")}</Button></>}>
+      {note && <p className="mb-4 rounded-xl border border-tally/40 bg-tally/10 px-4 py-3 text-tally">{note}</p>}
+      {mode === "new" && (
+        <form className="panel glow rise mb-6 max-w-3xl p-5" onSubmit={(e) => { e.preventDefault(); if (title.trim()) addVideo(); }}>
+          <p className="mb-3 font-semibold">{tv`Video mới trong “${data.title}”`}</p>
+          <div className="flex flex-wrap gap-2"><input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder={tr("Tên video")} aria-label={tr("Tên video")} className="h-10 min-w-0 flex-1 px-3" />
+            <Seg label={tr("Khung hình")} value={format} onChange={setFormat} items={Object.entries(FORMATS) as [string, string][]} />
+            <Button kind="primary" busy={busy} disabled={!title.trim()} type="submit">{tr("Tạo video")}</Button></div>
+          <p className="mt-2 text-[12.5px] text-faint">{tr("Video mới nhận kênh, mẫu, giọng đọc, nhạc, nhân vật và nguồn tham khảo của dự án; đổi riêng cho video sau cũng được.")}</p>
+        </form>)}
+      {mode === "mission" && (
+        <form className="ai-card rise mb-6 max-w-3xl p-5" onSubmit={(e) => { e.preventDefault(); if (ask_.trim()) mission(); }}>
+          <p className="mb-1 font-semibold">{tr("Giao việc cho dự án này")}</p>
+          <p className="mb-3 text-[13px] text-mute">{tr("Nói việc cần làm bằng lời, ví dụ “làm 3 video dọc về buổi sáng ở chợ”. Máy lập kế hoạch, kiểm tra năng lực và ngân sách; bạn xem và xác nhận ở Mission Control. Video làm ra nằm trong dự án này.")}</p>
+          <div className="flex flex-wrap gap-2"><textarea autoFocus rows={2} value={ask_} onChange={(e) => setAsk(e.target.value)} aria-label={tr("Việc cần làm")} className="min-w-0 flex-1 p-2.5" />
+            <Button kind="ai" busy={busy} disabled={!ask_.trim()} type="submit"><Icon name="sparkles" size={14} />{tr("Lập kế hoạch")}</Button></div>
+        </form>)}
+      {mode === "shared" && (
+        <div className="panel rise mb-6 grid max-w-3xl gap-3 p-5 text-[13px]">
+          <p className="font-semibold">{tr("Dùng chung cho các video")}</p>
+          <p className="-mt-2 text-[12.5px] text-faint">{tr("Đổi ở đây thì video nào còn theo giá trị của dự án sẽ đổi theo; video đã đặt riêng giữ nguyên.")}</p>
+          <label className="grid gap-1"><span className="field-label">{tr("Tên dự án")}</span><input defaultValue={data.title} onBlur={(e) => e.target.value.trim() && e.target.value !== data.title && change({ title: e.target.value })} className="h-9 px-3" /></label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="grid gap-1"><span className="field-label">{tr("Kênh")}</span><select value={data.channel ?? ""} onChange={(e) => change({ channel: e.target.value || null })} className="h-9 pl-2.5">
+              <option value="">{tr("Không chọn")}</option>{(chan?.channels ?? []).map((c) => <option key={c.name}>{c.name}</option>)}</select></label>
+            <label className="grid gap-1"><span className="field-label">{tr("Mẫu video")}</span><select value={data.template ?? ""} onChange={(e) => change({ template: e.target.value || null })} className="h-9 pl-2.5">
+              <option value="">{tr("Không chọn")}</option>{(settings?.templates ?? []).map((t) => <option key={t.name}>{t.name}</option>)}</select></label>
+            <label className="grid gap-1"><span className="field-label">{tr("Giọng đọc")}</span><select value={data.voice ?? ""} onChange={(e) => change({ voice: e.target.value || null })} className="h-9 pl-2.5">
+              <option value="">{tr("Theo mẫu")}</option>{(settings?.voices ?? []).map((v) => <option key={v}>{v}</option>)}</select></label>
+            <label className="grid gap-1"><span className="field-label">{tr("Ngân sách tổng (USD)")}</span><input type="number" min={0} step={0.5} defaultValue={data.budget_cap ?? ""} placeholder={tr("không giới hạn")}
+              onBlur={(e) => change({ budget_cap: e.target.value === "" ? null : Number(e.target.value) })} className="mono h-9 px-3" />
+              <span className="text-[12px] text-faint">{tv`Đã tiêu ${data.spent.toFixed(2)} USD cho các video của dự án`}</span></label>
+          </div>
+          <label className="grid gap-1"><span className="field-label">{tr("Nhạc nền (đường dẫn file)")}</span><input defaultValue={data.music_path ?? ""} onBlur={(e) => e.target.value !== (data.music_path ?? "") && change({ music_path: e.target.value || null })} className="mono h-9 px-3 text-[12.5px]" /></label>
+          <label className="grid gap-1"><span className="field-label">{tr("Ghi chú")}</span><textarea defaultValue={data.notes ?? ""} rows={2} onBlur={(e) => e.target.value !== (data.notes ?? "") && change({ notes: e.target.value })} className="p-2.5" /></label>
+        </div>)}
+      {data.projects.length === 0 ? <Empty icon="clapper" title={tr("Dự án chưa có video nào")} action={<div className="flex gap-2"><Button kind="primary" onClick={() => setMode("new")}><Icon name="plus" />{tr("Thêm video")}</Button>
+          <Button kind="quiet" onClick={() => act(async () => { await post(`/api/v1/productions/${id}`, undefined, "DELETE"); go("/du-an"); })}><Icon name="trash" size={14} />{tr("Xoá dự án trống")}</Button></div>}>
+          {tr("Thêm một video, hoặc giao việc để máy làm nhiều video cùng lúc.")}</Empty> : (<>
+        <div className="mb-4 flex justify-end"><div className="seg" role="radiogroup" aria-label={tr("Cách xem")}>
+          <button type="button" role="radio" aria-checked={view === "grid"} onClick={() => { setView("grid"); try { localStorage.setItem("nx.projects.view", "grid"); } catch { /* fine */ } }} aria-label={tr("Lưới")}><Icon name="grid" size={15} /></button>
+          <button type="button" role="radio" aria-checked={view === "list"} onClick={() => { setView("list"); try { localStorage.setItem("nx.projects.view", "list"); } catch { /* fine */ } }} aria-label={tr("Danh sách")}><Icon name="list" size={15} /></button></div></div>
+        <VideoCards list={data.projects} view={view} go={go} working={working} reload={reload} /></>)}
+    </Page>
+  );
+}
+
+export default function Projects({ sub, go }: { sub: string | null; go: (to: string) => void }) {
+  const { data, reload } = usePoll<Project[]>("/api/v1/projects", 5000);
+  const { data: prods, reload: reloadProds } = usePoll<{ productions: Production[] }>("/api/v1/productions", 8000);
+  const [title, setTitle] = useState("");
+  const [format, setFormat] = useState("landscape");
+  const [into, setInto] = useState("");
+  const [mode, setMode] = useState<"none" | "new" | "production" | "ideas">(() => { const q = new URLSearchParams(window.location.search); return q.has("moi") ? "new" : q.has("y-tuong") ? "ideas" : "none"; });
+  const [filter, setFilterState] = useState<Filter>(() => listFilter);
+  const setFilter = (f: Filter) => { listFilter = f; setFilterState(f); };
+  const [view, setView] = useState<"grid" | "list">(() => { try { return (localStorage.getItem("nx.projects.view") as "grid" | "list") ?? "grid"; } catch { return "grid"; } });
+  const { data: agent, reload: reloadAgent } = usePoll<{ tasks: AgentTask[] }>("/api/v1/agent/tasks", 4000);
+  useEffect(() => { if (!sub && new URLSearchParams(window.location.search).has("moi")) setMode("new"); }, [sub, window.location.search]);
+  if (sub) {
+    const [pid, part] = sub.split("/");
+    if (pid.startsWith("prd_")) return <ProductionPage key={pid} id={pid} go={go} />;
+    if (part === "storyboard") return <SideFrame side={<ProjectSide current={pid} place="storyboard" />}><Storyboard key={pid} projectId={pid} back={() => go(`/du-an/${pid}`)} /></SideFrame>;
+    return <Detail key={pid} id={pid} back={(to) => go(to ?? "/du-an")} />;
+  }
+  const create = async () => { const p = await post<Project>("/api/v1/projects", { title: title.trim(), format, production_id: into || null }); setTitle(""); reload(); go(`/du-an/${p.project_id}`); };
+  const makeProduction = async () => { const d = await post<Production>("/api/v1/productions", { title: title.trim() }); setTitle(""); reloadProds(); go(`/du-an/${d.production_id}`); };
+  const working = new Map((agent?.tasks ?? []).filter((t) => t.status === "working" || t.status === "waiting_operator").map((t) => [t.project_id, t]));
+  const setLook = (v: "grid" | "list") => { setView(v); try { localStorage.setItem("nx.projects.view", v); } catch { /* fine */ } };
+  const all = data ?? [];
+  const toggle = (m: typeof mode) => { setMode(mode === m ? "none" : m); if (window.location.search) window.history.replaceState({}, "", "/du-an"); };
+  // With a filter on, the videos in that state, across productions; otherwise the productions themselves.
+  const shown = all.filter((p) => bucket(p) === filter);
+  const byProduction = (prods?.productions ?? []).map((d) => ({ d, vids: all.filter((p) => p.production_id === d.production_id) }));
+  return (
+    <Page eyebrow={tr("Sản xuất")} title={tr("Dự án")} note={tr("Mỗi dự án gồm một hay nhiều video; mỗi video có kịch bản, storyboard, bản dựng riêng.")}
+          side={<ProjectSide filter={{ value: filter, set: setFilter }} />}
+          actions={<><Button kind="quiet" onClick={() => toggle("ideas")}><Icon name="spark" />{tr("Gợi ý ý tưởng")}</Button><Button kind="quiet" onClick={() => toggle("production")}><Icon name="folder" />{tr("Dự án mới")}</Button>
+                     <Button kind="primary" onClick={() => toggle("new")}><Icon name="plus" />{tr("Video mới")}</Button></>}>
+      {mode === "new" && (
+        <form className="panel glow rise mb-6 max-w-3xl p-5" onSubmit={(e) => { e.preventDefault(); if (title.trim()) create(); }}>
+          <div className="mb-3 flex items-center gap-2.5"><span className="grid h-8 w-8 place-items-center rounded-lg bg-accent/15 text-accent"><Icon name="clapper" size={16} /></span><p className="font-semibold">{tr("Video mới")}</p>
+            <button type="button" onClick={() => toggle("new")} className="ml-auto text-faint hover:text-ink" aria-label={tr("Đóng")}><Icon name="x" /></button></div>
+          <label htmlFor="title" className="field-label">{tr("Tên video")}</label>
+          <div className="flex flex-wrap gap-2">
+            <input id="title" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder={tr("Ví dụ: Một buổi sáng ở chợ Hội An")} className="h-10 min-w-0 flex-1 px-3" />
+            <select value={into} onChange={(e) => setInto(e.target.value)} aria-label={tr("Thuộc dự án")} className="h-10 max-w-[220px] pl-2.5">
+              <option value="">{tr("Dự án mới cùng tên")}</option>{(prods?.productions ?? []).map((d) => <option key={d.production_id} value={d.production_id}>{d.title}</option>)}</select>
+            <Seg label={tr("Khung hình")} value={format} onChange={setFormat} items={Object.entries(FORMATS) as [string, string][]} /><Button kind="primary" disabled={!title.trim()} onClick={create}>{tr("Tạo video")}</Button>
+          </div>
+        </form>
+      )}
+      {mode === "production" && (
+        <form className="panel glow rise mb-6 max-w-3xl p-5" onSubmit={(e) => { e.preventDefault(); if (title.trim()) makeProduction(); }}>
+          <p className="mb-1 font-semibold">{tr("Dự án mới")}</p>
+          <p className="mb-3 text-[13px] text-mute">{tr("Một dự án gom nhiều video cùng chủ đề hay cùng chiến dịch, và giữ những gì chúng dùng chung: kênh, mẫu, giọng đọc, nhạc, nhân vật, nguồn, ngân sách tổng.")}</p>
+          <div className="flex gap-2"><input autoFocus value={title} onChange={(e) => setTitle(e.target.value)} placeholder={tr("Ví dụ: Series biển miền Trung")} aria-label={tr("Tên dự án")} className="h-10 min-w-0 flex-1 px-3" />
+            <Button kind="primary" disabled={!title.trim()} type="submit">{tr("Tạo dự án")}</Button></div>
+        </form>
+      )}
+      {mode === "ideas" && <IdeasPanel format={format} close={() => toggle("ideas")} go={go} onTask={() => { reloadAgent(); reload(); }} />}
+      {data && prods && prods.productions.length === 0 && <Empty icon="clapper" title={tr("Chưa có dự án nào")} action={<Button kind="primary" onClick={() => setMode("new")}><Icon name="plus" />{tr("Video mới")}</Button>}>{tr("Tạo một video (nó có dự án riêng), hoặc tạo dự án rồi thêm nhiều video vào.")}</Empty>}
+      {all.length > 0 && filter !== "all" && (
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <p className="min-w-0 flex-1 text-[13px] text-mute">{tv`Video ${FILTERS.find(([k]) => k === filter)?.[1].toLowerCase()} ở mọi dự án`}</p>
+          <Button size="sm" kind="quiet" onClick={() => setFilter("all")}>{tr("Xem theo dự án")}</Button>
+          <div className="seg" role="radiogroup" aria-label={tr("Cách xem")}>
+            <button type="button" role="radio" aria-checked={view === "grid"} onClick={() => setLook("grid")} aria-label={tr("Lưới")}><Icon name="grid" size={15} /></button>
+            <button type="button" role="radio" aria-checked={view === "list"} onClick={() => setLook("list")} aria-label={tr("Danh sách")}><Icon name="list" size={15} /></button>
+          </div>
+        </div>
+      )}
+      {!data && <SkeletonCards count={6} className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4" />}
+      {data && filter !== "all" && (shown.length ? <VideoCards list={shown} view={view} go={go} working={working} reload={reload} /> : <p className="panel px-5 py-6 text-mute">{tr("Không có video nào ở mục này.")}</p>)}
+      {data && filter === "all" && (
+        <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+          {byProduction.map(({ d, vids }) => {
+            const states = vids.map(bucket), waiting = states.filter((x) => x === "waiting").length, active = states.filter((x) => x === "active").length, done = states.filter((x) => x === "done").length;
+            return (
+              <li key={d.production_id}><a href={`/du-an/${d.production_id}`} onClick={(e) => { e.preventDefault(); go(`/du-an/${d.production_id}`); }}
+                   className="panel group block overflow-hidden transition-[border-color,transform] duration-200 hover:-translate-y-0.5 hover:border-edge">
+                <div className="grid h-[150px] grid-cols-2 gap-0.5 bg-black">{vids.slice(0, 4).map((v, i) => <Filmstrip key={v.project_id} shots={v.shots} height={vids.length > 2 ? 74 : 150}
+                    className={vids.length === 1 || (vids.length === 3 && i === 2) ? "col-span-2" : ""} />)}
+                  {vids.length === 0 && <span className="col-span-2 grid place-items-center text-faint"><Icon name="folder" size={26} /></span>}</div>
+                <div className="px-4 pb-4 pt-2.5">
+                  <p className="display truncate text-[15.5px] leading-snug">{d.title}</p>
+                  <p className="mt-0.5 truncate text-[12.5px] text-mute">{tv`${vids.length} video`}{d.channel ? ` · ${d.channel}` : ""}{d.template ? ` · ${d.template}` : ""}</p>
+                  <p className="mt-2 flex flex-wrap gap-2 text-[12px]">
+                    {waiting > 0 && <Tag tone="cue">{tv`${waiting} chờ bạn`}</Tag>}{active > 0 && <Tag tone="accent">{tv`${active} đang làm`}</Tag>}{done > 0 && <Tag tone="proof">{tv`${done} đã xong`}</Tag>}
+                    {vids.length === 0 && <Tag tone="mute">{tr("trống")}</Tag>}</p>
+                </div>
+              </a></li>);
           })}
         </ul>
       )}

@@ -63,6 +63,7 @@ class System:
     generation: Generation
     workers: list = None            # one worker per lane, for a long-running server
     producer: Producer = None
+    productions: "ProductionStore" = None        # what the interface calls a project: several videos and what they share
     roughcut: RoughCut = None
     commands: Commands = None
     viewer: Viewer = None
@@ -568,6 +569,56 @@ def start_library_work(system: "System", kind: str) -> list[str]:
     return runs
 
 
+def production_budget_left(projects, productions, generation, project_id: str) -> float | None:
+    """What a production's total budget leaves for one of its videos: the total less what all its videos have spent; None when
+    the production sets no total."""
+    video = projects.project(project_id) or {}
+    production = productions.get(video.get("production_id"))
+    if not production or production.get("budget_cap") is None:
+        return None
+    spent = sum(generation.spent(p["project_id"]) for p in projects.projects(include_trashed=True) if p.get("production_id") == production["production_id"])
+    return max(0.0, float(production["budget_cap"]) - spent)
+
+
+def take_shared(system: "System", project_id: str, values: dict) -> None:
+    """Shared values set on a video: its channel (with the profile's version), its template (applied, as a template is), and
+    the rest as they are."""
+    if values.get("template"):
+        chosen = template_named(system, values["template"])
+        if chosen:
+            apply_template(system, project_id, {**chosen, "format": (system.projects.project(project_id) or {}).get("format") or chosen["format"]})
+    if "channel" in values:
+        channel = channel_named(system, values["channel"])
+        system.projects.update_project(project_id, channel=values["channel"] or None, channel_version=(channel or {}).get("version"))
+    system.projects.update_project(project_id, **{k: values[k] for k in ("voice", "music_path", "bible", "research") if k in values})
+
+
+def new_video(system: "System", title: str, *, production_id: str | None = None, format: str = "landscape") -> str:
+    """A video in a production (a new one of its title when none is named), taking the production's shared values."""
+    project_id = system.projects.create_project(title, format=format, production_id=production_id)
+    production = system.productions.get((system.projects.project(project_id) or {}).get("production_id"))
+    if production:
+        take_shared(system, project_id, {k: production[k] for k in ("channel", "template", "voice", "music_path", "bible", "research") if production.get(k)})
+    return project_id
+
+
+def update_production(system: "System", production_id: str, changes: dict) -> dict:
+    """A production's record changed. A shared value reaches each of its videos still on the production's previous value (or on
+    none); a video given its own keeps it. Returns the production as it now is."""
+    from nexora.core.productions import FIELDS, SHARED
+    changes = {k: v for k, v in changes.items() if k in FIELDS}
+    before = system.productions.update(production_id, **changes)
+    reach = {k: v for k, v in changes.items() if k in SHARED and v != before.get(k)}
+    if reach:
+        for video in system.projects.projects(include_trashed=True):
+            if video.get("production_id") != production_id:
+                continue
+            values = {k: v for k, v in reach.items() if video.get(k) in (before.get(k), None, "")}
+            if values:
+                take_shared(system, video["project_id"], values)
+    return system.productions.get(production_id)
+
+
 def lay_out_storyboard(system: "System", project_id: str) -> int:
     """The clips chosen for a script laid out on the project's storyboard, where the operator looks at them and approves. A
     storyboard the project already has is never replaced. Returns how many shots were laid out."""
@@ -577,7 +628,11 @@ def lay_out_storyboard(system: "System", project_id: str) -> int:
 
 
 def prepare_mission_project(system: "System", project_id: str, plan: dict) -> None:
-    """A project a mission started: its template, channel and the share of the mission's budget it may spend."""
+    """A project a mission started: its production's shared values, then the template and channel the plan names, and the
+    share of the mission's budget it may spend."""
+    production = system.productions.get((system.projects.project(project_id) or {}).get("production_id")) if system.productions else None
+    if production:
+        take_shared(system, project_id, {k: production[k] for k in ("channel", "template", "voice", "music_path", "bible", "research") if production.get(k)})
     chosen = template_named(system, plan.get("template"))
     if chosen:
         apply_template(system, project_id, {**chosen, "format": plan.get("format") or chosen["format"]})
@@ -765,6 +820,9 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     library.vq = vq_reader
     library.vq_render = lambda asset_id, out: vq.render_approved(asset_id, out)
     projects = ProjectStore(db_path)
+    from nexora.core.productions import ProductionStore
+    productions = ProductionStore(db_path)
+    productions.adopt_loose()                     # videos made before productions existed: each a production of its own, once
     from nexora.core.ideas import IdeaStore
     from nexora.modules.planning.scripts import HOUSE_VOICE
     planning = Planning(projects, assets, index, adapters, ideas=IdeaStore(db_path), voice=lambda: orch.setting("writing_voice", "") or HOUSE_VOICE)
@@ -786,7 +844,8 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     for generator in generators or []:
         adapters.register(generator)
     generation = Generation(orch, projects, assets, adapters, data_dir / "media", judge=model is not None,
-                            prefer=lambda kind: json.loads(orch.setting(f"providers:{kind}", "[]")))
+                            prefer=lambda kind: json.loads(orch.setting(f"providers:{kind}", "[]")),
+                            also_left=lambda project_id: production_budget_left(projects, productions, generation, project_id))
     generation.register(registry)
     # The Edit step on FilmCraft: the storyboard built into a sequence in the browser, the cut kept in versions, rendered here.
     from nexora.adapters.filmcraft import FilmCraft
@@ -867,10 +926,12 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     def missing(pipeline_id: str) -> list[str] | None:
         found = next((c for c in capabilities(system) if c["pipeline"] == pipeline_id), None)
         return [f"quy trình {pipeline_id}"] if found is None else found["missing"]
+    system.productions = productions
     system.missions = Missions(MissionStore(db_path), orch=orch, producer=system.producer, projects=projects, adapters=adapters, available=missing,
                                channels=lambda: [c["name"] for c in json.loads(orch.setting("channels", "[]"))], templates=lambda: [t["name"] for t in templates(system)],
                                budget_left=lambda: budget_left(system), prepare=lambda project_id, plan: prepare_mission_project(system, project_id, plan),
-                               start_library=lambda kind: start_library_work(system, kind), autonomy=lambda: system.autonomy.level)
+                               start_library=lambda kind: start_library_work(system, kind), autonomy=lambda: system.autonomy.level,
+                               new_production=lambda title: productions.create(title))
     return system
 
 

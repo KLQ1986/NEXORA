@@ -86,10 +86,11 @@ def split_duration(seconds: float, limit: float) -> list[float]:
 
 class Generation:
     def __init__(self, orch: Orchestrator, projects: ProjectStore, assets: AssetStore, adapters: AdapterRegistry, media_dir: str | Path,
-                 *, max_clip_seconds: float = 8.0, judge: bool = False, prefer=None):
+                 *, max_clip_seconds: float = 8.0, judge: bool = False, prefer=None, also_left=None):
         self._orch, self._projects, self._assets, self._adapters = orch, projects, assets, adapters
         self._judge = judge                                   # a vision model is there to look at each still
         self._prefer = prefer or (lambda kind: [])            # the operator's order of providers for "image_gen" or "video_gen"
+        self._also_left = also_left or (lambda project_id: None)   # what a wider budget (the production's) leaves this video, if any
         self._media, self._limit = Path(media_dir) / "generated", max_clip_seconds
         self._media.mkdir(parents=True, exist_ok=True)
 
@@ -166,6 +167,9 @@ class Generation:
         cap = project.get("budget_cap")
         # A project's budget covers all of its paid work: this run may spend only what earlier runs have left.
         left = None if cap is None else max(0.0, cap - self.spent(project["project_id"]))
+        wider = self._also_left(project["project_id"])            # the production's total, shared by its videos
+        if wider is not None:
+            left = wider if left is None else min(left, wider)
         self._orch.supersede(GENERATE.pipeline_id, script_id)
         return self._orch.submit_run(GENERATE, subject_ref=script_id, budget_cap=left)
 

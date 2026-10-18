@@ -133,6 +133,8 @@ CREATE TABLE IF NOT EXISTS moment_vectors (
     moment_id TEXT PRIMARY KEY,
     vector    BLOB NOT NULL
 );
+CREATE TABLE IF NOT EXISTS productions (production_id TEXT PRIMARY KEY, title TEXT NOT NULL, channel TEXT, template TEXT, voice TEXT,
+    music_path TEXT, bible TEXT, research TEXT, budget_cap REAL, notes TEXT, created_at REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS projects (
     project_id TEXT PRIMARY KEY,
     title      TEXT NOT NULL,
@@ -279,6 +281,7 @@ MIGRATIONS = [
     ("shots", "gen", "TEXT"),
     ("shots", "illustration", "TEXT"),
     ("shots", "quote", "TEXT"),
+    ("projects", "production_id", "TEXT"),
     ("projects", "options", "TEXT"),
     ("projects", "channel", "TEXT"),
     ("projects", "bible", "TEXT"),

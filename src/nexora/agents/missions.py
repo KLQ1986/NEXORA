@@ -64,11 +64,13 @@ def _texts(value) -> list[str]:
 class Missions:
     def __init__(self, store: MissionStore, *, orch, producer, projects, adapters, available: Callable[[str], list[str] | None],
                  channels: Callable[[], list[str]], templates: Callable[[], list[str]], budget_left: Callable[[], float | None],
-                 prepare: Callable[[str, dict], None], start_library: Callable[[str], list[str]], autonomy: Callable[[], int]):
+                 prepare: Callable[[str, dict], None], start_library: Callable[[str], list[str]], autonomy: Callable[[], int],
+                 new_production: Callable[[str], str] | None = None):
         self.store = store
         self._orch, self._producer, self._projects, self._adapters = orch, producer, projects, adapters
         self._available, self._channels, self._templates, self._budget_left = available, channels, templates, budget_left
         self._prepare, self._start_library, self._autonomy = prepare, start_library, autonomy
+        self._new_production = new_production or (lambda title: None)
 
     # ------------------------------------------------------------------------------------------------------ the plan
     def _ask(self, text: str) -> dict:
@@ -93,7 +95,8 @@ class Missions:
                 "format": fmt if fmt in FORMATS else "landscape", "lines": _int(raw.get("lines"), 5, 2, 12),
                 "channel": str(raw.get("channel") or "").strip() or None, "template": str(raw.get("template") or "").strip() or None,
                 "budget": budget, "paid": _flag(raw.get("paid"), False), "stock": _flag(raw.get("stock"), True), "critique": _flag(raw.get("critique"), True),
-                "constraints": _texts(raw.get("constraints")), "acceptance": _texts(raw.get("acceptance")), "autonomy": self._autonomy()}
+                "constraints": _texts(raw.get("constraints")), "acceptance": _texts(raw.get("acceptance")), "autonomy": self._autonomy(),
+                "production_id": str(raw.get("production_id") or "").strip() or None}
 
     def check(self, plan: dict) -> list[str]:
         """What stops the plan from running, said plainly; an empty list when it can be confirmed."""
@@ -118,13 +121,14 @@ class Missions:
             problems.append(f"Ngân sách {plan['budget']:.2f} USD vượt phần còn lại của hạn mức hôm nay và tháng này ({left:.2f} USD).")
         return problems
 
-    def plan(self, text: str) -> dict:
-        """A mission from the operator's words: planned when nothing stops it, else a draft that says what does."""
+    def plan(self, text: str, *, production_id: str | None = None) -> dict:
+        """A mission from the operator's words: planned when nothing stops it, else a draft that says what does. Given from a
+        production, its videos go into it."""
         text = text.strip()
         try:
-            plan = self._ask(text)
+            plan = {**self._ask(text), "production_id": production_id}
         except (AdapterError, KeyError, AttributeError, TypeError) as err:
-            plan = self.normalise({"goal": text})
+            plan = self.normalise({"goal": text, "production_id": production_id})
             mission_id = self.store.create(text, plan, [f"Mô hình chưa lập được kế hoạch ({getattr(err, 'message', None) or err}). Hãy chọn loại việc và sửa kế hoạch."])
             return self.view(mission_id)
         return self.view(self.store.create(text, plan, self.check(plan)))
@@ -151,11 +155,14 @@ class Missions:
         self.store.set_state(mission_id, "confirmed")
         if plan["kind"] == "video":
             cap = round(plan["budget"] / plan["count"], 2) if plan["paid"] and plan["budget"] else 0.0       # no paid service without the permission
+            # One production holds the mission's videos: the one it was given from, else a new one of its title.
+            production = plan.get("production_id") or self._new_production(plan["title"] or short_title(plan["goal"]))
             for n in range(plan["count"]):
                 goal = plan["goal"] if plan["count"] == 1 else f"{plan['goal']} (video {n + 1} trên {plan['count']}; khác các video còn lại)"
                 title = plan["title"] or short_title(plan["goal"])
                 title = title if plan["count"] == 1 else f"{short_title(title, 52)} · {n + 1}"
-                task_id = self._producer.start(goal, title=title, format=plan["format"], lines=plan["lines"], use_stock=plan["stock"], critique=plan["critique"])
+                task_id = self._producer.start(goal, title=title, format=plan["format"], lines=plan["lines"], use_stock=plan["stock"], critique=plan["critique"],
+                                               production_id=production)
                 project_id = self._producer.task(task_id)["project_id"]
                 self._prepare(project_id, {**plan, "budget_cap": cap})
                 self.store.link(mission_id, tasks=[task_id], projects=[project_id])

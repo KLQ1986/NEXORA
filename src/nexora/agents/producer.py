@@ -58,8 +58,8 @@ class Producer:
 
     # ------------------------------------------------------------------ tasks
     def start(self, goal: str, *, title: str | None = None, format: str = "landscape", lines: int = 5, use_stock: bool = True,
-              urls: list[str] | None = None, critique: bool = True, find_sources: bool = False) -> str:
-        project_id = self._planning.create_project(short_title(title or goal), format=format)
+              urls: list[str] | None = None, critique: bool = True, find_sources: bool = False, production_id: str | None = None) -> str:
+        project_id = self._planning.create_project(short_title(title or goal), format=format, production_id=production_id)
         task_id, now = new_id("tsk"), time.time()
         with db.write(self._conn) as c:
             c.execute("INSERT INTO agent_tasks (task_id, project_id, goal, status, step, options, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
