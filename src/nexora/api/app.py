@@ -1219,6 +1219,11 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         if not lines:
             raise HTTPException(422, "Kịch bản cần ít nhất một câu")
         system.planning.save_script(project_id, lines)
+        offered = system.topics.latest(project_id)
+        if offered and offered["state"] == "offered" and offered["package"]:
+            from nexora.app import merge_sources
+            merge_sources(system, project_id, offered["package"]["sources"])          # a script from a topic brings its sources once, when saved
+            system.topics.mark(offered["run_id"], "applied")
         return project_view(system.projects.project(project_id))
 
     @app.post("/api/v1/projects/{project_id}/script/rewrite")
@@ -1266,6 +1271,49 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             raise HTTPException(503, f"Mô hình không trả lời được: {err.message or err.code.value}")
         system.projects.keep_draft(project_id, written)
         return {"lines": [l if isinstance(l, str) else l["text"] for l in written]}
+
+    @app.post("/api/v1/projects/{project_id}/draft-from-topic", status_code=202)
+    def draft_from_topic(project_id: str, body: dict):
+        """A script from a topic, written by Claude Code from what it reads on the web. It runs in the background and the editor
+        asks for it when it is done; nothing is saved until the operator saves the script."""
+        need_project(project_id)
+        topic = str(body.get("topic") or "").strip()
+        if not topic:
+            raise HTTPException(422, "Hãy nói chủ đề của video")
+        if "model.claude_code" not in {c.name for c in system.adapters.describe()}:
+            raise HTTPException(503, "Máy này chưa có Claude Code. Cài Claude Code và đăng nhập một lần bằng lệnh claude.")
+        try:
+            lines = max(3, min(30, int(body.get("lines") or 8)))
+        except (TypeError, ValueError):
+            lines = 8
+        return {"run_id": system.topics.start(project_id, topic, goal=str(body.get("goal") or ""), lines=lines)}
+
+    @app.get("/api/v1/projects/{project_id}/draft-from-topic")
+    def topic_draft(project_id: str):
+        """The latest script from a topic asked for this video: still being written, failed (with why), or offered to the
+        editor with its sources, what it could not verify and its warnings."""
+        from nexora.modules.planning.topic import script_lines
+        need_project(project_id)
+        got = system.topics.latest(project_id)
+        if got is None:
+            return {"state": None}
+        status = system.orch.run_status(got["run_id"]).value
+        reason = None
+        if status in ("failed", "blocked"):
+            stage = system.orch.stages(got["run_id"])[0]
+            attempts = system.orch.attempt_rows(stage.stage_id)
+            reason = stage.blocked_reason or (attempts[-1]["error_message"] if attempts else None)
+        if got["state"] == "written":
+            system.topics.mark(got["run_id"], "offered")
+            got["state"] = "offered"
+        if got["state"] != "offered" or not got["package"]:
+            return {"state": got["state"], "status": status, "reason": reason, "topic": got["topic"], "created_at": got["created_at"]}
+        lines = script_lines(got["package"])
+        system.projects.keep_draft(project_id, [l for l in lines if isinstance(l, dict)])
+        package = got["package"]
+        return {"state": "offered", "status": status, "topic": got["topic"], "created_at": got["created_at"], "title": package["title"], "angle": package["angle"],
+                "lines": [l if isinstance(l, str) else l["text"] for l in lines], "sources": package["sources"], "unverified": package["unverified"],
+                "warnings": package["warnings"], "api_equivalent": package.get("api_equivalent", 0.0)}
 
     @app.post("/api/v1/projects/{project_id}/draft")
     def draft_script(project_id: str, body: dict):

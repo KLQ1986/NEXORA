@@ -2578,6 +2578,20 @@ const en: Record<string, string> = {
   "Xem trong Mission Control": "See in Mission Control",
   "{0} đang mở · {1} tất cả": "{0} open · {1} in all",
   "{0} nhiệm vụ": "{0} missions",
+  "Kịch bản từ chủ đề": "Script from a topic",
+  "Claude Code tự tìm nguồn trên web, kiểm dữ kiện và viết lời dẫn theo giọng văn và mẫu của video": "Claude Code looks for sources on the web, checks the facts and writes the narration in the video's voice and template",
+  "Chủ đề, ví dụ: khủng hoảng rừng bạch đàn ở Israel": "Topic, for example: Israel's eucalyptus forest crisis",
+  "Chủ đề": "Topic",
+  "Mục tiêu (không bắt buộc)": "Goal (optional)",
+  "Viết bằng Claude Code": "Write with Claude Code",
+  "Claude Code không viết được kịch bản.": "Claude Code could not write the script.",
+  "Đưa vào ô soạn": "Put in the editor",
+  "Chưa kiểm chứng được, nên không đưa vào lời dẫn:": "Could not be verified, so left out of the narration:",
+  "Nguồn được ghi vào dự án khi bạn lưu kịch bản.": "The sources are added to the project when you save the script.",
+  "Claude Code tìm nguồn trên web và viết kịch bản theo một chủ đề": "Claude Code finds sources on the web and writes a script on a topic",
+  "Từ chủ đề…": "From a topic…",
+  "Claude Code đang tìm nguồn và viết về “{0}”. Việc này mất vài phút; bạn có thể làm việc khác.": "Claude Code is finding sources and writing about “{0}”. This takes a few minutes; you can do other work meanwhile.",
+  "{0} câu · {1} nguồn": "{0} lines · {1} sources",
 };
 
 export default en;

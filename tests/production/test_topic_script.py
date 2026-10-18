@@ -97,3 +97,38 @@ def test_a_package_that_fails_its_checks_fails_the_run_and_writes_nothing(tmp_pa
     drain(system)
     assert system.orch.run_status(run_id).value == "failed" and system.projects.current_script(project) is None
     assert system.topics.get(run_id)["state"] == "asked"
+
+
+def test_the_editor_gets_the_topic_draft_unsaved_and_its_sources_on_save_only(tmp_path):
+    system, client = _topic_system(tmp_path)
+    project = system.planning.create_project("Rừng")
+    assert client.post(f"/api/v1/projects/{project}/draft-from-topic", json={"topic": " "}).status_code == 422
+    assert client.get(f"/api/v1/projects/{project}/draft-from-topic").json() == {"state": None}
+    client.post(f"/api/v1/projects/{project}/draft-from-topic", json={"topic": "rừng bạch đàn Israel", "lines": 6})
+    assert client.get(f"/api/v1/projects/{project}/draft-from-topic").json()["state"] == "asked"
+    drain(system)
+    got = client.get(f"/api/v1/projects/{project}/draft-from-topic").json()
+    assert got["state"] == "offered" and got["lines"][0] == "# Mở đầu" and got["sources"][0]["url"] == "https://example.org/a"
+    assert got["unverified"] == ["con số chính xác diện tích"] and got["warnings"]
+    assert system.projects.current_script(project) is None and system.planning.research(project) == []       # nothing saved yet
+    client.put(f"/api/v1/projects/{project}/script", json={"lines": got["lines"]})
+    first = system.projects.current_script(project)["shots"][0]
+    assert first.is_fact and first.source == "Bài A" and len(system.planning.research(project)) == 1
+    client.put(f"/api/v1/projects/{project}/script", json={"lines": got["lines"]})
+    assert len(system.planning.research(project)) == 1                                                      # applied once
+    other = system.planning.create_project("Khác")
+    client.put(f"/api/v1/projects/{other}/script", json={"lines": ["Một câu."]})
+    assert system.planning.research(other) == []
+
+
+def test_the_editor_is_told_when_claude_code_is_missing_or_the_writing_failed(tmp_path):
+    system = build(tmp_path / "data", model=FakeModel(), voice=FakeVoice())
+    client = TestClient(create_app(system))
+    project = system.planning.create_project("Rừng")
+    assert client.post(f"/api/v1/projects/{project}/draft-from-topic", json={"topic": "rừng"}).status_code == 503
+    system, client = _topic_system(tmp_path / "b", answer={"title": "x", "sources": [], "lines": []})
+    project = system.planning.create_project("Rừng")
+    client.post(f"/api/v1/projects/{project}/draft-from-topic", json={"topic": "rừng"})
+    drain(system)
+    got = client.get(f"/api/v1/projects/{project}/draft-from-topic").json()
+    assert got["status"] == "failed" and "not usable" in got["reason"]

@@ -400,6 +400,56 @@ function SpeechDraft({ id, topic, done }: { id: string; topic: string; done: (li
   );
 }
 
+type TopicSource = { id: string; url: string; title: string; publisher: string | null; date: string | null; passage: string };
+type TopicState = { state: "asked" | "written" | "offered" | "applied" | null; status?: string; reason?: string | null; topic?: string; title?: string; angle?: string;
+  lines?: string[]; sources?: TopicSource[]; unverified?: string[]; warnings?: string[]; api_equivalent?: number };
+
+/** A script from a topic, written by Claude Code from what it reads on the web, in the background (minutes); the result goes into
+    the editor like a draft, and its sources reach the project when the script is saved. */
+function TopicDraft({ id, topic, done }: { id: string; topic: string; done: (lines: string[]) => void }) {
+  const [subject, setSubject] = useState(topic), [goal, setGoal] = useState(""), [n, setN] = useState(10), [err, setErr] = useState<string | null>(null);
+  const [got, setGot] = useState<TopicState | null>(null), [waiting, setWaiting] = useState(false);
+  const read = useCallback(async () => { try { const r = await call<TopicState>(`/api/v1/projects/${id}/draft-from-topic`); setGot(r); return r; } catch (e) { setErr((e as Error).message); return null; } }, [id]);
+  useEffect(() => { read(); }, [read]);
+  const running = got?.state === "asked" && !["failed", "blocked", "cancelled"].includes(got.status ?? "");
+  useEffect(() => {
+    if (!running) return;
+    const timer = window.setInterval(async () => { const r = await read(); if (r?.state === "offered" && waiting && r.lines) { setWaiting(false); done(r.lines); } }, 3000);
+    return () => window.clearInterval(timer);
+  }, [running, waiting, read, done]);
+  const write = async () => {
+    setErr(null);
+    try { await post(`/api/v1/projects/${id}/draft-from-topic`, { topic: subject, goal, lines: n }); setWaiting(true); await read(); } catch (e) { setErr((e as Error).message); }
+  };
+  return (
+    <div className="border-t border-line bg-ai/[0.04] px-4 py-3 text-[13px]">
+      <p className="mb-2 flex items-center gap-2"><Icon name="globe" size={15} className="text-ai" /><span className="font-medium">{tr("Kịch bản từ chủ đề")}</span>
+        <span className="text-faint">{tr("Claude Code tự tìm nguồn trên web, kiểm dữ kiện và viết lời dẫn theo giọng văn và mẫu của video")}</span></p>
+      <div className="flex flex-wrap items-center gap-2">
+        <input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder={tr("Chủ đề, ví dụ: khủng hoảng rừng bạch đàn ở Israel")} aria-label={tr("Chủ đề")} className="h-8 min-w-0 flex-[2] px-2.5" />
+        <input value={goal} onChange={(e) => setGoal(e.target.value)} placeholder={tr("Mục tiêu (không bắt buộc)")} aria-label={tr("Mục tiêu")} className="h-8 min-w-0 flex-1 px-2.5" />
+        <label className="flex items-center gap-1.5 text-[12.5px] text-mute">{tr("Khoảng")}<input type="number" min={3} max={30} value={n} onChange={(e) => setN(Number(e.target.value))} className="mono h-8 w-16 px-2" />{tr("câu")}</label>
+        <Button size="sm" kind="ai" busy={running} disabled={running || !subject.trim()} onClick={write}>{running ? <Spinner /> : <Icon name="sparkles" size={13} />}{running ? tr("Đang viết…") : tr("Viết bằng Claude Code")}</Button>
+      </div>
+      {running && <p className="mt-2 text-mute">{tv`Claude Code đang tìm nguồn và viết về “${got?.topic ?? subject}”. Việc này mất vài phút; bạn có thể làm việc khác.`}</p>}
+      {got && ["failed", "blocked"].includes(got.status ?? "") && got.state === "asked" && <p className="mt-2 text-tally">{tr("Claude Code không viết được kịch bản.")} {got.reason}</p>}
+      {got?.state === "offered" && got.lines && (
+        <div className="mt-3 grid gap-2">
+          <div className="flex flex-wrap items-center gap-2"><span className="font-medium">{got.title || got.topic}</span>{got.angle && <span className="text-faint">· {got.angle}</span>}
+            <span className="mono text-[12px] text-faint">{tv`${got.lines.filter((l) => !l.startsWith("#")).length} câu · ${got.sources?.length ?? 0} nguồn`}{got.api_equivalent ? ` · ≈$${got.api_equivalent.toFixed(2)} API` : ""}</span>
+            <span className="ml-auto"><Button size="sm" onClick={() => done(got.lines!)}><Icon name="edit" size={13} />{tr("Đưa vào ô soạn")}</Button></span></div>
+          {!!got.warnings?.length && <p className="text-cue">{got.warnings.join(" · ")}</p>}
+          {!!got.sources?.length && <ul className="grid gap-1">{got.sources.map((src) => (
+            <li key={src.url} className="truncate text-[12.5px]"><a href={src.url} target="_blank" rel="noreferrer" className="link">{src.title}</a>
+              <span className="text-faint"> · {[src.publisher, src.date].filter(Boolean).join(", ")}</span></li>))}</ul>}
+          {!!got.unverified?.length && <p className="text-[12.5px] text-faint">{tr("Chưa kiểm chứng được, nên không đưa vào lời dẫn:")} {got.unverified.join("; ")}</p>}
+          <p className="text-[12px] text-faint">{tr("Nguồn được ghi vào dự án khi bạn lưu kịch bản.")}</p>
+        </div>)}
+      {err && <p className="mt-2 text-tally">{err}</p>}
+    </div>
+  );
+}
+
 const WORDS_PER_SECOND = 2.6, MIN_LINE = 3;             // as the server and the storyboard time a line of narration
 const fold = (x: string) => x.normalize("NFC").toLowerCase().trim();
 
@@ -778,7 +828,7 @@ function Detail({ id, back }: { id: string; back: (to?: string) => void }) {
   const editor = useRef<HTMLTextAreaElement>(null);
   const [span, setSpan] = useState<{ first: number; last: number } | null>(null);       // the lines the cursor or the selection is on
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});                      // quotes picked in this editor, by their words, until saved
-  const [quoting, setQuoting] = useState(false), [fromSpeech, setFromSpeech] = useState(false);
+  const [quoting, setQuoting] = useState(false), [fromSpeech, setFromSpeech] = useState(false), [fromTopic, setFromTopic] = useState(false);
   const [lineView, setLineView] = useState(() => { try { return localStorage.getItem("nx.script.view") === "lines"; } catch { return false; } });
   useEffect(() => { try { localStorage.setItem("nx.script.view", lineView ? "lines" : "text"); } catch { /* private window */ } }, [lineView]);
   // A "> " line the operator picked from what the footage says goes with its stretch of the recording; any other line as written.
@@ -912,10 +962,14 @@ function Detail({ id, back }: { id: string; back: (to?: string) => void }) {
                     <input id="topic" value={topic} onChange={(e) => setTopic(e.target.value)} placeholder={tr("Viết nháp từ kho footage — nhập chủ đề, ví dụ: một buổi sáng ở chợ")} className="bare h-8 min-w-0 flex-1 px-1" />
                     <Button kind="ai" size="sm" disabled={busy || !topic.trim()} onClick={() => run(async () => { const r = await post<{ lines: string[] }>(`/api/v1/projects/${id}/draft`, { topic }); if (r.lines.length) setText(r.lines.join("\n")); else setNote(tr("Mô hình không viết được câu nào. Hãy thử chủ đề khác.")); })}>{tr("Viết nháp")}</Button>
                     <Button kind={fromSpeech ? "ai" : "quiet"} size="sm" onClick={() => setFromSpeech(!fromSpeech)} title={tr("Soạn kịch bản từ lời người nói trong các bản ghi")}><Icon name="mic" size={14} />{tr("Từ lời nói…")}</Button>
+                    <Button kind={fromTopic ? "ai" : "quiet"} size="sm" onClick={() => setFromTopic(!fromTopic)} title={tr("Claude Code tìm nguồn trên web và viết kịch bản theo một chủ đề")}><Icon name="globe" size={14} />{tr("Từ chủ đề…")}</Button>
                   </form>
                   {fromSpeech && <SpeechDraft id={id} topic={topic} done={async (lines) => {
                     if (dirty && (text ?? "").trim() && !(await ask(tr("Thay kịch bản đang soạn?"), { body: tr("Ô soạn có thay đổi chưa lưu; kịch bản mới sẽ thay chỗ nó."), confirm: tr("Thay") }))) return;
                     setText(lines.join("\n")); setFromSpeech(false); }} />}
+                  {fromTopic && <TopicDraft id={id} topic={topic} done={async (lines) => {
+                    if (dirty && (text ?? "").trim() && !(await ask(tr("Thay kịch bản đang soạn?"), { body: tr("Ô soạn có thay đổi chưa lưu; kịch bản mới sẽ thay chỗ nó."), confirm: tr("Thay") }))) return;
+                    setText(lines.join("\n")); }} />}
                 </div>
                 {dirty && p.script && <p className="mt-2 text-[12.5px] text-mute">{tr("Lưu sẽ tạo phiên bản kịch bản mới; các clip đã chọn cho phiên bản cũ không áp dụng nữa.")}</p>}
                 {p.script && !dirty && (
