@@ -125,7 +125,8 @@ export type BibleEntry = { model?: string | null; training?: { status: string; a
 export type Provider = { name: string; label: string; runs: string };
 export type GapPlan = { line: number; shot_id: string; text: string; brief: string | null; scene: string | null; seconds: number; near: { moment_id: string; asset_id: string; text: string; score: number; t_start: number; t_end: number } | null; ways: { way: string; text: string }[] };
 export type Illustration = { mode?: "direct" | "associative" | "contrast"; evokes?: string; feel?: Record<string, string> };
-export type Shot = { illustration?: Illustration; gen: GenChoice; fact_check: FactCheck | null; target_seconds: number | null; sound_cue: string | null; is_fact: boolean; source: string | null; scene: string | null; brief: string | null; screen_text: string | null; shot_id: string; position: number; text: string; selection: Selection | null; keyframe_url: string | null;
+export type Quote = { asset_id?: string; moment_id?: string | null; t_in?: number; t_out?: number };
+export type Shot = { quote?: Quote | null; illustration?: Illustration; gen: GenChoice; fact_check: FactCheck | null; target_seconds: number | null; sound_cue: string | null; is_fact: boolean; source: string | null; scene: string | null; brief: string | null; screen_text: string | null; shot_id: string; position: number; text: string; selection: Selection | null; keyframe_url: string | null;
   generation: { prompt: string; seed: number | null; provider: string; quality: { score: number; issues: string[]; tries: number } | null; tries: number } | null };
 export type Finding = { check: string; shot: number; severity: string; text: string; fix: string };
 export type Snapshot = { snapshot_id: string; at: number; hours: number; figures: Record<string, number> };
@@ -161,8 +162,8 @@ export type Segment = { role: "hook" | "body" | "close"; label: string; min: num
 export type StructureCheck = { segments: (Segment & { seconds: number | null; state: "ok" | "short" | "long" | "missing" })[]; findings: string[]; unplaced: number };
 export type Variant = { variant_id: string; script_id: string; part: "opening" | "ending"; label: string; note: string | null; lines: string[]; chosen: string | null; created_at: number };
 /** The script as the operator types it: scene names on lines starting with "#", one spoken line per row. */
-export const scriptText = (shots: Shot[]) => { const out: string[] = []; let scene: string | null = null; for (const s of shots) { if (s.scene && s.scene !== scene) out.push(`# ${s.scene}`); scene = s.scene; out.push(s.text); } return out.join("\n"); };
-export type Settings = { voice: string; voices: string[]; models: Record<string, boolean>; model_roles: Record<string, string>; privacy_local_only: boolean; watch_folders: string[]; templates: Template[] };
+export const scriptText = (shots: Shot[]) => { const out: string[] = []; let scene: string | null = null; for (const s of shots) { if (s.scene && s.scene !== scene) out.push(`# ${s.scene}`); scene = s.scene; out.push(s.quote != null ? `> ${s.text}` : s.text); } return out.join("\n"); };
+export type Settings = { writing_voice: string; writing_voice_default: string; voice: string; voices: string[]; models: Record<string, boolean>; model_roles: Record<string, string>; privacy_local_only: boolean; watch_folders: string[]; templates: Template[] };
 export type AgentTask = { task_id: string; project_id: string; goal: string; status: string; step: string; created_at: number; log: { at: number; role: string; text: string }[] };
 /** Every change the operator makes refreshes the open screens at once. */
 export const post = <T,>(url: string, body?: unknown, method = "POST") =>

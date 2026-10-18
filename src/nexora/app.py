@@ -759,7 +759,8 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     library.vq_render = lambda asset_id, out: vq.render_approved(asset_id, out)
     projects = ProjectStore(db_path)
     from nexora.core.ideas import IdeaStore
-    planning = Planning(projects, assets, index, adapters, ideas=IdeaStore(db_path))
+    from nexora.modules.planning.scripts import HOUSE_VOICE
+    planning = Planning(projects, assets, index, adapters, ideas=IdeaStore(db_path), voice=lambda: orch.setting("writing_voice", "") or HOUSE_VOICE)
     sourcing = Sourcing(orch, projects, index, threshold=match_threshold, adapters=adapters, judge=judge and model is not None, rejected=assets.rejected,
                         may_accept=lambda project: system.autonomy.clips_may_be_accepted(project),
                         cuts=lambda asset_id: (assets.original(asset_id).metadata.get("scene_cuts") or [], assets.original(asset_id).metadata.get("probe", {}).get("duration")),

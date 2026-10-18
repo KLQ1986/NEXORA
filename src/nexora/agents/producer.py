@@ -245,7 +245,8 @@ class Producer:
 
         if step == "gaps":
             texts = {s.shot_id: s.text for s in script["shots"]}
-            gaps = [s for s in self._projects.selections(script["script_id"]) if s.status == "gap"]
+            quotes = {s.shot_id for s in script["shots"] if s.quote is not None}         # someone's own words are never filled with stock
+            gaps = [s for s in self._projects.selections(script["script_id"]) if s.status == "gap" and s.shot_id not in quotes]
             has_stock = any(c.name == "stock" for c in self._adapters.describe())
             for sel in gaps[:MAX_STOCK_FILLS] if task["options"]["use_stock"] and has_stock else []:
                 query = ""

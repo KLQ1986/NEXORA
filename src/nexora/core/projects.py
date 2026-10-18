@@ -27,6 +27,7 @@ class Shot:
     fact_check: dict | None = None    # what checking the line against the sources found: verdict, source, quote
     gen: dict = field(default_factory=dict)   # the operator's choices for a generated picture: subject, framing, provider, variation
     illustration: dict = field(default_factory=dict)   # how the picture illustrates the words: mode (direct, associative, contrast), evokes, feel
+    quote: dict | None = None         # a line someone says in the footage, played with its own sound: {asset_id, moment_id, t_in, t_out} ({} until found)
 
 
 @dataclass(frozen=True)
@@ -86,14 +87,16 @@ class ProjectStore:
 
     def save_script(self, project_id: str, lines: list, *, label: str | None = None) -> str:
         """A script is never edited in place: saving creates the next version. A line is its words, or a dict with its words
-        (`text`) and the notes written with it (`brief`, `illustration`), which take the place of any it carried before."""
+        (`text`) and the notes written with it (`brief`, `illustration`, `quote`), which take the place of any it carried before.
+        A line starting with "> " is a quote: words someone says in the footage, played with their own sound; one that knows
+        its stretch of the recording has that stretch as its clip at once, accepted, since the operator chose it."""
         script_id = new_id("scr")
         with db.write(self._conn) as c:
             version = c.execute("SELECT COALESCE(MAX(version), 0) + 1 FROM scripts WHERE project_id = ?", (project_id,)).fetchone()[0]
             c.execute("INSERT INTO scripts (script_id, project_id, version, label, created_at) VALUES (?,?,?,?,?)", (script_id, project_id, version, label, time.time()))
             # A line starting with "#" names a scene; the lines after it belong to that scene. Notes a line carried in the
             # previous version follow it into the new one, as long as its words are unchanged.
-            before = {r["text"]: r for r in c.execute("SELECT s.text, s.brief, s.screen_text, s.target_seconds, s.sound_cue, s.is_fact, s.source, s.fact_check, s.gen, s.illustration "
+            before = {r["text"]: r for r in c.execute("SELECT s.text, s.brief, s.screen_text, s.target_seconds, s.sound_cue, s.is_fact, s.source, s.fact_check, s.gen, s.illustration, s.quote "
                                                       "FROM shots s JOIN scripts sc USING (script_id) WHERE sc.project_id = ? AND sc.version = ?", (project_id, version - 1))}
             scene, position = None, 0
             for line in lines:
@@ -104,15 +107,28 @@ class ProjectStore:
                 if text.startswith("#"):
                     scene = text.lstrip("# ").strip() or None
                     continue
+                quoted = text.startswith(">")
+                if quoted:
+                    text = text.lstrip("> ").strip()
+                    if not text:
+                        continue
                 kept = before.get(text)
-                notes = [kept["brief"], kept["screen_text"], kept["target_seconds"], kept["sound_cue"], kept["is_fact"], kept["source"], kept["fact_check"], kept["gen"], kept["illustration"]] \
-                    if kept else [None, None, None, None, 0, None, None, None, None]
+                notes = [kept["brief"], kept["screen_text"], kept["target_seconds"], kept["sound_cue"], kept["is_fact"], kept["source"], kept["fact_check"], kept["gen"], kept["illustration"], kept["quote"]] \
+                    if kept else [None, None, None, None, 0, None, None, None, None, None]
                 if given.get("brief"):
                     notes[0] = str(given["brief"]).strip()
                 if given.get("illustration"):
                     notes[8] = json.dumps(given["illustration"], ensure_ascii=False)
-                c.execute("INSERT INTO shots (shot_id, script_id, position, text, scene, brief, screen_text, target_seconds, sound_cue, is_fact, source, fact_check, gen, illustration) "
-                          "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (new_id("sht"), script_id, position, text, scene, *notes))
+                ref = given.get("quote") if isinstance(given.get("quote"), dict) else (json.loads(notes[9]) if notes[9] else {})
+                ref = {k: ref[k] for k in ("asset_id", "moment_id", "t_in", "t_out") if ref.get(k) is not None} if ref else {}
+                notes[9] = json.dumps(ref, ensure_ascii=False) if quoted else None       # a line no longer marked "> " is narration again
+                shot_id = new_id("sht")
+                c.execute("INSERT INTO shots (shot_id, script_id, position, text, scene, brief, screen_text, target_seconds, sound_cue, is_fact, source, fact_check, gen, illustration, quote) "
+                          "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (shot_id, script_id, position, text, scene, *notes))
+                if quoted and ref.get("asset_id") and ref.get("t_out") is not None:
+                    c.execute("INSERT INTO selections (shot_id, status, asset_id, moment_id, t_in, t_out, score, reason, alternates, decided_by, extras) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                              (shot_id, "accepted", ref["asset_id"], ref.get("moment_id"), float(ref["t_in"]), float(ref["t_out"]), None,
+                               "Trích lời: đoạn người trong footage nói câu này, giữ nguyên tiếng.", "[]", "operator", json.dumps({"live_sound": True})))
                 position += 1
         return script_id
 
@@ -142,6 +158,8 @@ class ProjectStore:
                 c.execute("UPDATE shots SET is_fact = ? WHERE shot_id = ?", (int(bool(more["is_fact"])), shot_id))
             if "source" in more:
                 c.execute("UPDATE shots SET source = ? WHERE shot_id = ?", (str(more["source"] or "").strip() or None, shot_id))
+            if "quote" in more:                            # the stretch of a recording a quote is said in
+                c.execute("UPDATE shots SET quote = ? WHERE shot_id = ?", (json.dumps(more["quote"] or {}, ensure_ascii=False), shot_id))
             if "illustration" in more:                     # how the picture illustrates the words, set as a whole
                 value = more["illustration"] or None
                 c.execute("UPDATE shots SET illustration = ? WHERE shot_id = ?", (json.dumps(value, ensure_ascii=False) if value else None, shot_id))
@@ -179,12 +197,13 @@ class ProjectStore:
                 fresh, old_shot = new_id("sht"), by_id[shot_id]
                 text = (texts.get(shot_id) or old_shot.text).strip()
                 kept = text == old_shot.text
-                c.execute("INSERT INTO shots (shot_id, script_id, position, text, scene, brief, screen_text, target_seconds, sound_cue, is_fact, source, fact_check, gen, illustration) "
-                          "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                c.execute("INSERT INTO shots (shot_id, script_id, position, text, scene, brief, screen_text, target_seconds, sound_cue, is_fact, source, fact_check, gen, illustration, quote) "
+                          "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                           (fresh, new_id_, position, text, old_shot.scene, old_shot.brief, old_shot.screen_text, old_shot.target_seconds, old_shot.sound_cue,
                            int(old_shot.is_fact and kept), old_shot.source if kept else None,
                            json.dumps(old_shot.fact_check, ensure_ascii=False) if old_shot.fact_check and kept else None, json.dumps(old_shot.gen, ensure_ascii=False) if old_shot.gen else None,
-                           json.dumps(old_shot.illustration, ensure_ascii=False) if old_shot.illustration else None))
+                           json.dumps(old_shot.illustration, ensure_ascii=False) if old_shot.illustration else None,
+                           json.dumps(old_shot.quote if kept else {}, ensure_ascii=False) if old_shot.quote is not None else None))
                 if not kept:
                     continue
                 c.execute("INSERT INTO selections (shot_id, status, asset_id, moment_id, t_in, t_out, score, reason, alternates, decided_by, extras) "
@@ -210,7 +229,7 @@ class ProjectStore:
             return None
         shots = [Shot(r["shot_id"], r["script_id"], r["position"], r["text"], r["scene"], r["brief"], r["screen_text"], r["target_seconds"], r["sound_cue"], bool(r["is_fact"]), r["source"],
                       json.loads(r["fact_check"]) if r["fact_check"] else None, json.loads(r["gen"]) if r["gen"] else {},
-                      json.loads(r["illustration"]) if r["illustration"] else {})
+                      json.loads(r["illustration"]) if r["illustration"] else {}, json.loads(r["quote"]) if r["quote"] is not None else None)
                  for r in self._conn.execute("SELECT * FROM shots WHERE script_id = ? ORDER BY position", (script_id,))]
         return {**dict(row), "match_approved": bool(row["match_approved"]), "critique": json.loads(row["critique"]) if row["critique"] else None, "shots": shots}
 

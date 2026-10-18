@@ -14,8 +14,15 @@ from nexora.core.ideas import IdeaStore
 from nexora.core.projects import ProjectStore
 from nexora.modules.planning.ideas import OVERLAP, IdeaFinder, channel_text
 
+# How every line is written unless the operator sets another voice (setting "writing_voice"): the operator's word, 2026-10-18.
+HOUSE_VOICE = ("Hành văn tự nhiên, liền mạch như đang kể bằng lời nói: câu sau nối ý câu trước, không rời rạc, không sáo rỗng, không văn viết khô cứng. "
+               "Dùng giọng và từ ngữ miền Nam (ví dụ: ly chứ không cốc, muỗng chứ không thìa, trái chứ không quả, bông chứ không hoa khi nói một bông, "
+               "heo chứ không lợn, chén chứ không bát, dù chứ không ô, mắc chứ không đắt, bữa nay, hồi sáng, ghé, vô, nè, nha, hen) "
+               "nhưng vừa phải, như người miền Nam nói chuyện tự nhiên, không nhồi từ địa phương vào mọi câu; "
+               "không lặp lại cùng một cụm từ hay tiếng đệm (nè, nha…) ở nhiều câu. ")
+
 DRAFT_PROMPT = (
-    "Bạn là người viết lời dẫn cho video ngắn. {channel}Chủ đề: {topic}.\n"
+    "Bạn là người viết lời dẫn cho video ngắn. {voice}{channel}Chủ đề: {topic}.\n"
     "Dưới đây là những gì có trong kho footage của người làm video:\n{inventory}\n\n"
     "Hãy viết lời dẫn tiếng Việt gồm {n} câu ngắn. {style}\n"
     "{shape}"
@@ -35,27 +42,30 @@ CHECK_FACT_PROMPT = (
 )
 CRITIQUE_PROMPT = (
     "Bạn là người phản biện kịch bản video ngắn, khó tính và cụ thể. {channel}Chủ đề: {topic}.\nLời dẫn, mỗi câu có số thứ tự:\n{lines}\n\n"
-    "Tìm những chỗ làm video kém đi: mở đầu yếu, câu dài hoặc khó đọc thành tiếng, ý lặp, ý mơ hồ, câu khó có hình minh hoạ, kết không rõ. "
+    "Giọng văn mong muốn: {voice}\n"
+    "Tìm những chỗ làm video kém đi: mở đầu yếu, câu dài hoặc khó đọc thành tiếng, câu rời rạc không nối ý với câu trước, từ ngữ không tự nhiên hoặc lệch giọng văn mong muốn, "
+    "ý lặp, ý mơ hồ, câu khó có hình minh hoạ, kết không rõ. Câu đánh dấu (trích lời) là lời người trong footage tự nói: không nhận xét cách nói của nó. "
     "Tối đa {n} nhận xét, chỉ nêu điều đáng sửa; nếu kịch bản đã ổn thì trả về danh sách rỗng. "
     "Chỉ trả về JSON với khoá nhan_xet: danh sách các mục có cau (số thứ tự câu, 0 nếu nói về cả bài), van_de (một câu), de_xuat (cách sửa, một câu)."
 )
 REVISE_PROMPT = (
-    "{channel}Đây là lời dẫn của một video về {topic}:\n{lines}\n\nNgười phản biện nêu các điểm sau:\n{notes}\n\n"
-    "Viết lại lời dẫn để xử lý các điểm đó. Giữ số câu gần như cũ, giữ nguyên những câu không bị nhận xét, không thêm dữ kiện mới. "
+    "{voice}{channel}Đây là lời dẫn của một video về {topic}:\n{lines}\n\nNgười phản biện nêu các điểm sau:\n{notes}\n\n"
+    "Viết lại lời dẫn để xử lý các điểm đó. Giữ số câu gần như cũ, giữ nguyên những câu không bị nhận xét, không thêm dữ kiện mới; "
+    "câu đánh dấu (trích lời) là lời người khác nói, chép nguyên văn, không sửa. "
     "Chỉ trả về JSON với khoá cau (danh sách các câu)."
 )
 FLAT_SHAPE = "Chỉ trả về JSON với khoá cau: danh sách các mục như trên, theo thứ tự."
 PARTS_SHAPE = ("Chia lời dẫn thành các phần theo đúng thứ tự sau: {parts}. "
                "Chỉ trả về JSON với khoá phan: danh sách các mục có ten (tên phần như trên) và cau (danh sách các mục như trên của phần đó).")
 VARIANT_PROMPT = (
-    "{channel}Đây là lời dẫn của một video về {topic}, mỗi câu có số thứ tự:\n{lines}\n\n"
+    "{voice}{channel}Đây là lời dẫn của một video về {topic}, mỗi câu có số thứ tự:\n{lines}\n\n"
     "Viết lại riêng {part} (câu {first} đến câu {last}) theo {n} cách khác nhau rõ rệt; phần còn lại giữ nguyên, không thêm dữ kiện mới. "
     "Chỉ trả về JSON với khoá phuong_an: danh sách các mục có ten (vài chữ nói cách này khác gì) và cau (các câu thay cho phần đó)."
 )
 PARTS = {"opening": ("phần mở bài", "Mở bài"), "ending": ("phần kết", "Kết")}
 # Writing with the model on a stretch of the script: what each request asks, and how many lines each answer should have.
 REWRITE_PROMPT = (
-    "{channel}Đây là lời dẫn của một video về {topic}, mỗi câu có số thứ tự:\n{lines}\n\n"
+    "{voice}{channel}Đây là lời dẫn của một video về {topic}, mỗi câu có số thứ tự:\n{lines}\n\n"
     "Chỉ làm việc với {which}: {ask}\n"
     "Phần còn lại giữ nguyên, không thêm dữ kiện mới, giữ giọng của cả bài. Viết {n} phương án khác nhau rõ rệt. "
     "Chỉ trả về JSON với khoá phuong_an: danh sách các mục có ten (vài chữ nói phương án này khác gì) và cau (danh sách {shape})."
@@ -74,6 +84,11 @@ VERDICTS = {"dung": "supported", "sai": "contradicted", "khong_thay": "not_found
 PASSAGE_CHARS = 1500
 
 
+def _numbered(shots) -> str:
+    """The script's lines numbered for a prompt, a quote marked as someone's own words."""
+    return "\n".join(f"{i}. {s.text}" + (" (trích lời)" if s.quote is not None else "") for i, s in enumerate(shots, 1))
+
+
 def _overlap(a: str, b: str) -> float:
     """The share of the shorter text's words that the other has too: how much a line repeats what is to be seen."""
     wa, wb = {w for w in re.findall(r"\w+", _fold(a)) if len(w) > 1}, {w for w in re.findall(r"\w+", _fold(b)) if len(w) > 1}
@@ -85,8 +100,10 @@ def _fold(text: str) -> str:
 
 
 class Planning:
-    def __init__(self, projects: ProjectStore, assets: AssetStore, index: MomentIndex, adapters: AdapterRegistry, ideas: IdeaStore | None = None):
+    def __init__(self, projects: ProjectStore, assets: AssetStore, index: MomentIndex, adapters: AdapterRegistry, ideas: IdeaStore | None = None,
+                 voice=None):
         self._projects, self._assets, self._index, self._adapters = projects, assets, index, adapters
+        self._voice = voice or (lambda: HOUSE_VOICE)                  # () -> how every line is written: the operator's setting, else the house voice
         self.ideas = ideas
         self._finder = IdeaFinder(projects, assets, index, adapters)
 
@@ -143,7 +160,7 @@ class Planning:
         shape = PARTS_SHAPE.format(parts=parts) if structure else FLAT_SHAPE
         style = style if style in ILL.STYLES else "mixed"
         out = self._adapters.submit("model", Request("chat", privacy_class=TEXT_ONLY, params={
-            "prompt": DRAFT_PROMPT.format(topic=topic, inventory=inventory, n=lines, channel=channel_text(channel), shape=shape, style=ILL.style_prompt(style)),
+            "prompt": DRAFT_PROMPT.format(topic=topic, inventory=inventory, n=lines, channel=channel_text(channel), shape=shape, style=ILL.style_prompt(style), voice=self._voice()),
             "json": True, "max_tokens": 1400, "task": "draft"})).outputs["json"]
 
         def line(item) -> dict | None:
@@ -205,7 +222,7 @@ class Planning:
         lines = "\n".join(f"{i}. {s.text}" for i, s in enumerate(shots, 1))
         out = self._adapters.submit("model", Request("chat", privacy_class=TEXT_ONLY, params={"task": "variant", "json": True, "max_tokens": 700,
                                     "prompt": VARIANT_PROMPT.format(channel=channel_text(channel), topic=project["title"], lines=lines, part=PARTS[part][0],
-                                                                    first=span[0] + 1, last=span[-1] + 1, n=n)})).outputs["json"]
+                                                                    first=span[0] + 1, last=span[-1] + 1, n=n, voice=self._voice())})).outputs["json"]
 
         def whole(replacement: list[str]) -> list[str]:
             texts = [s.text for s in shots]
@@ -242,15 +259,17 @@ class Planning:
             raise ValueError("this request needs words from the operator")
         if not (0 <= first <= last < len(lines)) or any(str(lines[k]).strip().startswith("#") for k in range(first, last + 1)):
             raise ValueError("choose lines of one scene, without its heading")
+        if any(str(lines[k]).strip().startswith(">") for k in range(first, last + 1)):
+            raise ValueError("a quote is someone's own words")
         spoken = [k for k, l in enumerate(lines) if str(l).strip() and not str(l).strip().startswith("#")]
         if not all(k in spoken for k in range(first, last + 1)):
             raise ValueError("choose lines of the script")
-        numbered = "\n".join(f"{i}. {str(lines[k]).strip()}" for i, k in enumerate(spoken, 1))
+        numbered = "\n".join(f"{i}. {str(lines[k]).strip().lstrip('> ')}" + (" (trích lời)" if str(lines[k]).strip().startswith(">") else "") for i, k in enumerate(spoken, 1))
         a, b = spoken.index(first) + 1, spoken.index(last) + 1
         which = f"câu {a}" if a == b else f"câu {a} đến câu {b}"
         ask, shape = REWRITES[action]
         out = self._adapters.submit("model", Request("chat", privacy_class=TEXT_ONLY, params={"task": "rewrite", "json": True, "max_tokens": 900,
-                                    "prompt": REWRITE_PROMPT.format(channel=channel_text(channel), topic=topic, lines=numbered, which=which,
+                                    "prompt": REWRITE_PROMPT.format(voice=self._voice(), channel=channel_text(channel), topic=topic, lines=numbered, which=which,
                                                                     ask=ask.format(instruction=instruction.strip()), n=n, shape=shape)})).outputs["json"]
         chosen = [str(lines[k]).strip() for k in range(first, last + 1)]
         proposals, seen = [], set()
@@ -343,8 +362,8 @@ class Planning:
         script, project = self._projects.current_script(project_id), self._projects.project(project_id)
         if not script or not script["shots"]:
             return []
-        lines = "\n".join(f"{i}. {s.text}" for i, s in enumerate(script["shots"], 1))
-        out = self._adapters.submit("model", Request("chat", privacy_class=TEXT_ONLY, params={"prompt": CRITIQUE_PROMPT.format(topic=project["title"], lines=lines, n=limit, channel=channel_text(channel)), "json": True, "max_tokens": 600, "task": "critique"})).outputs["json"]
+        lines = _numbered(script["shots"])
+        out = self._adapters.submit("model", Request("chat", privacy_class=TEXT_ONLY, params={"prompt": CRITIQUE_PROMPT.format(topic=project["title"], lines=lines, n=limit, channel=channel_text(channel), voice=self._voice()), "json": True, "max_tokens": 600, "task": "critique"})).outputs["json"]
         notes, said = [], {shot.text.strip().rstrip(".") for shot in script["shots"]}
         for raw in (out.get("nhan_xet") or [])[:limit]:
             # A note that only repeats a line of the script says nothing about it; small models do this when they have no remark to make.
@@ -372,12 +391,13 @@ class Planning:
         notes = (script or {}).get("critique") or []
         if not notes:
             return None
-        lines = "\n".join(f"{i}. {s.text}" for i, s in enumerate(script["shots"], 1))
+        lines = _numbered(script["shots"])
         listed = "\n".join(f"- {'Câu ' + str(n['line']) if n['line'] else 'Cả bài'}: {n['issue']} Đề xuất: {n['fix']}" for n in notes)
-        out = self._adapters.submit("model", Request("chat", privacy_class=TEXT_ONLY, params={"prompt": REVISE_PROMPT.format(topic=project["title"], lines=lines, notes=listed, channel=channel_text(channel)), "json": True, "max_tokens": 700, "task": "revise"})).outputs["json"]
+        out = self._adapters.submit("model", Request("chat", privacy_class=TEXT_ONLY, params={"prompt": REVISE_PROMPT.format(topic=project["title"], lines=lines, notes=listed, channel=channel_text(channel), voice=self._voice()), "json": True, "max_tokens": 700, "task": "revise"})).outputs["json"]
         new = [str(c).strip() for c in out.get("cau") or [] if str(c).strip()]
         if not new or new == [s.text for s in script["shots"]]:
             return None
+        quoted = {s.text: s for s in script["shots"] if s.quote is not None}
         if len(new) == len(script["shots"]):                     # same shape: keep each line under its scene, with its notes
             with_scenes, scene = [], None
             for shot, text in zip(script["shots"], new):
@@ -385,8 +405,13 @@ class Planning:
                     scene = shot.scene
                     if scene:
                         with_scenes.append(f"# {scene}")
-                with_scenes.append({"text": text, "brief": shot.brief, "illustration": shot.illustration or None})
+                if shot.quote is not None:                       # someone's own words are never rewritten
+                    with_scenes.append({"text": f"> {shot.text}", "quote": shot.quote})
+                else:
+                    with_scenes.append({"text": text, "brief": shot.brief, "illustration": shot.illustration or None})
             new = with_scenes
+        else:                                                    # another shape: a quote the model kept word for word stays a quote
+            new = [{"text": f"> {t}", "quote": quoted[t].quote} if t in quoted else t for t in new]
         return self._projects.save_script(project_id, new)
 
     # ------------------------------------------------------------------ opportunity radar

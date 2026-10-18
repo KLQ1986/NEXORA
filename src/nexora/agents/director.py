@@ -63,6 +63,8 @@ class Director:
         return done
 
     def _one(self, s: Shot, previous: Shot | None, autonomy: int) -> tuple[str, dict | None, list]:
+        if s.spec.get("quote") and s.assignment and s.assignment.get("asset_id"):
+            return "accepted", s.assignment, s.checks              # someone's own words: their stretch of the recording, never searched again
         policy = s.spec["source"]["policy"]
         if policy == "generate":
             return self._generated(s, autonomy)

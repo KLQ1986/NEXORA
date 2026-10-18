@@ -30,6 +30,7 @@ LOCATE_PROMPT = (
 MATCH = PipelineDefinition("sourcing.match", "1", [StageDef("match", gate=True, requires=("model",))])
 WORDS_PER_SECOND = 2.6
 MIN_SECONDS = 2.5
+QUOTE_FOUND = 0.6        # a typed quote is found in the speech that says it this well
 FEEL_FLOOR = 0.7         # a stretch with none of the wanted feel keeps 70% of its meaning's score; one with all of it, 100%
 AUTO_ACCEPT = 8          # judge points (0-10) every selection must reach for a match to be accepted without review
 
@@ -233,6 +234,14 @@ class Sourcing:
         matched = gaps = 0
         confident: list[int] = []
         for shot in self._projects.script(ctx.subject_ref)["shots"]:
+            if shot.quote is not None:
+                # Someone's own words: their stretch of the recording, never another picture. One the operator chose is kept;
+                # one typed without it is looked for in what the footage says.
+                if self._quote(shot):
+                    matched += 1
+                else:
+                    gaps += 1
+                continue
             need = needed_seconds(shot.text)
             # A direct line: what is said, plus what the operator asked to see. A line that evokes: what is to be seen and what it
             # evokes, never its words (they say an idea the picture does not show).
@@ -302,6 +311,23 @@ class Sourcing:
         if gaps:
             self._orch.notify("gaps", ctx.claim.run_id, reason=str(gaps))
         return {"matched": matched, "gaps": gaps}
+
+    def _quote(self, shot) -> bool:
+        """The stretch of a recording where these words are said: the one the operator chose, else the speech that says them
+        best (most of its words, in order of meaning). False when no recording says them."""
+        sel = self._projects.selection(shot.shot_id)
+        if shot.quote and shot.quote.get("asset_id") and sel and sel.asset_id == shot.quote["asset_id"]:
+            return True
+        hits = [h for h in self._index.search(shot.text, limit=5, level="speech") if h.score >= QUOTE_FOUND]
+        if not hits:
+            self._projects.set_selection(shot.shot_id, status="gap", reason="Trích lời: không tìm thấy câu này trong lời nói của footage đã nghe.")
+            return False
+        m = hits[0].moment
+        self._projects.set_selection(shot.shot_id, status="proposed", asset_id=m.asset_id, moment_id=m.moment_id, t_in=m.t_start, t_out=m.t_end, score=hits[0].score,
+                                     reason=f"Trích lời: người trong footage nói “{m.text[:120]}”.", decided_by="system")
+        self._projects.set_extras(shot.shot_id, live_sound=True)
+        self._projects.annotate_shot(shot.shot_id, quote={"asset_id": m.asset_id, "moment_id": m.moment_id, "t_in": m.t_start, "t_out": m.t_end})
+        return True
 
     def swap(self, shot_id: str, alternate: int) -> None:
         """Replace the selection of a shot with one of its alternates; the old selection becomes an alternate."""

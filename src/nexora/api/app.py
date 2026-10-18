@@ -320,17 +320,21 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
 
     @app.get("/api/v1/settings")
     def get_settings():
-        """What the Settings screen shows: voices, models, privacy mode, watched folders and templates."""
+        """What the Settings screen shows: voices, models, privacy mode, watched folders, templates and the writing voice."""
         from nexora.app import templates
+        from nexora.modules.planning.scripts import HOUSE_VOICE
         env = system.adapters.environment()
         return {"voice": system.orch.setting("voice", config.voice if config else "Linh"), "voices": sorted(set((env.get("voice") or {}).get("vietnamese_voices", []))),
                 "models": (env.get("model") or {}).get("models", {}), "model_roles": {"vision": config.vision_model, "judge": config.judge_model or config.vision_model,
                                                                                      "writer": config.writer_model or config.vision_model, "embed": config.embed_model} if config else {},
                 "privacy_local_only": system.orch.setting("privacy_local_only", "0") == "1",
-                "watch_folders": json.loads(system.orch.setting("watch_folders", "[]")), "templates": templates(system)}
+                "watch_folders": json.loads(system.orch.setting("watch_folders", "[]")), "templates": templates(system),
+                "writing_voice": system.orch.setting("writing_voice", "") or HOUSE_VOICE, "writing_voice_default": HOUSE_VOICE}
 
     @app.post("/api/v1/settings")
     def set_settings(body: dict):
+        if "writing_voice" in body:                  # how every line is written; empty goes back to the house voice
+            system.orch.set_setting("writing_voice", str(body["writing_voice"] or "").strip())
         if "voice" in body:
             system.orch.set_setting("voice", str(body["voice"]))
         if "privacy_local_only" in body:
@@ -606,6 +610,22 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         return {"asked": wanted, "used": sorted(f for f in wanted if f in released or f"model.{f}" in released),
                 "hits": [{**moment_view(m, score), "asset": asset_brief(m.asset_id), "fits": why} for score, m, why in found]}
 
+    @app.get("/api/v1/speech")
+    def speech(q: str = "", limit: int = 40):
+        """What people say in the footage, for a quote in a script: the sentences that say these words, or (without words) every
+        sentence heard, newest recordings first. Each with its recording, its stretch and something to play."""
+        rejected = system.assets.rejected()
+        if q.strip():
+            found = [(h.score, h.moment) for h in system.index.search(q, limit=limit, level="speech", exclude_assets=rejected)]
+        else:
+            found = []
+            for asset in system.assets.assets():
+                if asset["asset_id"] in rejected:
+                    continue
+                found += [(None, m) for m in system.index.moments(asset["asset_id"], level="speech")]
+            found = found[:limit]
+        return {"hits": [{**moment_view(m, score), "asset": asset_brief(m.asset_id)} for score, m in found]}
+
     @app.get("/api/v1/assets/{asset_id}/moments")
     def asset_moments(asset_id: str):
         moments = system.index.moments(asset_id)
@@ -775,7 +795,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         shots = []
         for shot in (script["shots"] if script else []):
             sel = system.projects.selection(shot.shot_id)
-            item = {"shot_id": shot.shot_id, "position": shot.position, "text": shot.text, "scene": shot.scene, "brief": shot.brief, "screen_text": shot.screen_text, "illustration": shot.illustration, "target_seconds": shot.target_seconds, "sound_cue": shot.sound_cue,
+            item = {"shot_id": shot.shot_id, "position": shot.position, "text": shot.text, "scene": shot.scene, "brief": shot.brief, "screen_text": shot.screen_text, "illustration": shot.illustration, "quote": shot.quote, "target_seconds": shot.target_seconds, "sound_cue": shot.sound_cue,
                     "is_fact": shot.is_fact, "source": shot.source, "fact_check": shot.fact_check, "gen": shot.gen, "selection": None, "keyframe_url": None, "generation": None}
             keys = system.projects.generations(shot.shot_id, kind="keyframe")
             if keys:
@@ -1186,7 +1206,10 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
     @app.put("/api/v1/projects/{project_id}/script")
     def save_script(project_id: str, body: dict):
         need_project(project_id)
-        lines = [str(line).strip() for line in body.get("lines", []) if str(line).strip()]
+        # A line is its words, or {text, quote} for a quote the operator picked from what the footage says.
+        lines = [({"text": str(l.get("text") or "").strip(), **({"quote": l["quote"]} if isinstance(l.get("quote"), dict) else {})} if isinstance(l, dict) else str(l).strip())
+                 for l in body.get("lines", [])]
+        lines = [l for l in lines if (l["text"] if isinstance(l, dict) else l)]
         if not lines:
             raise HTTPException(422, "Kịch bản cần ít nhất một câu")
         system.planning.save_script(project_id, lines)
@@ -1203,7 +1226,8 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         except (TypeError, ValueError) as err:
             raise HTTPException(422, {"choose lines of one scene, without its heading": "Hãy chọn các câu trong cùng một cảnh, không gồm dòng tên cảnh.",
                                       "this request needs words from the operator": "Hãy nói muốn viết lại theo cách nào.",
-                                      "choose lines of the script": "Hãy chọn các câu của kịch bản."}.get(str(err), "Yêu cầu không hợp lệ."))
+                                      "choose lines of the script": "Hãy chọn các câu của kịch bản.",
+                                      "a quote is someone's own words": "Câu trích lời là lời người trong footage tự nói: không viết lại được. Chọn câu lời dẫn."}.get(str(err), "Yêu cầu không hợp lệ."))
         except AdapterError as err:
             raise HTTPException(503, f"Mô hình không trả lời được: {err.message or err.code.value}")
         if not proposals:

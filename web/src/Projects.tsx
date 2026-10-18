@@ -1,7 +1,7 @@
 import { t as tr, tv, locale } from "./i18n";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { call, post, projectNext, projectState, scriptText, stageName, timecode, usePoll, type Idea, type Source, type AgentTask, type Asset, type Settings, type Candidate, type Project, type RenderItem, type Shot, type BibleEntry, type GapPlan, type Op, type Rights, type Publishing, type Channel, type StructureCheck, type Variant, type Illustration } from "./api";
+import { call, post, projectNext, projectState, scriptText, stageName, timecode, usePoll, type Idea, type Source, type AgentTask, type Asset, type Settings, type Candidate, type Project, type RenderItem, type Shot, type BibleEntry, type GapPlan, type Op, type Rights, type Publishing, type Channel, type StructureCheck, type Variant, type Illustration, type Quote } from "./api";
 import Board from "./Board";
 import { ask, Button, Empty, Filmstrip, goTo, Icon, Meter, Page, Section, Seg, SideFrame, SideGroup, SideLink, SkeletonCards, Spinner, StageRail, Steps, Tabs, Tag, TimeChip, toast, Readout } from "./parts";
 import Timeline from "./Timeline";
@@ -344,6 +344,43 @@ function Illustrations({ shots, busy, run }: { shots: Shot[]; busy: boolean; run
   );
 }
 
+type SpeechHit = { moment_id: string; asset_id: string; t_start: number; t_end: number; text: string; score: number | null; asset: { name: string; proxy_url: string | null } };
+
+/** What people say in the footage, to put into the script as a quote: searched by words (or all of it), each sentence heard
+    where it is said, and inserted after the line the cursor is on as a "> " line that keeps its stretch of the recording. */
+function QuotePicker({ insert, close }: { insert: (hit: SpeechHit) => void; close: () => void }) {
+  const [q, setQ] = useState(""), [asked, setAsked] = useState("");
+  const { data } = usePoll<{ hits: SpeechHit[] }>(`/api/v1/speech?q=${encodeURIComponent(asked)}`, 60000);
+  const player = useRef<HTMLVideoElement>(null), [playing, setPlaying] = useState<string | null>(null);
+  const hear = (h: SpeechHit) => {
+    const v = player.current;
+    if (!v || !h.asset.proxy_url) return;
+    if (playing === h.moment_id) { v.pause(); setPlaying(null); return; }
+    v.src = h.asset.proxy_url; v.currentTime = h.t_start; v.play().catch(() => {}); setPlaying(h.moment_id);
+    v.ontimeupdate = () => { if (v.currentTime >= h.t_end) { v.pause(); setPlaying(null); } };
+  };
+  return (
+    <div className="border-t border-line bg-raised/40 px-4 py-3 text-[13px]">
+      <div className="mb-2 flex items-center gap-2"><Icon name="mic" size={15} className="text-accent" /><span className="font-medium">{tr("Trích lời từ footage")}</span>
+        <span className="text-faint">{tr("câu người trong footage tự nói; khi dựng giữ nguyên tiếng của họ")}</span><span className="flex-1" />
+        <button type="button" className="link text-[12px]" onClick={close}>{tr("Đóng")}</button></div>
+      <form className="mb-2 flex gap-2" onSubmit={(e) => { e.preventDefault(); setAsked(q.trim()); }}>
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={tr("Tìm theo lời nói, để trống để xem tất cả")} aria-label={tr("Tìm trong lời nói")} className="h-8 min-w-0 flex-1 px-2.5" />
+        <Button size="sm" type="submit"><Icon name="search" size={13} />{tr("Tìm")}</Button></form>
+      <video ref={player} className="hidden" playsInline />
+      {!data ? <Spinner /> : data.hits.length === 0 ? <p className="text-faint">{asked ? tr("Không có câu nào nói như vậy trong footage đã nghe.") : tr("Footage chưa được nghe lời nói. Vào Thư viện, tab Lời thoại, bấm Nghe lời nói.")}</p> : (
+        <ul className="grid max-h-72 gap-1.5 overflow-y-auto">{data.hits.map((h) => (
+          <li key={h.moment_id} className="flex items-start gap-2.5 rounded-lg border border-line bg-surface/60 px-3 py-2">
+            <button type="button" onClick={() => hear(h)} disabled={!h.asset.proxy_url} aria-label={playing === h.moment_id ? tr("Dừng") : tr("Nghe")}
+                    className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-md border border-edge text-mute hover:text-ink disabled:opacity-40"><Icon name={playing === h.moment_id ? "pause" : "play"} size={12} /></button>
+            <span className="min-w-0 flex-1"><span className="block">“{h.text}”</span>
+              <span className="mono block truncate text-[11.5px] text-faint">{h.asset.name} · {timecode(h.t_start)}–{timecode(h.t_end)}</span></span>
+            <Button size="sm" onClick={() => insert(h)}><Icon name="plus" size={13} />{tr("Chèn")}</Button>
+          </li>))}</ul>)}
+    </div>
+  );
+}
+
 /** The lines a selection in the editor covers (a cursor alone: its line), when they are lines of the script (not empty, not
     a scene heading); null otherwise. */
 function span_of(el: HTMLTextAreaElement): { first: number; last: number } | null {
@@ -352,7 +389,7 @@ function span_of(el: HTMLTextAreaElement): { first: number; last: number } | nul
   let last = before(el.selectionEnd);
   if (last > first && el.value[el.selectionEnd - 1] === "\n") last -= 1;            // a selection that ends at a line's start stops before it
   const lines = el.value.split("\n").slice(first, last + 1);
-  return lines.length && lines.every((l) => l.trim() && !l.trim().startsWith("#")) ? { first, last } : null;
+  return lines.length && lines.every((l) => l.trim() && !l.trim().startsWith("#") && !l.trim().startsWith(">")) ? { first, last } : null;     // a quote is not rewritten
 }
 
 type Proposal = { label: string; lines: string[]; flags: string[] };
@@ -634,6 +671,10 @@ function Detail({ id, back }: { id: string; back: () => void }) {
   const [topic, setTopic] = useState("");
   const editor = useRef<HTMLTextAreaElement>(null);
   const [span, setSpan] = useState<{ first: number; last: number } | null>(null);       // the lines the cursor or the selection is on
+  const [quotes, setQuotes] = useState<Record<string, Quote>>({});                      // quotes picked in this editor, by their words, until saved
+  const [quoting, setQuoting] = useState(false);
+  // A "> " line the operator picked from what the footage says goes with its stretch of the recording; any other line as written.
+  const toSave = () => (text ?? "").split("\n").map((l) => { const w = l.trim().replace(/^>\s*/, ""); return l.trim().startsWith(">") && quotes[w] ? { text: `> ${w}`, quote: quotes[w] } : l; });
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const asked = new URLSearchParams(window.location.search).get("tab") as View | null;
@@ -676,7 +717,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
   const run = async (fn: () => Promise<unknown>) => { setBusy(true); setNote(null); try { await fn(); } catch (e) { setNote((e as Error).message); } setBusy(false); reload(); };
   const saved = scriptText(p.shots);
   const dirty = text !== null && text.trim() !== saved.trim();
-  saveRef.current = () => { if (dirty && (text ?? "").trim()) run(() => post(`/api/v1/projects/${id}/script`, { lines: (text ?? "").split("\n") }, "PUT")); };
+  saveRef.current = () => { if (dirty && (text ?? "").trim()) run(() => post(`/api/v1/projects/${id}/script`, { lines: toSave() }, "PUT")); };
   const matching = p.match && ["queued", "running"].includes(p.match.status);
   const reviewing = p.match?.status === "waiting_review";
   const approved = !!p.script?.match_approved;
@@ -692,7 +733,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
   const patch = (body: Record<string, unknown>) => run(() => post(`/api/v1/projects/${id}`, body, "PATCH"));
   const lines = (text ?? "").split("\n").filter((l) => l.trim() && !l.trim().startsWith("#")).length;
   // The one thing to do next, always in the same place.
-  const next = dirty ? { label: tr("Lưu kịch bản"), icon: "check", go: () => run(() => post(`/api/v1/projects/${id}/script`, { lines: (text ?? "").split("\n") }, "PUT")) }
+  const next = dirty ? { label: tr("Lưu kịch bản"), icon: "check", go: () => run(() => post(`/api/v1/projects/${id}/script`, { lines: toSave() }, "PUT")) }
     : !p.script ? null
     : reviewing || (!approved && !rendering) ? { label: tr("Chọn hình trên Storyboard"), icon: "layers", go: () => goTo(`/du-an/${id}/storyboard`) }
     : renderReview ? { label: tr("Duyệt bản dựng"), icon: "check", go: () => run(() => post(`/api/v1/projects/${id}/render/decision`, { approve: true })) }
@@ -731,17 +772,22 @@ function Detail({ id, back }: { id: string; back: () => void }) {
                   <span className="block text-mute">{tr("Từ ý tưởng hoặc kịch bản này thành cảnh và shot có đặc tả, mặt bằng máy, liền mạch; sửa bằng hội thoại.")}</span></span>
                 <Button kind="primary" onClick={() => goTo(`/du-an/${id}/storyboard`)}>{tr("Mở Storyboard")}</Button>
               </div>
-              <Section title={tr("Kịch bản")} icon="edit" note={tr("Mỗi dòng là một câu lời dẫn; hệ thống tìm một clip cho từng câu. Dòng bắt đầu bằng dấu # là tên một cảnh.")}>
+              <Section title={tr("Kịch bản")} icon="edit" note={tr("Mỗi dòng là một câu lời dẫn; hệ thống tìm một clip cho từng câu. Dòng bắt đầu bằng dấu # là tên một cảnh; dòng bắt đầu bằng > là câu trích lời, người trong footage tự nói, giữ nguyên tiếng.")}>
                 <div className={`panel overflow-hidden ${dirty ? "glow" : ""}`}>
                   <div className="flex flex-wrap items-center gap-3 border-b border-line bg-raised/40 px-4 py-2 text-[12px] text-mute">
                     <span className="mono">{p.script ? `v${p.script.version}` : tr("bản nháp")}</span>{p.script?.label && <Tag tone="ai">{p.script.label}</Tag>}<span className="mono">{tv`${lines} câu`}</span>
                     {dirty && <span className="flex items-center gap-1.5 text-accent"><span className="h-1.5 w-1.5 rounded-full bg-accent" />{tr("Chưa lưu")}</span>}
                     <span className="ml-auto" />
-                    <Button size="sm" disabled={busy || !dirty || !(text ?? "").trim()} onClick={() => run(() => post(`/api/v1/projects/${id}/script`, { lines: (text ?? "").split("\n") }, "PUT"))}>{tr("Lưu kịch bản")}</Button>
+                    <Button size="sm" kind={quoting ? "ai" : "quiet"} onClick={() => setQuoting(!quoting)} title={tr("Chèn một câu người trong footage tự nói, giữ nguyên tiếng")}><Icon name="mic" size={14} />{tr("Chèn trích lời")}</Button>
+                    <Button size="sm" disabled={busy || !dirty || !(text ?? "").trim()} onClick={() => run(() => post(`/api/v1/projects/${id}/script`, { lines: toSave() }, "PUT"))}>{tr("Lưu kịch bản")}</Button>
                   </div>
                   <textarea ref={editor} value={text ?? ""} onChange={(e) => setText(e.target.value)} rows={Math.max(6, (text ?? "").split("\n").length + 1)} aria-label={tr("Kịch bản")}
                             onSelect={(e) => setSpan(span_of(e.currentTarget))}
                             className="bare block w-full !rounded-none px-5 py-4 text-[15px] leading-[1.95]" placeholder={tr("Chợ Hội An buổi sáng tấp nập người mua kẻ bán.")} />
+                  {quoting && <QuotePicker insert={(hit) => {
+                    const all = (text ?? "").split("\n"), at = span ? span.last + 1 : all.length;
+                    all.splice(at, 0, `> ${hit.text}`); setText(all.join("\n"));
+                    setQuotes({ ...quotes, [hit.text]: { asset_id: hit.asset_id, moment_id: hit.moment_id, t_in: hit.t_start, t_out: hit.t_end } }); }} close={() => setQuoting(false)} />}
                   {span && <CoWrite id={id} lines={(text ?? "").split("\n")} span={span} replace={(first, last, lines) => {
                     const all = (text ?? "").split("\n"); all.splice(first, last - first + 1, ...lines); setText(all.join("\n")); setSpan(null); }} />}
                   <form className="flex flex-wrap items-center gap-2 border-t border-line bg-ai/[0.04] px-4 py-2.5" onSubmit={(e) => e.preventDefault()}>

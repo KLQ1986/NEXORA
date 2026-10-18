@@ -125,6 +125,8 @@ def normalise(raw: dict, *, camera: tuple[float, float] | None = None) -> dict:
         "criteria": [x for x in (criterion(r) for r in (raw.get("criteria") or default_criteria(policy)) if isinstance(r, dict)) if x],
         # How the picture illustrates the words (direct, associative, contrast): an evoking shot is searched by what is to be seen.
         "illustration": ILL.normalise(raw.get("illustration")),
+        # A quote: the shot is someone in the footage saying its line, played with their own sound.
+        "quote": bool(raw.get("quote")),
     }
     if spec["duration"]["min"] > spec["duration"]["target"]:
         spec["duration"]["min"] = spec["duration"]["target"]
@@ -249,7 +251,7 @@ class StoryboardPlanner:
                 scenes[name] = self._store.add_scene(project_id, {"title": name, "purpose": "", "subject": {"x": 300, "y": AXIS, "label": ""}})
             spec = normalise({"intent": line.brief or line.text, "line": line.text, "duration": line.target_seconds or max(3.0, round(len(line.text.split()) / 2.6, 1)),
                               "source": "any", "query": ILL.query(line.text, line.brief, line.illustration) if line.illustration.get("mode") in ("associative", "contrast") else (line.brief or line.text),
-                              "illustration": line.illustration}, camera=camera_row(k, len(lines)))
+                              "illustration": line.illustration, "quote": line.quote is not None}, camera=camera_row(k, len(lines)))
             sid = self._store.add_shot(project_id, scenes[name], spec, position=k, made_by="script", note="từ kịch bản")
             self._store.link_script(sid, line.shot_id)
             sel = self._projects.selection(line.shot_id)
@@ -258,8 +260,10 @@ class StoryboardPlanner:
                 # looked at and approved there; the shot waits for the operator, nothing is accepted on their behalf.
                 others = [{"asset_id": a["asset_id"], "moment_id": a.get("moment_id"), "t_in": a["t_in"], "t_out": a["t_out"], "score": a.get("score"),
                            "text": a.get("reason") or "", "passed": 0, "of": 0, "failed": []} for a in sel.alternates if a.get("asset_id") and a.get("t_in") is not None][:5]
-                self._store.set_state(sid, "needs", assignment={"kind": "footage", "asset_id": sel.asset_id, "moment_id": sel.moment_id, "t_in": sel.t_in, "t_out": sel.t_out,
-                                                                "score": sel.score, "text": sel.reason or "", "decided_by": sel.decided_by, "candidates": others}, checks=[])
+                quote = line.quote is not None
+                self._store.set_state(sid, "accepted" if quote else "needs", assignment={"kind": "footage", "asset_id": sel.asset_id, "moment_id": sel.moment_id, "t_in": sel.t_in, "t_out": sel.t_out,
+                                                                "score": sel.score, "text": sel.reason or "", "decided_by": sel.decided_by, "candidates": others,
+                                                                **({"treat": {"live_sound": True}} if quote else {})}, checks=[])
         if not self._store.board(project_id):
             self.set_shared(project_id, idea=self._projects.project(project_id)["title"], seconds=int(sum(_get(s.spec, "duration.target") for s in self._store.shots(project_id))))
         return len(lines)
@@ -545,7 +549,8 @@ class StoryboardPlanner:
         shots = self._store.shots(project_id)
         if not shots:
             raise AdapterError(ErrorCode.INVALID_REQUEST, "the storyboard has no shots", retryable=False)
-        lines = [{"text": s.spec["line"] or s.spec["intent"], "brief": s.spec["intent"] or None, "illustration": s.spec.get("illustration") or None} for s in shots]
+        lines = [{"text": ("> " if s.spec.get("quote") else "") + (s.spec["line"] or s.spec["intent"]), "brief": s.spec["intent"] or None, "illustration": s.spec.get("illustration") or None,
+                  **({"quote": {k: (s.assignment or {}).get(k) for k in ("asset_id", "moment_id", "t_in", "t_out")}} if s.spec.get("quote") and s.assignment else {})} for s in shots]
         script_id = self._projects.save_script(project_id, lines)
         made = self._projects.script(script_id)["shots"]
         for s, line in zip(shots, made):

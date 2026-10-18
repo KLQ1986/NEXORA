@@ -268,6 +268,11 @@ function VoiceModels() {
         <p className="mt-2 text-[12.5px] text-faint">{tr("Đổi mô hình cho từng việc trong file")} <span className="mono text-mute">nexora.toml</span> {tr("rồi khởi động lại.")}</p>
         {note && <p role="status" className="mt-2 text-[13px] text-proof">{note}</p>}
       </Card>
+      <Card title={tr("Giọng văn khi viết")} icon="edit" note={tr("Mọi lần máy viết hay viết lại lời dẫn đều theo giọng này; giọng của kênh nói thêm về từng kênh.")}>
+        <textarea key={s.writing_voice} defaultValue={s.writing_voice} rows={5} aria-label={tr("Giọng văn khi viết")} className="w-full p-2.5 text-[13px] leading-relaxed"
+                  onBlur={(e) => { if (e.target.value.trim() !== s.writing_voice.trim()) save({ writing_voice: e.target.value }, tr("Đã lưu giọng văn.")); }} />
+        <button type="button" className="link mt-1.5 text-[12.5px]" onClick={() => save({ writing_voice: "" }, tr("Đã trở về giọng mặc định."))}>{tr("Trở về giọng mặc định (miền Nam, tự nhiên, liền mạch)")}</button>
+      </Card>
       <Card title={tr("Chế độ riêng tư")} icon="shield" note={tr("Footage bạn tự quay vốn không bao giờ được gửi đi.")}>
         <label className={`flex cursor-pointer items-start gap-3 rounded-xl border p-3.5 transition-colors ${s.privacy_local_only ? "border-proof/40 bg-proof/[0.05]" : "border-line"}`}>
           <input type="checkbox" className="mt-0.5" checked={s.privacy_local_only} onChange={(e) => save({ privacy_local_only: e.target.checked })} />

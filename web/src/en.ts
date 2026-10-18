@@ -2519,6 +2519,22 @@ const en: Record<string, string> = {
   "Dùng cách này": "Use this one",
   "Đoạn đã đổi từ lúc hỏi; các phương án trước là cho đoạn cũ.": "The lines changed since you asked; these proposals were for the old ones.",
   "Ẩn": "Hide",
+  "Chèn trích lời": "Insert a quote",
+  "Chèn một câu người trong footage tự nói, giữ nguyên tiếng": "Insert a line someone says in the footage, with its own sound",
+  "Trích lời từ footage": "Quotes from the footage",
+  "câu người trong footage tự nói; khi dựng giữ nguyên tiếng của họ": "lines people say in the footage; the cut keeps their own sound",
+  "Tìm theo lời nói, để trống để xem tất cả": "Search what is said, or leave empty to see everything",
+  "Tìm trong lời nói": "Search speech",
+  "Không có câu nào nói như vậy trong footage đã nghe.": "Nobody says that in the footage heard so far.",
+  "Footage chưa được nghe lời nói. Vào Thư viện, tab Lời thoại, bấm Nghe lời nói.": "No footage has been listened to yet. In the Library, open the Speech tab and press Listen.",
+  "Nghe": "Listen",
+  "Chèn": "Insert",
+  "Mỗi dòng là một câu lời dẫn; hệ thống tìm một clip cho từng câu. Dòng bắt đầu bằng dấu # là tên một cảnh; dòng bắt đầu bằng > là câu trích lời, người trong footage tự nói, giữ nguyên tiếng.": "Each line is a line of narration; a clip is found for each. A line starting with # names a scene; a line starting with > is a quote, someone in the footage saying it, with their own sound.",
+  "Giọng văn khi viết": "Writing voice",
+  "Mọi lần máy viết hay viết lại lời dẫn đều theo giọng này; giọng của kênh nói thêm về từng kênh.": "Every line the model writes or rewrites follows this voice; a channel's own voice adds to it.",
+  "Đã lưu giọng văn.": "Writing voice saved.",
+  "Đã trở về giọng mặc định.": "Back to the default voice.",
+  "Trở về giọng mặc định (miền Nam, tự nhiên, liền mạch)": "Back to the default voice (Southern, natural, flowing)",
 };
 
 export default en;

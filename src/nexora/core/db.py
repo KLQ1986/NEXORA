@@ -278,6 +278,7 @@ MIGRATIONS = [
     ("assets", "rejected", "INTEGER NOT NULL DEFAULT 0"),
     ("shots", "gen", "TEXT"),
     ("shots", "illustration", "TEXT"),
+    ("shots", "quote", "TEXT"),
     ("projects", "options", "TEXT"),
     ("projects", "channel", "TEXT"),
     ("projects", "bible", "TEXT"),
