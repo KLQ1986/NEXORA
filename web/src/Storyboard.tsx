@@ -37,7 +37,7 @@ type Board = {
 };
 
 const STATE: Record<SbShot["state"], [string, string]> = { accepted: [tr("đạt"), "proof"], needs: [tr("cần bạn"), "ai"], running: [tr("đang làm"), "accent"], planned: [tr("đã lên"), "mute"], stale: [tr("cần kiểm lại"), "cue"] };
-const SRC: Record<string, [string, string]> = { footage: [tr("Footage"), "#4fd1a5"], generate: [tr("AI"), "#ff8c52"], stock: [tr("Stock"), "#c9a7ff"], any: [tr("Bất kỳ"), "#a7b2c6"] };
+const SRC: Record<string, [string, string]> = { footage: [tr("Footage"), "#4fd1a5"], generate: [tr("AI"), "#ff8c52"], stock: [tr("Stock"), "#c9a7ff"], any: [tr("Bất kỳ"), "#a7acb8"] };
 const SEAM: Record<string, [string, string]> = { pass: [tr("liền"), "#4fd1a5"], warn: [tr("cần xem"), "#f5c451"], fail: [tr("đứt"), "#ff6b6b"] };
 const MARK: Record<string, [string, string]> = { pass: ["✓", "bg-proof"], fail: ["✕", "bg-tally"], wait: ["?", "bg-cue"], unmeasured: ["–", "bg-white/20"], warn: ["!", "bg-cue"] };
 const TONE = ["#2f5a47", "#3b4a3a", "#4d5a2f", "#5a4a35", "#2f4a5a", "#5a3f2f", "#4a3f5a", "#355a3c"];
@@ -328,7 +328,7 @@ function BoardView({ board, cur, seam, tone, pick, pickSeam, move }: { board: Bo
                      onDragEnd={end} onDragOver={(e) => { if (drag && drag !== s.shot_id) { e.preventDefault(); setOver(s.shot_id); } }} onDragLeave={() => setOver((o) => (o === s.shot_id ? null : o))}
                      onDrop={(e) => drop(e, { before: s.shot_id })}
                      className={`relative grid min-w-0 cursor-grab content-start gap-2 active:cursor-grabbing ${drag === s.shot_id ? "opacity-40" : ""}`}>
-                  {over === s.shot_id && <span className="pointer-events-none absolute -left-2.5 bottom-0 top-0 w-[3px] rounded-full bg-accent shadow-[0_0_8px_var(--color-accent)]" aria-hidden="true" />}
+                  {over === s.shot_id && <span className="pointer-events-none absolute -left-2.5 bottom-0 top-0 w-[3px] rounded-full bg-accent" aria-hidden="true" />}
                   {sm && flagged && <button type="button" onClick={() => pickSeam(`${sm.a}-${sm.b}`)} title={tv`Mối nối ${sm.a_code} → ${sm.b_code}: ${SEAM[sm.worst][0]}`}
                                             className={`flex h-[22px] items-center justify-self-start rounded-full border px-2 text-[11px] ${seam === `${sm.a}-${sm.b}` ? "border-accent" : ""}`}
                                             style={{ color: SEAM[sm.worst][1], background: `${SEAM[sm.worst][1]}1f`, borderColor: seam === `${sm.a}-${sm.b}` ? undefined : `${SEAM[sm.worst][1]}66` }}>
@@ -541,7 +541,7 @@ function TimeView({ board, cur, tone, pick, pickSeam }: { board: Board; cur?: Sb
       <div className="flex items-center gap-2.5 text-[12px] text-faint">
         <Button size="sm" onClick={() => { if (at >= total) setAt(0); setPlaying(!playing); }}><Icon name={playing ? "pause" : "play"} size={13} />{playing ? tr("Dừng") : tr("Phát animatic")}</Button>
         <span className="mono">{mmss(at)}</span>
-        <input type="range" min={0} max={total} step={0.1} value={at} onChange={(e) => setAt(Number(e.target.value))} aria-label={tr("Vị trí trên timeline")} className="min-w-0 flex-1 accent-[#22e1ff]" />
+        <input type="range" min={0} max={total} step={0.1} value={at} onChange={(e) => setAt(Number(e.target.value))} aria-label={tr("Vị trí trên timeline")} className="min-w-0 flex-1 accent-[#46c8e0]" />
         <span className="mono">{mmss(total)}</span>
       </div>
       {/* Each shot as its frame, so the order reads at a glance and a move shows at once (the codes follow the order and alone look the same). */}
@@ -556,7 +556,7 @@ function TimeView({ board, cur, tone, pick, pickSeam }: { board: Board; cur?: Sb
             {tv`${board.seams.length} mối nối · ${board.seams.filter((x) => x.worst === "fail").length} đứt · ${board.seams.filter((x) => x.worst === "warn").length} cần xem`}</span></div>
         {entities.map((e, i) => <Lane key={e} label={e} thin>{shots.map((s) => <div key={s.shot_id} className="h-3 min-w-0 rounded-sm" style={{ flex: `${s.spec.duration.target} 1 0`, background: s.spec.continuity.entities.includes(e) ? ent[i % ent.length] : "transparent", border: s.spec.continuity.entities.includes(e) ? "none" : "1px dashed rgba(255,255,255,0.12)" }} />)}</Lane>)}
         {!entities.length && <p className="text-[12px] text-faint">{tr("Chưa shot nào gắn thực thể (tab Liên tục); làn nhân vật, nơi chốn, đạo cụ sẽ hiện ở đây.")}</p>}
-        <Lane label={tr("Hướng")}>{shots.map((s) => <div key={s.shot_id} className="min-w-0 text-center text-[13px]" style={{ flex: `${s.spec.duration.target} 1 0`, color: s.spec.direction ? "var(--color-ink)" : "#4a5670" }}>{s.spec.direction === "phải" ? "→" : s.spec.direction === "trái" ? "←" : "·"}</div>)}</Lane>
+        <Lane label={tr("Hướng")}>{shots.map((s) => <div key={s.shot_id} className="min-w-0 text-center text-[13px]" style={{ flex: `${s.spec.duration.target} 1 0`, color: s.spec.direction ? "var(--color-ink)" : "#3a3f4a" }}>{s.spec.direction === "phải" ? "→" : s.spec.direction === "trái" ? "←" : "·"}</div>)}</Lane>
         <Lane label={tr("Thời điểm")}>{shots.map((s, i) => <div key={s.shot_id} className="min-w-0 truncate text-center text-[11px] text-mute" style={{ flex: `${s.spec.duration.target} 1 0` }}>{times[i] && times[i] !== times[i - 1] ? times[i] : times[i] ? "·" : ""}</div>)}</Lane>
         <Lane label={tr("Mối nối")}>
           <div className="relative h-4 flex-1">{board.seams.map((x) => <button key={`${x.a}-${x.b}`} type="button" onClick={() => pickSeam(`${x.a}-${x.b}`)} title={tv`Mối nối ${x.a_code} → ${x.b_code}: ${SEAM[x.worst][0]}`}
@@ -599,13 +599,13 @@ function PlanView({ board, cur, pick, flip }: { board: Board; cur?: SbShot; pick
                 {pl.cams.map((c) => {
                   const s = codes.get(c.shot_id)!, isSel = c.shot_id === cur?.shot_id, f = (lensFov(s.spec.framing.lens) * Math.PI) / 360, th = (c.aim * Math.PI) / 180, L = 85;
                   const pt = (a: number) => `${(c.x + L * Math.cos(a)).toFixed(0)}px ${(c.y + L * Math.sin(a)).toFixed(0)}px`;
-                  const col = c.crossed ? "#ff6b6b" : isSel ? "#22e1ff" : "#8592a9";
+                  const col = c.crossed ? "#ff6b6b" : isSel ? "#46c8e0" : "#848a97";
                   return (
                     <span key={c.shot_id}>
-                      <span className="pointer-events-none absolute inset-0" style={{ background: c.crossed ? "rgba(255,107,107,0.2)" : isSel ? "rgba(34,225,255,0.24)" : "rgba(133,146,169,0.12)", clipPath: `polygon(${c.x}px ${c.y}px, ${pt(th - f)}, ${pt(th + f)})` }} />
+                      <span className="pointer-events-none absolute inset-0" style={{ background: c.crossed ? "rgba(255,107,107,0.2)" : isSel ? "rgba(70,200,224,0.24)" : "rgba(132,138,151,0.12)", clipPath: `polygon(${c.x}px ${c.y}px, ${pt(th - f)}, ${pt(th + f)})` }} />
                       {c.end && <span className="pointer-events-none absolute h-0 origin-top-left border-t-2 border-dashed" style={{ left: c.x, top: c.y, width: Math.hypot(c.end.x - c.x, c.end.y - c.y), borderColor: col, transform: `rotate(${Math.atan2(c.end.y - c.y, c.end.x - c.x)}rad)` }} />}
                       <button type="button" onClick={() => pick(c.shot_id)} title={s.code} className="mono absolute grid h-8 w-8 place-items-center rounded-full border-2 text-[10px] font-semibold"
-                              style={{ left: c.x - 16, top: c.y - 16, background: isSel || c.crossed ? col : "#26354f", color: isSel || c.crossed ? "#04121f" : "#e6edf7", borderColor: isSel ? "#e6edf7" : "#070c16" }}>{s.code}</button>
+                              style={{ left: c.x - 16, top: c.y - 16, background: isSel || c.crossed ? col : "#30353f", color: isSel || c.crossed ? "#0c0d11" : "#eceef2", borderColor: isSel ? "#eceef2" : "#0a0b0e" }}>{s.code}</button>
                     </span>);
                 })}
               </div>

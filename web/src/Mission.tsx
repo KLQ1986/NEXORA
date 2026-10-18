@@ -88,7 +88,7 @@ function Kpi({ label, value, sub, tone = "accent", code, onClick }: { label: str
   return (
     <button type="button" onClick={onClick} className="bento bento-hover flex min-w-0 flex-col p-4 text-left">
       <span className="flex items-center justify-between gap-2"><span className="truncate text-[12.5px] text-mute">{label}</span><span className="hud-label">{code}</span></span>
-      <span className={`mono mt-2 text-[30px] font-semibold leading-none tracking-tight ${c} kpi-glow`}>{value}</span>
+      <span className={`mono mt-2 text-[30px] font-semibold leading-none tracking-tight ${c}`}>{value}</span>
       {sub && <span className="mt-2 truncate text-[12px] text-faint">{sub}</span>}
     </button>
   );
@@ -142,11 +142,11 @@ function OverviewTab({ ov, go, show }: { ov: Overview | null; go: (k: TabKey) =>
         <Kpi code="ALR.N" label={tr("Cảnh báo")} value={ov.kpis.alerts} sub={ov.alerts[0]?.text ?? tr("Không có gì bất thường")} tone={ov.kpis.alerts ? "tally" : "mute"} onClick={() => go("logs")} />
       </div>
       <div className="grid gap-4 xl:grid-cols-12">
-        <Bento label={tr("Giao nhiệm vụ")} code="CMP.01" className="xl:col-span-7 xl:row-span-2"><Composer onPlanned={(m) => show(m.mission_id)} autonomy={ov.autonomy} /></Bento>
+        <Bento label={tr("Giao nhiệm vụ")} code="CMP.01" className="xl:col-span-7"><Composer onPlanned={(m) => show(m.mission_id)} autonomy={ov.autonomy} /></Bento>
         <Bento label={tr("Chờ bạn duyệt")} code="APR.02" className="xl:col-span-5" end={<button type="button" className="link text-[12.5px]" onClick={() => go("approvals")}>{tr("Xem hết")}</button>}>
           {ov.approvals.length ? <ul className="grid gap-2">{ov.approvals.slice(0, 4).map((a) => (
             <li key={a.key}><button type="button" onClick={() => (a.kind === "mission" ? show(a.id) : a.link ? goTo(a.link) : go("approvals"))} className="tile flex w-full items-start gap-3 px-3 py-2.5 text-left">
-              <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-cue shadow-[0_0_8px_var(--color-cue)]" /><span className="min-w-0 flex-1"><span className="block truncate text-[13.5px]">{a.title}</span>
+              <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-cue" /><span className="min-w-0 flex-1"><span className="block truncate text-[13.5px]">{a.title}</span>
               <span className="block truncate text-[12px] text-faint">{a.asked_by} · {a.why}</span></span></button></li>))}</ul>
             : <p className="text-[13px] text-mute">{tr("Không có gì đang chờ bạn.")}</p>}
         </Bento>
@@ -175,7 +175,7 @@ function OverviewTab({ ov, go, show }: { ov: Overview | null; go: (k: TabKey) =>
 
 function Lamp({ state }: { state: string }) {
   const tone = UNIT[state]?.[1] ?? "mute";
-  return <span className={`relative inline-block h-2 w-2 shrink-0 rounded-full ${DOT[tone]} ${state === "busy" ? "ping" : ""}`} style={{ boxShadow: tone === "mute" ? undefined : `0 0 8px var(--color-${tone})` }} />;
+  return <span className={`relative inline-block h-2 w-2 shrink-0 rounded-full ${DOT[tone]} ${state === "busy" ? "ping" : ""}`} />;
 }
 
 function MachineMeters({ r }: { r: Resources }) {
@@ -210,7 +210,7 @@ function Composer({ onPlanned, autonomy }: { onPlanned: (m: Mission) => void; au
   return (
     <div className="flex h-full flex-col gap-3">
       <p className="text-[13px] text-mute">{tr("Nói việc cần làm bằng lời. Mô hình chỉ lập kế hoạch từ những gì NEXORA làm được; máy kiểm tra năng lực, ngân sách và quyền. Không có gì chạy trước khi bạn xác nhận.")}</p>
-      <textarea value={text} onChange={(e) => setText(e.target.value)} rows={4} aria-label={tr("Nhiệm vụ")} className="min-h-[112px] w-full flex-1 resize-y p-3 text-[14px]"
+      <textarea value={text} onChange={(e) => setText(e.target.value)} rows={4} aria-label={tr("Nhiệm vụ")} className="min-h-[112px] w-full resize-y p-3 text-[14px]"
                 onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) plan(); }}
                 placeholder={tr("Ví dụ: làm 2 video dọc về buổi sáng ở chợ quê từ footage chưa dùng, không dùng dịch vụ trả tiền, dừng ở bước duyệt clip")} />
       <div className="flex flex-wrap items-center gap-3">
@@ -340,7 +340,7 @@ function Monitor({ id, back }: { id: string; back: () => void }) {
         </div>)}
       <Bento label={tr("Dòng sự kiện")} code="EVT.LOG">
         <ol className="grid gap-1.5 border-l border-line pl-4">{[...m.events].reverse().map((e, i) => (
-          <li key={i} className="relative text-[13px]"><span className="absolute -left-[21px] top-1.5 h-2 w-2 rounded-full bg-accent shadow-[0_0_8px_var(--color-accent)]" />
+          <li key={i} className="relative text-[13px]"><span className="absolute -left-[21px] top-1.5 h-2 w-2 rounded-full bg-accent" />
             <span className="mono mr-2 text-[12px] text-faint">{clock(e.at)}</span><span className="text-mute">{EVENT[e.kind] ?? e.kind}</span>{e.text && <span className="text-faint"> · {e.text}</span>}</li>))}</ol>
       </Bento>
     </div>

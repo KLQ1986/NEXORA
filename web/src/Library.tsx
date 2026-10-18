@@ -949,8 +949,8 @@ export default function Library() {
   const tagAll = async (list: Asset[], name: string) => { const t = name.trim(); if (!t || !list.length) return; for (const a of list) if (!a.collections.includes(t)) await post(`/api/v1/assets/${a.asset_id}`, { collections: [...a.collections, t] }, "PATCH").catch(() => {}); setNewGroup(null); reload(); toast(tv`Đã đưa ${list.length} mục vào “${t}”.`); };
   const trash = async (list: Asset[]) => {
     const ids = list.map((a) => a.asset_id); if (!ids.length) return;
-    const using = list.filter((a) => a.used_in.length).length;
-    if (!(await ask(tv`Chuyển ${ids.length} nguyên liệu vào thùng rác?`, { body: (using ? tv`${using} trong số đó đang được dùng trong dự án. ` : "") + tr("Có thể khôi phục trong Thùng rác trong 30 ngày. File gốc không bị đụng tới."), confirm: tr("Chuyển vào thùng rác"), danger: true }))) return;
+    const inUse = list.filter((a) => a.used_in.length).length;
+    if (!(await ask(tv`Chuyển ${ids.length} nguyên liệu vào thùng rác?`, { body: (inUse ? tv`${inUse} trong số đó đang được dùng trong dự án. ` : "") + tr("Có thể khôi phục trong Thùng rác trong 30 ngày. File gốc không bị đụng tới."), confirm: tr("Chuyển vào thùng rác"), danger: true }))) return;
     await post("/api/v1/trash", { assets: ids }); if (picked && ids.includes(picked)) setPicked(null); setChosen(new Set()); reload();
     toast(tv`Đã chuyển ${ids.length} nguyên liệu vào thùng rác.`, { undo: () => { post("/api/v1/trash/restore", { assets: ids }).then(reload).catch(() => {}); } });
   };

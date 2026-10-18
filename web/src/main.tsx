@@ -42,8 +42,8 @@ type HomeLite = { attention: unknown[]; gaps: unknown[]; offline_volumes: unknow
 function Mark({ size = 26 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 28 28" aria-hidden="true">
-      <rect x=".5" y=".5" width="27" height="27" rx="7.5" fill="#0f1424" stroke="#22e1ff" strokeOpacity=".55" />
-      <rect x="6" y="7.5" width="16" height="3" rx="1.5" fill="#22e1ff" /><rect x="6" y="12.5" width="10" height="3" rx="1.5" fill="#e6edf7" /><rect x="6" y="17.5" width="13" height="3" rx="1.5" fill="#22e1ff" opacity=".55" />
+      <rect x=".5" y=".5" width="27" height="27" rx="7.5" fill="#111318" stroke="#46c8e0" strokeOpacity=".55" />
+      <rect x="6" y="7.5" width="16" height="3" rx="1.5" fill="#46c8e0" /><rect x="6" y="12.5" width="10" height="3" rx="1.5" fill="#eceef2" /><rect x="6" y="17.5" width="13" height="3" rx="1.5" fill="#46c8e0" opacity=".55" />
     </svg>
   );
 }
@@ -135,7 +135,7 @@ function Bell({ go, unread }: { go: (to: string) => void; unread: number }) {
     <div ref={box} className="relative shrink-0">
       <button type="button" onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="dialog" aria-label={tr("Thông báo")} title={tr("Thông báo")}
               className={`relative grid h-9 w-9 place-items-center rounded-lg border transition-colors ${open ? "border-accent/50 bg-accent/10 text-accent" : "border-line bg-surface text-mute hover:text-ink"}`}>
-        <Icon name="bell" size={17} />{unread > 0 && <span className="mono absolute -right-1.5 -top-1.5 grid h-[18px] min-w-[18px] place-items-center rounded-full bg-accent px-1 text-[10.5px] font-semibold text-[#03111f] ring-2 ring-canvas">{unread > 9 ? "9+" : unread}</span>}
+        <Icon name="bell" size={17} />{unread > 0 && <span className="mono absolute -right-1.5 -top-1.5 grid h-[18px] min-w-[18px] place-items-center rounded-full bg-accent px-1 text-[10.5px] font-semibold text-[#04161b] ring-2 ring-canvas">{unread > 9 ? "9+" : unread}</span>}
       </button>
       {open && (
         <div role="dialog" aria-label={tr("Thông báo")} className="dialog absolute right-0 top-11 z-40 w-[380px] max-w-[calc(100vw-2rem)] overflow-hidden p-0">
@@ -260,9 +260,9 @@ function App() {
         <nav aria-label={tr("Điều hướng chính")} className="hidden min-w-0 items-center gap-0.5 md:flex">
           {SECTIONS.map((x) => { const on = x === section; return (
             <a key={x.key} href={x.to} onClick={(e) => { e.preventDefault(); go(x.to); }} aria-current={on ? "page" : undefined} title={x.label}
-               className={`relative flex h-9 shrink-0 items-center gap-2 rounded-lg px-2.5 text-[13.5px] transition-colors lg:px-3 ${on ? "bg-accent/10 font-medium text-accent shadow-[inset_0_0_0_1px_rgba(34,225,255,0.18)]" : "text-mute hover:bg-raised/60 hover:text-ink"}`}>
+               className={`relative flex h-9 shrink-0 items-center gap-2 rounded-lg px-2.5 text-[13.5px] transition-colors lg:px-3 ${on ? "bg-accent/10 font-medium text-accent shadow-[inset_0_0_0_1px_rgba(70,200,224,0.18)]" : "text-mute hover:bg-raised/60 hover:text-ink"}`}>
               <Icon name={x.icon} size={16} /><span className="hidden lg:inline">{x.label}</span>{badge(x.key)}
-              {on && <span className="absolute inset-x-3 -bottom-[11px] h-[2px] rounded-full bg-accent shadow-[0_0_10px_var(--color-accent)]" />}
+              {on && <span className="absolute inset-x-3 -bottom-[11px] h-[2px] rounded-full bg-accent" />}
             </a>); })}
         </nav>
         <span className="flex-1" />

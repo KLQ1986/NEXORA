@@ -453,12 +453,17 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         for run_id in sorted(system.orch.runs(), key=lambda r: system.orch.run_info(r)["created_at"], reverse=True):
             view = run_view(system, run_id)
             subject = view["subject_ref"] or ""
-            if (subject, view["pipeline"]) in seen:
-                continue                                  # only the newest run of a piece of work speaks for it
-            seen.add((subject, view["pipeline"]))
             project = titles.get(subject)
+            if not project and subject.startswith("cut_") and getattr(system, "cuts", None) is not None:
+                cut = system.cuts.get(subject)                   # an export of the Edit step names its project
+                project = system.projects.project(cut["project_id"]) if cut else None
+            if (project["project_id"] if project and subject.startswith("cut_") else subject, view["pipeline"]) in seen:
+                continue                                  # only the newest run of a piece of work speaks for it
+            seen.add((project["project_id"] if project and subject.startswith("cut_") else subject, view["pipeline"]))
             if subject and subject not in asset_names and not project and system.assets.asset(subject):
                 asset_names[subject] = system.assets.path_of(system.assets.original(subject)).name
+            elif subject and subject not in asset_names and not project and system.vq_reader is not None and (vq := system.vq_reader.subject(subject)):
+                asset_names[subject] = Path(vq.get("path") or subject).name      # a Visual Quality job: the file it works on
             name = project["title"] if project else asset_names.get(subject, subject)
             link = f"/du-an/{project['project_id']}" if project else "/tien-trinh"
             item = {"run_id": run_id, "pipeline": view["pipeline"], "name": name, "link": link, "status": view["status"], "held": view["held"]}

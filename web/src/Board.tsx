@@ -51,7 +51,7 @@ export default function Board({ project: p }: { project: Project }) {
             return (
               <li key={s.key} className="relative flex flex-col items-center text-center">
                 {i > 0 && <span className={`absolute top-[17px] h-0.5 rounded-full ${d || a || w ? "bg-proof/45" : "bg-line"}`} style={{ left: "calc(-50% + 24px)", right: "calc(50% + 24px)" }} />}
-                <span className={`relative z-10 grid h-9 w-9 place-items-center rounded-full border ${w ? "border-cue/60 bg-cue/15 text-cue shadow-[0_0_18px_-2px_var(--color-cue)]" : a ? "border-ai/60 bg-ai/15 text-ai shadow-[0_0_18px_-2px_var(--color-ai)]" : d ? "border-proof/40 bg-proof/15 text-proof" : "border-line bg-raised text-faint"}`}>
+                <span className={`relative z-10 grid h-9 w-9 place-items-center rounded-full border ${w ? "border-cue/60 bg-cue/15 text-cue" : a ? "border-ai/60 bg-ai/15 text-ai" : d ? "border-proof/40 bg-proof/15 text-proof" : "border-line bg-raised text-faint"}`}>
                   <Icon name={d && !w && !a ? "check" : s.icon} size={16} />{a && <span className="ping absolute inset-0 rounded-full bg-ai/30" />}</span>
                 <p className={`mt-2 px-1 text-[12px] leading-tight ${w ? "font-medium text-cue" : a ? "font-medium text-ai" : d ? "text-mute" : "text-faint"}`}>{s.label}</p>
               </li>

@@ -190,7 +190,7 @@ export function SideLink({ label, icon, lead, on, onClick, count, tone, small, t
   return (
     <>
       <button type="button" onClick={onClick} aria-current={on ? "page" : undefined} title={title}
-              className={`flex w-full min-w-0 items-center gap-2.5 rounded-lg px-2.5 text-left transition-colors ${small ? "h-8 text-[13px]" : "h-9 text-[13.5px]"} ${on ? "bg-accent/10 font-medium text-accent shadow-[inset_0_0_0_1px_rgba(34,225,255,0.18)]" : "text-mute hover:bg-raised/60 hover:text-ink"}`}>
+              className={`flex w-full min-w-0 items-center gap-2.5 rounded-lg px-2.5 text-left transition-colors ${small ? "h-8 text-[13px]" : "h-9 text-[13.5px]"} ${on ? "bg-accent/10 font-medium text-accent shadow-[inset_0_0_0_1px_rgba(70,200,224,0.18)]" : "text-mute hover:bg-raised/60 hover:text-ink"}`}>
         {lead ?? (icon && <Icon name={icon} size={small ? 15 : 16} />)}<span className="min-w-0 flex-1 truncate">{label}</span>
         {count != null && count > 0 && <span className={`mono shrink-0 rounded-md px-1.5 text-[11px] font-medium leading-[18px] ${badge}`}>{count}</span>}
       </button>
@@ -393,7 +393,7 @@ export function Readout({ label, value, icon, tone = "accent", on, onClick }: { 
 /** A thin bar of a share. */
 export function Meter({ share, tone = "accent" }: { share: number; tone?: "accent" | "cue" | "proof" | "ai" }) {
   // Each bar runs from its colour into a neighbouring one, as the gauges on the overview do.
-  const c = { accent: "from-accent to-ai", cue: "from-cue to-[#f97316]", proof: "from-proof to-accent", ai: "from-ai to-[#ff4fd8]" }[tone];
+  const c = { accent: "from-accent-deep to-accent", cue: "from-[#c98f2c] to-cue", proof: "from-[#2f9e6d] to-proof", ai: "from-[#6f5fd6] to-ai" }[tone];
   return <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.06]"><div className={`h-full rounded-full bg-gradient-to-r ${c}`} style={{ width: `${Math.max(0, Math.min(1, share)) * 100}%` }} /></div>;
 }
 

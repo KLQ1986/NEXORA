@@ -229,7 +229,7 @@ export function VQPanel({ vq }: { vq: VQ }) {
         <div className="flex flex-wrap gap-1">
           {([["recipe", tr("Công thức")], ["qa", tr("Kiểm tra")], ["defects", tr("Lỗi")], ["source", tr("Nguồn")], ["versions", tr("Phiên bản")]] as const).map(([k, l]) => (
             <button key={k} type="button" onClick={() => vq.setTab(k)} aria-pressed={vq.tab === k}
-                    className={`h-7 rounded-md px-2.5 text-[12.5px] ${vq.tab === k ? "bg-accent/15 text-ink shadow-[inset_0_0_0_1px_rgba(34,225,255,0.35)]" : "text-mute hover:bg-raised hover:text-ink"}`}>{l}
+                    className={`h-7 rounded-md px-2.5 text-[12.5px] ${vq.tab === k ? "bg-accent/15 text-ink shadow-[inset_0_0_0_1px_rgba(70,200,224,0.35)]" : "text-mute hover:bg-raised hover:text-ink"}`}>{l}
               {k === "defects" && shot.defects.length > 0 && <span className="mono ml-1 text-[11px] text-faint">{shot.defects.length}</span>}
               {k === "versions" && <span className="mono ml-1 text-[11px] text-faint">{data.versions.length}</span>}
             </button>))}
@@ -402,7 +402,7 @@ function Compare({ before, after, beforeVideo, afterVideo, split, onSplit, label
       {video && !marking && (
         <div className="flex items-center gap-2">
           <Button size="sm" onClick={toggle}><Icon name={playing ? "pause" : "play"} size={14} />{playing ? tr("Dừng") : both ? tr("Phát cả hai") : tr("Phát")}</Button>
-          <input type="range" min={0} max={length || 1} step={0.01} value={now} onChange={(e) => seek(Number(e.target.value))} aria-label={tr("Tua")} className="min-w-0 flex-1 accent-[#22e1ff]" />
+          <input type="range" min={0} max={length || 1} step={0.01} value={now} onChange={(e) => seek(Number(e.target.value))} aria-label={tr("Tua")} className="min-w-0 flex-1 accent-[#46c8e0]" />
           <span className="mono w-[86px] text-right text-[12px] text-faint">{`${now.toFixed(2)} / ${length.toFixed(2)}s`}</span>
         </div>
       )}
@@ -530,7 +530,7 @@ function StepCard({ step, index, onEdit }: { step: Step; index: number; onEdit: 
               {knobs.map((k) => (
                 <label key={k.key} className="grid grid-cols-[96px_1fr_44px] items-center gap-2 text-[12px]">
                   <span className="text-faint">{k.label}</span>
-                  <input type="range" min={k.min} max={k.max} step={k.step} value={value(k.key)} onChange={(e) => setDraft({ ...draft, [k.key]: Number(e.target.value) })} className="accent-[#22e1ff]" />
+                  <input type="range" min={k.min} max={k.max} step={k.step} value={value(k.key)} onChange={(e) => setDraft({ ...draft, [k.key]: Number(e.target.value) })} className="accent-[#46c8e0]" />
                   <span className="mono text-right text-mute">{fmt(value(k.key))}</span>
                 </label>))}
               {dirty && <div className="flex gap-1.5"><Button size="sm" kind="primary" onClick={() => { onEdit({ params: draft }); setDraft({}); }}>{tr("Lưu thành phiên bản mới")}</Button>

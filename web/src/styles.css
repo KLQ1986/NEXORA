@@ -4,84 +4,80 @@
 @import "@fontsource/be-vietnam-pro/600.css";
 @import "@fontsource/be-vietnam-pro/700.css";
 @import "@fontsource-variable/geist/wght.css";
-@import "@fontsource-variable/lexend/wght.css";
 @import "@fontsource/geist-mono/400.css";
 @import "@fontsource/geist-mono/500.css";
 @import "@fontsource/geist-mono/600.css";
 
-/* NEXORA Studio, the control plane at night. A near-black ink canvas (#0B0F19) under a slow gradient mesh of electric purple and
-   cyber cyan; panels of frosted glass with a faint white edge that lights cyan and violet when the pointer is on them; thin HUD
-   grids, dot matrices and small data labels. Colour still means something: cyan is where you are and what to press, violet the
-   machine at work, amber waits for you, rose has stopped, green has passed. Readings (clocks, counts, timecodes) are set in Geist
-   Mono so they line up and read as instruments. Picture areas stay dark and neutral. */
+/* NEXORA Studio: a cinematic AI studio. Charcoal and near-black like a grading suite at night, graphite panels with hairline
+   edges and controlled depth, the picture always the brightest thing on the screen. Two accents, used sparingly: a soft cyan for
+   where you are and what to press, a restrained electric violet for the machine at work. Amber waits for you, red has stopped,
+   green has passed. Readings (clocks, counts, timecodes) are set in Geist Mono, the way a slate or a deck reads them; the
+   interface itself in Be Vietnam Pro, drawn for Vietnamese and precise at small sizes. Light falls from above, the edges fall off
+   into a vignette, and a still film grain sits over everything; nothing glows. */
 /* Screens shorter than a laptop at full height: the overview drops its pictures and keeps its numbers so it still fits. */
 @custom-variant short (@media (max-height: 860px));
 
 @theme {
-  --color-canvas: #0b0f19;
-  --color-surface: #0f1424;
-  --color-raised: #151b2e;
-  --color-overlay: #1b2238;
-  --color-line: #1d2439;
-  --color-edge: #2b3452;
-  --color-field: #090d17;
-  --color-ink: #e8ecf8;
-  --color-mute: #aab2cc;
-  --color-faint: #8a93b0;
-  --color-accent: #22e1ff;
-  --color-accent-deep: #0bb8d9;
-  --color-ai: #b26bff;
-  --color-cue: #fbbf24;
-  --color-tally: #fb7185;
-  --color-proof: #34d399;
-  --font-sans: "Lexend Variable", "Geist Variable", "Geist", system-ui, -apple-system, sans-serif;
-  --font-display: "Lexend Variable", "Geist Variable", "Geist", system-ui, -apple-system, sans-serif;
+  --color-canvas: #0a0b0e;
+  --color-surface: #111318;
+  --color-raised: #171a21;
+  --color-overlay: #1e222b;
+  --color-line: #22262e;
+  --color-edge: #30353f;
+  --color-field: #0c0d11;
+  --color-ink: #eceef2;
+  --color-mute: #a7acb8;
+  --color-faint: #848a97;
+  --color-accent: #46c8e0;
+  --color-accent-deep: #2aa6bf;
+  --color-ai: #9b87ff;
+  --color-cue: #e8b04b;
+  --color-tally: #f07070;
+  --color-proof: #4cc38a;
+  --font-sans: "Be Vietnam Pro", "Geist Variable", system-ui, -apple-system, sans-serif;
+  --font-display: "Be Vietnam Pro", "Geist Variable", system-ui, -apple-system, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, Menlo, monospace;
-  /* One scale of corners, rounder than before: containers 20, nested panels 14, controls 10, chips 8. State tags alone are pills. */
-  --radius-card: 20px;
-  --radius-panel: 14px;
-  --radius-control: 10px;
-  --radius-chip: 8px;
-  --shadow-card: none;
-  --shadow-float: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 24px 60px -24px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  /* One scale of corners, precise rather than soft: containers 14, nested panels 10, controls 8, chips 6. State tags alone are pills. */
+  --radius-card: 14px;
+  --radius-panel: 10px;
+  --radius-control: 8px;
+  --radius-chip: 6px;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35), 0 18px 36px -28px rgba(0, 0, 0, 0.9);
+  --shadow-float: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 28px 64px -28px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(255, 255, 255, 0.05);
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 html { color-scheme: dark; height: 100%; -webkit-text-size-adjust: 100%; }
-/* Geist carries the Vietnamese set, so both languages share one face; Vietnamese gets half a size more for the stacked marks (ấ, ồ, ữ). */
-html[lang="vi"] body { font-size: 14.5px; }
+html[lang="vi"] body { font-size: 14px; }
 html[lang="vi"] h1, html[lang="vi"] h2, html[lang="vi"] h3 { letter-spacing: -0.01em; }
 @media (pointer: fine) { html { overscroll-behavior: none; } }
 body, #root { height: 100%; }
 body {
-  background: var(--color-canvas); color: var(--color-ink); font-family: var(--font-sans); font-size: 14px; font-weight: 350; line-height: 1.55;
+  background: var(--color-canvas); color: var(--color-ink); font-family: var(--font-sans); font-size: 14px; font-weight: 400; line-height: 1.55;
   -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; -webkit-tap-highlight-color: transparent;
 }
-/* The gradient mesh: three soft lights drifting slowly behind everything; and over it a hairline grid fading towards the edges. */
-body::before { content: ""; position: fixed; inset: -20%; z-index: 0; pointer-events: none;
-  background: radial-gradient(38% 42% at 18% 12%, rgba(178, 107, 255, 0.16), transparent 70%), radial-gradient(34% 40% at 86% 18%, rgba(34, 225, 255, 0.11), transparent 70%),
-              radial-gradient(46% 38% at 55% 105%, rgba(91, 76, 255, 0.13), transparent 70%);
-  filter: blur(10px); animation: mesh 48s ease-in-out infinite alternate; }
-body::after { content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
-  background-image: linear-gradient(rgba(148, 170, 255, 0.045) 1px, transparent 1px), linear-gradient(90deg, rgba(148, 170, 255, 0.045) 1px, transparent 1px);
-  background-size: 44px 44px; -webkit-mask-image: radial-gradient(ellipse at 50% 30%, #000 20%, transparent 75%); mask-image: radial-gradient(ellipse at 50% 30%, #000 20%, transparent 75%); }
+/* Light from above, a faint violet key and a cooler fill at the corner, falling off into a vignette; over it a still grain. */
+body::before { content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background: radial-gradient(70% 45% at 50% -12%, rgba(155, 135, 255, 0.075), transparent 65%), radial-gradient(40% 35% at 100% 0%, rgba(70, 200, 224, 0.04), transparent 70%),
+              radial-gradient(ellipse at 50% 40%, transparent 55%, rgba(0, 0, 0, 0.45) 100%); }
+body::after { content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none; opacity: .05; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .9 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)'/%3E%3C/svg%3E"); }
 #root { position: relative; z-index: 1; }
-@keyframes mesh { 0% { transform: translate3d(0, 0, 0) scale(1); } 50% { transform: translate3d(3%, -2%, 0) scale(1.06); } 100% { transform: translate3d(-3%, 2%, 0) scale(1.02); } }
-h1, h2, h3 { letter-spacing: -0.02em; text-wrap-style: balance; }
+h1, h2, h3 { letter-spacing: -0.015em; text-wrap-style: balance; }
 p { text-wrap-style: pretty; }
 button, a, [role="button"], input, select, textarea, summary { touch-action: manipulation; }
 .tc { font-variant-numeric: tabular-nums; letter-spacing: 0.01em; }
 /* Readings: figures in Geist Mono so they line up and read as instruments. */
 .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
-.eyebrow { font-size: 12.5px; font-weight: 500; color: var(--color-faint); }
+.eyebrow { font-size: 12px; font-weight: 500; color: var(--color-faint); }
 /* Titles and the figures on a project header: the same face, heavier and tighter. */
-.display { font-family: var(--font-display); font-weight: 600; letter-spacing: -0.025em; font-variant-numeric: tabular-nums; }
-html[lang="vi"] .display { letter-spacing: -0.015em; }
+.display { font-family: var(--font-display); font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+html[lang="vi"] .display { letter-spacing: -0.012em; }
 :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: var(--radius-chip); }
-::selection { background: color-mix(in srgb, var(--color-accent) 40%, transparent); }
-.hatch { background-image: repeating-linear-gradient(135deg, #1c2940 0 2px, transparent 2px 7px); }
+::selection { background: color-mix(in srgb, var(--color-accent) 35%, transparent); }
+.hatch { background-image: repeating-linear-gradient(135deg, #22262e 0 2px, transparent 2px 7px); }
 .hatch-cue { background-image: repeating-linear-gradient(135deg, color-mix(in srgb, var(--color-cue) 30%, transparent) 0 2px, transparent 2px 8px); }
-.dots { background-image: radial-gradient(#3a4a66 1px, transparent 1.2px); background-size: 5px 5px; }
+.dots { background-image: radial-gradient(#3a3f4a 1px, transparent 1.2px); background-size: 5px 5px; }
 
 /* The one way in for keyboard users: hidden until it has focus. */
 .skip { position: fixed; top: 8px; left: 8px; z-index: 100; padding: 8px 14px; border-radius: var(--radius-control); background: var(--color-accent); color: var(--color-canvas); font-weight: 500;
@@ -94,15 +90,15 @@ html[lang="vi"] .display { letter-spacing: -0.015em; }
     transition: border-color 140ms, background-color 140ms, box-shadow 140ms;
   }
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]), select { min-height: 36px; }
-  input:hover, select:hover, textarea:hover { border-color: #3a4568; }
-  input:focus, select:focus, textarea:focus { outline: none; border-color: color-mix(in srgb, var(--color-accent) 70%, transparent); background: var(--color-canvas);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 18%, transparent); }
+  input:hover, select:hover, textarea:hover { border-color: #3d424e; }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: color-mix(in srgb, var(--color-accent) 65%, transparent); background: #08090c;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 14%, transparent); }
   input::placeholder, textarea::placeholder { color: var(--color-faint); }
   input[type="checkbox"], input[type="radio"] { accent-color: var(--color-accent); width: 15px; height: 15px; cursor: pointer; }
   input[type="range"] { accent-color: var(--color-accent); }
   input[type="color"] { border-radius: var(--radius-control); border: 1px solid var(--color-edge); background: var(--color-field); }
   select { padding-right: 28px; appearance: none; background-color: var(--color-field); color: var(--color-ink);
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 20 20' fill='none' stroke='%238e9bb2' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 8 4 4 4-4'/%3E%3C/svg%3E");
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 20 20' fill='none' stroke='%23898f9c' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 8 4 4 4-4'/%3E%3C/svg%3E");
     background-repeat: no-repeat; background-position: right 9px center; }
   select option { background: var(--color-surface); color: var(--color-ink); }
   button { cursor: pointer; }
@@ -117,41 +113,43 @@ html[lang="vi"] .display { letter-spacing: -0.015em; }
 }
 
 @layer components {
-  .panel, .bento { background: linear-gradient(180deg, rgba(24, 30, 52, 0.58), rgba(13, 17, 31, 0.62)); border: 1px solid rgba(255, 255, 255, 0.075); border-radius: var(--radius-card);
-    -webkit-backdrop-filter: blur(16px) saturate(140%); backdrop-filter: blur(16px) saturate(140%); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 22px 50px -32px rgba(0, 0, 0, 0.95); }
-  /* A bento card carries a hairline of light along its top edge, cyan into violet, brighter when the pointer is on it. */
-  .bento { position: relative; transition: border-color 200ms, box-shadow 200ms; }
-  .bento::before { content: ""; position: absolute; left: 18px; right: 18px; top: -1px; height: 1px; border-radius: 1px; pointer-events: none; opacity: .45; transition: opacity 200ms;
-    background: linear-gradient(90deg, transparent, var(--color-accent), var(--color-ai), transparent); }
-  .bento:hover::before, .bento:focus-within::before { opacity: 1; }
-  .bento-hover:hover, .bento-hover:focus-visible { border-color: color-mix(in srgb, var(--color-accent) 40%, transparent);
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 12%, transparent), 0 0 36px -10px color-mix(in srgb, var(--color-accent) 45%, transparent), 0 0 60px -24px color-mix(in srgb, var(--color-ai) 55%, transparent); }
-  /* HUD: a tiny data label, a glowing square, a figure that glows a little. */
-  .hud-label { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: color-mix(in srgb, var(--color-faint) 80%, transparent); }
-  .hud-dot { width: 6px; height: 6px; border-radius: 2px; background: var(--color-accent); box-shadow: 0 0 10px var(--color-accent); flex-shrink: 0; }
-  .kpi-glow { text-shadow: 0 0 22px color-mix(in srgb, currentColor 35%, transparent); }
-  .matrix { background-image: radial-gradient(rgba(148, 170, 255, 0.18) 1px, transparent 1.2px); background-size: 8px 8px; }
-  /* A reading inside a panel: a darker well with a faint cyan edge that lights on hover. */
-  .tile { background: rgba(255, 255, 255, 0.025); border: 1px solid rgba(255, 255, 255, 0.065); border-radius: var(--radius-panel); transition: border-color 160ms, background-color 160ms, box-shadow 160ms; }
-  /* A chosen reading (a filter that is on) stays lit. */
-  .tile[aria-checked="true"], .tile[aria-current="page"] { border-color: color-mix(in srgb, var(--color-accent) 55%, transparent); background: rgba(34, 225, 255, 0.06); box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 15%, transparent), 0 0 28px -10px color-mix(in srgb, var(--color-accent) 55%, transparent); }
-  /* Cards that open something light their edge when the pointer is on them. */
-  a.panel:hover, button.panel:not(:disabled):hover, li > a.panel:hover { border-color: color-mix(in srgb, var(--color-accent) 40%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 10%, transparent), 0 0 32px -12px color-mix(in srgb, var(--color-accent) 45%, transparent), 0 0 56px -24px color-mix(in srgb, var(--color-ai) 50%, transparent); }
-  a.tile:hover, button.tile:hover { border-color: color-mix(in srgb, var(--color-accent) 45%, transparent); background: rgba(34, 225, 255, 0.04); box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 12%, transparent), 0 0 24px -8px color-mix(in srgb, var(--color-accent) 40%, transparent); }
-  .panel-raised { background: rgba(27, 34, 56, 0.6); border: 1px solid rgba(255, 255, 255, 0.07); border-radius: var(--radius-panel); }
+  /* Graphite panels: solid, a hairline edge, a breath of light on the top edge, a shadow that only separates. */
+  .panel, .bento { background: linear-gradient(180deg, #14161c, #101217); border: 1px solid var(--color-line); border-radius: var(--radius-card);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035), var(--shadow-card); }
+  .bento { position: relative; transition: border-color 180ms; }
+  .bento-hover:hover, .bento-hover:focus-visible { border-color: #3a3f4b; }
+  /* Slate labels: the small technical captions a camera report or a deck would carry. */
+  .hud-label { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: color-mix(in srgb, var(--color-faint) 75%, transparent); }
+  .hud-dot { width: 5px; height: 5px; border-radius: 1px; background: var(--color-accent); flex-shrink: 0; opacity: .85; }
+  .matrix { background-image: radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1.2px); background-size: 8px 8px; }
+  /* A reading inside a panel: a darker well whose edge firms up on hover. */
+  .tile { background: rgba(255, 255, 255, 0.018); border: 1px solid var(--color-line); border-radius: var(--radius-panel); transition: border-color 160ms, background-color 160ms; }
+  /* A chosen reading (a filter that is on) stays marked. */
+  .tile[aria-checked="true"], .tile[aria-current="page"] { border-color: color-mix(in srgb, var(--color-accent) 45%, transparent); background: color-mix(in srgb, var(--color-accent) 6%, transparent); }
+  /* Cards that open something firm their edge and lift a little when the pointer is on them. */
+  a.panel, button.panel { transition: border-color 160ms, transform 160ms var(--ease-out), box-shadow 160ms; }
+  a.panel:hover, button.panel:not(:disabled):hover, li > a.panel:hover { border-color: #3a3f4b; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 4px rgba(0, 0, 0, 0.4), 0 24px 44px -28px rgba(0, 0, 0, 0.95); }
+  a.tile:hover, button.tile:hover { border-color: #383d48; background: rgba(255, 255, 255, 0.035); }
+  .panel-raised { background: var(--color-raised); border: 1px solid var(--color-line); border-radius: var(--radius-panel); }
   .rows > * + * { border-top: 1px solid var(--color-line); }
   .filmstrip { display: flex; gap: 2px; overflow: hidden; background: #000; }
   .filmstrip > * { min-width: 0; }
+  /* Where a picture plays: true black, with the four corner marks of a safe frame. */
+  .viewer { position: relative; background: #000; }
+  .viewer::after { content: ""; position: absolute; inset: 10px; pointer-events: none; opacity: .5;
+    background: linear-gradient(#fff, #fff) left top / 14px 1px, linear-gradient(#fff, #fff) left top / 1px 14px, linear-gradient(#fff, #fff) right top / 14px 1px, linear-gradient(#fff, #fff) right top / 1px 14px,
+                linear-gradient(#fff, #fff) left bottom / 14px 1px, linear-gradient(#fff, #fff) left bottom / 1px 14px, linear-gradient(#fff, #fff) right bottom / 14px 1px, linear-gradient(#fff, #fff) right bottom / 1px 14px;
+    background-repeat: no-repeat; mix-blend-mode: difference; }
   /* The one framed thing on a screen: the editor that holds unsaved words. */
-  .glow { box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 55%, transparent), var(--shadow-card); border-color: transparent; }
-  .ai-card { background: color-mix(in srgb, var(--color-ai) 5%, var(--color-surface)); border: 1px solid color-mix(in srgb, var(--color-ai) 22%, var(--color-line)); border-radius: var(--radius-card); }
-  .cue-card { background: color-mix(in srgb, var(--color-cue) 6%, var(--color-surface)); border: 1px solid color-mix(in srgb, var(--color-cue) 35%, var(--color-line)); border-radius: var(--radius-card); }
+  .glow { box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 50%, transparent), var(--shadow-card); border-color: transparent; }
+  .ai-card { background: color-mix(in srgb, var(--color-ai) 5%, var(--color-surface)); border: 1px solid color-mix(in srgb, var(--color-ai) 20%, var(--color-line)); border-radius: var(--radius-card); }
+  .cue-card { background: color-mix(in srgb, var(--color-cue) 5%, var(--color-surface)); border: 1px solid color-mix(in srgb, var(--color-cue) 30%, var(--color-line)); border-radius: var(--radius-card); }
   .chip { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: var(--radius-chip); font-size: 11.5px; font-weight: 500;
-    background: color-mix(in srgb, #000 60%, transparent); color: var(--color-ink); backdrop-filter: blur(6px); white-space: nowrap; }
-  .seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: var(--radius-panel); background: var(--color-canvas); border: 1px solid var(--color-line); }
+    background: color-mix(in srgb, #000 62%, transparent); color: var(--color-ink); backdrop-filter: blur(6px); white-space: nowrap; }
+  .seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: var(--radius-panel); background: var(--color-field); border: 1px solid var(--color-line); }
   .seg > button { height: 28px; padding: 0 11px; border-radius: 6px; font-size: 13px; color: var(--color-mute); transition: background-color 120ms, color 120ms; white-space: nowrap; }
   .seg > button:hover { color: var(--color-ink); }
-  .seg > button[aria-checked="true"], .seg > button[aria-selected="true"] { background: color-mix(in srgb, var(--color-accent) 14%, transparent); color: var(--color-accent); font-weight: 500; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 28%, transparent); }
+  .seg > button[aria-checked="true"], .seg > button[aria-selected="true"] { background: var(--color-overlay); color: var(--color-ink); font-weight: 500; box-shadow: inset 0 0 0 1px #343944, 0 1px 2px rgba(0, 0, 0, 0.4); }
   .link { color: var(--color-mute); text-decoration: underline; text-decoration-color: var(--color-edge); text-underline-offset: 3px; transition: color 120ms, text-decoration-color 120ms; }
   .link:hover { color: var(--color-ink); text-decoration-color: var(--color-mute); }
   .link:disabled { color: var(--color-faint); text-decoration: none; }
@@ -159,19 +157,20 @@ html[lang="vi"] .display { letter-spacing: -0.015em; }
   /* Buttons press: they move one pixel on the way down and settle back. */
   .btn { transition: background-color 140ms, border-color 140ms, color 140ms, box-shadow 140ms, transform 80ms; }
   .btn:active:not(:disabled) { transform: translateY(1px); }
-  .brand-button { background: linear-gradient(135deg, var(--color-accent), #5ab8ff); color: #041821; font-weight: 600; box-shadow: 0 0 0 1px rgba(34, 225, 255, 0.45), 0 8px 26px -10px rgba(34, 225, 255, 0.8); }
-  .brand-button:hover:not(:disabled) { background: linear-gradient(135deg, #7ff0ff, #8fcbff); box-shadow: 0 0 0 1px rgba(34, 225, 255, 0.6), 0 0 30px -6px rgba(34, 225, 255, 0.75), 0 0 46px -18px rgba(178, 107, 255, 0.7); }
+  .brand-button { background: var(--color-accent); color: #04161b; font-weight: 600; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 1px 2px rgba(0, 0, 0, 0.5); }
+  .brand-button:hover:not(:disabled) { background: #6dd6ea; }
   .brand-button:disabled { background: var(--color-raised); color: var(--color-faint); box-shadow: none; }
   /* A place where content will be: the shape of it, breathing slowly. */
   .skeleton { position: relative; overflow: hidden; border-radius: var(--radius-chip); background: var(--color-raised); }
   .skeleton::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%); animation: sweep 1.6s var(--ease-out) infinite;
-    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.045), transparent); }
-  .toast { background: rgba(27, 34, 56, 0.85); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); border: 1px solid rgba(255, 255, 255, 0.09); border-radius: var(--radius-panel); box-shadow: var(--shadow-float); animation: rise 200ms var(--ease-out) both; }
-  .dialog { background: rgba(17, 22, 38, 0.92); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); border: 1px solid rgba(255, 255, 255, 0.09); border-radius: var(--radius-card); box-shadow: var(--shadow-float); animation: pop 180ms var(--ease-out) both; }
-  .scrim { background: rgba(5, 7, 14, 0.72); backdrop-filter: blur(4px); animation: fade 160ms ease-out both; overscroll-behavior: contain; }
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.04), transparent); }
+  /* What floats over the work (toasts, dialogs, menus) is the only glass: a little blur so the work stays readable beneath. */
+  .toast { background: rgba(30, 34, 43, 0.88); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: var(--radius-panel); box-shadow: var(--shadow-float); animation: rise 200ms var(--ease-out) both; }
+  .dialog { background: rgba(20, 22, 28, 0.94); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: var(--radius-card); box-shadow: var(--shadow-float); animation: pop 180ms var(--ease-out) both; }
+  .scrim { background: rgba(4, 5, 7, 0.74); backdrop-filter: blur(3px); animation: fade 160ms ease-out both; overscroll-behavior: contain; }
 }
 
-/* The shell lets the mesh show through; the chrome itself does not glow. */
+/* The shell lets the light and the grain show through; the chrome itself does not glow. */
 .backdrop { background: transparent; }
 /* Fields that sit inside a framed editor carry no frame of their own. */
 /* Rows that scroll sideways on a phone show no bar: the content itself says it continues. */
@@ -204,7 +203,6 @@ html[lang="vi"] .display { letter-spacing: -0.015em; }
 .spin { animation: spin 0.8s linear infinite; }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
-  body::before { animation: none; }
   .skeleton::after { display: none; }
   .working { background: var(--color-ai); }
 }
@@ -215,10 +213,4 @@ html[lang="vi"] .display { letter-spacing: -0.015em; }
 :where(.text-faint, .text-mute):not([class*="font-"]) { font-weight: 400; }
 .text-\[9\.5px\], .text-\[10px\], .text-\[10\.5px\], .text-\[11px\], .text-\[11\.5px\], .chip { font-size: 11px; font-weight: 400; }
 
-/* Lexend draws heavier than Geist at the same number, so the weight scale steps down by one notch:
-   body 350, medium 450, semibold 550, bold 650. */
-.font-medium { font-weight: 450; }
-.font-semibold { font-weight: 550; }
-.font-bold { font-weight: 650; }
-.display { font-weight: 550; }
-.eyebrow, .field-label, .chip { font-weight: 450; }
+.eyebrow, .field-label, .chip { font-weight: 500; }

@@ -75,7 +75,7 @@ function Tile({ label, value, sub, icon, tone, to, go, share, quiet }: { label: 
       <span className="flex items-start justify-between gap-3"><span className="truncate text-[13px] text-mute">{label}</span><Icon name={icon} size={17} className={TEXT[tone]} /></span>
       <span className="mono mt-1.5 text-[22px] font-semibold leading-none tracking-tight 2xl:mt-2 2xl:text-[26px]">{value}</span>
       {share != null
-        ? <span className="mt-3 block h-1 overflow-hidden rounded-full bg-white/[0.06]"><span className={`block h-full rounded-full ${share > 0.9 && !quiet ? "bg-cue" : "bg-gradient-to-r from-accent to-[#3b82f6]"}`} style={{ width: `${Math.max(2, share * 100)}%` }} /></span>
+        ? <span className="mt-3 block h-1 overflow-hidden rounded-full bg-white/[0.06]"><span className={`block h-full rounded-full ${share > 0.9 && !quiet ? "bg-cue" : "bg-gradient-to-r from-accent-deep to-accent"}`} style={{ width: `${Math.max(2, share * 100)}%` }} /></span>
         : <span className="mt-2 truncate text-[12px] text-faint">{sub}</span>}
       {share != null && <span className="mt-1.5 truncate text-[12px] text-faint">{sub}</span>}
     </a>
@@ -95,7 +95,7 @@ function Panel({ title, icon, tone = "accent", end, children, className = "", fi
 const DAY = 86400000;
 const dayKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 /* Two series, checked for colour-blind separation on this panel's surface: cuts in blue, posts in orange. */
-const CUT = "#1c93e3", POST = "#e06a30";
+const CUT = "#46c8e0", POST = "#9b87ff";
 
 /** Fourteen days of output: how many cuts the machine made and how many videos went out, one pair of bars a day. */
 function Rhythm({ projects, posted }: { projects: Project[]; posted: number[] }) {

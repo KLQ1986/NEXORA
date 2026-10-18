@@ -198,7 +198,7 @@ export default function Timeline({ project: p, reload, rerender, busy }: { proje
                 return (
                   <button key={it.shot.shot_id} type="button" role="listitem" aria-current={it.i === current.i} title={`${it.i + 1}. ${it.shot.text}`}
                           onClick={(e) => { e.stopPropagation(); choose(it.i); }} style={{ left: pct(it.at), width: pct(it.d) }}
-                          className={`absolute inset-y-1.5 overflow-hidden rounded-md border-x border-canvas ${it.gap ? "hatch-cue bg-raised" : "bg-black"} ${it.i === current.i ? "z-10 ring-2 ring-accent shadow-[0_0_16px_-2px_var(--color-accent)]" : ""}`}>
+                          className={`absolute inset-y-1.5 overflow-hidden rounded-md border-x border-canvas ${it.gap ? "hatch-cue bg-raised" : "bg-black"} ${it.i === current.i ? "z-10 ring-2 ring-accent" : ""}`}>
                     {src && <img src={src} alt="" className="h-full w-full object-cover opacity-90" />}
                     <span className="mono absolute left-1 top-1 rounded bg-black/70 px-1 text-[10px]">{it.i + 1}</span>
                     {(it.shot.selection?.inserts ?? []).map((ins) => <span key={ins.keyword} className="absolute inset-y-0 w-0.5 bg-ai" style={{ left: `${ins.at * 100}%` }} title={tv`Chuyển hình ở “${ins.keyword}”`} />)}
@@ -218,7 +218,7 @@ export default function Timeline({ project: p, reload, rerender, busy }: { proje
             </div>
             <div className="relative h-10">
               {p.music_path
-                ? <div className="absolute inset-x-0 inset-y-1.5 truncate rounded bg-[#4f7cff]/20 px-2 text-[11px] leading-7 text-[#9db4ff]">{tv`♪ ${p.music_path.split("/").pop()} · tự nhỏ lại khi có lời dẫn`}</div>
+                ? <div className="absolute inset-x-0 inset-y-1.5 truncate rounded bg-ai/15 px-2 text-[11px] leading-7 text-ai">{tv`♪ ${p.music_path.split("/").pop()} · tự nhỏ lại khi có lời dẫn`}</div>
                 : <div className="absolute inset-x-0 inset-y-1.5 truncate rounded border border-dashed border-line px-2 text-[11px] leading-6 text-faint">{tr("Không có nhạc nền")}</div>}
             </div>
             {rendered && <div className="pointer-events-none absolute bottom-0 top-0 z-20 w-px bg-cue shadow-[0_0_8px_var(--color-cue)]" style={{ left: pct(now) }}><span className="absolute -left-[5px] top-0 h-0 w-0 border-x-[5px] border-t-[7px] border-x-transparent border-t-cue" /></div>}
