@@ -43,10 +43,11 @@ def short_title(text: str, limit: int = 60) -> str:
 
 
 class Producer:
-    def __init__(self, db_path, *, orch, projects, planning, sourcing, edit, adapters, fill_gap):
+    def __init__(self, db_path, *, orch, projects, planning, sourcing, edit, adapters, fill_gap, to_storyboard=None):
         self._db = db.LocalConnections(db_path)
         self._orch, self._projects, self._planning, self._sourcing, self._edit, self._adapters = orch, projects, planning, sourcing, edit, adapters
         self._fill_gap = fill_gap                    # (shot_id, query) -> {"found": bool, ...}; given by the composition root
+        self._to_storyboard = to_storyboard          # (project_id) -> None: the chosen clips laid out on the storyboard, where they are approved
         with db.write(self._conn) as c:
             c.execute(SCHEMA)
 
@@ -260,7 +261,12 @@ class Producer:
                 self._move(task_id, step="cut", status="working")
                 return True
             if task["status"] != "waiting_operator":
-                self._say(task_id, LEAD, "Chờ bạn xem và duyệt các clip đã chọn.")
+                if self._to_storyboard is not None:
+                    try:
+                        self._to_storyboard(project_id)
+                    except AdapterError as err:                 # the review still waits; only the layout is missing
+                        self._say(task_id, LEAD, f"Không bày được clip lên Storyboard: {err.message or err.code.value}")
+                self._say(task_id, LEAD, "Chờ bạn xem và duyệt các clip đã chọn trong Storyboard.")
                 self._move(task_id, status="waiting_operator")
                 return True
             return False

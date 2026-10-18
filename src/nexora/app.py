@@ -556,6 +556,14 @@ def start_library_work(system: "System", kind: str) -> list[str]:
     return runs
 
 
+def lay_out_storyboard(system: "System", project_id: str) -> int:
+    """The clips chosen for a script laid out on the project's storyboard, where the operator looks at them and approves. A
+    storyboard the project already has is never replaced. Returns how many shots were laid out."""
+    if system.storyboard is None or system.storyboard_planner is None or system.storyboard.shots(project_id):
+        return 0
+    return system.storyboard_planner.from_script(project_id)
+
+
 def prepare_mission_project(system: "System", project_id: str, plan: dict) -> None:
     """A project a mission started: its template, channel and the share of the mission's budget it may spend."""
     chosen = template_named(system, plan.get("template"))
@@ -830,7 +838,8 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     system.autonomy = Autonomy(orch, projects, package=package_for_policy, rights=lambda render_id: render_rights(system, render_id),
                                publish=(lambda render_id: system.publishing.publish(render_id, "publish.folder")) if has_folder else None)
     system.producer = Producer(db_path, orch=orch, projects=projects, planning=planning, sourcing=sourcing, edit=edit, adapters=adapters,
-                               fill_gap=lambda shot_id, query: fill_gap_from_stock(system, shot_id, query))
+                               fill_gap=lambda shot_id, query: fill_gap_from_stock(system, shot_id, query),
+                               to_storyboard=lambda project_id: lay_out_storyboard(system, project_id))
     from nexora.agents.missions import Missions
     from nexora.core.missions import MissionStore
 

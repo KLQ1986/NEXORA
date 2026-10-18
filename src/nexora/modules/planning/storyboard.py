@@ -231,7 +231,8 @@ class StoryboardPlanner:
     # ------------------------------------------------------------------------------------------------------- building
     def from_script(self, project_id: str) -> int:
         """A storyboard from the project's script as it stands: a scene for each of its scenes (one when it has none), a shot for
-        each line, framed plainly, footage first. The lines are kept word for word."""
+        each line, framed plainly, footage first. The lines are kept word for word, and a clip already chosen for a line comes
+        with it, waiting for the operator."""
         script = self._projects.current_script(project_id)
         if not script or not script["shots"]:
             raise AdapterError(ErrorCode.INVALID_REQUEST, "the project has no script to start a storyboard from", retryable=False)
@@ -246,6 +247,14 @@ class StoryboardPlanner:
                               "source": "any", "query": line.brief or line.text}, camera=camera_row(k, len(lines)))
             sid = self._store.add_shot(project_id, scenes[name], spec, position=k, made_by="script", note="từ kịch bản")
             self._store.link_script(sid, line.shot_id)
+            sel = self._projects.selection(line.shot_id)
+            if sel and sel.asset_id and sel.status != "gap" and sel.t_in is not None and sel.t_out is not None:
+                # The clip already chosen for the line (by a match, the producer, or the operator) is carried onto its shot, to be
+                # looked at and approved there; the shot waits for the operator, nothing is accepted on their behalf.
+                others = [{"asset_id": a["asset_id"], "moment_id": a.get("moment_id"), "t_in": a["t_in"], "t_out": a["t_out"], "score": a.get("score"),
+                           "text": a.get("reason") or "", "passed": 0, "of": 0, "failed": []} for a in sel.alternates if a.get("asset_id") and a.get("t_in") is not None][:5]
+                self._store.set_state(sid, "needs", assignment={"kind": "footage", "asset_id": sel.asset_id, "moment_id": sel.moment_id, "t_in": sel.t_in, "t_out": sel.t_out,
+                                                                "score": sel.score, "text": sel.reason or "", "decided_by": sel.decided_by, "candidates": others}, checks=[])
         if not self._store.board(project_id):
             self.set_shared(project_id, idea=self._projects.project(project_id)["title"], seconds=int(sum(_get(s.spec, "duration.target") for s in self._store.shots(project_id))))
         return len(lines)

@@ -1051,6 +1051,13 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         the cut can be rendered."""
         need_project(project_id)
         done = board_call(lambda: system.director.approve(project_id))
+        # A clip match still waiting at its gate is decided by the same word, for this script or the version the storyboard was
+        # laid out from (approving writes the storyboard back as a new version): the storyboard is where its clips were looked at.
+        for script_id in system.projects.script_ids(project_id):
+            run = latest_run(script_id, "sourcing.match")
+            if run and run["status"] == "waiting_review":
+                stage = next(s for s in run["stages"] if s["status"] == "waiting_review")
+                system.orch.decide_review(stage["stage_id"], approve=True)
         return {**done, "storyboard": storyboard_view(project_id)}
 
     @app.get("/api/v1/projects/{project_id}/storyboard/copilot/sources")

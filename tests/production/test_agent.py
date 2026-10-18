@@ -90,3 +90,39 @@ def test_a_project_budget_already_spent_stops_paid_generation_before_it_starts(t
         pass
     stage = system.orch.stages(run)[0]
     assert stage.status is StageStatus.BLOCKED and stage.blocked_reason == "budget_exceeded"
+
+
+def test_the_clips_the_producer_chose_wait_on_the_storyboard_and_its_approval_lets_the_producer_go_on(tmp_path):
+    # The clip review lives in the Storyboard: the producer lays its choices out there, and approving the storyboard is the word
+    # the clip match was waiting for.
+    from fastapi.testclient import TestClient
+    from nexora.api.app import create_app
+    model = FakeModel(); model.script = ["cá tươi trên sạp", "bàn phím máy tính"]
+    system = build(tmp_path / "data", model=model, voice=FakeVoice(), segment_seconds=2.0)
+    client = TestClient(create_app(system))
+    system.library.ingest(make_video(tmp_path / "footage.mp4", picture=20))
+    while system.worker.run_once():
+        pass
+    task_id = system.producer.start("một buổi sáng ở chợ", use_stock=False)
+    settle(system)
+    task = system.producer.task(task_id)
+    project = task["project_id"]
+    assert (task["status"], task["step"]) == ("waiting_operator", "review") and "Storyboard" in task["log"][-1]["text"]
+    shots = system.storyboard.shots(project)
+    script = system.projects.current_script(project)
+    sels = {s.shot_id: s for s in system.projects.selections(script["script_id"])}
+    assert [s.spec["line"] for s in shots] == [line.text for line in script["shots"]]                  # the lines word for word
+    chosen = [s for s in shots if sels[s.script_shot].status == "proposed"]
+    assert chosen and all(s.state == "needs" and s.assignment["asset_id"] == sels[s.script_shot].asset_id for s in chosen)   # nothing accepted for the operator
+    assert all(s.assignment is None for s in shots if sels[s.script_shot].status == "gap")
+    assert any(a["link"] == f"/du-an/{project}/storyboard" for a in client.get("/api/v1/approvals").json()["approvals"])
+    # A storyboard the project already has is never replaced by the producer's layout.
+    from nexora.app import lay_out_storyboard
+    assert lay_out_storyboard(system, project) == 0
+
+    assert client.post(f"/api/v1/projects/{project}/storyboard/approve").status_code == 200
+    match = next(r for r in system.orch.runs_for_subject(script["script_id"]) if system.orch.pipeline_of(r) == "sourcing.match")
+    assert system.orch.run_status(match) is RunStatus.SUCCEEDED                                       # its gate decided by the same word
+    assert system.projects.current_script(project)["match_approved"]
+    settle(system)
+    assert system.producer.task(task_id)["step"] == "cutting"

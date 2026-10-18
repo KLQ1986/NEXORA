@@ -169,8 +169,8 @@ def add_missions(app: FastAPI, system, *, health) -> None:
             if project:
                 waiting_projects.add(project["project_id"])
             where = project["title"] if project else (info["subject_ref"] or "")
-            link = f"/du-an/{project['project_id']}" if project else "/tien-trinh"
             pipeline = info["pipeline_id"]
+            link = (f"/du-an/{project['project_id']}/storyboard" if pipeline == "sourcing.match" else f"/du-an/{project['project_id']}") if project else "/tien-trinh"
             if status == "waiting_review":
                 actions = ["approve", "changes"] if pipeline == "edit.render" else ([] if pipeline in GATES else ["approve", "reject"])
                 out.append({"key": f"gate:{stage.stage_id}", "kind": "gate", "id": stage.stage_id, "pipeline": pipeline, "project_id": project and project["project_id"],
@@ -186,7 +186,7 @@ def add_missions(app: FastAPI, system, *, health) -> None:
             if t["status"] == "waiting_operator" and t["project_id"] not in waiting_projects:
                 out.append({"key": f"task:{t['task_id']}", "kind": "task", "id": t["task_id"], "project_id": t["project_id"], "title": f"Trợ lý chờ bạn: {project_title(t['project_id'])}",
                             "asked_by": "Producer", "why": t["log"][-1]["text"] if t["log"] else "Chờ bạn.", "touches": project_title(t["project_id"]), "cost": None,
-                            "next": "Trợ lý làm tiếp khi bạn đã xem và duyệt.", "at": t["updated_at"], "actions": [], "link": f"/du-an/{t['project_id']}"})
+                            "next": "Trợ lý làm tiếp khi bạn đã xem và duyệt.", "at": t["updated_at"], "actions": [], "link": f"/du-an/{t['project_id']}" + ("/storyboard" if t["step"] == "review" else "")})
         for idea in system.planning.ideas.ideas(status=("blocked",)) if system.planning.ideas else []:
             out.append({"key": f"idea:{idea['idea_id']}", "kind": "idea", "id": idea["idea_id"], "title": f"Ý tưởng bị chặn: {idea['title']}", "asked_by": "Tìm ý tưởng",
                         "why": idea.get("risk") or "Có rủi ro.", "touches": f"{idea['material']['kind']}: {idea['material']['name']}", "cost": None,
