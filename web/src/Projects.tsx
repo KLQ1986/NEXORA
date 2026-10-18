@@ -967,7 +967,7 @@ function Detail({ id, back }: { id: string; back: (to?: string) => void }) {
                   {fromSpeech && <SpeechDraft id={id} topic={topic} done={async (lines) => {
                     if (dirty && (text ?? "").trim() && !(await ask(tr("Thay kịch bản đang soạn?"), { body: tr("Ô soạn có thay đổi chưa lưu; kịch bản mới sẽ thay chỗ nó."), confirm: tr("Thay") }))) return;
                     setText(lines.join("\n")); setFromSpeech(false); }} />}
-                  {fromTopic && <TopicDraft id={id} topic={topic} done={async (lines) => {
+                  {fromTopic && <TopicDraft id={id} topic={topic.trim() || p.title} done={async (lines) => {
                     if (dirty && (text ?? "").trim() && !(await ask(tr("Thay kịch bản đang soạn?"), { body: tr("Ô soạn có thay đổi chưa lưu; kịch bản mới sẽ thay chỗ nó."), confirm: tr("Thay") }))) return;
                     setText(lines.join("\n")); }} />}
                 </div>
