@@ -7,7 +7,7 @@ import { ask, Button, Empty, goTo, Icon, Meter, OpsSide, Page, Seg, Spinner, Tab
    sends commands through their own endpoints. A mission keeps only what was asked, the plan and what it started. */
 
 type Tone = "mute" | "cue" | "proof" | "tally" | "ai" | "accent";
-type Plan = { kind: string; goal: string; count: number; format: string; lines: number; channel: string | null; template: string | null; budget: number | null;
+type Plan = { kind: string; goal: string; title: string; count: number; format: string; lines: number; channel: string | null; template: string | null; budget: number | null;
   paid: boolean; stock: boolean; critique: boolean; constraints: string[]; acceptance: string[]; autonomy: number };
 type Child = { kind: "task" | "run"; id: string; project_id?: string; pipeline?: string; status: string; state: string; step?: string; note: string | null };
 type MissionEvent = { at: number; kind: string; text: string | null };
@@ -240,6 +240,7 @@ function PlanEditor({ m, kinds, channels, templates, done }: { m: Mission; kinds
       {m.problems.length > 0 && <ul className="grid gap-1.5 rounded-xl border border-tally/30 bg-tally/[0.06] px-4 py-3 text-[13px] text-tally">{m.problems.map((p) => <li key={p} className="flex gap-2"><Icon name="alert" size={14} className="mt-0.5 shrink-0" />{p}</li>)}</ul>}
       <div className="grid gap-4 md:grid-cols-2">
         <label className="md:col-span-2"><span className="field-label">{tr("Mục tiêu")}</span><input value={plan.goal} onChange={(e) => set("goal", e.target.value)} className="w-full px-3" /></label>
+        {video && <label className="md:col-span-2"><span className="field-label">{tr("Tên video")}</span><input value={plan.title ?? ""} onChange={(e) => set("title", e.target.value)} maxLength={60} className="w-full px-3" /></label>}
         <label><span className="field-label">{tr("Loại việc")}</span>
           <select value={plan.kind} onChange={(e) => set("kind", e.target.value)} className="w-full pl-3"><option value="">{tr("Chọn…")}</option>{kinds.map((k) => <option key={k.kind} value={k.kind}>{k.name}</option>)}</select></label>
         {video && <label><span className="field-label">{tr("Số video")}</span><input type="number" min={1} max={10} value={plan.count} onChange={(e) => set("count", Number(e.target.value))} className="mono w-full px-3" /></label>}
@@ -351,7 +352,7 @@ const EVENT: Record<string, string> = { created: tr("Giao việc"), planned: tr(
 
 function PlanFacts({ m }: { m: Mission }) {
   const p = m.plan;
-  const rows: [string, React.ReactNode][] = [[tr("Loại việc"), m.kind_name ?? p.kind], [tr("Mục tiêu"), p.goal]];
+  const rows: [string, React.ReactNode][] = [[tr("Loại việc"), m.kind_name ?? p.kind], [tr("Mục tiêu"), p.goal], ...(p.kind === "video" && p.title ? [[tr("Tên video"), p.title] as [string, React.ReactNode]] : [])];
   if (p.kind === "video") rows.push([tr("Video"), tv`${p.count} video · ${FORMATS.find((f) => f[0] === p.format)?.[1] ?? p.format} · ${p.lines} câu`], [tr("Kênh / mẫu"), [p.channel, p.template].filter(Boolean).join(" · ") || "–"]);
   rows.push([tr("Ngân sách"), p.budget != null ? usd(p.budget) : tr("theo hạn mức chung")], [tr("Dịch vụ trả tiền"), p.paid ? tr("được dùng") : tr("không")], [tr("Đã tiêu"), usd(m.spent)]);
   return (

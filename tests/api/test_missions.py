@@ -4,6 +4,7 @@ what each service keeps."""
 from fastapi.testclient import TestClient
 
 from nexora.agents.missions import Missions
+from nexora.agents.producer import short_title
 from nexora.api.app import create_app
 from nexora.api.missions import verdict
 from nexora.app import build
@@ -127,3 +128,17 @@ def test_quality_verdicts_come_from_the_measured_checks():
     assert verdict({"passed": True, "checks": {"duration": True}, "findings": [{"check": "Phụ đề"}]}) == "pass_with_warnings"
     assert verdict({"passed": False, "checks": {"duration": False}, "findings": []}) == "fail"
     assert verdict({"external": True, "passed": True, "checks": {}}) == "manual_review"
+
+
+def test_a_title_is_short_and_never_cuts_a_word(tmp_path):
+    # The critic and the writer read the project title as the topic: a word cut in half ("từ foot") ended up in a script.
+    goal = "Tạo một video ngang ngắn mô tả buổi sáng đi dạo biển từ footage trong kho, phục vụ mục đích chia sẻ"
+    assert short_title(goal) == "Tạo một video ngang ngắn mô tả buổi sáng đi dạo biển từ"
+    assert short_title("ngắn") == "ngắn" and len(short_title("x" * 80)) == 60
+    system, model, client = _setup(tmp_path, plan={**PLAN, "count": 1, "so_video": 1, "muc_tieu": goal})
+    m = client.post("/api/v1/missions", json={"text": "đi dạo biển"}).json()
+    assert m["plan"]["title"] == short_title(goal)                          # no title from the model: the goal, cut between words
+    model.answers["mission_plan"] = {**PLAN, "so_video": 1, "muc_tieu": goal, "tieu_de": "Buổi sáng dạo biển"}
+    named = client.post("/api/v1/missions", json={"text": "đi dạo biển"}).json()
+    done = client.post(f"/api/v1/missions/{named['mission_id']}/confirm").json()
+    assert system.projects.project(done["links"]["projects"][0])["title"] == "Buổi sáng dạo biển"

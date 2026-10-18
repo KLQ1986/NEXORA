@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Callable
 
+from nexora.agents.producer import short_title
 from nexora.core.adapter import AdapterError, PrivacyClass, Request
 from nexora.core.missions import MissionStore
 from nexora.core.schedule import in_window
@@ -26,7 +27,8 @@ PLAN_PROMPT = (
     "Chỉ được chọn một loại việc NEXORA làm được: video (làm một hay nhiều video từ kho footage), understand (mô tả footage chưa được hiểu), "
     "transcribe (nghe lời nói trong footage chưa được nghe).\n"
     "Các kênh: {channels}. Các mẫu video: {templates}.\n"
-    "Trả về JSON với các khoá: loai (video | understand | transcribe), muc_tieu (một câu nói video hay việc này nhằm điều gì), so_video (số video, 1 nếu không nói), "
+    "Trả về JSON với các khoá: loai (video | understand | transcribe), muc_tieu (một câu nói video hay việc này nhằm điều gì), "
+    "tieu_de (tên video ngắn, dưới 8 chữ, viết như câu thường, không có chữ \"video\"), so_video (số video, 1 nếu không nói), "
     "dinh_dang (landscape | portrait | square; video dọc là portrait), so_cau (số câu lời dẫn mỗi video, 5 nếu không nói), kenh (tên một kênh ở trên hoặc chuỗi rỗng), "
     "mau (tên một mẫu ở trên hoặc chuỗi rỗng), ngan_sach_usd (số, hoặc null nếu không nói), dung_dich_vu_tra_tien (true chỉ khi người vận hành cho phép), "
     "tim_stock (true nếu được lấy video stock miễn phí cho câu thiếu hình), tu_phan_bien (true), "
@@ -73,7 +75,7 @@ class Missions:
         prompt = PLAN_PROMPT.format(text=text, channels=", ".join(self._channels()) or "(không có)", templates=", ".join(self._templates()) or "(không có)")
         out = self._adapters.submit("model", Request("chat", privacy_class=PrivacyClass.CLOUD_ALLOWED,
                                                      params={"task": "mission_plan", "prompt": prompt, "json": True, "max_tokens": 600})).outputs["json"]
-        return self.normalise({"kind": out.get("loai"), "goal": out.get("muc_tieu") or text, "count": out.get("so_video"), "format": out.get("dinh_dang"),
+        return self.normalise({"kind": out.get("loai"), "goal": out.get("muc_tieu") or text, "title": out.get("tieu_de"), "count": out.get("so_video"), "format": out.get("dinh_dang"),
                                "lines": out.get("so_cau"), "channel": out.get("kenh"), "template": out.get("mau"), "budget": out.get("ngan_sach_usd"),
                                "paid": out.get("dung_dich_vu_tra_tien"), "stock": out.get("tim_stock"), "critique": out.get("tu_phan_bien"),
                                "constraints": out.get("rang_buoc"), "acceptance": out.get("nghiem_thu")})
@@ -86,7 +88,8 @@ class Missions:
         except (TypeError, ValueError):
             budget = None
         fmt = str(raw.get("format") or "").strip().lower()
-        return {"kind": kind, "goal": str(raw.get("goal") or "").strip(), "count": _int(raw.get("count"), 1, 1, MAX_VIDEOS),
+        goal = str(raw.get("goal") or "").strip()
+        return {"kind": kind, "goal": goal, "title": short_title(raw.get("title") or goal), "count": _int(raw.get("count"), 1, 1, MAX_VIDEOS),
                 "format": fmt if fmt in FORMATS else "landscape", "lines": _int(raw.get("lines"), 5, 2, 12),
                 "channel": str(raw.get("channel") or "").strip() or None, "template": str(raw.get("template") or "").strip() or None,
                 "budget": budget, "paid": _flag(raw.get("paid"), False), "stock": _flag(raw.get("stock"), True), "critique": _flag(raw.get("critique"), True),
@@ -150,7 +153,8 @@ class Missions:
             cap = round(plan["budget"] / plan["count"], 2) if plan["paid"] and plan["budget"] else 0.0       # no paid service without the permission
             for n in range(plan["count"]):
                 goal = plan["goal"] if plan["count"] == 1 else f"{plan['goal']} (video {n + 1} trên {plan['count']}; khác các video còn lại)"
-                title = plan["goal"][:60] if plan["count"] == 1 else f"{plan['goal'][:52]} · {n + 1}"
+                title = plan["title"] or short_title(plan["goal"])
+                title = title if plan["count"] == 1 else f"{short_title(title, 52)} · {n + 1}"
                 task_id = self._producer.start(goal, title=title, format=plan["format"], lines=plan["lines"], use_stock=plan["stock"], critique=plan["critique"])
                 project_id = self._producer.task(task_id)["project_id"]
                 self._prepare(project_id, {**plan, "budget_cap": cap})

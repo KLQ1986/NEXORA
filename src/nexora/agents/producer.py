@@ -32,6 +32,16 @@ SCHEMA = """CREATE TABLE IF NOT EXISTS agent_tasks (
     options TEXT NOT NULL, log TEXT NOT NULL DEFAULT '[]', created_at REAL NOT NULL, updated_at REAL NOT NULL)"""
 
 
+def short_title(text: str, limit: int = 60) -> str:
+    """A title no longer than `limit`, cut between words, never inside one: the title is read back by the critic and the
+    writer as the topic, so a word cut in half ends up in the script."""
+    text = " ".join(str(text or "").split())
+    if len(text) <= limit:
+        return text
+    cut = text[:limit + 1].rsplit(" ", 1)[0] if " " in text[:limit + 1] else text[:limit]
+    return cut.rstrip(" ,;:.-–—")
+
+
 class Producer:
     def __init__(self, db_path, *, orch, projects, planning, sourcing, edit, adapters, fill_gap):
         self._db = db.LocalConnections(db_path)
@@ -47,7 +57,7 @@ class Producer:
     # ------------------------------------------------------------------ tasks
     def start(self, goal: str, *, title: str | None = None, format: str = "landscape", lines: int = 5, use_stock: bool = True,
               urls: list[str] | None = None, critique: bool = True, find_sources: bool = False) -> str:
-        project_id = self._planning.create_project(title or goal[:60], format=format)
+        project_id = self._planning.create_project(short_title(title or goal), format=format)
         task_id, now = new_id("tsk"), time.time()
         with db.write(self._conn) as c:
             c.execute("INSERT INTO agent_tasks (task_id, project_id, goal, status, step, options, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
