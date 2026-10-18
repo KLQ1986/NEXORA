@@ -148,7 +148,7 @@ export function Icon({ name, size = 16, className = "" }: { name: keyof typeof I
 /** The operations section's side menu: the four screens that look after the machine. The open one may hang its own places beneath. */
 export function OpsSide({ children }: { children?: React.ReactNode }) {
   const path = window.location.pathname;
-  const items: [string, string, string][] = [["/phong-may", tr("Phòng máy"), "gauge"], ["/tien-trinh", tr("Tiến trình"), "pulse"], ["/chi-phi", tr("Chi phí"), "coins"], ["/thong-bao", tr("Thông báo"), "bell"], ["/thung-rac", tr("Thùng rác"), "trash"], ["/he-thong", tr("Hệ thống"), "sliders"]];
+  const items: [string, string, string][] = [["/phong-may", tr("Mission Control"), "gauge"], ["/tien-trinh", tr("Tiến trình"), "pulse"], ["/chi-phi", tr("Chi phí"), "coins"], ["/thong-bao", tr("Thông báo"), "bell"], ["/thung-rac", tr("Thùng rác"), "trash"], ["/he-thong", tr("Hệ thống"), "sliders"]];
   return (
     <SideGroup label={tr("Vận hành")}>
       {items.map(([to, label, icon]) => { const on = path.startsWith(to); return <SideLink key={to} label={label} icon={icon} on={on && !children} onClick={() => goTo(to)}>{on ? children : null}</SideLink>; })}
@@ -190,7 +190,7 @@ export function SideLink({ label, icon, lead, on, onClick, count, tone, small, t
   return (
     <>
       <button type="button" onClick={onClick} aria-current={on ? "page" : undefined} title={title}
-              className={`flex w-full min-w-0 items-center gap-2.5 rounded-lg px-2.5 text-left transition-colors ${small ? "h-8 text-[13px]" : "h-9 text-[13.5px]"} ${on ? "bg-accent/10 font-medium text-accent shadow-[inset_0_0_0_1px_rgba(48,175,255,0.18)]" : "text-mute hover:bg-raised/60 hover:text-ink"}`}>
+              className={`flex w-full min-w-0 items-center gap-2.5 rounded-lg px-2.5 text-left transition-colors ${small ? "h-8 text-[13px]" : "h-9 text-[13.5px]"} ${on ? "bg-accent/10 font-medium text-accent shadow-[inset_0_0_0_1px_rgba(34,225,255,0.18)]" : "text-mute hover:bg-raised/60 hover:text-ink"}`}>
         {lead ?? (icon && <Icon name={icon} size={small ? 15 : 16} />)}<span className="min-w-0 flex-1 truncate">{label}</span>
         {count != null && count > 0 && <span className={`mono shrink-0 rounded-md px-1.5 text-[11px] font-medium leading-[18px] ${badge}`}>{count}</span>}
       </button>
@@ -393,7 +393,7 @@ export function Readout({ label, value, icon, tone = "accent", on, onClick }: { 
 /** A thin bar of a share. */
 export function Meter({ share, tone = "accent" }: { share: number; tone?: "accent" | "cue" | "proof" | "ai" }) {
   // Each bar runs from its colour into a neighbouring one, as the gauges on the overview do.
-  const c = { accent: "from-accent to-[#3b82f6]", cue: "from-cue to-[#f97316]", proof: "from-proof to-[#3b82f6]", ai: "from-ai to-[#f43f5e]" }[tone];
+  const c = { accent: "from-accent to-ai", cue: "from-cue to-[#f97316]", proof: "from-proof to-accent", ai: "from-ai to-[#ff4fd8]" }[tone];
   return <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.06]"><div className={`h-full rounded-full bg-gradient-to-r ${c}`} style={{ width: `${Math.max(0, Math.min(1, share)) * 100}%` }} /></div>;
 }
 

@@ -4,10 +4,10 @@ import { createRoot } from "react-dom/client";
 import { flushSync } from "react-dom";
 import "./styles.css";
 import { listenForChanges, megabytes, post, projectState, useConnection, usePoll, type Notice, type Project, type Run } from "./api";
-import Control from "./Control";
 import Costs from "./Costs";
 import Home from "./Home";
 import Library from "./Library";
+import MissionControl from "./Mission";
 import Quality from "./Quality";
 import Notices, { ICON as NOTICE_ICON, KIND as NOTICE_KIND, PIPE as NOTICE_PIPE, noticeTone } from "./Notices";
 import Plan from "./Plan";
@@ -25,7 +25,7 @@ const PAGES = [
   { path: "/thu-vien", label: tr("Thư viện"), icon: "film", view: Library, group: 0 },
   { path: "/chat-luong-hinh", label: tr("VQ"), icon: "eye", view: Quality, group: 0, hidden: true },     // now a tab of the Library; the address forwards there
   { path: "/ke-hoach", label: tr("Kế hoạch"), icon: "calendar", view: Plan, group: 0 },
-  { path: "/phong-may", label: tr("Phòng máy"), icon: "gauge", view: Control, group: 1 },
+  { path: "/phong-may", label: tr("Mission Control"), icon: "gauge", view: MissionControl, group: 1 },
   { path: "/tien-trinh", label: tr("Tiến trình"), icon: "pulse", view: Runs, group: 1 },
   { path: "/chi-phi", label: tr("Chi phí"), icon: "coins", view: Costs, group: 1 },
   { path: "/thong-bao", label: tr("Thông báo"), icon: "bell", view: Notices, group: 1 },
@@ -42,8 +42,8 @@ type HomeLite = { attention: unknown[]; gaps: unknown[]; offline_volumes: unknow
 function Mark({ size = 26 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 28 28" aria-hidden="true">
-      <rect x=".5" y=".5" width="27" height="27" rx="7.5" fill="#0b1220" stroke="#30afff" strokeOpacity=".55" />
-      <rect x="6" y="7.5" width="16" height="3" rx="1.5" fill="#30afff" /><rect x="6" y="12.5" width="10" height="3" rx="1.5" fill="#e6edf7" /><rect x="6" y="17.5" width="13" height="3" rx="1.5" fill="#30afff" opacity=".55" />
+      <rect x=".5" y=".5" width="27" height="27" rx="7.5" fill="#0f1424" stroke="#22e1ff" strokeOpacity=".55" />
+      <rect x="6" y="7.5" width="16" height="3" rx="1.5" fill="#22e1ff" /><rect x="6" y="12.5" width="10" height="3" rx="1.5" fill="#e6edf7" /><rect x="6" y="17.5" width="13" height="3" rx="1.5" fill="#22e1ff" opacity=".55" />
     </svg>
   );
 }
@@ -260,7 +260,7 @@ function App() {
         <nav aria-label={tr("Điều hướng chính")} className="hidden min-w-0 items-center gap-0.5 md:flex">
           {SECTIONS.map((x) => { const on = x === section; return (
             <a key={x.key} href={x.to} onClick={(e) => { e.preventDefault(); go(x.to); }} aria-current={on ? "page" : undefined} title={x.label}
-               className={`relative flex h-9 shrink-0 items-center gap-2 rounded-lg px-2.5 text-[13.5px] transition-colors lg:px-3 ${on ? "bg-accent/10 font-medium text-accent shadow-[inset_0_0_0_1px_rgba(48,175,255,0.18)]" : "text-mute hover:bg-raised/60 hover:text-ink"}`}>
+               className={`relative flex h-9 shrink-0 items-center gap-2 rounded-lg px-2.5 text-[13.5px] transition-colors lg:px-3 ${on ? "bg-accent/10 font-medium text-accent shadow-[inset_0_0_0_1px_rgba(34,225,255,0.18)]" : "text-mute hover:bg-raised/60 hover:text-ink"}`}>
               <Icon name={x.icon} size={16} /><span className="hidden lg:inline">{x.label}</span>{badge(x.key)}
               {on && <span className="absolute inset-x-3 -bottom-[11px] h-[2px] rounded-full bg-accent shadow-[0_0_10px_var(--color-accent)]" />}
             </a>); })}

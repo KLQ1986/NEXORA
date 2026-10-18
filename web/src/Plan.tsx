@@ -53,7 +53,7 @@ function Calendar() {
                 const day = iso(d), items = byDay.get(day) ?? [], today = day === data?.today;
                 return (
                   <div key={day} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { const id = e.dataTransfer.getData("text/plain"); if (id) plan(id, day); }}
-                       className={`min-h-[96px] border-r border-line p-1.5 last:border-r-0 ${today ? "bg-accent/[0.06] shadow-[inset_0_0_0_1px_rgba(48,175,255,0.35)]" : d.getMonth() === at.m ? "" : "bg-raised/30 text-faint"}`}>
+                       className={`min-h-[96px] border-r border-line p-1.5 last:border-r-0 ${today ? "bg-accent/[0.06] shadow-[inset_0_0_0_1px_rgba(34,225,255,0.35)]" : d.getMonth() === at.m ? "" : "bg-raised/30 text-faint"}`}>
                     <div className={`mono mb-1 inline-grid h-6 min-w-6 place-items-center rounded-md px-1 text-[12px] ${today ? "bg-accent text-[#03111f] font-semibold" : ""}`}>{d.getDate()}</div>
                     <div className="grid gap-1">
                       {items.map((p) => (

@@ -364,10 +364,8 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         return project_view(need_project(project_id))
 
     def use_template(project_id: str, chosen: dict) -> None:
-        system.projects.update_project(project_id, template=chosen["name"], format=chosen["format"], voice=chosen["voice"] or None, music_gain=chosen["music_gain"], auto_accept=int(chosen["auto_accept"]),
-                                       profile=json.dumps({"caption_scale": chosen.get("caption_scale", 1.0), "caption_position": chosen.get("caption_position", "bottom"),
-                                                           "typeface": chosen.get("typeface", "sans"), "caption_colour": chosen.get("caption_colour"), "logo_path": chosen.get("logo_path") or None,
-                                                           "pronounce": chosen.get("pronounce", {})}, ensure_ascii=False))
+        from nexora.app import apply_template
+        apply_template(system, project_id, chosen)
 
     @app.post("/api/v1/stages/{stage_id}/resume")
     def resume_stage(stage_id: str):
@@ -1548,6 +1546,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         return {"projects": rows, "today": today, "channels": channel_list(), "cadence": cadence_gaps(rows, today)}
 
     thinking = {"running": False, "error": None, "started_at": None}
+    app.state.ideas = thinking                       # Mission Control's fleet reads whether the idea finder is at work
 
     @app.post("/api/v1/ideas", status_code=202)
     def propose_ideas(body: dict | None = None):
@@ -2539,6 +2538,8 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
     add_notes(app, system.data_dir)                  # notes pinned to a moment of a recording or a cut
     from nexora.api.catalog import add_catalog
     add_catalog(app, system)                         # one code and one name for every item in the library
+    from nexora.api.missions import add_missions
+    add_missions(app, system, health=health)         # Mission Control: missions, approvals, the fleet, quality, resources, logs
 
     # ------------------------------------------------------------------ the Edit step (FilmCraft)
     def cut_view(project_id: str) -> dict:

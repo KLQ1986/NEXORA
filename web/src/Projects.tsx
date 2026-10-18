@@ -982,7 +982,7 @@ export default function Projects({ sub, go }: { sub: string | null; go: (to: str
   const [title, setTitle] = useState("");
   const [goal, setGoal] = useState("");
   const [format, setFormat] = useState("landscape");
-  const [mode, setMode] = useState<"none" | "new" | "agent" | "ideas">(() => (new URLSearchParams(window.location.search).has("moi") ? "new" : "none"));
+  const [mode, setMode] = useState<"none" | "new" | "agent" | "ideas">(() => { const q = new URLSearchParams(window.location.search); return q.has("moi") ? "new" : q.has("y-tuong") ? "ideas" : "none"; });
   const [filter, setFilterState] = useState<Filter>(() => listFilter);
   const setFilter = (f: Filter) => { listFilter = f; setFilterState(f); };
   const [view, setView] = useState<"grid" | "list">(() => { try { return (localStorage.getItem("nx.projects.view") as "grid" | "list") ?? "grid"; } catch { return "grid"; } });

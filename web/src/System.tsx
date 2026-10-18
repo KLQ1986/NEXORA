@@ -464,7 +464,7 @@ export default function System() {
         <nav className="panel scroll-x flex gap-1 p-1.5 lg:hidden" aria-label={tr("Mục cài đặt")}>
           {AREAS.map(([k, name, icon]) => (
             <button key={k} type="button" onClick={() => setArea(k)} aria-current={area === k ? "page" : undefined}
-                    className={`flex h-9 shrink-0 items-center gap-2.5 whitespace-nowrap rounded-lg px-3 text-[13.5px] transition-colors ${area === k ? "bg-accent/10 font-medium text-accent shadow-[inset_0_0_0_1px_rgba(48,175,255,0.2)]" : "text-mute hover:bg-raised/50 hover:text-ink"}`}>
+                    className={`flex h-9 shrink-0 items-center gap-2.5 whitespace-nowrap rounded-lg px-3 text-[13.5px] transition-colors ${area === k ? "bg-accent/10 font-medium text-accent shadow-[inset_0_0_0_1px_rgba(34,225,255,0.2)]" : "text-mute hover:bg-raised/50 hover:text-ink"}`}>
               <Icon name={icon} size={16} className={area === k ? "text-accent" : ""} />{name}</button>
           ))}
         </nav>

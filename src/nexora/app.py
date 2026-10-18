@@ -78,6 +78,7 @@ class System:
     storyboard: "Storyboard" = None              # a project's storyboard: scenes, shot specs and their versions, the conversation
     storyboard_planner: "StoryboardPlanner" = None
     director: "Director" = None                  # carries the storyboard's shots to acceptance, and holds the conversation
+    missions: "Missions" = None                  # Mission Control: the operator's missions, planned, checked and carried out
 
 
 def storyboard_stock(system: "System", shot_id: str, query: str) -> dict:
@@ -425,7 +426,7 @@ def structure_config(system: "System") -> dict:
     return {"signals": signals.VERSION, "structure": structure.VERSION, **asdict(system.intelligence.analysis.rules)}
 
 
-PIPELINE_NAMES = {"library.ingest": "Nhập footage", "library.ingest_image": "Nhập ảnh", "library.ingest_audio": "Nhập nhạc", "library.understand": "Hiểu nội dung footage", "library.transcribe": "Nghe lời nói trong footage", "library.profile": "Đo và nhận diện footage",
+PIPELINE_NAMES = {"edit.cut": "Xuất bản dựng", "library.ingest": "Nhập footage", "library.ingest_image": "Nhập ảnh", "library.ingest_audio": "Nhập nhạc", "library.understand": "Hiểu nội dung footage", "library.transcribe": "Nghe lời nói trong footage", "library.profile": "Đo và nhận diện footage",
                   "sourcing.match": "Chọn clip", "sourcing.generate": "Sinh hình bằng AI", "edit.render": "Dựng video", "edit.preview": "Dựng bản xem thử", "library.enhance": "Nâng chất lượng clip", "sourcing.train": "Huấn luyện mô hình nhân vật", "library.cuts": "Tìm chỗ chuyển cảnh", "library.structure": "Đo và chia footage thành cú máy, nhịp"}
 ANNOUNCE = {"model_fallback": "không dùng được mô hình cloud đã chọn, mô hình trên máy làm thay", "autonomy_lowered": "mức tự chủ vừa bị hạ", "metrics_due": "đã tới mốc ghi số liệu", "disk_low": "ổ đĩa sắp đầy", "volume_offline": "không tìm thấy nơi chứa footage", "gaps": "còn câu chưa có hình", "waiting_review": "đang chờ bạn duyệt", "blocked": "đang dừng và cần bạn xử lý", "failed": "thất bại", "succeeded": "đã xong"}
 QUIET = frozenset({"library.ingest", "library.ingest_image", "library.ingest_audio", "library.understand", "library.transcribe", "library.profile", "edit.preview", "library.cuts", "library.enhance", "library.structure"})   # finishing these needs nobody's attention
@@ -506,6 +507,61 @@ def channel_named(system: "System", name: str | None) -> dict | None:
 
 def template_named(system: "System", name: str | None) -> dict | None:
     return next((t for t in templates(system) if t["name"] == name), None) if name else None
+
+
+def apply_template(system: "System", project_id: str, chosen: dict) -> None:
+    """A project starts from a template: its format, voice, music level, captions and logo."""
+    system.projects.update_project(project_id, template=chosen["name"], format=chosen["format"], voice=chosen["voice"] or None, music_gain=chosen["music_gain"], auto_accept=int(chosen["auto_accept"]),
+                                   profile=json.dumps({"caption_scale": chosen.get("caption_scale", 1.0), "caption_position": chosen.get("caption_position", "bottom"),
+                                                       "typeface": chosen.get("typeface", "sans"), "caption_colour": chosen.get("caption_colour"), "logo_path": chosen.get("logo_path") or None,
+                                                       "pronounce": chosen.get("pronounce", {})}, ensure_ascii=False))
+
+
+def budget_left(system: "System", *, now: float | None = None) -> float | None:
+    """What is left of the day's and the month's budgets, the smaller; None when no budget is set."""
+    t = time.localtime(now)
+    day, month = time.mktime((t.tm_year, t.tm_mon, t.tm_mday, 0, 0, 0, 0, 0, -1)), time.mktime((t.tm_year, t.tm_mon, 1, 0, 0, 0, 0, 0, -1))
+    left = []
+    for key, since in (("budget_day", day), ("budget_month", month)):
+        value = system.orch.setting(key, "")
+        if value not in (None, ""):
+            left.append(max(0.0, float(value) - system.orch.spent_since(since)))
+    return round(min(left), 4) if left else None
+
+
+def start_library_work(system: "System", kind: str) -> list[str]:
+    """A mission's library work: every recording not yet described (or not yet listened to) is given to its pipeline."""
+    runs = []
+    for asset in system.assets.assets():
+        if asset["kind"] != "video" or asset.get("rejected") or asset.get("trashed_at"):
+            continue
+        aid = asset["asset_id"]
+        if kind == "understand":
+            if system.index.moments(aid, level="video"):
+                continue
+            earlier = [r for r in system.orch.runs_for_subject(aid) if system.orch.pipeline_of(r) == "library.understand"]
+            if earlier and system.orch.run_status(earlier[0]).value in ("queued", "running"):
+                runs.append(earlier[0])
+                continue
+            run = system.intelligence.understand(aid, force=bool(earlier))
+        else:
+            run = system.intelligence.transcribe(aid)
+            if run and system.orch.run_status(run).value == "succeeded":
+                continue                               # heard already: the same request answers with the run that did it
+        if run:
+            runs.append(run)
+    return runs
+
+
+def prepare_mission_project(system: "System", project_id: str, plan: dict) -> None:
+    """A project a mission started: its template, channel and the share of the mission's budget it may spend."""
+    chosen = template_named(system, plan.get("template"))
+    if chosen:
+        apply_template(system, project_id, {**chosen, "format": plan.get("format") or chosen["format"]})
+    channel = channel_named(system, plan.get("channel"))
+    if channel:
+        system.projects.update_project(project_id, channel=channel["name"], channel_version=channel.get("version", 1))
+    system.projects.update_project(project_id, budget_cap=plan.get("budget_cap", 0.0))
 
 
 IDEAS_SETTLE = 3600.0          # proposed again when the understood library changed and an hour has passed
@@ -772,6 +828,16 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
                                publish=(lambda render_id: system.publishing.publish(render_id, "publish.folder")) if has_folder else None)
     system.producer = Producer(db_path, orch=orch, projects=projects, planning=planning, sourcing=sourcing, edit=edit, adapters=adapters,
                                fill_gap=lambda shot_id, query: fill_gap_from_stock(system, shot_id, query))
+    from nexora.agents.missions import Missions
+    from nexora.core.missions import MissionStore
+
+    def missing(pipeline_id: str) -> list[str] | None:
+        found = next((c for c in capabilities(system) if c["pipeline"] == pipeline_id), None)
+        return [f"quy trình {pipeline_id}"] if found is None else found["missing"]
+    system.missions = Missions(MissionStore(db_path), orch=orch, producer=system.producer, projects=projects, adapters=adapters, available=missing,
+                               channels=lambda: [c["name"] for c in json.loads(orch.setting("channels", "[]"))], templates=lambda: [t["name"] for t in templates(system)],
+                               budget_left=lambda: budget_left(system), prepare=lambda project_id, plan: prepare_mission_project(system, project_id, plan),
+                               start_library=lambda kind: start_library_work(system, kind), autonomy=lambda: system.autonomy.level)
     return system
 
 

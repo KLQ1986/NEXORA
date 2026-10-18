@@ -9,40 +9,41 @@
 @import "@fontsource/geist-mono/500.css";
 @import "@fontsource/geist-mono/600.css";
 
-/* NEXORA Studio: the control room.
-   A deep navy canvas with panels of tinted glass, a bright blue signal for where you are and what to press, and colour that means
-   something: amber waits for you, red has stopped, blue has passed, orange is the machine at work. Readings (clocks, counts,
-   timecodes) are set in Geist Mono so they line up and read as instruments. Picture areas stay dark and neutral. */
+/* NEXORA Studio, the control plane at night. A near-black ink canvas (#0B0F19) under a slow gradient mesh of electric purple and
+   cyber cyan; panels of frosted glass with a faint white edge that lights cyan and violet when the pointer is on them; thin HUD
+   grids, dot matrices and small data labels. Colour still means something: cyan is where you are and what to press, violet the
+   machine at work, amber waits for you, rose has stopped, green has passed. Readings (clocks, counts, timecodes) are set in Geist
+   Mono so they line up and read as instruments. Picture areas stay dark and neutral. */
 /* Screens shorter than a laptop at full height: the overview drops its pictures and keeps its numbers so it still fits. */
 @custom-variant short (@media (max-height: 860px));
 
 @theme {
-  --color-canvas: #060a12;
-  --color-surface: #0b1220;
-  --color-raised: #111b2d;
-  --color-overlay: #16223a;
-  --color-line: #18243a;
-  --color-edge: #26354f;
-  --color-field: #070c16;
-  --color-ink: #e6edf7;
-  --color-mute: #a7b2c6;
-  --color-faint: #8592a9;
-  --color-accent: #30afff;
-  --color-accent-deep: #1a8fe0;
-  --color-ai: #ff8c52;
+  --color-canvas: #0b0f19;
+  --color-surface: #0f1424;
+  --color-raised: #151b2e;
+  --color-overlay: #1b2238;
+  --color-line: #1d2439;
+  --color-edge: #2b3452;
+  --color-field: #090d17;
+  --color-ink: #e8ecf8;
+  --color-mute: #aab2cc;
+  --color-faint: #8a93b0;
+  --color-accent: #22e1ff;
+  --color-accent-deep: #0bb8d9;
+  --color-ai: #b26bff;
   --color-cue: #fbbf24;
-  --color-tally: #f87171;
-  --color-proof: #30afff;
+  --color-tally: #fb7185;
+  --color-proof: #34d399;
   --font-sans: "Lexend Variable", "Geist Variable", "Geist", system-ui, -apple-system, sans-serif;
   --font-display: "Lexend Variable", "Geist Variable", "Geist", system-ui, -apple-system, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, Menlo, monospace;
-  /* One scale of corners: containers 12, nested panels 10, controls 8, chips 6. State tags alone are pills, so a state reads as a state. */
-  --radius-card: 14px;
-  --radius-panel: 10px;
-  --radius-control: 8px;
-  --radius-chip: 6px;
+  /* One scale of corners, rounder than before: containers 20, nested panels 14, controls 10, chips 8. State tags alone are pills. */
+  --radius-card: 20px;
+  --radius-panel: 14px;
+  --radius-control: 10px;
+  --radius-chip: 8px;
   --shadow-card: none;
-  --shadow-float: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 24px 60px -24px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.03);
+  --shadow-float: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 24px 60px -24px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.04);
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -53,10 +54,19 @@ html[lang="vi"] h1, html[lang="vi"] h2, html[lang="vi"] h3 { letter-spacing: -0.
 @media (pointer: fine) { html { overscroll-behavior: none; } }
 body, #root { height: 100%; }
 body {
-  background: radial-gradient(1200px 600px at 20% -10%, rgba(48, 175, 255, 0.07), transparent 60%), radial-gradient(900px 500px at 100% 0%, rgba(255, 140, 82, 0.04), transparent 60%), var(--color-canvas);
-  background-attachment: fixed; color: var(--color-ink); font-family: var(--font-sans); font-size: 14px; font-weight: 350; line-height: 1.55;
+  background: var(--color-canvas); color: var(--color-ink); font-family: var(--font-sans); font-size: 14px; font-weight: 350; line-height: 1.55;
   -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; -webkit-tap-highlight-color: transparent;
 }
+/* The gradient mesh: three soft lights drifting slowly behind everything; and over it a hairline grid fading towards the edges. */
+body::before { content: ""; position: fixed; inset: -20%; z-index: 0; pointer-events: none;
+  background: radial-gradient(38% 42% at 18% 12%, rgba(178, 107, 255, 0.16), transparent 70%), radial-gradient(34% 40% at 86% 18%, rgba(34, 225, 255, 0.11), transparent 70%),
+              radial-gradient(46% 38% at 55% 105%, rgba(91, 76, 255, 0.13), transparent 70%);
+  filter: blur(10px); animation: mesh 48s ease-in-out infinite alternate; }
+body::after { content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background-image: linear-gradient(rgba(148, 170, 255, 0.045) 1px, transparent 1px), linear-gradient(90deg, rgba(148, 170, 255, 0.045) 1px, transparent 1px);
+  background-size: 44px 44px; -webkit-mask-image: radial-gradient(ellipse at 50% 30%, #000 20%, transparent 75%); mask-image: radial-gradient(ellipse at 50% 30%, #000 20%, transparent 75%); }
+#root { position: relative; z-index: 1; }
+@keyframes mesh { 0% { transform: translate3d(0, 0, 0) scale(1); } 50% { transform: translate3d(3%, -2%, 0) scale(1.06); } 100% { transform: translate3d(-3%, 2%, 0) scale(1.02); } }
 h1, h2, h3 { letter-spacing: -0.02em; text-wrap-style: balance; }
 p { text-wrap-style: pretty; }
 button, a, [role="button"], input, select, textarea, summary { touch-action: manipulation; }
@@ -84,7 +94,7 @@ html[lang="vi"] .display { letter-spacing: -0.015em; }
     transition: border-color 140ms, background-color 140ms, box-shadow 140ms;
   }
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]), select { min-height: 36px; }
-  input:hover, select:hover, textarea:hover { border-color: #34466a; }
+  input:hover, select:hover, textarea:hover { border-color: #3a4568; }
   input:focus, select:focus, textarea:focus { outline: none; border-color: color-mix(in srgb, var(--color-accent) 70%, transparent); background: var(--color-canvas);
     box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 18%, transparent); }
   input::placeholder, textarea::placeholder { color: var(--color-faint); }
@@ -107,15 +117,28 @@ html[lang="vi"] .display { letter-spacing: -0.015em; }
 }
 
 @layer components {
-  .panel { background: linear-gradient(180deg, rgba(17, 27, 45, 0.78), rgba(10, 17, 30, 0.78)); border: 1px solid var(--color-line); border-radius: var(--radius-card); box-shadow: inset 0 1px 0 rgba(148, 197, 255, 0.04), 0 18px 40px -28px rgba(0, 0, 0, 0.9); }
+  .panel, .bento { background: linear-gradient(180deg, rgba(24, 30, 52, 0.58), rgba(13, 17, 31, 0.62)); border: 1px solid rgba(255, 255, 255, 0.075); border-radius: var(--radius-card);
+    -webkit-backdrop-filter: blur(16px) saturate(140%); backdrop-filter: blur(16px) saturate(140%); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 22px 50px -32px rgba(0, 0, 0, 0.95); }
+  /* A bento card carries a hairline of light along its top edge, cyan into violet, brighter when the pointer is on it. */
+  .bento { position: relative; transition: border-color 200ms, box-shadow 200ms; }
+  .bento::before { content: ""; position: absolute; left: 18px; right: 18px; top: -1px; height: 1px; border-radius: 1px; pointer-events: none; opacity: .45; transition: opacity 200ms;
+    background: linear-gradient(90deg, transparent, var(--color-accent), var(--color-ai), transparent); }
+  .bento:hover::before, .bento:focus-within::before { opacity: 1; }
+  .bento-hover:hover, .bento-hover:focus-visible { border-color: color-mix(in srgb, var(--color-accent) 40%, transparent);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 12%, transparent), 0 0 36px -10px color-mix(in srgb, var(--color-accent) 45%, transparent), 0 0 60px -24px color-mix(in srgb, var(--color-ai) 55%, transparent); }
+  /* HUD: a tiny data label, a glowing square, a figure that glows a little. */
+  .hud-label { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .14em; text-transform: uppercase; color: color-mix(in srgb, var(--color-faint) 80%, transparent); }
+  .hud-dot { width: 6px; height: 6px; border-radius: 2px; background: var(--color-accent); box-shadow: 0 0 10px var(--color-accent); flex-shrink: 0; }
+  .kpi-glow { text-shadow: 0 0 22px color-mix(in srgb, currentColor 35%, transparent); }
+  .matrix { background-image: radial-gradient(rgba(148, 170, 255, 0.18) 1px, transparent 1.2px); background-size: 8px 8px; }
   /* A reading inside a panel: a darker well with a faint cyan edge that lights on hover. */
-  .tile { background: rgba(6, 12, 22, 0.55); border: 1px solid #1c2a44; border-radius: var(--radius-panel); transition: border-color 160ms, background-color 160ms, box-shadow 160ms; }
+  .tile { background: rgba(255, 255, 255, 0.025); border: 1px solid rgba(255, 255, 255, 0.065); border-radius: var(--radius-panel); transition: border-color 160ms, background-color 160ms, box-shadow 160ms; }
   /* A chosen reading (a filter that is on) stays lit. */
-  .tile[aria-checked="true"], .tile[aria-current="page"] { border-color: color-mix(in srgb, var(--color-accent) 55%, transparent); background: rgba(48, 175, 255, 0.06); box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 15%, transparent), 0 0 28px -10px color-mix(in srgb, var(--color-accent) 55%, transparent); }
+  .tile[aria-checked="true"], .tile[aria-current="page"] { border-color: color-mix(in srgb, var(--color-accent) 55%, transparent); background: rgba(34, 225, 255, 0.06); box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 15%, transparent), 0 0 28px -10px color-mix(in srgb, var(--color-accent) 55%, transparent); }
   /* Cards that open something light their edge when the pointer is on them. */
-  a.panel:hover, button.panel:not(:disabled):hover, li > a.panel:hover { border-color: color-mix(in srgb, var(--color-accent) 40%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 10%, transparent), 0 0 32px -12px color-mix(in srgb, var(--color-accent) 45%, transparent); }
-  a.tile:hover, button.tile:hover { border-color: color-mix(in srgb, var(--color-accent) 45%, transparent); background: rgba(48, 175, 255, 0.04); box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 12%, transparent), 0 0 24px -8px color-mix(in srgb, var(--color-accent) 40%, transparent); }
-  .panel-raised { background: var(--color-raised); border: 1px solid var(--color-line); border-radius: var(--radius-panel); }
+  a.panel:hover, button.panel:not(:disabled):hover, li > a.panel:hover { border-color: color-mix(in srgb, var(--color-accent) 40%, transparent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 10%, transparent), 0 0 32px -12px color-mix(in srgb, var(--color-accent) 45%, transparent), 0 0 56px -24px color-mix(in srgb, var(--color-ai) 50%, transparent); }
+  a.tile:hover, button.tile:hover { border-color: color-mix(in srgb, var(--color-accent) 45%, transparent); background: rgba(34, 225, 255, 0.04); box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 12%, transparent), 0 0 24px -8px color-mix(in srgb, var(--color-accent) 40%, transparent); }
+  .panel-raised { background: rgba(27, 34, 56, 0.6); border: 1px solid rgba(255, 255, 255, 0.07); border-radius: var(--radius-panel); }
   .rows > * + * { border-top: 1px solid var(--color-line); }
   .filmstrip { display: flex; gap: 2px; overflow: hidden; background: #000; }
   .filmstrip > * { min-width: 0; }
@@ -136,20 +159,20 @@ html[lang="vi"] .display { letter-spacing: -0.015em; }
   /* Buttons press: they move one pixel on the way down and settle back. */
   .btn { transition: background-color 140ms, border-color 140ms, color 140ms, box-shadow 140ms, transform 80ms; }
   .btn:active:not(:disabled) { transform: translateY(1px); }
-  .brand-button { background: var(--color-accent); color: #03111f; font-weight: 600; box-shadow: 0 0 0 1px rgba(48, 175, 255, 0.4), 0 8px 24px -10px rgba(48, 175, 255, 0.7); }
-  .brand-button:hover:not(:disabled) { background: #6cc6ff; }
+  .brand-button { background: linear-gradient(135deg, var(--color-accent), #5ab8ff); color: #041821; font-weight: 600; box-shadow: 0 0 0 1px rgba(34, 225, 255, 0.45), 0 8px 26px -10px rgba(34, 225, 255, 0.8); }
+  .brand-button:hover:not(:disabled) { background: linear-gradient(135deg, #7ff0ff, #8fcbff); box-shadow: 0 0 0 1px rgba(34, 225, 255, 0.6), 0 0 30px -6px rgba(34, 225, 255, 0.75), 0 0 46px -18px rgba(178, 107, 255, 0.7); }
   .brand-button:disabled { background: var(--color-raised); color: var(--color-faint); box-shadow: none; }
   /* A place where content will be: the shape of it, breathing slowly. */
   .skeleton { position: relative; overflow: hidden; border-radius: var(--radius-chip); background: var(--color-raised); }
   .skeleton::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%); animation: sweep 1.6s var(--ease-out) infinite;
     background: linear-gradient(90deg, transparent, rgba(255,255,255,0.045), transparent); }
-  .toast { background: var(--color-overlay); border: 1px solid var(--color-edge); border-radius: var(--radius-panel); box-shadow: var(--shadow-float); animation: rise 200ms var(--ease-out) both; }
-  .dialog { background: var(--color-surface); border: 1px solid var(--color-edge); border-radius: var(--radius-card); box-shadow: var(--shadow-float); animation: pop 180ms var(--ease-out) both; }
-  .scrim { background: rgba(2, 5, 12, 0.72); backdrop-filter: blur(4px); animation: fade 160ms ease-out both; overscroll-behavior: contain; }
+  .toast { background: rgba(27, 34, 56, 0.85); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); border: 1px solid rgba(255, 255, 255, 0.09); border-radius: var(--radius-panel); box-shadow: var(--shadow-float); animation: rise 200ms var(--ease-out) both; }
+  .dialog { background: rgba(17, 22, 38, 0.92); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); border: 1px solid rgba(255, 255, 255, 0.09); border-radius: var(--radius-card); box-shadow: var(--shadow-float); animation: pop 180ms var(--ease-out) both; }
+  .scrim { background: rgba(5, 7, 14, 0.72); backdrop-filter: blur(4px); animation: fade 160ms ease-out both; overscroll-behavior: contain; }
 }
 
-/* The sidebar sits on a surface a shade above the canvas; nothing in the chrome glows. */
-.backdrop { background: var(--color-canvas); }
+/* The shell lets the mesh show through; the chrome itself does not glow. */
+.backdrop { background: transparent; }
 /* Fields that sit inside a framed editor carry no frame of their own. */
 /* Rows that scroll sideways on a phone show no bar: the content itself says it continues. */
 .scroll-x { overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none; }
@@ -177,80 +200,11 @@ html[lang="vi"] .display { letter-spacing: -0.015em; }
 ::view-transition-old(sidebar), ::view-transition-new(sidebar) { animation: none; }
 @keyframes fade-out { to { opacity: 0; } }
 @keyframes rise-in { from { opacity: 0; transform: translateY(6px); } }
-/* The control room: work moving along the loop, jobs orbiting the library, a dashed link to a busy department. */
-@keyframes flow { from { left: -24px; } to { left: 100%; } }
-.flow { animation: flow 2.4s linear infinite; }
-@keyframes orbit { to { transform: rotate(360deg); } }
-.orbit { animation: orbit 60s linear infinite; }
-@keyframes dash { to { stroke-dashoffset: -14; } }
-.dash { animation: dash 1s linear infinite; }
-/* The control room is an instrument, not a page: black ground, hairline rules, mono type, a mint signal colour, and each
-   department in its own colour. Everything here is scoped to .lab so the rest of the studio keeps its own look. */
-.lab {
-  --color-canvas: #030405; --color-surface: #07090a; --color-raised: #0d1110; --color-overlay: #121816; --color-line: #1a2420; --color-edge: #2b3832;
-  --color-ink: #dce8e1; --color-mute: #93a79e; --color-faint: #7f948a; --color-accent: #8fe3c0; --color-ai: #ff8c52; --color-cue: #f2c14e; --color-tally: #ff5f5f; --color-proof: #7bd389;
-  background: #030405; color: var(--color-ink); font-family: var(--font-sans); font-size: 14px;
-}
-.lab .panel, .lab .lab-card { background: transparent; border: 1px solid var(--color-line); border-radius: 2px; box-shadow: none; }
-.lab .tile { background: rgba(255,255,255,0.012); border: 1px solid var(--color-line); border-radius: 2px; box-shadow: none; }
-.lab button.lab-card { transition: border-color 160ms, background-color 160ms; }
-.lab button.lab-card:hover, .lab a.tile:hover, .lab button.tile:hover { border-color: color-mix(in srgb, var(--color-accent) 45%, transparent); background: rgba(143,227,192,0.03); box-shadow: none; }
-.lab .panel h2 { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--color-mute); }
-.lab .lab-rule { border-bottom: 1px solid var(--color-line); }
-.lab .lab-cap { font-size: 12px; font-weight: 500; letter-spacing: .07em; text-transform: uppercase; color: var(--color-faint); }
-.lab .lab-tag { display: inline-flex; align-items: center; height: 20px; padding: 0 6px; border: 1px solid var(--color-edge); font-size: 11px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: var(--color-mute); }
-.lab .lab-btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px; border: 1px solid var(--color-edge); font-size: 12px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; }
-.lab .lab-seg { display: inline-flex; border: 1px solid var(--color-edge); }
-.lab .lab-seg > button { height: 28px; padding: 0 11px; font-size: 12px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: var(--color-faint); }
-.lab .lab-seg > button + button { border-left: 1px solid var(--color-edge); }
-.lab .lab-seg > button[aria-checked="true"] { background: rgba(143,227,192,0.1); color: var(--color-accent); }
-.lab .seg { border-radius: 2px; } .lab .seg > button { border-radius: 1px; }
-.lab input, .lab select { border-radius: 2px; }
-.lab-svgcap { font: 500 11px var(--font-sans); letter-spacing: .06em; text-transform: uppercase; fill: var(--color-faint); }
-.lab-svgnum { font: 600 11.5px var(--font-mono); }
-.lab-svgtag { font: 500 11.5px var(--font-sans); letter-spacing: .03em; }
-.lab-svgbig { font: 600 19px var(--font-mono); fill: var(--color-ink); }
-/* Amber: the same instrument in the colour of an old phosphor terminal. */
-.lab.lab-amber { --color-accent: #ffb347; --color-line: #2a2015; --color-edge: #3d2f1c; --color-ink: #f2e6d4; --color-mute: #b8a68c; --color-faint: #9c8b72; --color-proof: #c8e06b; }
-.lab.lab-amber button.lab-card:hover { background: rgba(255,179,71,0.04); }
-.lab.lab-amber .lab-seg > button[aria-checked="true"] { background: rgba(255,179,71,0.12); }
-/* Studio: the control room in the studio's own clothes — navy glass panels, rounded, sentence-case labels. */
-.studio { font-size: 14px; --color-faint: #8592aa; }
-.studio .lab-card { background: linear-gradient(180deg, rgba(17, 27, 45, 0.78), rgba(10, 17, 30, 0.78)); border: 1px solid var(--color-line); border-radius: 14px; box-shadow: inset 0 1px 0 rgba(148, 197, 255, 0.04); }
-.studio button.lab-card { transition: border-color 160ms, box-shadow 160ms; }
-.studio button.lab-card:hover { border-color: color-mix(in srgb, var(--color-accent) 40%, transparent); box-shadow: 0 0 32px -12px color-mix(in srgb, var(--color-accent) 45%, transparent); }
-.studio .lab-rule { border-bottom: 1px solid var(--color-line); }
-.studio .lab-cap { font-size: 12px; color: var(--color-faint); }
-.studio .lab-tag { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border: 1px solid var(--color-edge); border-radius: 999px; font-size: 11px; color: var(--color-mute); }
-.studio .lab-btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px; border: 1px solid var(--color-edge); border-radius: 8px; font-size: 12.5px; font-weight: 500; }
-.studio .lab-seg { display: inline-flex; padding: 2px; gap: 2px; border: 1px solid var(--color-line); border-radius: 10px; background: var(--color-canvas); }
-.studio .lab-seg > button { height: 26px; padding: 0 10px; border-radius: 8px; font-size: 12.5px; color: var(--color-mute); }
-.studio .lab-seg > button[aria-checked="true"] { background: color-mix(in srgb, var(--color-accent) 14%, transparent); color: var(--color-accent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 28%, transparent); }
-.studio .uppercase { text-transform: none; }
-.lab .lab-seg > button, .studio .lab-seg > button { white-space: nowrap; }
-.lab .dept-icon { border-radius: 3px; }
-.studio .dept-icon { border-radius: 10px; }
-/* a department with nothing to do steps back; one at work stands forward */
-.lab-card.dept-idle .dept-icon { filter: saturate(.35); opacity: .75; }
-.lab-card.dept-idle:hover .dept-icon { filter: none; opacity: 1; }
-.need:hover { filter: brightness(1.2); }
-.lab .need { border-radius: 2px; } .studio .need { border-radius: 8px; }
-.dial-tag:hover text { text-decoration: underline; } .dial-tag:focus-visible { outline: none; } .dial-tag:focus-visible circle { r: 6; }
-/* the quick window pops up where it stands; scale and opacity only, so the drag offset is untouched */
-@keyframes quickpop { from { opacity: 0; scale: .97; } to { opacity: 1; scale: 1; } }
-.quick-win { animation: quickpop 160ms var(--ease-out) both; }
-.lab .quick-win { border-radius: 4px; } .studio .quick-win { border-radius: 16px; }
-@media (prefers-reduced-motion: reduce) { .quick-win { animation: none; } }
-@keyframes lab-pulse { from { r: 13; opacity: .9; } to { r: 22; opacity: 0; } }
-.lab-pulse { animation: lab-pulse 1.6s ease-out infinite; }
-@keyframes lab-breathe { 0%, 100% { opacity: .85; } 50% { opacity: 1; } }
-.lab-breathe { animation: lab-breathe 5s ease-in-out infinite; }
-@keyframes lab-scan { 0% { transform: translateY(-120px); opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } 100% { transform: translateY(120px); opacity: 0; } }
-.lab-scan { animation: lab-scan 6s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .spin { animation: spin 0.8s linear infinite; }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
+  body::before { animation: none; }
   .skeleton::after { display: none; }
   .working { background: var(--color-ai); }
 }
@@ -260,12 +214,6 @@ html[lang="vi"] .display { letter-spacing: -0.015em; }
    wins over the utilities without touching every screen. ── */
 :where(.text-faint, .text-mute):not([class*="font-"]) { font-weight: 400; }
 .text-\[9\.5px\], .text-\[10px\], .text-\[10\.5px\], .text-\[11px\], .text-\[11\.5px\], .chip { font-size: 11px; font-weight: 400; }
-.lab .lab-tag { font-size: 11px; font-weight: 400; }
-.lab-svgcap { font-size: 11px; font-weight: 400; }
-.lab-svgtag, .lab-svgnum { font-size: 11px; font-weight: 400; }
-.lab { --color-mute: #aabdb3; --color-faint: #93a79e; }
-.lab.lab-amber { --color-mute: #c9b89d; --color-faint: #ad9c82; }
-.studio { --color-faint: #94a0b6; }
 
 /* Lexend draws heavier than Geist at the same number, so the weight scale steps down by one notch:
    body 350, medium 450, semibold 550, bold 650. */

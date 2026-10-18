@@ -69,6 +69,41 @@ class Producer:
         with db.write(self._conn) as c:
             return c.execute("DELETE FROM agent_tasks WHERE project_id = ?", (project_id,)).rowcount
 
+    def pause(self, task_id: str) -> bool:
+        """The task takes no further step until it is resumed; a stage already running finishes. Its state comes back on resume."""
+        task = self.task(task_id)
+        if task is None or task["status"] not in ("working", "waiting_operator"):
+            return False
+        with db.write(self._conn) as c:
+            c.execute("UPDATE agent_tasks SET status = 'paused', options = ? WHERE task_id = ?", (json.dumps({**task["options"], "before_pause": task["status"]}), task_id))
+        self._say(task_id, LEAD, "Tạm dừng theo lệnh của bạn.")
+        return True
+
+    def resume(self, task_id: str) -> bool:
+        task = self.task(task_id)
+        if task is None or task["status"] != "paused":
+            return False
+        self._move(task_id, status=task["options"].get("before_pause") or "working")
+        self._say(task_id, LEAD, "Tiếp tục.")
+        return True
+
+    def retry(self, task_id: str) -> bool:
+        """A task stopped by a failure takes up again from the step it stopped at (its checkpoint), not from the start."""
+        task = self.task(task_id)
+        if task is None or task["status"] != "failed":
+            return False
+        self._move(task_id, status="working")
+        self._say(task_id, LEAD, f"Chạy lại từ bước “{task['step']}”.")
+        return True
+
+    def cancel(self, task_id: str) -> bool:
+        task = self.task(task_id)
+        if task is None or task["status"] in ("done", "failed", "cancelled"):
+            return False
+        self._move(task_id, status="cancelled")
+        self._say(task_id, LEAD, "Đã huỷ theo lệnh của bạn.")
+        return True
+
     def _say(self, task_id: str, role: str, text: str) -> None:
         with db.write(self._conn) as c:
             log = json.loads(c.execute("SELECT log FROM agent_tasks WHERE task_id = ?", (task_id,)).fetchone()[0])

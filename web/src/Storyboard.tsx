@@ -541,7 +541,7 @@ function TimeView({ board, cur, tone, pick, pickSeam }: { board: Board; cur?: Sb
       <div className="flex items-center gap-2.5 text-[12px] text-faint">
         <Button size="sm" onClick={() => { if (at >= total) setAt(0); setPlaying(!playing); }}><Icon name={playing ? "pause" : "play"} size={13} />{playing ? tr("Dừng") : tr("Phát animatic")}</Button>
         <span className="mono">{mmss(at)}</span>
-        <input type="range" min={0} max={total} step={0.1} value={at} onChange={(e) => setAt(Number(e.target.value))} aria-label={tr("Vị trí trên timeline")} className="min-w-0 flex-1 accent-[#30afff]" />
+        <input type="range" min={0} max={total} step={0.1} value={at} onChange={(e) => setAt(Number(e.target.value))} aria-label={tr("Vị trí trên timeline")} className="min-w-0 flex-1 accent-[#22e1ff]" />
         <span className="mono">{mmss(total)}</span>
       </div>
       {/* Each shot as its frame, so the order reads at a glance and a move shows at once (the codes follow the order and alone look the same). */}
@@ -599,10 +599,10 @@ function PlanView({ board, cur, pick, flip }: { board: Board; cur?: SbShot; pick
                 {pl.cams.map((c) => {
                   const s = codes.get(c.shot_id)!, isSel = c.shot_id === cur?.shot_id, f = (lensFov(s.spec.framing.lens) * Math.PI) / 360, th = (c.aim * Math.PI) / 180, L = 85;
                   const pt = (a: number) => `${(c.x + L * Math.cos(a)).toFixed(0)}px ${(c.y + L * Math.sin(a)).toFixed(0)}px`;
-                  const col = c.crossed ? "#ff6b6b" : isSel ? "#30afff" : "#8592a9";
+                  const col = c.crossed ? "#ff6b6b" : isSel ? "#22e1ff" : "#8592a9";
                   return (
                     <span key={c.shot_id}>
-                      <span className="pointer-events-none absolute inset-0" style={{ background: c.crossed ? "rgba(255,107,107,0.2)" : isSel ? "rgba(48,175,255,0.24)" : "rgba(133,146,169,0.12)", clipPath: `polygon(${c.x}px ${c.y}px, ${pt(th - f)}, ${pt(th + f)})` }} />
+                      <span className="pointer-events-none absolute inset-0" style={{ background: c.crossed ? "rgba(255,107,107,0.2)" : isSel ? "rgba(34,225,255,0.24)" : "rgba(133,146,169,0.12)", clipPath: `polygon(${c.x}px ${c.y}px, ${pt(th - f)}, ${pt(th + f)})` }} />
                       {c.end && <span className="pointer-events-none absolute h-0 origin-top-left border-t-2 border-dashed" style={{ left: c.x, top: c.y, width: Math.hypot(c.end.x - c.x, c.end.y - c.y), borderColor: col, transform: `rotate(${Math.atan2(c.end.y - c.y, c.end.x - c.x)}rad)` }} />}
                       <button type="button" onClick={() => pick(c.shot_id)} title={s.code} className="mono absolute grid h-8 w-8 place-items-center rounded-full border-2 text-[10px] font-semibold"
                               style={{ left: c.x - 16, top: c.y - 16, background: isSel || c.crossed ? col : "#26354f", color: isSel || c.crossed ? "#04121f" : "#e6edf7", borderColor: isSel ? "#e6edf7" : "#070c16" }}>{s.code}</button>

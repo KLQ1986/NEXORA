@@ -417,6 +417,17 @@ class Orchestrator:
             stage = self._expect(c, stage_id, StageStatus.FAILED)
             self._set_status(c, stage, StageStatus.READY, now, actor="operator")
 
+    def lane_load(self) -> dict[str, dict[str, int]]:
+        """The queue by lane: how many stages are ready, running or waiting to retry, and how many of the running ones cost money."""
+        out: dict[str, dict[str, int]] = {}
+        for r in self._conn.execute("SELECT s.lane AS lane, s.status AS status, s.costly AS costly, COUNT(*) AS n FROM stages s JOIN runs r USING (run_id) "
+                                    "WHERE s.status IN ('ready', 'running', 'retry_wait') AND r.cancel_requested = 0 GROUP BY lane, s.status, costly"):
+            lane = out.setdefault(r["lane"], {"ready": 0, "running": 0, "retry_wait": 0, "costly_running": 0})
+            lane[r["status"]] += r["n"]
+            if r["status"] == "running" and r["costly"]:
+                lane["costly_running"] += r["n"]
+        return out
+
     def stalled(self, run_id: str, *, now: float | None = None) -> bool:
         """A stage is marked running but its worker has stopped reporting: the lease ran out and nothing has recovered it yet."""
         now = time.time() if now is None else now
