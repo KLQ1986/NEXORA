@@ -549,8 +549,11 @@ function TimeView({ board, cur, tone, pick, pickSeam }: { board: Board; cur?: Sb
         {now?.frame_url && <img src={now.frame_url} alt="" className="absolute inset-0 h-full w-full object-cover" />}
         {span && <video key={now!.shot_id} ref={vid} src={now!.clip_url!} muted playsInline preload="auto" className="absolute inset-0 h-full w-full object-cover"
                          onLoadedMetadata={(e) => { const v = e.currentTarget; v.currentTime = Math.min(span.t_out, span.t_in + Math.max(0, at - starts[k])); if (playing) v.play().catch(() => {}); }} />}
-        {now && <div className="relative grid gap-1 rounded-lg bg-black/55 px-3.5 py-2 text-center"><span className="mono text-[12px]">{now.code} · {mmss(at)}</span><span className="text-[13px]">{now.spec.line || now.spec.intent}</span></div>}
       </div>
+      {/* The shot and its words under the picture, as a caption strip, so nothing covers the frame. */}
+      {now && <div className="mx-auto -mt-1.5 flex w-full max-w-[680px] shrink-0 items-start gap-3 rounded-lg border border-line bg-surface px-3.5 py-2.5">
+        <span className="mono shrink-0 pt-px text-[12px] text-accent">{now.code} · {mmss(at)}</span>
+        <span className="min-w-0 text-[13px] leading-snug">{now.spec.line || now.spec.intent}</span></div>}
       <div className="flex items-center gap-2.5 text-[12px] text-faint">
         <Button size="sm" onClick={() => { if (at >= total) setAt(0); setPlaying(!playing); }}><Icon name={playing ? "pause" : "play"} size={13} />{playing ? tr("Dừng") : tr("Phát animatic")}</Button>
         <span className="mono">{mmss(at)}</span>
