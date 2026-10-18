@@ -208,3 +208,12 @@ def test_a_topic_mission_allowed_to_pay_asks_pictures_for_the_lines_left_without
     made = [r for r in run if system.orch.pipeline_of(r) == "sourcing.generate"]
     assert gaps and made and system.generation.targets(made[-1]) == gaps
     assert "Tạo hình AI cho" in " ".join(e["text"] for e in system.producer.task(task_id)["log"])
+
+
+def test_what_the_operator_chose_as_they_asked_is_taken_over_what_the_model_read(tmp_path):
+    system, client = _topic_system(tmp_path)
+    system.adapters._adapters["model"].answers["mission_plan"] = {"loai": "video", "muc_tieu": "rừng bạch đàn", "so_video": 1, "thoi_luong_phut": 2, "the_loai": "news"}
+    m = client.post("/api/v1/missions", json={"text": "video về rừng bạch đàn", "kind": "topic", "form": "science", "seconds": 480}).json()
+    assert (m["plan"]["kind"], m["plan"]["form"], m["plan"]["seconds"], m["plan"]["critique"]) == ("topic", "science", 480, False)
+    auto = client.post("/api/v1/missions", json={"text": "video về rừng bạch đàn", "kind": "", "form": None}).json()
+    assert auto["plan"]["kind"] == "video"                                   # nothing chosen: the model's reading stands

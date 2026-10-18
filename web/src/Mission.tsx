@@ -201,27 +201,45 @@ function MachineMeters({ r }: { r: Resources }) {
 }
 
 /* ─────────────────────────────────────────────── Composer ─────────────────────────────────────────────── */
+const WORK: [string, string, string][] = [["", tr("Tự nhận biết"), "sparkles"], ["video", tr("Làm video từ kho"), "clapper"], ["topic", tr("Video theo chủ đề"), "globe"],
+  ["understand", tr("Mô tả footage"), "eye"], ["transcribe", tr("Nghe lời nói"), "mic"]];
+const MINUTES = [1, 2, 3, 5, 8, 10, 15];
+
 function Composer({ onPlanned, autonomy }: { onPlanned: (m: Mission) => void; autonomy: number }) {
+  const forms = usePoll<{ forms: { key: string; name: string }[] }>("/api/v1/topic/forms", 600000).data?.forms ?? [];
   const [text, setText] = useState(""), [busy, setBusy] = useState(false);
+  const [kind, setKind] = useState(""), [form, setForm] = useState("reportage"), [minutes, setMinutes] = useState(3);
   const plan = async () => {
     if (!text.trim()) return;
     setBusy(true);
-    try { const m = await post<Mission>("/api/v1/missions", { text }); setText(""); onPlanned(m); } catch (e) { fail(e); }
+    // What is chosen here is taken over what the model reads in the words; "Tự nhận biết" leaves it all to the words.
+    const chosen = kind === "topic" ? { kind, form, seconds: minutes * 60 } : kind ? { kind } : {};
+    try { const m = await post<Mission>("/api/v1/missions", { text, ...chosen }); setText(""); onPlanned(m); } catch (e) { fail(e); }
     setBusy(false);
   };
   return (
     <div className="flex h-full flex-col gap-3">
       <p className="text-[13px] text-mute">{tr("Nói việc cần làm bằng lời. Mô hình chỉ lập kế hoạch từ những gì NEXORA làm được; máy kiểm tra năng lực, ngân sách và quyền. Không có gì chạy trước khi bạn xác nhận.")}</p>
+      <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label={tr("Loại việc")}>
+        {WORK.map(([key, label, icon]) => (
+          <button key={key} type="button" role="radio" aria-checked={kind === key} onClick={() => setKind(key)}
+                  className={`tile flex items-center gap-1.5 px-2.5 py-1.5 text-[12px] ${kind === key ? "border-accent/60 bg-accent/10 text-ink" : "text-faint"}`}>
+            <Icon name={icon} size={13} className={kind === key ? "text-accent" : ""} />{label}</button>))}
+      </div>
+      {kind === "topic" && (
+        <div className="flex flex-wrap items-center gap-2 text-[12.5px]">
+          <label className="flex items-center gap-1.5 text-mute">{tr("Thể loại")}<select value={form} onChange={(e) => setForm(e.target.value)} className="h-8 pl-2.5">
+            {(forms.length ? forms : [{ key: "reportage", name: tr("Phóng sự") }]).map((f) => <option key={f.key} value={f.key}>{f.name}</option>)}</select></label>
+          <label className="flex items-center gap-1.5 text-mute">{tr("Dài khoảng")}<select value={minutes} onChange={(e) => setMinutes(Number(e.target.value))} className="mono h-8 pl-2">
+            {MINUTES.map((m) => <option key={m} value={m}>{m}</option>)}</select>{tr("phút")}</label>
+        </div>)}
       <textarea value={text} onChange={(e) => setText(e.target.value)} rows={4} aria-label={tr("Nhiệm vụ")} className="min-h-[112px] w-full resize-y p-3 text-[14px]"
                 onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) plan(); }}
-                placeholder={tr("Ví dụ: làm 2 video dọc về buổi sáng ở chợ quê từ footage chưa dùng, không dùng dịch vụ trả tiền, dừng ở bước duyệt clip")} />
+                placeholder={kind === "topic" ? tr("Ví dụ: video về cuộc khủng hoảng rừng bạch đàn của Israel, khung ngang, không dùng dịch vụ trả tiền")
+                  : tr("Ví dụ: làm 2 video dọc về buổi sáng ở chợ quê từ footage chưa dùng, không dùng dịch vụ trả tiền, dừng ở bước duyệt clip")} />
       <div className="flex flex-wrap items-center gap-3">
         <Button kind="primary" busy={busy} disabled={!text.trim()} onClick={plan}>{busy ? <Spinner /> : <Icon name="sparkles" size={15} />}{busy ? tr("Đang lập kế hoạch…") : tr("Lập kế hoạch")}</Button>
         <span className="mono text-[12px] text-faint">⌘↵ · {tv`mức tự chủ ${autonomy}`}</span>
-      </div>
-      <div className="grid grid-cols-3 gap-2 text-[12px] text-faint">
-        {[[tr("Làm video từ kho"), "clapper"], [tr("Mô tả footage"), "eye"], [tr("Nghe lời nói"), "mic"]].map(([label, icon]) => (
-          <span key={label} className="tile flex items-center gap-2 px-2.5 py-2"><Icon name={icon} size={14} className="text-accent" /><span className="truncate">{label}</span></span>))}
       </div>
     </div>
   );

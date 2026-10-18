@@ -143,14 +143,19 @@ class Missions:
             problems.append(f"Ngân sách {plan['budget']:.2f} USD vượt phần còn lại của hạn mức hôm nay và tháng này ({left:.2f} USD).")
         return problems
 
-    def plan(self, text: str, *, production_id: str | None = None) -> dict:
+    def plan(self, text: str, *, production_id: str | None = None, chosen: dict | None = None) -> dict:
         """A mission from the operator's words: planned when nothing stops it, else a draft that says what does. Given from a
-        production, its videos go into it."""
+        production, its videos go into it. What the operator chose as they asked (the kind of work, a topic video's kind and
+        length) is taken over what the model read in their words."""
         text = text.strip()
+        chosen = {k: v for k, v in (chosen or {}).items() if k in ("kind", "form", "seconds") and v not in (None, "")}
         try:
-            plan = {**self._ask(text), "production_id": production_id}
+            asked = self._ask(text)
+            if chosen.get("kind") and chosen["kind"] != asked["kind"]:
+                asked.pop("critique", None)              # set for the kind the model read, not the one chosen: the chosen kind's own default
+            plan = self.normalise({**asked, **chosen, "production_id": production_id})
         except (AdapterError, KeyError, AttributeError, TypeError) as err:
-            plan = self.normalise({"goal": text, "production_id": production_id})
+            plan = self.normalise({"goal": text, **chosen, "production_id": production_id})
             mission_id = self.store.create(text, plan, [f"Mô hình chưa lập được kế hoạch ({getattr(err, 'message', None) or err}). Hãy chọn loại việc và sửa kế hoạch."])
             return self.view(mission_id)
         return self.view(self.store.create(text, plan, self.check(plan)))

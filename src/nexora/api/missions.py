@@ -117,7 +117,8 @@ def add_missions(app: FastAPI, system, *, health) -> None:
         text = str(body.get("text") or "").strip()
         if not text:
             raise HTTPException(422, "Hãy nói nhiệm vụ cần làm")
-        return missions.plan(text, production_id=str(body.get("production_id") or "").strip() or None)
+        return missions.plan(text, production_id=str(body.get("production_id") or "").strip() or None,
+                             chosen={k: body.get(k) for k in ("kind", "form", "seconds")})
 
     @app.get("/api/v1/missions/{mission_id}")
     def mission_detail(mission_id: str):

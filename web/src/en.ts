@@ -2598,6 +2598,9 @@ const en: Record<string, string> = {
   "Dài khoảng": "About",
   "phút": "min",
   "Claude Code đang tìm nguồn và viết về “{0}”. Việc này mất vài phút, lâu hơn với video dài; bạn có thể làm việc khác.": "Claude Code is finding sources and writing about “{0}”. This takes a few minutes, longer for a long video; you can do other work meanwhile.",
+  "Tự nhận biết": "Work it out",
+  "Video theo chủ đề": "Video on a topic",
+  "Ví dụ: video về cuộc khủng hoảng rừng bạch đàn của Israel, khung ngang, không dùng dịch vụ trả tiền": "For example: a video on Israel's eucalyptus forest crisis, landscape, no paid services",
 };
 
 export default en;
