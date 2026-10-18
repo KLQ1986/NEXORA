@@ -21,7 +21,7 @@ type Treat = { speed?: number; stabilise?: boolean; live_sound?: boolean; sfx?: 
 type SbShot = { shot_id: string; code: string; scene_id: string; version: number; state: "planned" | "running" | "accepted" | "needs" | "stale"; spec: Spec;
   assignment: { kind: string; asset_id: string; t_in: number; t_out: number; score: number | null; text: string; gap_prev?: number; candidates?: Cand[]; others?: Cand[];
     name?: string; treat?: Treat; decided_by?: string } | null;
-  checks: Check[]; frame_url: string | null; script_shot: string | null };
+  checks: Check[]; frame_url: string | null; clip_url?: string | null; script_shot: string | null };
 type SeamCheck = { key: string; st: "pass" | "warn" | "fail"; name: string; detail: string; value: string };
 type Seam = { a: string; b: string; a_code: string; b_code: string; same_scene: boolean; checks: SeamCheck[]; worst: "pass" | "warn" | "fail"; fixes: { text: string; ops: object[] }[] };
 type Plan = { scene_id: string; subject: { x: number; y: number; label: string; path?: number[] }; cams: { shot_id: string; x: number; y: number; end?: { x: number; y: number }; fov: number; crossed: boolean; aim: number }[]; crossed: string[] };
@@ -528,6 +528,17 @@ function TimeView({ board, cur, tone, pick, pickSeam }: { board: Board; cur?: Sb
   }, [playing, total]);
   const k = Math.max(0, starts.findIndex((a, i) => at >= a && (i === starts.length - 1 || at < starts[i + 1])));
   const now = shots[k];
+  // The shot's own footage plays through its stretch, kept in step with the timeline's clock; a clip shorter than its shot
+  // holds its last frame, as the cut would. A still (or a shot without a picture) shows its frame.
+  const vid = useRef<HTMLVideoElement>(null);
+  const span = now?.clip_url && now.assignment ? now.assignment : null;
+  useEffect(() => {
+    const v = vid.current;
+    if (!v || !span) return;
+    const want = Math.min(span.t_out, span.t_in + Math.max(0, at - starts[k]));
+    if (!playing || Math.abs(v.currentTime - want) > 0.35) v.currentTime = want;     // seek when scrubbing or when it has drifted
+    if (playing && want < span.t_out - 0.05) v.play().catch(() => {}); else v.pause();
+  }, [at, playing, k, span, starts]);
   const entities = [...new Set(shots.flatMap((s) => s.spec.continuity.entities))];
   const times = shots.map((s) => s.spec.continuity.time_of_day);
   const seamAt = (sid: string) => starts[shots.findIndex((s) => s.shot_id === sid)];
@@ -536,6 +547,8 @@ function TimeView({ board, cur, tone, pick, pickSeam }: { board: Board; cur?: Sb
     <div className="flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto p-3.5">
       <div className="relative mx-auto grid aspect-video w-full max-w-[680px] shrink-0 place-items-center overflow-hidden rounded-lg" style={{ background: now ? tone(now) : "#000" }}>
         {now?.frame_url && <img src={now.frame_url} alt="" className="absolute inset-0 h-full w-full object-cover" />}
+        {span && <video key={now!.shot_id} ref={vid} src={now!.clip_url!} muted playsInline preload="auto" className="absolute inset-0 h-full w-full object-cover"
+                         onLoadedMetadata={(e) => { const v = e.currentTarget; v.currentTime = Math.min(span.t_out, span.t_in + Math.max(0, at - starts[k])); if (playing) v.play().catch(() => {}); }} />}
         {now && <div className="relative grid gap-1 rounded-lg bg-black/55 px-3.5 py-2 text-center"><span className="mono text-[12px]">{now.code} · {mmss(at)}</span><span className="text-[13px]">{now.spec.line || now.spec.intent}</span></div>}
       </div>
       <div className="flex items-center gap-2.5 text-[12px] text-faint">

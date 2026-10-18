@@ -874,6 +874,17 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
                 return f"/media/{system.assets.original(a['asset_id']).version_id}" if system.assets.asset(a["asset_id"]) else None
             return f"/api/v1/vq/subjects/{a['asset_id']}/frame?t={(a['t_in'] + a['t_out']) / 2:.2f}&width=480"
 
+        def clip(sh) -> str | None:
+            """The moving picture of a footage shot, for the animatic to play: the proxy, else the camera file. None for a still."""
+            a = sh.assignment
+            if not a or not a.get("asset_id") or a.get("kind") == "generated" or not system.assets.asset(a["asset_id"]):
+                return None
+            by_role = {v.role: v for v in system.assets.versions(a["asset_id"])}
+            original = by_role.get("original")
+            if original is None or (original.metadata.get("probe") or {}).get("still"):
+                return None
+            return f"/media/{(by_role.get('proxy') or original).version_id}"
+
         def file_name(asset_id: str) -> str:
             """The clip as the operator knows it: its file's name, as the library shows it."""
             try:
@@ -893,7 +904,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             return {"shot_id": sh.shot_id, "code": codes[sh.shot_id], "scene_id": sh.scene_id, "version": sh.version, "state": sh.state, "spec": sh.spec,
                     "assignment": {**a, "candidates": [dress(c) for c in a.get("candidates", [])], "others": [dress(c) for c in others],
                                    "name": names.get(a.get("asset_id"), a.get("asset_id"))} if a else None,
-                    "checks": sh.checks, "frame_url": frame(sh), "script_shot": sh.script_shot}
+                    "checks": sh.checks, "frame_url": frame(sh), "clip_url": clip(sh), "script_shot": sh.script_shot}
 
         gap = lambda a, b: (b.assignment or {}).get("gap_prev")
         seams = SB.seams(shots, scene_of, colour_gap=gap)
