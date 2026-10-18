@@ -55,6 +55,11 @@ class Config:
     claude_model: str = "claude-haiku-5-5"
     claude_input_price: float = 0.0
     claude_output_price: float = 0.0
+    claude_code_binary: str = ""
+    claude_code_model: str = "opus"
+    claude_code_effort: str = "high"
+    claude_code_chat_seconds: float = 180.0
+    claude_code_research_seconds: float = 900.0
 
     @classmethod
     def load(cls, path: str | Path = "nexora.toml") -> "Config":
@@ -119,4 +124,9 @@ anthropic_workspace_id = ""       # needed only for a key that is not tied to on
 claude_model = "claude-haiku-5-5"
 claude_input_price = 0.0          # USD per million input tokens, for the cost record; take the figure from your Anthropic price list
 claude_output_price = 0.0         # USD per million output tokens
+claude_code_binary = ""           # Claude Code for writing on your Claude plan; empty: the claude on the path, if any. Log in once by running claude
+claude_code_model = "opus"
+claude_code_effort = "high"
+claude_code_chat_seconds = 180.0
+claude_code_research_seconds = 900.0     # a script from a topic: looking the subject up on the web takes minutes
 """

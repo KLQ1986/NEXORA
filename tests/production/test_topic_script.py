@@ -1,11 +1,14 @@
 """A script from a topic (design 2026-10-18, Claude Code as NEXORA's writer): a writer that reads the web returns its sources and the
 lines it wrote on them; NEXORA checks the package before anything is written, and writes it into the production and the video."""
 import pytest
+from fastapi.testclient import TestClient
 
-from nexora.app import build
+from nexora.api.app import create_app
+from nexora.app import apply_topic, build, merge_sources
 from nexora.modules.planning.topic import UNSOURCED_NOTE, check_package, script_lines, topic_prompt
 
-from tests.fakes import FakeModel, FakeVoice
+from tests.fakes import FakeClaudeCode, FakeModel, FakeVoice
+from tests.library.test_analysis import drain
 
 
 def test_a_line_carries_its_fact_its_source_and_its_screen_words(tmp_path):
@@ -57,3 +60,40 @@ def test_the_prompt_carries_the_voice_the_structure_and_the_siblings():
                                   voice="Giọng miền Nam.", style="mixed", siblings=["Bạch đàn và nước ngầm"])
     assert "Giọng miền Nam." in system and "nguồn" in system and "WebSearch" in system
     assert "rừng bạch đàn Israel" in prompt and "Mở đầu" in prompt and "Bạch đàn và nước ngầm" in prompt and "8" in prompt
+
+
+def _topic_system(tmp_path, answer=PACKAGE):
+    system = build(tmp_path / "data", model=FakeModel(), voice=FakeVoice(), cloud_models=[FakeClaudeCode(answer)])
+    return system, TestClient(create_app(system))
+
+
+def test_a_topic_is_written_by_the_researching_writer_and_applied_with_its_sources(tmp_path):
+    system, client = _topic_system(tmp_path)
+    project = system.planning.create_project("Rừng")
+    sibling = system.planning.create_project("Bạch đàn và nước ngầm", production_id=system.projects.project(project)["production_id"])
+    run_id = system.topics.start(project, "rừng bạch đàn Israel", goal="vì sao", lines=6)
+    assert system.orch.lane_load()["claude_code"]["ready"] == 1                  # on a lane of its own
+    drain(system)
+    got = system.topics.get(run_id)
+    assert got["state"] == "written" and got["package"]["title"] == "Rừng bạch đàn" and got["package"]["unverified"] == ["con số chính xác diện tích"]
+    asked = system.adapters._adapters["model.claude_code"].asked[-1]
+    assert asked.operation == "research" and "rừng bạch đàn Israel" in asked.params["prompt"] and asked.params["schema"]
+    assert "Bạch đàn và nước ngầm" in asked.params["prompt"] and "miền Nam" in asked.params["system"]       # the other videos, the house voice
+    script_id = apply_topic(system, project, run_id)
+    shots = system.projects.script(script_id)["shots"]
+    assert shots[0].text == "Năm 1950 người ta trồng bạch đàn khắp nơi." and shots[0].scene == "Mở đầu" and shots[0].source == "Bài A"
+    research = system.planning.research(project)
+    assert [s["url"] for s in research] == ["https://example.org/a"] and research[0]["passage"].startswith("Năm 1950")
+    production = system.productions.get(system.projects.project(project)["production_id"])
+    assert "https://example.org/a" in production["research"] and "https://example.org/a" in (system.projects.project(sibling)["research"] or "")
+    assert system.topics.get(run_id)["state"] == "applied"
+    assert merge_sources(system, project, got["package"]["sources"]) == 0          # merged by address: nothing twice
+
+
+def test_a_package_that_fails_its_checks_fails_the_run_and_writes_nothing(tmp_path):
+    system, client = _topic_system(tmp_path, answer={"title": "x", "sources": [], "lines": []})
+    project = system.planning.create_project("Rừng")
+    run_id = system.topics.start(project, "x")
+    drain(system)
+    assert system.orch.run_status(run_id).value == "failed" and system.projects.current_script(project) is None
+    assert system.topics.get(run_id)["state"] == "asked"

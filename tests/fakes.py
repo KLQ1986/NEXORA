@@ -200,3 +200,18 @@ class FakePictures(Adapter):
         if request.operation == "images":
             return Result(outputs={"vectors": [[1.0, 0.0, 0.0] for _ in request.inputs["images"]], "model": "fake"})
         return Result(outputs={"vectors": [[1.0, 0.0, 0.0] if "chợ" in t else [0.0, 1.0, 0.0] for t in request.inputs["texts"]], "model": "fake"})
+
+
+class FakeClaudeCode(Adapter):
+    """Claude Code standing in for itself: answers research with the package it was given, and keeps what it was asked."""
+
+    def __init__(self, answer: dict):
+        self.answer, self.asked = answer, []
+
+    def describe(self) -> Capability:
+        return Capability(name="model.claude_code", operations=("chat", "research"), runs="cloud")
+
+    def submit(self, request: Request) -> Result:
+        self.asked.append(request)
+        answer = self.answer(request) if callable(self.answer) else self.answer
+        return Result(outputs={"json": answer, "provider": "claude_code", "model": "opus", "api_equivalent": 0.1})

@@ -619,6 +619,53 @@ def update_production(system: "System", production_id: str, changes: dict) -> di
     return system.productions.get(production_id)
 
 
+def topic_context(system: "System", project_id: str) -> dict:
+    """What a writer of a script from a topic is told about the video: the voice to write in, the template's parts, the way of
+    illustrating, and the titles of the other videos of its production, so that this one takes another angle."""
+    from nexora.modules.planning.scripts import HOUSE_VOICE
+    project = system.projects.project(project_id) or {}
+    siblings = [p["title"] for p in system.projects.projects() if project.get("production_id") and p.get("production_id") == project["production_id"] and p["project_id"] != project_id]
+    return {"voice": system.orch.setting("writing_voice", "") or HOUSE_VOICE, "structure": (template_named(system, project.get("template")) or {}).get("structure"),
+            "style": illustration_style(system, project), "siblings": siblings}
+
+
+def merge_sources(system: "System", project_id: str, sources: list[dict]) -> int:
+    """Sources a writer read, kept as the operator's own are (who published it, when, the passage), merged by address into the
+    video's production, where its other videos find them, and into the video itself. Returns how many were new to the video."""
+    import time
+    def merged(raw: str | None) -> tuple[str, int]:
+        kept = json.loads(raw or "[]")
+        known = {s.get("url") for s in kept}
+        new = [{"title": s["title"], "publisher": s.get("publisher"), "date": s.get("date"), "url": s["url"], "passage": s["passage"], "retrieved_at": time.time()}
+               for s in sources if s.get("url") and s["url"] not in known]
+        return json.dumps(kept + new, ensure_ascii=False), len(new)
+    project = system.projects.project(project_id) or {}
+    production = system.productions.get(project.get("production_id")) if system.productions else None
+    if production:
+        value, added = merged(production.get("research"))
+        if added:
+            update_production(system, production["production_id"], {"research": value})       # reaches the videos still on its sources
+    value, added = merged((system.projects.project(project_id) or {}).get("research"))
+    if added:
+        system.projects.update_project(project_id, research=value)
+    return added
+
+
+def apply_topic(system: "System", project_id: str, run_id: str) -> str:
+    """A script from a topic, written and checked, saved into the video with what the writer said about each line, and its
+    sources into the production and the video. Returns the script saved."""
+    from nexora.modules.planning.topic import script_lines
+    got = system.topics.get(run_id)
+    if not got or not got["package"]:
+        raise ValueError("nothing was written for this run")
+    lines = script_lines(got["package"])
+    system.projects.keep_draft(project_id, [l for l in lines if isinstance(l, dict)])
+    script_id = system.planning.save_script(project_id, lines)
+    merge_sources(system, project_id, got["package"]["sources"])
+    system.topics.mark(run_id, "applied")
+    return script_id
+
+
 def lay_out_storyboard(system: "System", project_id: str) -> int:
     """The clips chosen for a script laid out on the project's storyboard, where the operator looks at them and approves. A
     storyboard the project already has is never replaced. Returns how many shots were laid out."""
@@ -871,7 +918,9 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     # Long footage analysis has its own worker, so that a render or a match the operator is waiting for never queues behind it.
     night_only = lambda: in_window(orch.setting("background_window", ""))          # the operator may keep heavy analysis to chosen hours
     workers = [Worker(orch, registry, worker_id=f"interactive-{os.getpid()}", lanes=frozenset({"interactive"}), log=log),
-               Worker(orch, registry, worker_id=f"background-{os.getpid()}", lanes=frozenset({"background"}), log=log, allowed=night_only)]
+               Worker(orch, registry, worker_id=f"background-{os.getpid()}", lanes=frozenset({"background"}), log=log, allowed=night_only),
+               # A writer that reads the web (Claude Code) takes minutes and runs one at a time on the operator's plan: a lane of its own.
+               Worker(orch, registry, worker_id=f"claude-code-{os.getpid()}", lanes=frozenset({"claude_code"}), log=log)]
     system = System(data_dir, orch, assets, adapters, registry, worker, library, index, projects, planning, sourcing, edit, distribution, generation, workers)
     system.intelligence, system.vi = intelligence, vi
     system.vq, system.vq_reader = vq, vq_reader
@@ -916,6 +965,9 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     has_folder = any(c.name == "publish.folder" for c in adapters.describe())
     system.autonomy = Autonomy(orch, projects, package=package_for_policy, rights=lambda render_id: render_rights(system, render_id),
                                publish=(lambda render_id: system.publishing.publish(render_id, "publish.folder")) if has_folder else None)
+    from nexora.modules.planning.topic import TopicWriter
+    system.topics = TopicWriter(db_path, adapters, context=lambda project_id: topic_context(system, project_id), submit=orch.submit_run)
+    system.topics.register(registry)
     system.producer = Producer(db_path, orch=orch, projects=projects, planning=planning, sourcing=sourcing, edit=edit, adapters=adapters,
                                fill_gap=lambda shot_id, query: fill_gap_from_stock(system, shot_id, query),
                                to_storyboard=lambda project_id: lay_out_storyboard(system, project_id),
@@ -942,6 +994,8 @@ def build_from_config(config, **overrides) -> System:
     from nexora.adapters.openmontage import OpenMontageStock
     import os as _os
     from nexora.adapters.claude import ClaudeText
+    from nexora.adapters.claude_code import ClaudeCode, find_claude
+    claude_code = config.claude_code_binary or find_claude()          # Claude Code, when installed: the operator's plan
     from nexora.adapters.motion import StillMotion
     from nexora.adapters.outbox import FolderPublisher
     from nexora.adapters.pollinations import PollinationsImage
@@ -981,9 +1035,12 @@ def build_from_config(config, **overrides) -> System:
                  publishers=[*([FolderPublisher(config.publish_folder)] if config.publish_folder else []),
                              *([YouTubePublisher(config.youtube_client_id, config.youtube_client_secret, config.youtube_refresh_token, privacy=config.youtube_privacy)]
                                if config.youtube_client_id and config.youtube_client_secret and config.youtube_refresh_token else [])],
-                 cloud_models=[ClaudeText(_os.environ.get("ANTHROPIC_API_KEY") or config.anthropic_api_key, model=config.claude_model, workspace_id=config.anthropic_workspace_id,
-                                          input_price=config.claude_input_price, output_price=config.claude_output_price)]
-                 if (_os.environ.get("ANTHROPIC_API_KEY") or config.anthropic_api_key) else [], **overrides)
+                 cloud_models=([ClaudeText(_os.environ.get("ANTHROPIC_API_KEY") or config.anthropic_api_key, model=config.claude_model, workspace_id=config.anthropic_workspace_id,
+                                           input_price=config.claude_input_price, output_price=config.claude_output_price)]
+                               if (_os.environ.get("ANTHROPIC_API_KEY") or config.anthropic_api_key) else [])
+                              + ([ClaudeCode(claude_code, model=config.claude_code_model, effort=config.claude_code_effort, chat_seconds=config.claude_code_chat_seconds,
+                                             research_seconds=config.claude_code_research_seconds, workdir=Path(config.data_dir) / "claude_code")] if claude_code else []),
+                 **overrides)
 
 
 def _pictures(config):

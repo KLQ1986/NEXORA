@@ -4,7 +4,14 @@ a source needs a web address and a passage to rest on, a line stating a fact kee
 package with no line is refused before anything is written."""
 from __future__ import annotations
 
+import json
 import time
+from pathlib import Path
+from typing import Callable
+
+from nexora.core import db
+from nexora.core.adapter import AdapterError, ErrorCode, PrivacyClass, Request
+from nexora.core.pipeline import PipelineDefinition, StageDef
 
 UNSOURCED_NOTE = "Người viết không dẫn nguồn cho câu này."
 MODES = ("direct", "associative", "contrast")
@@ -103,3 +110,70 @@ def script_lines(package: dict) -> list:
             line["fact_check"] = {"verdict": "not_found", "source": None, "quote": "", "note": UNSOURCED_NOTE, "checked_at": time.time()}
         out.append(line)
     return out
+
+
+# ---------------------------------------------------------------------------------------------------------- the pipeline
+# One stage, on a lane of its own with one worker: a writer that reads the web takes minutes, and never holds up a match or a
+# render the operator is waiting for, nor runs twice at once on the operator's plan.
+TOPIC = PipelineDefinition("planning.topic_script", "1", [StageDef("write", requires=("model.claude_code",), lane="claude_code", timeout_seconds=1200, max_attempts=2)])
+STATES = ("asked", "written", "offered", "applied")
+TABLE = """CREATE TABLE IF NOT EXISTS topic_scripts (run_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, topic TEXT NOT NULL, goal TEXT,
+    lines INTEGER, package TEXT, state TEXT NOT NULL, created_at REAL NOT NULL)"""
+
+
+class TopicWriter:
+    """Asks for a script from a topic and keeps what came back: asked, written (checked, not yet given to anyone), offered (to the
+    operator in the editor) and applied (saved into the video). `context(project_id)` gives the house voice, the template's
+    structure, the way of illustrating and the titles of the production's other videos."""
+
+    def __init__(self, db_path: str | Path, adapters, *, context: Callable[[str], dict], submit: Callable[..., str]):
+        self._db = db.LocalConnections(db_path)
+        self._adapters, self._context, self._submit = adapters, context, submit
+        with db.write(self._db.get()) as c:
+            c.execute(TABLE)
+
+    @property
+    def _conn(self):
+        return self._db.get()
+
+    def register(self, registry) -> None:
+        registry.register(TOPIC, {"write": self._write})
+
+    def start(self, project_id: str, topic: str, *, goal: str = "", lines: int = 8) -> str:
+        run_id = self._submit(TOPIC, subject_ref=project_id)
+        with db.write(self._conn) as c:
+            c.execute("INSERT INTO topic_scripts (run_id, project_id, topic, goal, lines, package, state, created_at) VALUES (?,?,?,?,?,?,?,?)",
+                      (run_id, project_id, topic.strip(), goal.strip(), int(lines), None, "asked", time.time()))
+        return run_id
+
+    def _row(self, r) -> dict | None:
+        return {**dict(r), "package": json.loads(r["package"]) if r["package"] else None} if r else None
+
+    def get(self, run_id: str) -> dict | None:
+        return self._row(self._conn.execute("SELECT * FROM topic_scripts WHERE run_id = ?", (run_id,)).fetchone())
+
+    def latest(self, project_id: str) -> dict | None:
+        return self._row(self._conn.execute("SELECT * FROM topic_scripts WHERE project_id = ? ORDER BY created_at DESC LIMIT 1", (project_id,)).fetchone())
+
+    def mark(self, run_id: str, state: str) -> None:
+        assert state in STATES
+        with db.write(self._conn) as c:
+            c.execute("UPDATE topic_scripts SET state = ? WHERE run_id = ?", (state, run_id))
+
+    def _write(self, ctx) -> dict:
+        asked = self.get(ctx.claim.run_id)
+        if asked is None:
+            raise AdapterError(ErrorCode.MISSING_INPUT, "no topic was asked for this run", retryable=False)
+        context = self._context(asked["project_id"])
+        system, prompt = topic_prompt(asked["topic"], goal=asked["goal"] or "", lines=asked["lines"] or 8, structure=context.get("structure"),
+                                      voice=context.get("voice", ""), style=context.get("style", "mixed"), siblings=context.get("siblings"))
+        result = self._adapters.submit("model.claude_code", Request("research", params={"prompt": prompt, "system": system, "schema": PACKAGE_SCHEMA},
+                                                                    privacy_class=PrivacyClass.CLOUD_ALLOWED, attempt_id=ctx.claim.attempt_id))
+        try:
+            package = check_package(result.outputs["json"])
+        except (ValueError, KeyError, TypeError, AttributeError) as err:
+            raise AdapterError(ErrorCode.OUTPUT_INVALID, f"the writer's package is not usable: {err}", retryable=False) from None
+        package["api_equivalent"] = result.outputs.get("api_equivalent", 0.0)
+        with db.write(self._conn) as c:
+            c.execute("UPDATE topic_scripts SET package = ?, state = 'written' WHERE run_id = ?", (json.dumps(package, ensure_ascii=False), ctx.claim.run_id))
+        return {"lines": len(package["lines"]), "sources": len(package["sources"]), "api_equivalent": package["api_equivalent"]}
