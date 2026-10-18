@@ -892,7 +892,7 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
         adapters.register(generator)
     generation = Generation(orch, projects, assets, adapters, data_dir / "media", judge=model is not None,
                             prefer=lambda kind: json.loads(orch.setting(f"providers:{kind}", "[]")),
-                            also_left=lambda project_id: production_budget_left(projects, productions, generation, project_id))
+                            also_left=lambda project_id: production_budget_left(projects, productions, generation, project_id), db_path=db_path)
     generation.register(registry)
     # The Edit step on FilmCraft: the storyboard built into a sequence in the browser, the cut kept in versions, rendered here.
     from nexora.adapters.filmcraft import FilmCraft
@@ -971,7 +971,11 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     system.producer = Producer(db_path, orch=orch, projects=projects, planning=planning, sourcing=sourcing, edit=edit, adapters=adapters,
                                fill_gap=lambda shot_id, query: fill_gap_from_stock(system, shot_id, query),
                                to_storyboard=lambda project_id: lay_out_storyboard(system, project_id),
-                               style=lambda project_id: illustration_style(system, projects.project(project_id)))
+                               style=lambda project_id: illustration_style(system, projects.project(project_id)),
+                               write_topic=lambda project_id, topic, lines: system.topics.start(project_id, topic, lines=lines),
+                               topic_state=lambda run_id: (system.topics.get(run_id) or {}).get("state", "asked"),
+                               apply_topic=lambda project_id, run_id: apply_topic(system, project_id, run_id),
+                               generate=lambda script_id, shot_ids: system.generation.start(script_id, only=shot_ids))
     from nexora.agents.missions import Missions
     from nexora.core.missions import MissionStore
 

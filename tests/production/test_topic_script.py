@@ -132,3 +132,59 @@ def test_the_editor_is_told_when_claude_code_is_missing_or_the_writing_failed(tm
     drain(system)
     got = client.get(f"/api/v1/projects/{project}/draft-from-topic").json()
     assert got["status"] == "failed" and "not usable" in got["reason"]
+
+
+def test_a_topic_mission_researches_then_carries_on_like_any_video(tmp_path):
+    system, client = _topic_system(tmp_path)
+    plan = {"loai": "topic", "muc_tieu": "khủng hoảng rừng bạch đàn Israel", "tieu_de": "Rừng bạch đàn", "so_video": 1, "dinh_dang": "landscape", "so_cau": 20}
+    system.adapters._adapters["model"].answers["mission_plan"] = plan
+    m = client.post("/api/v1/missions", json={"text": "sản xuất video về khủng hoảng rừng bạch đàn của Israel"}).json()
+    assert m["plan"]["kind"] == "topic" and m["plan"]["critique"] is False and m["plan"]["lines"] == 20 and m["state"] == "planned"
+    done = client.post(f"/api/v1/missions/{m['mission_id']}/confirm").json()
+    task_id, project = done["links"]["tasks"][0], done["links"]["projects"][0]
+    assert system.producer.task(task_id)["step"] == "topic"
+    for _ in range(12):                                          # the producer steps; the worker runs what they start
+        system.producer.advance(task_id)
+        drain(system)
+    task = system.producer.task(task_id)
+    said = " ".join(e["text"] for e in task["log"])
+    assert system.projects.current_script(project)["shots"][0].text == "Năm 1950 người ta trồng bạch đàn khắp nơi."
+    assert "Claude Code viết 3 câu dựa trên 1 nguồn; 1 câu nêu dữ kiện chưa có nguồn." in said and "câu nêu dữ kiện" in said      # written, then checked
+    assert system.adapters._adapters["model.claude_code"].asked[-1].params["prompt"].count("20") >= 1
+    assert task["step"] in ("review", "cut", "cutting") and len(system.planning.research(project)) == 1
+
+
+def test_a_topic_mission_needs_claude_code(tmp_path):
+    system = build(tmp_path / "data", model=FakeModel(), voice=FakeVoice())
+    client = TestClient(create_app(system))
+    system.adapters._adapters["model"].answers["mission_plan"] = {"loai": "topic", "muc_tieu": "rừng", "so_video": 1}
+    m = client.post("/api/v1/missions", json={"text": "video về rừng"}).json()
+    assert m["state"] == "draft" and any("model.claude_code" in p for p in m["problems"])
+
+
+def test_pictures_are_made_for_the_lines_named_only(tmp_path):
+    system, client = _topic_system(tmp_path)
+    project = system.planning.create_project("Rừng")
+    system.projects.save_script(project, ["Câu một.", "Câu hai."])
+    script = system.projects.current_script(project)
+    run_id = system.generation.start(script["script_id"], only=[script["shots"][1].shot_id])
+    assert system.generation.targets(run_id) == {script["shots"][1].shot_id}
+    assert system.generation.targets(system.generation.start(script["script_id"])) == set()      # every line
+
+
+def test_a_topic_mission_allowed_to_pay_asks_pictures_for_the_lines_left_without_one(tmp_path):
+    system, client = _topic_system(tmp_path)
+    plan = {"loai": "topic", "muc_tieu": "rừng bạch đàn Israel", "tieu_de": "Rừng", "so_video": 1, "so_cau": 6, "dung_dich_vu_tra_tien": True, "ngan_sach_usd": 2}
+    system.adapters._adapters["model"].answers["mission_plan"] = plan
+    m = client.post("/api/v1/missions", json={"text": "video về rừng bạch đàn, được dùng dịch vụ trả tiền tối đa 2 USD"}).json()
+    done = client.post(f"/api/v1/missions/{m['mission_id']}/confirm").json()
+    task_id, project = done["links"]["tasks"][0], done["links"]["projects"][0]
+    for _ in range(12):
+        system.producer.advance(task_id)
+        drain(system)
+    script = system.projects.current_script(project)
+    gaps = {s.shot_id for s in system.projects.selections(script["script_id"]) if s.status == "gap"}
+    run = system.orch.runs_for_subject(script["script_id"])
+    made = [r for r in run if system.orch.pipeline_of(r) == "sourcing.generate"]
+    assert gaps and made and system.generation.targets(made[-1]) == gaps
+    assert "Tạo hình AI cho" in " ".join(e["text"] for e in system.producer.task(task_id)["log"])

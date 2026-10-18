@@ -18,20 +18,24 @@ KINDS = {
     "video": {"name": "Làm video từ kho footage", "pipelines": ("sourcing.match", "edit.render")},
     "understand": {"name": "Mô tả footage chưa được hiểu", "pipelines": ("library.understand",)},
     "transcribe": {"name": "Nghe lời nói trong footage chưa được nghe", "pipelines": ("library.transcribe",)},
+    # A subject the library does not hold: Claude Code looks it up on the web and writes the script; the rest is a video's way.
+    "topic": {"name": "Làm video theo chủ đề", "pipelines": ("planning.topic_script", "sourcing.match", "edit.render")},
 }
+MAKES_VIDEOS = ("video", "topic")
 FORMATS = ("landscape", "portrait", "square")
 MAX_VIDEOS = 10
 
 PLAN_PROMPT = (
     "Bạn lập kế hoạch cho hệ thống làm video NEXORA. Người vận hành giao việc: \"{text}\".\n"
-    "Chỉ được chọn một loại việc NEXORA làm được: video (làm một hay nhiều video từ kho footage), understand (mô tả footage chưa được hiểu), "
+    "Chỉ được chọn một loại việc NEXORA làm được: video (làm một hay nhiều video từ kho footage), topic (làm video theo một chủ đề, sự kiện hay câu chuyện "
+    "nằm ngoài kho footage: máy tự tìm nguồn trên web và viết kịch bản, hình lấy từ stock hoặc AI tạo), understand (mô tả footage chưa được hiểu), "
     "transcribe (nghe lời nói trong footage chưa được nghe).\n"
     "Các kênh: {channels}. Các mẫu video: {templates}.\n"
-    "Trả về JSON với các khoá: loai (video | understand | transcribe), muc_tieu (một câu nói video hay việc này nhằm điều gì), "
+    "Trả về JSON với các khoá: loai (video | topic | understand | transcribe), muc_tieu (một câu nói video hay việc này nhằm điều gì), "
     "tieu_de (tên video ngắn, dưới 8 chữ, viết như câu thường, không có chữ \"video\"), so_video (số video, 1 nếu không nói), "
     "dinh_dang (landscape | portrait | square; video dọc là portrait), so_cau (số câu lời dẫn mỗi video, 5 nếu không nói), kenh (tên một kênh ở trên hoặc chuỗi rỗng), "
     "mau (tên một mẫu ở trên hoặc chuỗi rỗng), ngan_sach_usd (số, hoặc null nếu không nói), dung_dich_vu_tra_tien (true chỉ khi người vận hành cho phép), "
-    "tim_stock (true nếu được lấy video stock miễn phí cho câu thiếu hình), tu_phan_bien (true), "
+    "tim_stock (true nếu được lấy video stock miễn phí cho câu thiếu hình), tu_phan_bien (true cho video, false cho topic), "
     "rang_buoc (danh sách ngắn các ràng buộc người vận hành nêu: thời lượng, phong cách...), nghiem_thu (danh sách ngắn: thế nào là xong và đạt)."
 )
 
@@ -92,9 +96,10 @@ class Missions:
         fmt = str(raw.get("format") or "").strip().lower()
         goal = str(raw.get("goal") or "").strip()
         return {"kind": kind, "goal": goal, "title": short_title(raw.get("title") or goal), "count": _int(raw.get("count"), 1, 1, MAX_VIDEOS),
-                "format": fmt if fmt in FORMATS else "landscape", "lines": _int(raw.get("lines"), 5, 2, 12),
+                "format": fmt if fmt in FORMATS else "landscape", "lines": _int(raw.get("lines"), 5, 2, 30 if kind == "topic" else 12),
                 "channel": str(raw.get("channel") or "").strip() or None, "template": str(raw.get("template") or "").strip() or None,
-                "budget": budget, "paid": _flag(raw.get("paid"), False), "stock": _flag(raw.get("stock"), True), "critique": _flag(raw.get("critique"), True),
+                "budget": budget, "paid": _flag(raw.get("paid"), False), "stock": _flag(raw.get("stock"), True),
+                "critique": _flag(raw.get("critique"), kind != "topic"),         # a writer that sourced its own lines has already gone over them
                 "constraints": _texts(raw.get("constraints")), "acceptance": _texts(raw.get("acceptance")), "autonomy": self._autonomy(),
                 "production_id": str(raw.get("production_id") or "").strip() or None}
 
@@ -107,7 +112,7 @@ class Missions:
         missing = sorted({m for p in kind["pipelines"] for m in (self._available(p) or [])})
         if missing:
             problems.append(f"Máy này chưa chạy được “{kind['name']}”: thiếu {', '.join(missing)}.")
-        if plan["kind"] == "video":
+        if plan["kind"] in MAKES_VIDEOS:
             if not plan["goal"]:
                 problems.append("Cần nói video nói về điều gì.")
             if plan["channel"] and plan["channel"] not in self._channels():
@@ -153,7 +158,7 @@ class Missions:
             raise ValueError(" ".join(problems))
         plan = m["plan"]
         self.store.set_state(mission_id, "confirmed")
-        if plan["kind"] == "video":
+        if plan["kind"] in MAKES_VIDEOS:
             cap = round(plan["budget"] / plan["count"], 2) if plan["paid"] and plan["budget"] else 0.0       # no paid service without the permission
             # One production holds the mission's videos: the one it was given from, else a new one of its title.
             production = m.get("production_id") or self._new_production(plan["title"] or short_title(plan["goal"]))
@@ -163,7 +168,7 @@ class Missions:
                 title = plan["title"] or short_title(plan["goal"])
                 title = title if plan["count"] == 1 else f"{short_title(title, 52)} · {n + 1}"
                 task_id = self._producer.start(goal, title=title, format=plan["format"], lines=plan["lines"], use_stock=plan["stock"], critique=plan["critique"],
-                                               production_id=production)
+                                               production_id=production, topic=plan["kind"] == "topic", paid=plan["paid"])
                 project_id = self._producer.task(task_id)["project_id"]
                 self._prepare(project_id, {**plan, "budget_cap": cap})
                 self.store.link(mission_id, tasks=[task_id], projects=[project_id])

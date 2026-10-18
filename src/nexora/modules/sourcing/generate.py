@@ -14,6 +14,7 @@ import json
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
+from nexora.core import db
 from nexora.core.adapter import AdapterError, AdapterRegistry, ErrorCode, PrivacyClass, Request
 from nexora.core.assets import AssetStore
 from nexora.core.orchestrator import Orchestrator
@@ -86,8 +87,13 @@ def split_duration(seconds: float, limit: float) -> list[float]:
 
 class Generation:
     def __init__(self, orch: Orchestrator, projects: ProjectStore, assets: AssetStore, adapters: AdapterRegistry, media_dir: str | Path,
-                 *, max_clip_seconds: float = 8.0, judge: bool = False, prefer=None, also_left=None):
+                 *, max_clip_seconds: float = 8.0, judge: bool = False, prefer=None, also_left=None, db_path: str | Path | None = None):
         self._orch, self._projects, self._assets, self._adapters = orch, projects, assets, adapters
+        # The lines a run was asked to make pictures for, when not every line (kept with the run, so a restart keeps them too).
+        self._db = db.LocalConnections(db_path) if db_path else None
+        if self._db is not None:
+            with db.write(self._db.get()) as c:
+                c.execute("CREATE TABLE IF NOT EXISTS generate_only (run_id TEXT NOT NULL, shot_id TEXT NOT NULL, PRIMARY KEY (run_id, shot_id))")
         self._judge = judge                                   # a vision model is there to look at each still
         self._prefer = prefer or (lambda kind: [])            # the operator's order of providers for "image_gen" or "video_gen"
         self._also_left = also_left or (lambda project_id: None)   # what a wider budget (the production's) leaves this video, if any
@@ -161,7 +167,9 @@ class Generation:
                     raise
         raise AssertionError("unreachable")
 
-    def start(self, script_id: str) -> str:
+    def start(self, script_id: str, *, only: list[str] | None = None) -> str:
+        """Pictures for a script's lines, within its budget; `only` the lines named (a video on a topic asks for the lines its
+        footage and stock left without a picture), else every line."""
         self._projects.set_match_approved(script_id, False)
         project = self._projects.project(self._projects.script(script_id)["project_id"])
         cap = project.get("budget_cap")
@@ -171,7 +179,19 @@ class Generation:
         if wider is not None:
             left = wider if left is None else min(left, wider)
         self._orch.supersede(GENERATE.pipeline_id, script_id)
-        return self._orch.submit_run(GENERATE, subject_ref=script_id, budget_cap=left)
+        run_id = self._orch.submit_run(GENERATE, subject_ref=script_id, budget_cap=left)
+        if only:
+            if self._db is None:
+                raise ValueError("making pictures for some lines only needs the database")
+            with db.write(self._db.get()) as c:
+                c.executemany("INSERT INTO generate_only (run_id, shot_id) VALUES (?,?)", [(run_id, shot_id) for shot_id in dict.fromkeys(only)])
+        return run_id
+
+    def targets(self, run_id: str) -> set[str]:
+        """The lines a run makes pictures for when it was given some; empty when it makes them for every line."""
+        if self._db is None:
+            return set()
+        return {r[0] for r in self._db.get().execute("SELECT shot_id FROM generate_only WHERE run_id = ?", (run_id,))}
 
     def spent(self, project_id: str) -> float:
         return sum(self._orch.run_cost(r) for s in self._projects.script_ids(project_id) for r in self._orch.runs_for_subject(s))
@@ -226,7 +246,10 @@ class Generation:
         script = self._projects.script(ctx.subject_ref)
         project = self._projects.project(script["project_id"])
         made = repaired = 0
+        wanted = self.targets(ctx.claim.run_id)
         for shot in script["shots"]:
+            if wanted and shot.shot_id not in wanted:
+                continue
             spec = self.spec_for(shot, project)
             prompt, turn = compile_prompt(spec, kind="image"), int(shot.gen.get("attempt", 0))
             seeds = [seed_for(shot.shot_id, turn * 10 + repair) for repair in range(MAX_REPAIRS + 1)]
@@ -260,7 +283,10 @@ class Generation:
         script = self._projects.script(ctx.subject_ref)
         known = {f.name for f in fields(PromptSpec)}
         made = 0
+        wanted = self.targets(ctx.claim.run_id)
         for shot in script["shots"]:
+            if wanted and shot.shot_id not in wanted:
+                continue
             key = self._projects.generations(shot.shot_id, kind="keyframe")[-1]
             spec = PromptSpec(**{k: v for k, v in key["spec"].items() if k in known})
             still = self._assets.path_of(self._assets.original(key["asset_id"]))

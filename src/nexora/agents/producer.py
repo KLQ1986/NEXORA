@@ -43,12 +43,17 @@ def short_title(text: str, limit: int = 60) -> str:
 
 
 class Producer:
-    def __init__(self, db_path, *, orch, projects, planning, sourcing, edit, adapters, fill_gap, to_storyboard=None, style=None):
+    def __init__(self, db_path, *, orch, projects, planning, sourcing, edit, adapters, fill_gap, to_storyboard=None, style=None,
+                 write_topic=None, topic_state=None, apply_topic=None, generate=None):
         self._db = db.LocalConnections(db_path)
         self._orch, self._projects, self._planning, self._sourcing, self._edit, self._adapters = orch, projects, planning, sourcing, edit, adapters
         self._fill_gap = fill_gap                    # (shot_id, query) -> {"found": bool, ...}; given by the composition root
         self._style = style or (lambda project_id: "mixed")     # (project_id) -> how its pictures illustrate the words
         self._to_storyboard = to_storyboard          # (project_id) -> None: the chosen clips laid out on the storyboard, where they are approved
+        # A video on a topic (design 2026-10-18, Claude Code as NEXORA's writer): (project_id, topic, lines) -> run_id writes it,
+        # (run_id) -> state says where it is, (project_id, run_id) -> script_id saves it; (script_id, shot_ids) -> run_id makes
+        # pictures for the lines still without one, within the budget.
+        self._write_topic, self._topic_state, self._apply_topic, self._generate = write_topic, topic_state, apply_topic, generate
         with db.write(self._conn) as c:
             c.execute(SCHEMA)
 
@@ -58,13 +63,15 @@ class Producer:
 
     # ------------------------------------------------------------------ tasks
     def start(self, goal: str, *, title: str | None = None, format: str = "landscape", lines: int = 5, use_stock: bool = True,
-              urls: list[str] | None = None, critique: bool = True, find_sources: bool = False, production_id: str | None = None) -> str:
+              urls: list[str] | None = None, critique: bool = True, find_sources: bool = False, production_id: str | None = None,
+              topic: bool = False, paid: bool = False) -> str:
         project_id = self._planning.create_project(short_title(title or goal), format=format, production_id=production_id)
         task_id, now = new_id("tsk"), time.time()
         with db.write(self._conn) as c:
             c.execute("INSERT INTO agent_tasks (task_id, project_id, goal, status, step, options, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
-                      (task_id, project_id, goal, "working", "research" if urls or find_sources else "write",
-                       json.dumps({"lines": lines, "use_stock": use_stock, "urls": list(urls or [])[:MAX_SOURCES], "critique": critique, "find_sources": find_sources, "steps": 0, "revisions": 0}), now, now))
+                      (task_id, project_id, goal, "working", "topic" if topic else "research" if urls or find_sources else "write",
+                       json.dumps({"lines": lines, "use_stock": use_stock, "urls": list(urls or [])[:MAX_SOURCES], "critique": critique, "find_sources": find_sources,
+                                   "topic": topic, "paid": paid, "steps": 0, "revisions": 0}), now, now))
         self._say(task_id, LEAD, f"Nhận việc: {goal}")
         return task_id
 
@@ -129,6 +136,12 @@ class Producer:
             c.execute("UPDATE agent_tasks SET options = ? WHERE task_id = ?", (json.dumps(options), task_id))
         return options[key]
 
+    def _option(self, task_id: str, key: str, value) -> None:
+        with db.write(self._conn) as c:
+            options = json.loads(c.execute("SELECT options FROM agent_tasks WHERE task_id = ?", (task_id,)).fetchone()[0])
+            options[key] = value
+            c.execute("UPDATE agent_tasks SET options = ? WHERE task_id = ?", (json.dumps(options), task_id))
+
     def _move(self, task_id: str, *, step: str | None = None, status: str | None = None) -> None:
         with db.write(self._conn) as c:
             if step:
@@ -183,6 +196,36 @@ class Producer:
             self._move(task_id, step="write")
             return True
 
+        if step == "topic":
+            if self._write_topic is None:
+                self._say(task_id, RESEARCHER, "Máy này chưa có Claude Code để viết video theo chủ đề.")
+                self._move(task_id, status="failed")
+                return True
+            self._option(task_id, "topic_run", self._write_topic(project_id, task["goal"], task["options"]["lines"]))
+            self._say(task_id, RESEARCHER, "Giao Claude Code tìm nguồn trên web và viết kịch bản. Việc này mất vài phút.")
+            self._move(task_id, step="topic_wait")
+            return True
+
+        if step == "topic_wait":
+            run_id = task["options"].get("topic_run")
+            status = self._orch.run_status(run_id)
+            if status in (RunStatus.FAILED, RunStatus.BLOCKED, RunStatus.CANCELLED):
+                stage = self._orch.stages(run_id)[0]
+                attempts = self._orch.attempt_rows(stage.stage_id)
+                why = stage.blocked_reason or (attempts[-1]["error_message"] if attempts else None) or status.value
+                self._say(task_id, WRITER, f"Claude Code không viết được kịch bản: {why}")
+                self._move(task_id, status="failed")
+                return True
+            if self._topic_state(run_id) == "asked":
+                return False
+            script_id = self._apply_topic(project_id, run_id)
+            shots = self._projects.script(script_id)["shots"]
+            sources = self._planning.research(project_id)
+            self._say(task_id, WRITER, f"Claude Code viết {len(shots)} câu dựa trên {len(sources)} nguồn"
+                      + (f"; {sum(1 for s in shots if s.is_fact and not s.source)} câu nêu dữ kiện chưa có nguồn." if any(s.is_fact and not s.source for s in shots) else "."))
+            self._move(task_id, step="critique" if task["options"].get("critique") else "facts")
+            return True
+
         if step == "write":
             lines = self._planning.draft(task["goal"], lines=task["options"]["lines"], style=self._style(project_id))
             if not lines:
@@ -211,7 +254,8 @@ class Producer:
             return True
 
         if step == "facts":
-            facts = self._planning.find_facts(project_id)
+            # A video on a topic comes with its facts marked by the writer that sourced them; others are read for them.
+            facts = [x.shot_id for x in script["shots"] if x.is_fact] if task["options"].get("topic") else self._planning.find_facts(project_id)
             if facts:
                 results = self._planning.check_facts(project_id)
                 good = sum(r["verdict"] == "supported" for r in results)
@@ -257,6 +301,11 @@ class Producer:
                 except AdapterError:
                     found = False
                 self._say(task_id, STOCK, f"Câu “{texts[sel.shot_id]}”: " + (f"lấy clip stock theo từ khoá “{query}”." if found else "không tìm được clip stock phù hợp."))
+            if task["options"].get("paid") and self._generate is not None:
+                left = [x.shot_id for x in self._projects.selections(script["script_id"]) if x.status == "gap" and x.shot_id not in quotes]
+                if left:
+                    self._generate(script["script_id"], left)
+                    self._say(task_id, STOCK, f"Tạo hình AI cho {len(left)} câu còn thiếu, trong ngân sách của dự án; ảnh phác chờ bạn duyệt trước khi thành clip.")
             self._move(task_id, step="review")
             return True
 

@@ -67,7 +67,7 @@ def test_footage_analysis_is_held_outside_the_window_while_other_work_goes_on(tm
     hour = __import__("time").localtime().tm_hour
     system.orch.set_setting("background_window", f"{(hour + 2) % 24}-{(hour + 3) % 24}")        # a window that is not now
     asset_id, ingest = system.library.ingest(make_video(tmp_path / "f.mp4", picture=6))
-    interactive, background = system.workers
+    interactive, background = system.workers[:2]                                  # the third, for Claude Code, has nothing to do here
     while interactive.run_once() or background.run_once():
         pass
     structure = next(r for r in system.orch.runs_for_subject(asset_id) if system.orch.pipeline_of(r) == "library.structure")

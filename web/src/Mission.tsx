@@ -61,6 +61,7 @@ const TABS: { key: TabKey; label: string; icon: string }[] = [
 ];
 
 const clock = (t: number) => new Date(t * 1000).toLocaleString(locale, { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" });
+const makesVideos = (kind: string) => kind === "video" || kind === "topic";       // a topic video is made as a video, its script written by Claude Code
 const usd = (n: number | null | undefined) => (n == null ? "–" : `$${n.toFixed(n < 1 ? 3 : 2)}`);
 const secs = (s: number | null) => (s == null ? "–" : s < 60 ? `${s.toFixed(1)}s` : `${Math.floor(s / 60)}m${String(Math.round(s % 60)).padStart(2, "0")}`);
 const fail = (e: unknown) => toast((e as Error).message, { tone: "tally" });
@@ -235,7 +236,7 @@ function PlanEditor({ m, kinds, channels, templates, done }: { m: Mission; kinds
   const save = () => run("save", () => post(`/api/v1/missions/${m.mission_id}`, { plan }, "PATCH"));
   const confirm = () => run("confirm", async () => { if (dirty) await post(`/api/v1/missions/${m.mission_id}`, { plan }, "PATCH"); await post(`/api/v1/missions/${m.mission_id}/confirm`); toast(tr("Đã xác nhận. Nhiệm vụ bắt đầu chạy."), { tone: "proof" }); });
   const lines = (v: string[]) => v.join("\n"), split = (s: string) => s.split("\n").map((x) => x.trim()).filter(Boolean);
-  const video = plan.kind === "video";
+  const video = makesVideos(plan.kind);
   return (
     <div className="grid gap-4">
       {m.problems.length > 0 && <ul className="grid gap-1.5 rounded-xl border border-tally/30 bg-tally/[0.06] px-4 py-3 text-[13px] text-tally">{m.problems.map((p) => <li key={p} className="flex gap-2"><Icon name="alert" size={14} className="mt-0.5 shrink-0" />{p}</li>)}</ul>}
@@ -246,7 +247,7 @@ function PlanEditor({ m, kinds, channels, templates, done }: { m: Mission; kinds
           <select value={plan.kind} onChange={(e) => set("kind", e.target.value)} className="w-full pl-3"><option value="">{tr("Chọn…")}</option>{kinds.map((k) => <option key={k.kind} value={k.kind}>{k.name}</option>)}</select></label>
         {video && <label><span className="field-label">{tr("Số video")}</span><input type="number" min={1} max={10} value={plan.count} onChange={(e) => set("count", Number(e.target.value))} className="mono w-full px-3" /></label>}
         {video && <div><span className="field-label">{tr("Khung hình")}</span><Seg items={FORMATS} value={plan.format} onChange={(v) => set("format", v)} label={tr("Khung hình")} /></div>}
-        {video && <label><span className="field-label">{tr("Số câu lời dẫn mỗi video")}</span><input type="number" min={2} max={12} value={plan.lines} onChange={(e) => set("lines", Number(e.target.value))} className="mono w-full px-3" /></label>}
+        {video && <label><span className="field-label">{tr("Số câu lời dẫn mỗi video")}</span><input type="number" min={2} max={plan.kind === "topic" ? 30 : 12} value={plan.lines} onChange={(e) => set("lines", Number(e.target.value))} className="mono w-full px-3" /></label>}
         {video && <label><span className="field-label">{tr("Kênh")}</span><select value={plan.channel ?? ""} onChange={(e) => set("channel", e.target.value || null)} className="w-full pl-3"><option value="">{tr("Không chọn")}</option>{channels.map((c) => <option key={c}>{c}</option>)}</select></label>}
         {video && <label><span className="field-label">{tr("Mẫu video")}</span><select value={plan.template ?? ""} onChange={(e) => set("template", e.target.value || null)} className="w-full pl-3"><option value="">{tr("Không chọn")}</option>{templates.map((c) => <option key={c}>{c}</option>)}</select></label>}
         <label><span className="field-label">{tr("Ngân sách tối đa (USD)")}</span><input type="number" min={0} step={0.1} value={plan.budget ?? ""} onChange={(e) => set("budget", e.target.value === "" ? null : Number(e.target.value))} placeholder={tr("không giới hạn riêng")} className="mono w-full px-3" /></label>
@@ -358,10 +359,10 @@ const EVENT: Record<string, string> = { created: tr("Giao việc"), planned: tr(
 
 function PlanFacts({ m }: { m: Mission }) {
   const p = m.plan;
-  const rows: [string, React.ReactNode][] = [[tr("Loại việc"), m.kind_name ?? p.kind], [tr("Mục tiêu"), p.goal], ...(p.kind === "video" && p.title ? [[tr("Tên video"), p.title] as [string, React.ReactNode]] : [])];
-  if (p.kind === "video") rows.push([tr("Dự án"), m.production ? <button type="button" className="link" onClick={() => goTo(`/du-an/${m.production!.production_id}`)}>{m.production.title}</button>
+  const rows: [string, React.ReactNode][] = [[tr("Loại việc"), m.kind_name ?? p.kind], [tr("Mục tiêu"), p.goal], ...(makesVideos(p.kind) && p.title ? [[tr("Tên video"), p.title] as [string, React.ReactNode]] : [])];
+  if (makesVideos(p.kind)) rows.push([tr("Dự án"), m.production ? <button type="button" className="link" onClick={() => goTo(`/du-an/${m.production!.production_id}`)}>{m.production.title}</button>
     : <span className="text-mute">{tr("một dự án mới, khi xác nhận")}</span>]);
-  if (p.kind === "video") rows.push([tr("Video"), tv`${p.count} video · ${FORMATS.find((f) => f[0] === p.format)?.[1] ?? p.format} · ${p.lines} câu`], [tr("Kênh / mẫu"), [p.channel, p.template].filter(Boolean).join(" · ") || "–"]);
+  if (makesVideos(p.kind)) rows.push([tr("Video"), tv`${p.count} video · ${FORMATS.find((f) => f[0] === p.format)?.[1] ?? p.format} · ${p.lines} câu`], [tr("Kênh / mẫu"), [p.channel, p.template].filter(Boolean).join(" · ") || "–"]);
   rows.push([tr("Ngân sách"), p.budget != null ? usd(p.budget) : tr("theo hạn mức chung")], [tr("Dịch vụ trả tiền"), p.paid ? tr("được dùng") : tr("không")], [tr("Đã tiêu"), usd(m.spent)]);
   return (
     <div className="grid gap-3 text-[13px]">

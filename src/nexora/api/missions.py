@@ -155,7 +155,7 @@ def add_missions(app: FastAPI, system, *, health) -> None:
             if m["state"] == "planned":
                 plan = m["plan"]
                 out.append({"key": f"mission:{m['mission_id']}", "kind": "mission", "id": m["mission_id"], "title": m["text"], "asked_by": "Mission Composer",
-                            "why": "Kế hoạch đã lập, chờ bạn xác nhận trước khi chạy.", "touches": f"{plan['count']} video" if plan["kind"] == "video" else plan["kind"],
+                            "why": "Kế hoạch đã lập, chờ bạn xác nhận trước khi chạy.", "touches": f"{plan['count']} video" if plan["kind"] in ("video", "topic") else plan["kind"],
                             "cost": plan.get("budget"), "next": "Xác nhận thì hệ thống bắt đầu làm; không xác nhận thì không có gì chạy.", "at": m["created_at"],
                             "actions": ["confirm", "cancel"], "link": None})
         seen = set()
