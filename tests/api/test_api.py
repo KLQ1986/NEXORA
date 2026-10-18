@@ -477,3 +477,15 @@ def test_projects_are_renamed_and_duplicated_and_a_single_cut_can_be_deleted(tmp
     with sqlite3.connect(tmp_path / "data" / "nexora.db") as c:
         c.execute("INSERT INTO publications (publication_id, render_id, project_id, target, idempotency_key, status, created_at) VALUES ('pub_1', ?, ?, 'youtube', 'k1', 'published', 0)", (second, project))
     assert client.delete(f"/api/v1/renders/{second}").status_code == 409
+
+
+def test_a_card_shows_a_frame_of_a_clip_visual_quality_has_not_looked_at_yet(tmp_path):
+    # A stock clip just brought in for a storyboard shot is in the Library before visual quality has analysed it.
+    from tests.conftest import make_video
+    system = build(tmp_path / "data", segment_seconds=2.0)
+    client = TestClient(create_app(system))
+    asset_id, _ = system.library.ingest(make_video(tmp_path / "stock.mp4", picture=4))
+    system.vq_reader.subject = lambda subject: None                       # not analysed yet
+    got = client.get(f"/api/v1/vq/subjects/{asset_id}/frame", params={"t": 1.0, "width": 320})
+    assert got.status_code == 200 and got.headers["content-type"].startswith("image/")
+    assert client.get("/api/v1/vq/subjects/ast_none/frame").status_code == 404

@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from nexora.core.adapter import AdapterError, ErrorCode
+from nexora.core.adapter import AdapterError, ErrorCode, Request
 from nexora.modules.edit.colour import colour_pairs
 from nexora.modules.planning import storyboard as SB
 
@@ -2509,10 +2509,19 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
     def vq_subject_frame(subject: str, t: float = 0.0, graded: int = 0, width: int = 0):
         """A frame of the source at `t`, as it is or with its colour transform, for the viewer and for marking a region; with
         `width`, a smaller copy (kept beside it) for a card, so a storyboard of many shots does not fetch full frames."""
-        if system.vq_reader.subject(subject) is None:
-            raise HTTPException(404, "no such subject")
         try:
-            frame = system.vq.frame(subject, t, graded=bool(graded))
+            if system.vq_reader.subject(subject) is not None:
+                frame = system.vq.frame(subject, t, graded=bool(graded))
+            elif system.assets.asset(subject) is not None:
+                # In the Library, not yet looked at by visual quality (a stock clip just brought in for a shot): its own frame.
+                frame = system.data_dir / "tmp" / "frames" / subject / f"{max(0.0, t):.2f}_s_1280.jpg"
+                if not frame.is_file():
+                    frame.parent.mkdir(parents=True, exist_ok=True)
+                    source = system.assets.path_of(system.assets.original(subject))
+                    system.adapters.submit("ffmpeg", Request("vq_render", inputs={"path": str(source)},
+                                                             params={"kind": "still", "out": str(frame), "t_in": max(0.0, t), "filters": [], "width": 1280}))
+            else:
+                raise HTTPException(404, "no such subject")
         except AdapterError as e:
             raise HTTPException(422, str(e))
         if 0 < width < 1280:
