@@ -509,11 +509,33 @@ function ShotCard({ s, on, tone, pick }: { s: SbShot; on: boolean; tone: string;
         {s.version > 1 && <span className="mono absolute bottom-1.5 left-1.5 rounded bg-black/60 px-1.5 text-[11px] text-mute">v{s.version}</span>}
       </span>
       <span className="text-[11px] font-semibold uppercase leading-snug tracking-wide text-ink">{`${s.code}: ${f.lens} | ${s.spec.duration.target}s | ${f.move} | ${f.size} · ${f.angle}`}</span>
-      <span className="text-[12.5px] leading-relaxed text-mute">{s.spec.intent}</span>
-      {s.spec.line && !sameWords(s.spec.line, s.spec.intent) && <span className="border-l-2 border-accent/40 pl-2 text-[12px] italic leading-snug text-mute">“{s.spec.line}”</span>}
+      <Clamp className="text-[12.5px] leading-relaxed text-mute">{s.spec.intent}</Clamp>
+      {s.spec.line && !sameWords(s.spec.line, s.spec.intent) && <Clamp className="border-l-2 border-accent/40 pl-2 text-[12px] italic leading-snug text-mute">“{s.spec.line}”</Clamp>}
       <span className="flex items-center gap-1.5 text-[11px] text-faint"><span className={`h-1.5 w-1.5 rounded-full ${dot}`} aria-hidden="true" />{label}
         {of > 0 && <><span aria-hidden="true">·</span><span className={of && passed === of ? "text-proof" : passed ? "text-cue" : "text-faint"}>{tv`nghiệm thu ${passed}/${of}`}</span></>}</span>
     </button>
+  );
+}
+
+/** Text held to three lines on a card; when it runs longer, the whole of it opens in a box while the pointer (or the keyboard's
+    focus) is on the card. The full text stays in the page for screen readers; the box is only for the eye. */
+function Clamp({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  const box = useRef<HTMLSpanElement>(null);
+  const [cut, setCut] = useState(false);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const look = () => setCut(el.scrollHeight > el.clientHeight + 1);
+    look();
+    const watch = new ResizeObserver(look);
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, [children]);
+  return (
+    <span className="group/clamp relative block">
+      <span ref={box} className={`line-clamp-3 ${className}`}>{children}</span>
+      {cut && <span aria-hidden="true" className={`pointer-events-none invisible absolute -inset-x-1.5 top-[calc(100%+4px)] z-30 rounded-lg border border-edge bg-overlay px-2.5 py-2 opacity-0 shadow-[var(--shadow-float)] transition-opacity duration-150 group-hover/clamp:visible group-hover/clamp:opacity-100 [button:focus-visible_&]:visible [button:focus-visible_&]:opacity-100 ${className} !text-ink`}>{children}</span>}
+    </span>
   );
 }
 
