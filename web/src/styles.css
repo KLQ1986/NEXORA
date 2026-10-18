@@ -1,9 +1,6 @@
 @import "tailwindcss";
-@import "@fontsource/be-vietnam-pro/400.css";
-@import "@fontsource/be-vietnam-pro/500.css";
-@import "@fontsource/be-vietnam-pro/600.css";
-@import "@fontsource/be-vietnam-pro/700.css";
 @import "@fontsource-variable/geist/wght.css";
+@import "@fontsource-variable/lexend/wght.css";
 @import "@fontsource/geist-mono/400.css";
 @import "@fontsource/geist-mono/500.css";
 @import "@fontsource/geist-mono/600.css";
@@ -12,7 +9,7 @@
    edges and controlled depth, the picture always the brightest thing on the screen. Two accents, used sparingly: a soft cyan for
    where you are and what to press, a restrained electric violet for the machine at work. Amber waits for you, red has stopped,
    green has passed. Readings (clocks, counts, timecodes) are set in Geist Mono, the way a slate or a deck reads them; the
-   interface itself in Be Vietnam Pro, drawn for Vietnamese and precise at small sizes. Light falls from above, the edges fall off
+   interface itself in Lexend, which carries the Vietnamese marks and stays legible at small sizes. Light falls from above, the edges fall off
    into a vignette, and a still film grain sits over everything; nothing glows. */
 /* Screens shorter than a laptop at full height: the overview drops its pictures and keeps its numbers so it still fits. */
 @custom-variant short (@media (max-height: 860px));
@@ -34,8 +31,8 @@
   --color-cue: #e8b04b;
   --color-tally: #f07070;
   --color-proof: #4cc38a;
-  --font-sans: "Be Vietnam Pro", "Geist Variable", system-ui, -apple-system, sans-serif;
-  --font-display: "Be Vietnam Pro", "Geist Variable", system-ui, -apple-system, sans-serif;
+  --font-sans: "Lexend Variable", "Geist Variable", system-ui, -apple-system, sans-serif;
+  --font-display: "Lexend Variable", "Geist Variable", system-ui, -apple-system, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, Menlo, monospace;
   /* One scale of corners, precise rather than soft: containers 14, nested panels 10, controls 8, chips 6. State tags alone are pills. */
   --radius-card: 14px;
@@ -53,7 +50,7 @@ html[lang="vi"] h1, html[lang="vi"] h2, html[lang="vi"] h3 { letter-spacing: -0.
 @media (pointer: fine) { html { overscroll-behavior: none; } }
 body, #root { height: 100%; }
 body {
-  background: var(--color-canvas); color: var(--color-ink); font-family: var(--font-sans); font-size: 14px; font-weight: 400; line-height: 1.55;
+  background: var(--color-canvas); color: var(--color-ink); font-family: var(--font-sans); font-size: 14px; font-weight: 350; line-height: 1.55;
   -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; -webkit-tap-highlight-color: transparent;
 }
 /* Light from above, a faint violet key and a cooler fill at the corner, falling off into a vignette; over it a still grain. */
@@ -213,4 +210,10 @@ html[lang="vi"] .display { letter-spacing: -0.012em; }
 :where(.text-faint, .text-mute):not([class*="font-"]) { font-weight: 400; }
 .text-\[9\.5px\], .text-\[10px\], .text-\[10\.5px\], .text-\[11px\], .text-\[11\.5px\], .chip { font-size: 11px; font-weight: 400; }
 
-.eyebrow, .field-label, .chip { font-weight: 500; }
+/* Lexend draws heavier than most faces at the same number, so the weight scale steps down by one notch:
+   body 350, medium 450, semibold 550, bold 650. */
+.font-medium { font-weight: 450; }
+.font-semibold { font-weight: 550; }
+.font-bold { font-weight: 650; }
+.display { font-weight: 550; }
+.eyebrow, .field-label, .chip { font-weight: 450; }
