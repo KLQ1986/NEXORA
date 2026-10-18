@@ -190,7 +190,7 @@ def add_missions(app: FastAPI, system, *, health) -> None:
             else:
                 out.append({"key": f"blocked:{stage.stage_id}", "kind": "blocked", "id": stage.stage_id, "pipeline": pipeline, "project_id": project and project["project_id"],
                             "title": f"Đang dừng: {PIPELINE_NAMES.get(pipeline, pipeline)} · {where}", "asked_by": PIPELINE_NAMES.get(pipeline, pipeline),
-                            "why": stage.blocked_reason or "Bước này cần bạn xử lý trước khi chạy tiếp.", "touches": where, "cost": None,
+                            "why": system.orch.why_stopped(stage) or "Bước này cần bạn xử lý trước khi chạy tiếp.", "touches": where, "cost": None,
                             "next": "Xử lý xong lý do rồi cho chạy tiếp.", "at": info["created_at"], "actions": ["resume"], "link": link})
         for t in system.producer.tasks():
             if t["status"] == "waiting_operator" and t["project_id"] not in waiting_projects:

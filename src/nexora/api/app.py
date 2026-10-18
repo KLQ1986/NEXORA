@@ -1308,9 +1308,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         status = system.orch.run_status(got["run_id"]).value
         reason = None
         if status in ("failed", "blocked"):
-            stage = system.orch.stages(got["run_id"])[0]
-            attempts = system.orch.attempt_rows(stage.stage_id)
-            reason = stage.blocked_reason or (attempts[-1]["error_message"] if attempts else None)
+            reason = system.orch.why_stopped(system.orch.stages(got["run_id"])[0])
         if got["state"] == "written":
             system.topics.mark(got["run_id"], "offered")
             got["state"] = "offered"

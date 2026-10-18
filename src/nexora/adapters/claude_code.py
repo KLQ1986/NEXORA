@@ -64,13 +64,13 @@ class ClaudeCode(Adapter):
         env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
         self._workdir.mkdir(parents=True, exist_ok=True)
         cwd = Path(tempfile.mkdtemp(prefix="run_", dir=self._workdir))
+        seconds = request.deadline_seconds or self._seconds.get(op, 180.0)
         try:
-            done = subprocess.run(argv, input=prompt, capture_output=True, text=True, cwd=cwd, env=env,
-                                  timeout=request.deadline_seconds or self._seconds.get(op, 180.0))
+            done = subprocess.run(argv, input=prompt, capture_output=True, text=True, cwd=cwd, env=env, timeout=seconds)
         except FileNotFoundError:
             raise AdapterError(ErrorCode.UNAVAILABLE, f"Claude Code is not installed here ({self._binary})", retryable=False) from None
         except subprocess.TimeoutExpired:             # subprocess.run kills the child before raising
-            raise AdapterError(ErrorCode.TIMEOUT, f"claude -p did not finish within {self._seconds.get(op, 180.0):.0f} s") from None
+            raise AdapterError(ErrorCode.TIMEOUT, f"claude -p did not finish within {seconds:.0f} s") from None
         finally:
             shutil.rmtree(cwd, ignore_errors=True)
         return self._read(done, op, bool(schema), bool(params.get("json")))

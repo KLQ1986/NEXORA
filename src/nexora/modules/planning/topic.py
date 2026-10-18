@@ -92,8 +92,11 @@ def topic_prompt(topic: str, *, goal: str = "", seconds: int = DEFAULT_SECONDS, 
     parts.append(f"Độ dài: lời dẫn đọc hết khoảng {minutes} phút ({seconds} giây), tức khoảng {round(seconds * WORDS_PER_SECOND)} chữ khi đọc 2,6 chữ mỗi giây. "
                  "Đừng ngắn hơn hay dài hơn nhiều: chủ đề cần bao nhiêu ý thì tìm đủ nguồn cho bấy nhiêu ý.")
     if structure:
-        parts.append("Chia lời dẫn theo đúng các phần sau, theo thứ tự, ghi tên phần vào part: "
-                     + "; ".join(f"{p['name']} ({p.get('min', 0)}–{p.get('max', 0)} giây)" for p in structure) + ". Đọc khoảng 2,6 chữ mỗi giây.")
+        # A template's timings are for its own short videos: its parts keep their weight, and share out the length asked.
+        weights = [max(0.0, (float(p.get("min") or 0) + float(p.get("max") or 0)) / 2) or 1.0 for p in structure]
+        named = [f"{p.get('label') or p.get('name') or p.get('role') or f'Phần {i}'} (khoảng {round(seconds * w / sum(weights))} giây)"
+                 + (f": {p['goal']}" if p.get("goal") else "") for i, (p, w) in enumerate(zip(structure, weights), 1)]
+        parts.append("Chia lời dẫn theo đúng các phần sau, theo thứ tự, ghi tên phần vào part: " + "; ".join(named) + ".")
     else:
         parts.append("Ghi part là Mở đầu, Thân bài hoặc Kết.")
     if siblings:

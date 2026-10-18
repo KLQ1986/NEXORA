@@ -38,7 +38,8 @@ class FilmCraft(Adapter):
             raise AdapterError(ErrorCode.TIMEOUT, "FilmCraft did not finish in time") from None
         lines = [line for line in done.stdout.splitlines() if line.strip().startswith("{")]
         if done.returncode != 0:
-            raise AdapterError(ErrorCode.INTERNAL, f"FilmCraft failed: {(done.stderr or done.stdout).strip()[-400:]}", retryable=False)
+            said = (done.stderr or done.stdout).strip()[-400:] or f"exit code {done.returncode}, nothing said"      # a crash says nothing; its code still does
+            raise AdapterError(ErrorCode.INTERNAL, f"FilmCraft failed: {said}", retryable=False)
         try:
             return json.loads(lines[-1]) if lines else {}
         except ValueError:

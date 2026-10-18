@@ -26,6 +26,7 @@ RESEARCHER, CRITIC, CHECKER = "Nghiên cứu", "Phản biện", "Kiểm chứng"
 MAX_STOCK_FILLS = 3
 MAX_REVISIONS = 1            # the writer answers the critic once; a second round rarely pays for itself
 MAX_SOURCES = 5
+RESTARTS = {"topic_wait": ("topic", "planning.topic_script"), "matching": ("source", "sourcing.match"), "cutting": ("cut", "edit.render")}
 MAX_STEPS = 40               # no task needs this many moves; one that reaches it is going round in circles
 SCHEMA = """CREATE TABLE IF NOT EXISTS agent_tasks (
     task_id TEXT PRIMARY KEY, project_id TEXT NOT NULL, goal TEXT NOT NULL, status TEXT NOT NULL, step TEXT NOT NULL,
@@ -111,6 +112,14 @@ class Producer:
         task = self.task(task_id)
         if task is None or task["status"] != "failed":
             return False
+        # A step waiting on a run that is still stopped would stop again at once: it goes back to the step that starts the run.
+        # (A mission retries the run's failed stage first, and the step then simply waits on it.)
+        if task["step"] in RESTARTS:
+            starter, pipeline = RESTARTS[task["step"]]
+            script = self._projects.current_script(task["project_id"])
+            run_id = task["options"].get("topic_run") if task["step"] == "topic_wait" else script and self._latest(script["script_id"], pipeline)
+            if run_id is None or self._orch.run_status(run_id) in (RunStatus.FAILED, RunStatus.BLOCKED, RunStatus.CANCELLED):
+                self._move(task_id, step=starter)
         self._move(task_id, status="working")
         self._say(task_id, LEAD, f"Chạy lại từ bước “{task['step']}”.")
         return True
@@ -210,9 +219,7 @@ class Producer:
             run_id = task["options"].get("topic_run")
             status = self._orch.run_status(run_id)
             if status in (RunStatus.FAILED, RunStatus.BLOCKED, RunStatus.CANCELLED):
-                stage = self._orch.stages(run_id)[0]
-                attempts = self._orch.attempt_rows(stage.stage_id)
-                why = stage.blocked_reason or (attempts[-1]["error_message"] if attempts else None) or status.value
+                why = self._orch.why_stopped(self._orch.stages(run_id)[0]) or status.value
                 self._say(task_id, WRITER, f"Claude Code không viết được kịch bản: {why}")
                 self._move(task_id, status="failed")
                 return True

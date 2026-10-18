@@ -624,7 +624,10 @@ def topic_context(system: "System", project_id: str) -> dict:
     illustrating, and the titles of the other videos of its production, so that this one takes another angle."""
     from nexora.modules.planning.scripts import HOUSE_VOICE
     project = system.projects.project(project_id) or {}
-    siblings = [p["title"] for p in system.projects.projects() if project.get("production_id") and p.get("production_id") == project["production_id"] and p["project_id"] != project_id]
+    def told(p: dict) -> str:                    # a sibling's title, and the angle its own writer took, when one wrote it
+        angle = ((system.topics.latest(p["project_id"]) or {}).get("package") or {}).get("angle") if system.topics else None
+        return f"{p['title']} (góc: {angle})" if angle else p["title"]
+    siblings = [told(p) for p in system.projects.projects() if project.get("production_id") and p.get("production_id") == project["production_id"] and p["project_id"] != project_id]
     return {"voice": system.orch.setting("writing_voice", "") or HOUSE_VOICE, "structure": (template_named(system, project.get("template")) or {}).get("structure"),
             "style": illustration_style(system, project), "siblings": siblings}
 

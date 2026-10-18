@@ -206,6 +206,7 @@ class Missions:
         """Every run a mission's work made: its own, and the ones its producer tasks started for their projects."""
         out = list(m["links"]["runs"])
         for project_id in m["links"]["projects"]:
+            out += self._orch.runs_for_subject(project_id)           # a script from a topic is asked for the video, before it has a script
             for script_id in self._projects.script_ids(project_id):
                 out += self._orch.runs_for_subject(script_id)
         return list(dict.fromkeys(out))

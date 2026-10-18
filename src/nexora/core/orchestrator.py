@@ -103,6 +103,12 @@ class Orchestrator:
         """Attempts with their times and error text, for the run detail screen."""
         return [dict(r) for r in self._conn.execute("SELECT * FROM attempts WHERE stage_id = ? ORDER BY number", (stage_id,))]
 
+    def why_stopped(self, stage: Stage) -> str | None:
+        """Why a stage stopped, in the words of what went wrong (its last attempt's error), else the reason it was blocked:
+        "retry_limit" says only that it gave up, not why."""
+        last = self._conn.execute("SELECT error_message FROM attempts WHERE stage_id = ? ORDER BY number DESC LIMIT 1", (stage.stage_id,)).fetchone()
+        return (last and last[0]) or stage.blocked_reason
+
     def events(self, run_id: str) -> list[Event]:
         rows = self._conn.execute("SELECT * FROM events WHERE run_id = ? ORDER BY event_id", (run_id,))
         return [Event(r["kind"], r["stage_id"], r["attempt_id"], json.loads(r["payload"] or "{}"), r["actor"], r["occurred_at"])

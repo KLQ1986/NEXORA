@@ -217,3 +217,96 @@ def test_what_the_operator_chose_as_they_asked_is_taken_over_what_the_model_read
     assert (m["plan"]["kind"], m["plan"]["form"], m["plan"]["seconds"], m["plan"]["critique"]) == ("topic", "science", 480, False)
     auto = client.post("/api/v1/missions", json={"text": "video về rừng bạch đàn", "kind": "", "form": None}).json()
     assert auto["plan"]["kind"] == "video"                                   # nothing chosen: the model's reading stands
+
+
+def _topic_mission(system, client):
+    system.adapters._adapters["model"].answers["mission_plan"] = {"loai": "topic", "muc_tieu": "rừng bạch đàn Israel", "tieu_de": "Rừng", "so_video": 1}
+    m = client.post("/api/v1/missions", json={"text": "video về rừng bạch đàn"}).json()
+    return client.post(f"/api/v1/missions/{m['mission_id']}/confirm").json()
+
+
+def test_a_topic_mission_whose_writing_failed_writes_again_when_retried(tmp_path):
+    answers = [{"title": "x", "sources": [], "lines": []}, PACKAGE]
+    system, client = _topic_system(tmp_path, answer=lambda request: answers.pop(0) if len(answers) > 1 else answers[0])
+    m = _topic_mission(system, client)
+    task_id, project = m["links"]["tasks"][0], m["links"]["projects"][0]
+    for _ in range(3):
+        system.producer.advance(task_id)
+        drain(system)
+    assert system.producer.task(task_id)["status"] == "failed"
+    assert "not usable" in system.producer.task(task_id)["log"][-1]["text"]
+    assert any(system.orch.pipeline_of(r) == "planning.topic_script" for r in client.get(f"/api/v1/missions/{m['mission_id']}").json()["run_ids"])
+    client.post(f"/api/v1/missions/{m['mission_id']}/retry")
+    for _ in range(4):
+        system.producer.advance(task_id)
+        drain(system)
+    assert system.projects.current_script(project)["shots"][0].text == "Năm 1950 người ta trồng bạch đàn khắp nơi."
+    assert system.producer.task(task_id)["status"] != "failed"
+
+
+def test_a_failed_wait_retried_on_its_own_starts_its_work_again(tmp_path):
+    answers = [{"title": "x", "sources": [], "lines": []}, PACKAGE]
+    system, client = _topic_system(tmp_path, answer=lambda request: answers.pop(0) if len(answers) > 1 else answers[0])
+    task_id = system.producer.start("rừng bạch đàn", topic=True, critique=False)
+    for _ in range(3):
+        system.producer.advance(task_id)
+        drain(system)
+    assert system.producer.task(task_id)["status"] == "failed"
+    assert system.producer.retry(task_id)                      # the producer alone: its failed run is asked for again
+    for _ in range(4):
+        system.producer.advance(task_id)
+        drain(system)
+    assert system.projects.current_script(system.producer.task(task_id)["project_id"]) is not None
+
+
+def test_cancelling_a_topic_mission_stops_its_writer(tmp_path):
+    system, client = _topic_system(tmp_path)
+    m = _topic_mission(system, client)
+    task_id = m["links"]["tasks"][0]
+    system.producer.advance(task_id)                           # the writer is asked, not yet run
+    run_id = system.producer.task(task_id)["options"]["topic_run"]
+    client.post(f"/api/v1/missions/{m['mission_id']}/cancel")
+    assert system.orch.run_status(run_id).value == "cancelled"
+
+
+def test_a_templates_parts_share_out_the_length_asked(tmp_path):
+    from nexora.app import DEFAULT_STRUCTURE
+    system, prompt = topic_prompt("miền Tây sông nước", seconds=300, structure=DEFAULT_STRUCTURE)
+    assert "Mở bài" in prompt and "Thân bài" in prompt and "giữ người xem ngay từ câu đầu" in prompt
+    assert "15–90 giây" not in prompt                                  # a template's short-video timings are not the length asked
+    shares = [int(s) for s in __import__("re").findall(r"khoảng (\d+) giây\)", prompt)]
+    assert len(shares) == 3 and abs(sum(shares) - 300) <= 3 and shares[1] > shares[0] + shares[2]
+    topic_prompt("x", structure=[{"role": "hook"}, {}])                 # a part with nothing but its role, or nothing at all
+
+
+def test_a_topic_mission_on_a_template_writes(tmp_path):
+    system, client = _topic_system(tmp_path)
+    m = _topic_mission(system, client)
+    task_id, project = m["links"]["tasks"][0], m["links"]["projects"][0]
+    system.projects.update_project(project, template="Video ngang có lời dẫn")      # as its production gives it, on this machine
+    for _ in range(3):
+        system.producer.advance(task_id)
+        drain(system)
+    assert system.projects.current_script(project) is not None, system.producer.task(task_id)["log"]
+
+
+def test_the_editor_says_what_went_wrong_not_that_it_gave_up(tmp_path):
+    system, client = _topic_system(tmp_path, answer=lambda request: (_ for _ in ()).throw(KeyError("name")))
+    project = system.planning.create_project("Rừng")
+    client.post(f"/api/v1/projects/{project}/draft-from-topic", json={"topic": "rừng"})
+    drain(system)
+    with system.orch._conn:                                                     # the wait before the second try, gone by
+        system.orch._conn.execute("UPDATE stages SET next_retry_at = 0 WHERE status = 'retry_wait'")
+    drain(system)
+    got = client.get(f"/api/v1/projects/{project}/draft-from-topic").json()
+    assert got["status"] == "blocked" and "name" in got["reason"] and got["reason"] != "retry_limit"
+
+
+def test_a_writer_is_told_the_angles_its_productions_other_videos_took(tmp_path):
+    from nexora.app import topic_context
+    system, client = _topic_system(tmp_path)
+    production = client.post("/api/v1/productions", json={"title": "Rừng"}).json()["production_id"]
+    first, second = (system.planning.create_project(t, production_id=production) for t in ("Video một", "Video hai"))
+    system.topics.start(first, "rừng")
+    drain(system)
+    assert topic_context(system, second)["siblings"] == ["Video một (góc: Vì sao một cây ngoại lai thành bài toán)"]
