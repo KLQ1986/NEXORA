@@ -3,7 +3,7 @@ import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { call, post, projectNext, projectState, scriptText, stageName, timecode, usePoll, type Idea, type Source, type AgentTask, type Asset, type Settings, type Candidate, type Project, type RenderItem, type Shot, type BibleEntry, type GapPlan, type Op, type Rights, type Publishing, type Channel, type StructureCheck, type Variant, type Illustration } from "./api";
 import Board from "./Board";
-import { ask, Button, Empty, Filmstrip, goTo, Icon, Meter, Page, Section, Seg, SideFrame, SideGroup, SideLink, SkeletonCards, StageRail, Steps, Tabs, Tag, TimeChip, toast, Readout } from "./parts";
+import { ask, Button, Empty, Filmstrip, goTo, Icon, Meter, Page, Section, Seg, SideFrame, SideGroup, SideLink, SkeletonCards, Spinner, StageRail, Steps, Tabs, Tag, TimeChip, toast, Readout } from "./parts";
 import Timeline from "./Timeline";
 import EditStep from "./EditStep";
 import Storyboard from "./Storyboard";
@@ -344,6 +344,62 @@ function Illustrations({ shots, busy, run }: { shots: Shot[]; busy: boolean; run
   );
 }
 
+/** The lines a selection in the editor covers (a cursor alone: its line), when they are lines of the script (not empty, not
+    a scene heading); null otherwise. */
+function span_of(el: HTMLTextAreaElement): { first: number; last: number } | null {
+  const before = (n: number) => el.value.slice(0, n).split("\n").length - 1;
+  const first = before(el.selectionStart);
+  let last = before(el.selectionEnd);
+  if (last > first && el.value[el.selectionEnd - 1] === "\n") last -= 1;            // a selection that ends at a line's start stops before it
+  const lines = el.value.split("\n").slice(first, last + 1);
+  return lines.length && lines.every((l) => l.trim() && !l.trim().startsWith("#")) ? { first, last } : null;
+}
+
+type Proposal = { label: string; lines: string[]; flags: string[] };
+const ASKS: [string, string, string, boolean][] = [["shorten", tr("Rút gọn"), "collapse", false], ["tone", tr("Đổi giọng…"), "mic", true], ["bridge", tr("Thêm câu nối"), "plus", false],
+  ["split", tr("Tách câu"), "scissors", false], ["again", tr("3 cách khác"), "sparkles", false], ["ask", tr("Yêu cầu khác…"), "comment", true]];
+
+/** Writing with the model on the lines the operator is on: proposals for just those lines, the script as context; one chosen
+    takes their place in the editor, still to be saved, as if typed. */
+function CoWrite({ id, lines, span, replace }: { id: string; lines: string[]; span: { first: number; last: number }; replace: (first: number, last: number, lines: string[]) => void }) {
+  const [asking, setAsking] = useState<string | null>(null), [words, setWords] = useState(""), [busy, setBusy] = useState(false);
+  const [got, setGot] = useState<{ first: number; last: number; was: string[]; proposals: Proposal[] } | null>(null), [err, setErr] = useState<string | null>(null);
+  const spoken = lines.map((l, k) => [l, k] as const).filter(([l]) => l.trim() && !l.trim().startsWith("#")).map(([, k]) => k);
+  const a = spoken.indexOf(span.first) + 1, b = spoken.indexOf(span.last) + 1;
+  const go = async (action: string, instruction = "") => {
+    setBusy(true); setErr(null); setGot(null);
+    const was = lines.slice(span.first, span.last + 1);
+    try { setGot({ ...(await post<{ first: number; last: number; proposals: Proposal[] }>(`/api/v1/projects/${id}/script/rewrite`, { lines, first: span.first, last: span.last, action, instruction })), was }); setAsking(null); setWords(""); }
+    catch (e) { setErr((e as Error).message); }
+    setBusy(false);
+  };
+  // Proposals are for the lines as they were asked about: another choice, or those lines edited since, makes them out of date.
+  const stale = got && (got.first !== span.first || got.last !== span.last || lines.slice(got.first, got.last + 1).join("\n") !== got.was.join("\n"));
+  return (
+    <div className="border-t border-line bg-ai/[0.04] px-4 py-2.5 text-[13px]">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="mr-1 flex items-center gap-1.5 text-ai"><Icon name="sparkles" size={14} />{a === b ? tv`Câu ${a}` : tv`Câu ${a}–${b}`}</span>
+        {ASKS.map(([key, label, icon, needs]) => <Button key={key} size="sm" kind={asking === key ? "ai" : "quiet"} disabled={busy}
+          onClick={() => (needs ? setAsking(asking === key ? null : key) : go(key))}><Icon name={icon} size={13} />{label}</Button>)}
+        {busy && <span className="flex items-center gap-1.5 text-faint"><Spinner />{tr("Đang viết…")}</span>}
+      </div>
+      {asking && <form className="mt-2 flex gap-2" onSubmit={(e) => { e.preventDefault(); if (words.trim()) go(asking, words); }}>
+        <input autoFocus value={words} onChange={(e) => setWords(e.target.value)} placeholder={asking === "tone" ? tr("Giọng thế nào? ví dụ: ấm hơn, hài hước, như kể chuyện") : tr("Muốn viết lại thế nào?")}
+               aria-label={tr("Yêu cầu cho mô hình")} className="h-8 min-w-0 flex-1 px-2.5" />
+        <Button size="sm" kind="ai" type="submit" disabled={busy || !words.trim()}>{tr("Viết")}</Button></form>}
+      {err && <p className="mt-2 text-tally">{err}</p>}
+      {got && !stale && <ul className="mt-2.5 grid gap-2">{got.proposals.map((p, k) => (
+        <li key={k} className="rounded-lg border border-line bg-surface/70 px-3 py-2.5">
+          <div className="mb-1.5 flex items-center gap-2"><span className="text-[12px] font-medium text-ai">{p.label}</span><span className="flex-1" />
+            <Button size="sm" kind="primary" onClick={() => { replace(got.first, got.last, p.lines); setGot(null); }}><Icon name="check" size={13} />{tr("Dùng cách này")}</Button></div>
+          <ol className="grid gap-0.5 text-[13.5px] leading-relaxed">{p.lines.map((l, i) => <li key={i}>{l}</li>)}</ol>
+          {p.flags.map((f) => <p key={f} className="mt-1 text-[12px] text-cue">{f}</p>)}
+        </li>))}</ul>}
+      {got && stale && <p className="mt-2 text-[12px] text-faint">{tr("Đoạn đã đổi từ lúc hỏi; các phương án trước là cho đoạn cũ.")} <button type="button" className="link" onClick={() => setGot(null)}>{tr("Ẩn")}</button></p>}
+    </div>
+  );
+}
+
 function Variants({ id, p, busy, run }: { id: string; p: Project; busy: boolean; run: (fn: () => Promise<unknown>) => void }) {
   const { data, reload } = usePoll<{ variants: Variant[] }>(`/api/v1/projects/${id}/variants`, 60000);
   const current = new Set(p.shots.map((s) => s.text));
@@ -576,6 +632,8 @@ function Detail({ id, back }: { id: string; back: () => void }) {
   const { data: p, reload } = usePoll<Project>(`/api/v1/projects/${id}`, 2500);
   const [text, setText] = useState<string | null>(null);
   const [topic, setTopic] = useState("");
+  const editor = useRef<HTMLTextAreaElement>(null);
+  const [span, setSpan] = useState<{ first: number; last: number } | null>(null);       // the lines the cursor or the selection is on
   const [note, setNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const asked = new URLSearchParams(window.location.search).get("tab") as View | null;
@@ -681,8 +739,11 @@ function Detail({ id, back }: { id: string; back: () => void }) {
                     <span className="ml-auto" />
                     <Button size="sm" disabled={busy || !dirty || !(text ?? "").trim()} onClick={() => run(() => post(`/api/v1/projects/${id}/script`, { lines: (text ?? "").split("\n") }, "PUT"))}>{tr("Lưu kịch bản")}</Button>
                   </div>
-                  <textarea value={text ?? ""} onChange={(e) => setText(e.target.value)} rows={Math.max(6, (text ?? "").split("\n").length + 1)} aria-label={tr("Kịch bản")}
+                  <textarea ref={editor} value={text ?? ""} onChange={(e) => setText(e.target.value)} rows={Math.max(6, (text ?? "").split("\n").length + 1)} aria-label={tr("Kịch bản")}
+                            onSelect={(e) => setSpan(span_of(e.currentTarget))}
                             className="bare block w-full !rounded-none px-5 py-4 text-[15px] leading-[1.95]" placeholder={tr("Chợ Hội An buổi sáng tấp nập người mua kẻ bán.")} />
+                  {span && <CoWrite id={id} lines={(text ?? "").split("\n")} span={span} replace={(first, last, lines) => {
+                    const all = (text ?? "").split("\n"); all.splice(first, last - first + 1, ...lines); setText(all.join("\n")); setSpan(null); }} />}
                   <form className="flex flex-wrap items-center gap-2 border-t border-line bg-ai/[0.04] px-4 py-2.5" onSubmit={(e) => e.preventDefault()}>
                     <Icon name="sparkles" size={15} className="text-ai" />
                     <label htmlFor="topic" className="sr-only">{tr("Chủ đề để viết nháp")}</label>

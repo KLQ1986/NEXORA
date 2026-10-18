@@ -1192,6 +1192,24 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         system.planning.save_script(project_id, lines)
         return project_view(system.projects.project(project_id))
 
+    @app.post("/api/v1/projects/{project_id}/script/rewrite")
+    def rewrite_script(project_id: str, body: dict):
+        """Write a stretch of the script in the editor with the model: proposals only, the editor decides what to keep."""
+        project = need_project(project_id)
+        lines = [str(l) for l in body.get("lines") or []]
+        try:
+            proposals = system.planning.rewrite(lines, int(body.get("first", -1)), int(body.get("last", -1)), str(body.get("action") or ""),
+                                                topic=project["title"], instruction=str(body.get("instruction") or ""), channel=channel_named(system, project.get("channel")))
+        except (TypeError, ValueError) as err:
+            raise HTTPException(422, {"choose lines of one scene, without its heading": "Hãy chọn các câu trong cùng một cảnh, không gồm dòng tên cảnh.",
+                                      "this request needs words from the operator": "Hãy nói muốn viết lại theo cách nào.",
+                                      "choose lines of the script": "Hãy chọn các câu của kịch bản."}.get(str(err), "Yêu cầu không hợp lệ."))
+        except AdapterError as err:
+            raise HTTPException(503, f"Mô hình không trả lời được: {err.message or err.code.value}")
+        if not proposals:
+            raise HTTPException(502, "Mô hình không đưa ra phương án nào khác đoạn đang có. Thử lại hoặc nói rõ hơn.")
+        return {"proposals": proposals, "first": int(body["first"]), "last": int(body["last"])}
+
     @app.post("/api/v1/projects/{project_id}/draft")
     def draft_script(project_id: str, body: dict):
         need_project(project_id)

@@ -2504,6 +2504,21 @@ const en: Record<string, string> = {
   "Sửa lời thoại của {0}": "Edit the line of {0}",
   "Lời thoại của {0}": "Line of {0}",
   "sửa lời thoại": "edit the line",
+  "Rút gọn": "Shorten",
+  "Đổi giọng…": "Change the voice…",
+  "Thêm câu nối": "Add a bridge",
+  "Tách câu": "Split",
+  "3 cách khác": "3 other ways",
+  "Yêu cầu khác…": "Something else…",
+  "Câu {0}–{1}": "Lines {0}–{1}",
+  "Đang viết…": "Writing…",
+  "Giọng thế nào? ví dụ: ấm hơn, hài hước, như kể chuyện": "Which voice? e.g. warmer, funny, like telling a story",
+  "Muốn viết lại thế nào?": "How should it be written?",
+  "Yêu cầu cho mô hình": "Request for the model",
+  "Viết": "Write",
+  "Dùng cách này": "Use this one",
+  "Đoạn đã đổi từ lúc hỏi; các phương án trước là cho đoạn cũ.": "The lines changed since you asked; these proposals were for the old ones.",
+  "Ẩn": "Hide",
 };
 
 export default en;

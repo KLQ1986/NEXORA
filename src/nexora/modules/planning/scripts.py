@@ -53,6 +53,21 @@ VARIANT_PROMPT = (
     "Chỉ trả về JSON với khoá phuong_an: danh sách các mục có ten (vài chữ nói cách này khác gì) và cau (các câu thay cho phần đó)."
 )
 PARTS = {"opening": ("phần mở bài", "Mở bài"), "ending": ("phần kết", "Kết")}
+# Writing with the model on a stretch of the script: what each request asks, and how many lines each answer should have.
+REWRITE_PROMPT = (
+    "{channel}Đây là lời dẫn của một video về {topic}, mỗi câu có số thứ tự:\n{lines}\n\n"
+    "Chỉ làm việc với {which}: {ask}\n"
+    "Phần còn lại giữ nguyên, không thêm dữ kiện mới, giữ giọng của cả bài. Viết {n} phương án khác nhau rõ rệt. "
+    "Chỉ trả về JSON với khoá phuong_an: danh sách các mục có ten (vài chữ nói phương án này khác gì) và cau (danh sách {shape})."
+)
+REWRITES = {
+    "shorten": ("rút gọn, giữ ý chính, ngắn hơn rõ rệt, dễ đọc thành tiếng", "các câu thay cho đoạn đã chọn"),
+    "tone": ("viết lại theo giọng: {instruction}", "các câu thay cho đoạn đã chọn"),
+    "bridge": ("viết MỘT câu nối đặt ngay sau đoạn này, để chuyển mượt sang câu tiếp theo", "đúng một câu nối"),
+    "split": ("tách thành các câu ngắn hơn, mỗi câu một ý, giữ nguyên nội dung", "các câu thay cho đoạn đã chọn"),
+    "again": ("viết lại theo một cách khác, giữ ý", "các câu thay cho đoạn đã chọn"),
+    "ask": ("{instruction}", "các câu thay cho đoạn đã chọn"),
+}
 WORDS_PER_SECOND = 2.6
 MIN_LINE = 3.0
 VERDICTS = {"dung": "supported", "sai": "contradicted", "khong_thay": "not_found"}
@@ -214,6 +229,41 @@ class Planning:
             return []
         self._projects.add_variants(project_id, script["script_id"], part, items)
         return [v for v in self._projects.variants(project_id) if v["script_id"] == script["script_id"] and v["part"] == part and v["chosen"] is None]
+
+    def rewrite(self, lines: list[str], first: int, last: int, action: str, *, topic: str, instruction: str = "", n: int = 3,
+                channel: dict | None = None) -> list[dict]:
+        """Write a stretch of a script with the model: the lines `first`..`last` (indices into `lines`, the editor's lines as
+        they stand, scene headings included) shortened, in another voice, split, written another way, as the operator asks,
+        or followed by a bridging line. The whole script is the context. Returns `n` proposals, each the lines that take the
+        stretch's place and anything it found against the channel; nothing is saved."""
+        if action not in REWRITES:
+            raise ValueError("unknown request")
+        if action in ("tone", "ask") and not instruction.strip():
+            raise ValueError("this request needs words from the operator")
+        if not (0 <= first <= last < len(lines)) or any(str(lines[k]).strip().startswith("#") for k in range(first, last + 1)):
+            raise ValueError("choose lines of one scene, without its heading")
+        spoken = [k for k, l in enumerate(lines) if str(l).strip() and not str(l).strip().startswith("#")]
+        if not all(k in spoken for k in range(first, last + 1)):
+            raise ValueError("choose lines of the script")
+        numbered = "\n".join(f"{i}. {str(lines[k]).strip()}" for i, k in enumerate(spoken, 1))
+        a, b = spoken.index(first) + 1, spoken.index(last) + 1
+        which = f"câu {a}" if a == b else f"câu {a} đến câu {b}"
+        ask, shape = REWRITES[action]
+        out = self._adapters.submit("model", Request("chat", privacy_class=TEXT_ONLY, params={"task": "rewrite", "json": True, "max_tokens": 900,
+                                    "prompt": REWRITE_PROMPT.format(channel=channel_text(channel), topic=topic, lines=numbered, which=which,
+                                                                    ask=ask.format(instruction=instruction.strip()), n=n, shape=shape)})).outputs["json"]
+        chosen = [str(lines[k]).strip() for k in range(first, last + 1)]
+        proposals, seen = [], set()
+        for raw in (out.get("phuong_an") or [])[:n]:
+            said = [str(c).strip() for c in (raw.get("cau") if isinstance(raw, dict) else []) or [] if str(c).strip()]
+            if action == "bridge":
+                said = chosen + said[:1] if said else []          # the stretch stays; one line follows it
+            if not said or said == chosen or tuple(said) in seen:
+                continue
+            seen.add(tuple(said))
+            flags = [f"Có cụm từ kênh không dùng: “{w}”." for w in (channel or {}).get("banned") or [] if w and any(_fold(w) in _fold(x) for x in said)]
+            proposals.append({"label": str(raw.get("ten") or "").strip() or f"Phương án {len(proposals) + 1}", "lines": said, "flags": flags})
+        return proposals
 
     # ------------------------------------------------------------------ research and fact checking
     def research(self, project_id: str) -> list[dict]:
