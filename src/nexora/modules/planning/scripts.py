@@ -223,7 +223,9 @@ class Planning:
         script = self._projects.current_script(project_id)
         scenes: dict[str, float] = {}
         for shot in (script or {}).get("shots", []):
-            seconds = shot.target_seconds or max(MIN_LINE, len(shot.text.split()) / WORDS_PER_SECOND)      # as the storyboard times a line
+            quote = shot.quote or {}
+            seconds = (shot.target_seconds or (float(quote["t_out"]) - float(quote["t_in"]) if quote.get("t_out") is not None and quote.get("t_in") is not None else None)
+                       or max(MIN_LINE, len(shot.text.split()) / WORDS_PER_SECOND))       # as the storyboard times a line; a quote lasts as long as it is said
             scenes[_fold(shot.scene or "")] = scenes.get(_fold(shot.scene or ""), 0.0) + seconds
         rows, findings = [], []
         for seg in structure:

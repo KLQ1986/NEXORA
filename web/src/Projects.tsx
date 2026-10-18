@@ -1,7 +1,7 @@
 import { t as tr, tv, locale } from "./i18n";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { call, post, projectNext, projectState, scriptText, stageName, timecode, usePoll, type Idea, type Source, type AgentTask, type Asset, type Settings, type Candidate, type Project, type RenderItem, type Shot, type BibleEntry, type GapPlan, type Op, type Rights, type Publishing, type Channel, type StructureCheck, type Variant, type Illustration, type Quote } from "./api";
+import { call, post, projectNext, projectState, scriptText, stageName, timecode, usePoll, type Idea, type Source, type AgentTask, type Asset, type Settings, type Candidate, type Project, type RenderItem, type Shot, type BibleEntry, type GapPlan, type Op, type Rights, type Publishing, type Channel, type Variant, type Illustration, type Quote } from "./api";
 import Board from "./Board";
 import { ask, Button, Empty, Filmstrip, goTo, Icon, Meter, Page, Section, Seg, SideFrame, SideGroup, SideLink, SkeletonCards, Spinner, StageRail, Steps, Tabs, Tag, TimeChip, toast, Readout } from "./parts";
 import Timeline from "./Timeline";
@@ -284,21 +284,8 @@ async function trashProject(p: { project_id: string; title: string }, then?: () 
 const CRITERIA: Record<string, [string, boolean]> = { hop_khan_gia: [tr("Hợp người xem"), false], hop_kenh: [tr("Hợp kênh"), false], co_hinh: [tr("Có hình trong kho"), true],
   moi: [tr("Footage chưa dùng"), true], khac_biet: [tr("Khác video đã làm"), true] };      // [name, measured rather than the model's opinion]
 
-const STATE: Record<string, [string, "proof" | "cue" | "tally"]> = { ok: [tr("vừa"), "proof"], short: [tr("ngắn"), "cue"], long: [tr("dài"), "cue"], missing: [tr("chưa có"), "tally"] };
 
 /** The script against its template's structure: each part's estimated length against its range. */
-function StructureCheck({ s }: { s: StructureCheck }) {
-  return (
-    <div className="mt-3 rounded-xl border border-line bg-raised/30 px-4 py-3 text-[13px]">
-      <div className="mb-2 flex items-center gap-2"><Icon name="layers" size={15} className="text-mute" /><span className="font-medium">{tr("Cấu trúc theo mẫu")}</span>
-        <span className="text-faint">{s.findings.length ? tv`${s.findings.length} điểm lệch` : tr("Các phần đều vừa độ dài.")}</span></div>
-      <ul className="grid gap-1 sm:grid-cols-3">{s.segments.map((seg) => (
-        <li key={seg.label} className="flex items-center gap-2"><Tag tone={STATE[seg.state][1]}>{STATE[seg.state][0]}</Tag><span>{seg.label}</span>
-          <span className="mono ml-auto text-faint">{seg.seconds == null ? "–" : `${Math.round(seg.seconds)}s`} / {seg.min}–{seg.max}s</span></li>))}</ul>
-      {s.findings.length > 0 && <p className="mt-2 text-mute">{tr("Dòng bắt đầu bằng # đặt tên phần, ví dụ “# Mở bài”. Độ dài ước theo thời lượng giữ hình của câu, hoặc theo số chữ.")}</p>}
-    </div>
-  );
-}
 
 /** Two or three other ways to open or to end the script; choosing one saves it as the next version, the rest stay. */
 /* How each line's picture illustrates its words: shown it (direct), evokes it (associative), or runs against it (contrast).
@@ -410,6 +397,88 @@ function SpeechDraft({ id, topic, done }: { id: string; topic: string; done: (li
       </div>
       {err && <p className="mt-2 text-tally">{err}</p>}
     </div>
+  );
+}
+
+const WORDS_PER_SECOND = 2.6, MIN_LINE = 3;             // as the server and the storyboard time a line of narration
+const fold = (x: string) => x.normalize("NFC").toLowerCase().trim();
+
+/** Each line's estimated seconds (null for a heading or an empty line), the total, and the seconds of each named section and of
+    lines before any heading. */
+function timeScript(lines: string[], quoteSeconds: Record<string, number>) {
+  const out: (number | null)[] = [], sections: Record<string, number> = {};
+  let section: string | null = null, loose = 0, total = 0;
+  for (const raw of lines) {
+    const l = raw.trim();
+    if (!l) { out.push(null); continue; }
+    if (l.startsWith("#")) { section = fold(l.replace(/^#+\s*/, "")); sections[section] ??= 0; out.push(null); continue; }
+    const quoted = l.startsWith(">"), words = l.replace(/^>\s*/, "");
+    const secs = quoted && quoteSeconds[words] != null ? quoteSeconds[words] : Math.max(MIN_LINE, words.split(/\s+/).filter(Boolean).length / WORDS_PER_SECOND);
+    out.push(secs); total += secs;
+    if (section != null) sections[section] += secs; else loose += secs;
+  }
+  return { lines: out, total, sections, loose };
+}
+
+/** The template's parts against the script as it is being written, live: each part's estimated length against its range. */
+function LiveStructure({ segments, sections, loose }: { segments: { label: string; min: number; max: number }[]; sections: Record<string, number>; loose: number }) {
+  const rows = segments.map((seg) => { const secs = sections[fold(seg.label)]; return { ...seg, secs, state: secs == null ? "missing" : secs < seg.min ? "short" : secs > seg.max ? "long" : "ok" } as const; });
+  const target = [segments.reduce((t, s) => t + s.min, 0), segments.reduce((t, s) => t + s.max, 0)];
+  const tone = { ok: "proof", short: "cue", long: "cue", missing: "tally" } as const, said = { ok: tr("vừa"), short: tr("ngắn"), long: tr("dài"), missing: tr("chưa có") };
+  return (
+    <div className="mt-3 rounded-xl border border-line bg-raised/30 px-4 py-3 text-[13px]">
+      <div className="mb-2 flex flex-wrap items-center gap-2"><Icon name="layers" size={15} className="text-mute" /><span className="font-medium">{tr("Cấu trúc theo mẫu")}</span>
+        <span className="text-faint">{tv`mục tiêu ${Math.round(target[0])}–${Math.round(target[1])} giây`}</span>
+        {loose > 0 && <span className="text-cue">{tv`${Math.round(loose)} giây chưa thuộc phần nào (thêm dòng # tên phần ở trên)`}</span>}</div>
+      <ul className="grid gap-1.5 sm:grid-cols-3">{rows.map((r) => (
+        <li key={r.label} className="grid gap-1">
+          <span className="flex items-center gap-2"><Tag tone={tone[r.state]}>{said[r.state]}</Tag><span className="min-w-0 truncate">{r.label}</span>
+            <span className="mono ml-auto shrink-0 text-faint">{r.secs == null ? "–" : `${Math.round(r.secs)}s`} / {r.min}–{r.max}s</span></span>
+          <span className="relative h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+            <span className="absolute inset-y-0 bg-white/[0.08]" style={{ left: `${(r.min / (r.max * 1.25)) * 100}%`, width: `${((r.max - r.min) / (r.max * 1.25)) * 100}%` }} />
+            <span className={`absolute inset-y-0 left-0 rounded-full ${r.state === "ok" ? "bg-proof" : "bg-cue"}`} style={{ width: `${Math.min(100, ((r.secs ?? 0) / (r.max * 1.25)) * 100)}%` }} /></span>
+        </li>))}</ul>
+    </div>
+  );
+}
+
+/** The script line by line: each row its number, its kind (narration or quote), its estimated seconds and its words, edited in
+    place, dragged to another place or removed; a scene heading is a row of its own. The same text as the plain editor. */
+function ScriptLines({ lines, seconds, focus, change }: { lines: string[]; seconds: (number | null)[]; focus: (k: number) => void; change: (next: string[]) => void }) {
+  const [drag, setDrag] = useState<number | null>(null), [over, setOver] = useState<number | null>(null);
+  const set = (k: number, v: string) => change(lines.map((l, i) => (i === k ? v : l)));
+  const move = (from: number, to: number) => { const next = [...lines]; const [x] = next.splice(from, 1); next.splice(from < to ? to - 1 : to, 0, x); change(next); };
+  let n = 0;
+  return (
+    <ol className="grid gap-px bg-line/40 py-1">
+      {lines.map((raw, k) => {
+        const l = raw.trim();
+        const heading = l.startsWith("#"), quoted = l.startsWith(">");
+        if (!heading && l) n += 1;
+        return (
+          <li key={k} draggable={!!l} onDragStart={(e) => { setDrag(k); e.dataTransfer.effectAllowed = "move"; }} onDragEnd={() => { setDrag(null); setOver(null); }}
+              onDragOver={(e) => { if (drag != null && drag !== k) { e.preventDefault(); setOver(k); } }} onDrop={(e) => { e.preventDefault(); if (drag != null) move(drag, k); setDrag(null); setOver(null); }}
+              className={`group flex items-center gap-2.5 bg-surface px-3 ${heading ? "pt-3" : ""} ${drag === k ? "opacity-40" : ""} ${over === k ? "shadow-[inset_0_2px_0_var(--color-accent)]" : ""}`}>
+            <span className="cursor-grab text-faint opacity-40 group-hover:opacity-100" aria-hidden="true"><Icon name="list" size={13} /></span>
+            {heading ? <>
+              <input value={l.replace(/^#+\s*/, "")} onChange={(e) => set(k, `# ${e.target.value}`)} onFocus={() => focus(k)} aria-label={tr("Tên phần")}
+                     className="bare h-8 min-w-0 flex-1 px-1 text-[12.5px] font-semibold uppercase tracking-wide text-mute" />
+            </> : <>
+              <span className="mono w-6 shrink-0 text-right text-[12px] text-faint">{l ? n : ""}</span>
+              <span className={`shrink-0 rounded px-1.5 text-[10.5px] ${quoted ? "bg-accent/12 text-accent" : "bg-white/[0.05] text-faint"}`}>{quoted ? tr("Trích lời") : tr("Lời dẫn")}</span>
+              <textarea value={quoted ? l.replace(/^>\s*/, "") : raw} readOnly={quoted} onChange={(e) => set(k, e.target.value.replace(/\n/g, " "))} onFocus={() => focus(k)} aria-label={tv`Câu ${n}`}
+                        title={quoted ? tr("Lời người trong footage tự nói: giữ nguyên văn") : undefined} rows={Math.max(1, Math.ceil(raw.length / 72))}
+                        className={`bare min-w-0 flex-1 resize-none px-1 py-2 text-[14.5px] leading-relaxed ${quoted ? "italic text-mute" : ""}`} />
+              <span className="mono w-10 shrink-0 text-right text-[12px] text-faint">{seconds[k] != null ? `${Math.round(seconds[k]!)}s` : ""}</span>
+            </>}
+            <button type="button" onClick={() => change(lines.filter((_, i) => i !== k))} aria-label={tr("Bỏ dòng này")} className="grid h-7 w-7 shrink-0 place-items-center rounded text-faint opacity-0 hover:text-tally focus-visible:opacity-100 group-hover:opacity-100"><Icon name="x" size={13} /></button>
+          </li>);
+      })}
+      <li className="flex gap-2 bg-surface px-3 py-2">
+        <Button size="sm" kind="quiet" onClick={() => change([...lines, ""])}><Icon name="plus" size={13} />{tr("Thêm câu")}</Button>
+        <Button size="sm" kind="quiet" onClick={() => change([...lines, `# ${tr("Phần mới")}`])}><Icon name="plus" size={13} />{tr("Thêm tên phần")}</Button>
+      </li>
+    </ol>
   );
 }
 
@@ -705,6 +774,8 @@ function Detail({ id, back }: { id: string; back: () => void }) {
   const [span, setSpan] = useState<{ first: number; last: number } | null>(null);       // the lines the cursor or the selection is on
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});                      // quotes picked in this editor, by their words, until saved
   const [quoting, setQuoting] = useState(false), [fromSpeech, setFromSpeech] = useState(false);
+  const [lineView, setLineView] = useState(() => { try { return localStorage.getItem("nx.script.view") === "lines"; } catch { return false; } });
+  useEffect(() => { try { localStorage.setItem("nx.script.view", lineView ? "lines" : "text"); } catch { /* private window */ } }, [lineView]);
   // A "> " line the operator picked from what the footage says goes with its stretch of the recording; any other line as written.
   const toSave = () => (text ?? "").split("\n").map((l) => { const w = l.trim().replace(/^>\s*/, ""); return l.trim().startsWith(">") && quotes[w] ? { text: `> ${w}`, quote: quotes[w] } : l; });
   const [note, setNote] = useState<string | null>(null);
@@ -749,6 +820,11 @@ function Detail({ id, back }: { id: string; back: () => void }) {
   const run = async (fn: () => Promise<unknown>) => { setBusy(true); setNote(null); try { await fn(); } catch (e) { setNote((e as Error).message); } setBusy(false); reload(); };
   const saved = scriptText(p.shots);
   const dirty = text !== null && text.trim() !== saved.trim();
+  // How long the script runs, as it is being written: a quote as long as its stretch, a line of narration by its words.
+  const quoteSeconds: Record<string, number> = {};
+  for (const sh of p.shots) if (sh.quote?.t_out != null && sh.quote.t_in != null) quoteSeconds[sh.text] = sh.quote.t_out - sh.quote.t_in;
+  for (const [w, q] of Object.entries(quotes)) if (q.t_out != null && q.t_in != null) quoteSeconds[w] = q.t_out - q.t_in;
+  const timing = timeScript((text ?? saved).split("\n"), quoteSeconds);
   saveRef.current = () => { if (dirty && (text ?? "").trim()) run(() => post(`/api/v1/projects/${id}/script`, { lines: toSave() }, "PUT")); };
   const matching = p.match && ["queued", "running"].includes(p.match.status);
   const reviewing = p.match?.status === "waiting_review";
@@ -808,14 +884,17 @@ function Detail({ id, back }: { id: string; back: () => void }) {
                 <div className={`panel overflow-hidden ${dirty ? "glow" : ""}`}>
                   <div className="flex flex-wrap items-center gap-3 border-b border-line bg-raised/40 px-4 py-2 text-[12px] text-mute">
                     <span className="mono">{p.script ? `v${p.script.version}` : tr("bản nháp")}</span>{p.script?.label && <Tag tone="ai">{p.script.label}</Tag>}<span className="mono">{tv`${lines} câu`}</span>
+                    <span className="mono" title={tr("Ước lượng: lời dẫn 2,6 chữ mỗi giây (ít nhất 3 giây một câu), trích lời theo độ dài đoạn ghi âm")}>~{timecode(timing.total)}</span>
+                    <Seg items={[["text", tr("Soạn chữ")], ["lines", tr("Theo câu")]] as const} value={lineView ? "lines" : "text"} onChange={(v) => setLineView(v === "lines")} label={tr("Cách soạn")} />
                     {dirty && <span className="flex items-center gap-1.5 text-accent"><span className="h-1.5 w-1.5 rounded-full bg-accent" />{tr("Chưa lưu")}</span>}
                     <span className="ml-auto" />
                     <Button size="sm" kind={quoting ? "ai" : "quiet"} onClick={() => setQuoting(!quoting)} title={tr("Chèn một câu người trong footage tự nói, giữ nguyên tiếng")}><Icon name="mic" size={14} />{tr("Chèn trích lời")}</Button>
                     <Button size="sm" disabled={busy || !dirty || !(text ?? "").trim()} onClick={() => run(() => post(`/api/v1/projects/${id}/script`, { lines: toSave() }, "PUT"))}>{tr("Lưu kịch bản")}</Button>
                   </div>
-                  <textarea ref={editor} value={text ?? ""} onChange={(e) => setText(e.target.value)} rows={Math.max(6, (text ?? "").split("\n").length + 1)} aria-label={tr("Kịch bản")}
+                  {lineView ? <ScriptLines lines={(text ?? "").split("\n")} seconds={timing.lines} focus={(k) => setSpan({ first: k, last: k })} change={(next) => setText(next.join("\n"))} />
+                  : <textarea ref={editor} value={text ?? ""} onChange={(e) => setText(e.target.value)} rows={Math.max(6, (text ?? "").split("\n").length + 1)} aria-label={tr("Kịch bản")}
                             onSelect={(e) => setSpan(span_of(e.currentTarget))}
-                            className="bare block w-full !rounded-none px-5 py-4 text-[15px] leading-[1.95]" placeholder={tr("Chợ Hội An buổi sáng tấp nập người mua kẻ bán.")} />
+                            className="bare block w-full !rounded-none px-5 py-4 text-[15px] leading-[1.95]" placeholder={tr("Chợ Hội An buổi sáng tấp nập người mua kẻ bán.")} />}
                   {quoting && <QuotePicker insert={(hit) => {
                     const all = (text ?? "").split("\n"), at = span ? span.last + 1 : all.length;
                     all.splice(at, 0, `> ${hit.text}`); setText(all.join("\n"));
@@ -846,7 +925,7 @@ function Detail({ id, back }: { id: string; back: () => void }) {
                       <li key={i} className="flex gap-2.5"><span className="mono w-14 shrink-0 text-faint">{c.line ? tv`Câu ${c.line}` : tr("Cả bài")}</span><span className="min-w-0">{c.issue}{c.fix && <span className="text-mute"> {c.fix}</span>}</span></li>))}</ul>}
                   </div>
                 )}
-                {p.script && !dirty && p.structure && <StructureCheck s={p.structure} />}
+                {p.structure && (text ?? "").trim() && <LiveStructure segments={p.structure.segments} sections={timing.sections} loose={timing.loose} />}
                 {p.script && !dirty && <Variants id={id} p={p} busy={busy} run={run} />}
                 {p.script && !dirty && p.shots.length > 0 && <Illustrations shots={p.shots} busy={busy} run={run} />}
               </Section>
