@@ -27,7 +27,7 @@ from nexora.core.storyboard import Storyboard
 TICKS = 254_016_000_000
 FPS = 30000 / 1001
 SIZES = {"landscape": (1920, 1080), "portrait": (1080, 1920), "square": (1080, 1080)}
-EXPORT = PipelineDefinition("edit.cut", "1", [StageDef("export", gate=True, requires=("filmcraft", "ffprobe", "ffmpeg"))])
+EXPORT = PipelineDefinition("edit.cut", "1", [StageDef("export", gate=True, requires=("filmcraft", "ffprobe", "ffmpeg"), timeout_seconds=3 * 3600)])
 
 
 def ticks(seconds: float) -> int:

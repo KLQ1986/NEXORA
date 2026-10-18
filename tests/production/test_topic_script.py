@@ -334,3 +334,20 @@ def test_a_stopped_writer_is_listed_for_approval_under_its_video(tmp_path):
     item = next(a for a in client.get("/api/v1/approvals").json()["approvals"] if a["pipeline"] == "planning.topic_script")
     assert item["project_id"] == project and "Rừng bạch đàn" in item["title"] and "Viết kịch bản theo chủ đề" in item["title"]
     assert item["link"] == f"/du-an/{project}" and "name" in item["why"]
+
+
+def test_a_video_on_a_topic_fills_every_missing_picture_from_free_stock_in_the_assistants_lane(tmp_path):
+    from tests.fakes import FakeStock
+    lines = [{"part": "Thân bài", "text": f"Câu thứ {n} về rừng bạch đàn.", "fact": False, "sources": [], "brief": "rừng"} for n in range(1, 6)]
+    system = build(tmp_path / "data", model=FakeModel(), voice=FakeVoice(), cloud_models=[FakeClaudeCode({**PACKAGE, "lines": lines})], stock=FakeStock())
+    system.adapters._adapters["model"].answers["chat"] = {"tu_khoa": "eucalyptus forest"}
+    task_id = system.producer.start("rừng bạch đàn", topic=True, critique=False)
+    for _ in range(10):
+        system.producer.advance(task_id)
+        drain(system)
+    task = system.producer.task(task_id)
+    script = system.projects.current_script(task["project_id"])
+    match = next(r for r in system.orch.runs_for_subject(script["script_id"]) if system.orch.pipeline_of(r) == "sourcing.match")
+    assert {row[0] for row in system.orch._conn.execute("SELECT lane FROM stages WHERE run_id = ?", (match,))} == {"agent"}
+    asked = [e for e in task["log"] if e["role"] == "Tìm stock"]
+    assert len(asked) == 5, [e["text"] for e in task["log"]]            # every line without a picture, not the first three

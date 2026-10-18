@@ -954,7 +954,9 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     workers = [Worker(orch, registry, worker_id=f"interactive-{os.getpid()}", lanes=frozenset({"interactive"}), log=log),
                Worker(orch, registry, worker_id=f"background-{os.getpid()}", lanes=frozenset({"background"}), log=log, allowed=night_only),
                # A writer that reads the web (Claude Code) takes minutes and runs one at a time on the operator's plan: a lane of its own.
-               Worker(orch, registry, worker_id=f"claude-code-{os.getpid()}", lanes=frozenset({"claude_code"}), log=log)]
+               Worker(orch, registry, worker_id=f"claude-code-{os.getpid()}", lanes=frozenset({"claude_code"}), log=log),
+               # What the producer starts on its own (a match, a render) runs here, so the operator's own never waits behind an hour of it.
+               Worker(orch, registry, worker_id=f"agent-{os.getpid()}", lanes=frozenset({"agent"}), log=log)]
     system = System(data_dir, orch, assets, adapters, registry, worker, library, index, projects, planning, sourcing, edit, distribution, generation, workers)
     system.intelligence, system.vi = intelligence, vi
     system.vq, system.vq_reader = vq, vq_reader

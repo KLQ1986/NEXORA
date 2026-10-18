@@ -567,7 +567,7 @@ function ResourcesTab() {
   const { data: r } = usePoll<Resources>("/api/v1/resources", 5000);
   if (!r) return <div className="grid place-items-center py-24"><Spinner size={22} /></div>;
   const max = Math.max(0.01, ...r.by_day.map((d) => d.cost));
-  const lanes: [string, string][] = [["interactive", tr("Làn tương tác")], ["background", tr("Làn chạy nền")]];
+  const lanes: [string, string][] = [["interactive", tr("Làn tương tác")], ["agent", tr("Làn của trợ lý")], ["claude_code", tr("Làn Claude Code")], ["background", tr("Làn chạy nền")]];
   return (
     <div className="grid gap-4 xl:grid-cols-12">
       <Bento label={tr("Ngân sách")} code="BDG.01" className="xl:col-span-5" end={<button type="button" className="link text-[12.5px]" onClick={() => goTo("/chi-phi")}>{tr("Đặt hạn mức")}</button>}>

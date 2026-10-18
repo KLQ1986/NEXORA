@@ -23,7 +23,8 @@ QUERY_PROMPT = (
 )
 WRITER, SCOUT, STOCK, EDITOR, LEAD = "Biên kịch", "Tìm hình", "Tìm stock", "Dựng phim", "Điều phối"
 RESEARCHER, CRITIC, CHECKER = "Nghiên cứu", "Phản biện", "Kiểm chứng"
-MAX_STOCK_FILLS = 3
+MAX_STOCK_FILLS = 3          # a video from the library: its few missing pictures; a video on a topic fills every one, stock being free
+LANE = "agent"               # the producer's long work (a match of 78 lines takes an hour) never queues the operator's own behind it
 MAX_REVISIONS = 1            # the writer answers the critic once; a second round rarely pays for itself
 MAX_SOURCES = 5
 RESTARTS = {"topic_wait": ("topic", "planning.topic_script"), "matching": ("source", "sourcing.match"), "cutting": ("cut", "edit.render")}
@@ -275,7 +276,7 @@ class Producer:
             return True
 
         if step == "source":
-            self._sourcing.start_match(script["script_id"])
+            self._sourcing.start_match(script["script_id"], lane=LANE)
             self._say(task_id, SCOUT, "Bắt đầu tìm clip cho từng câu.")
             self._move(task_id, step="matching")
             return True
@@ -299,7 +300,8 @@ class Producer:
             quotes = {s.shot_id for s in script["shots"] if s.quote is not None}         # someone's own words are never filled with stock
             gaps = [s for s in self._projects.selections(script["script_id"]) if s.status == "gap" and s.shot_id not in quotes]
             has_stock = any(c.name == "stock" for c in self._adapters.describe())
-            for sel in gaps[:MAX_STOCK_FILLS] if task["options"]["use_stock"] and has_stock else []:
+            fill = gaps if task["options"].get("topic") else gaps[:MAX_STOCK_FILLS]
+            for sel in fill if task["options"]["use_stock"] and has_stock else []:
                 query = ""
                 try:
                     out = self._adapters.submit("model", Request("chat", params={"prompt": QUERY_PROMPT.format(line=texts[sel.shot_id]), "json": True, "max_tokens": 40}))
@@ -333,7 +335,7 @@ class Producer:
             return False
 
         if step == "cut":
-            self._edit.start_render(script["script_id"])
+            self._edit.start_render(script["script_id"], lane=LANE)
             self._say(task_id, EDITOR, "Bắt đầu dựng video: lời dẫn, phụ đề, ghép cảnh.")
             self._move(task_id, step="cutting")
             return True

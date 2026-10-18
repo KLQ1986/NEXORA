@@ -103,6 +103,10 @@ class Orchestrator:
         """Attempts with their times and error text, for the run detail screen."""
         return [dict(r) for r in self._conn.execute("SELECT * FROM attempts WHERE stage_id = ? ORDER BY number", (stage_id,))]
 
+    def time_allowed(self, stage_id: str) -> float | None:
+        row = self._conn.execute("SELECT timeout_seconds FROM stages WHERE stage_id = ?", (stage_id,)).fetchone()
+        return float(row[0]) if row and row[0] else None
+
     def why_stopped(self, stage: Stage) -> str | None:
         """Why a stage stopped, in the words of what went wrong (its last attempt's error), else the reason it was blocked:
         "retry_limit" says only that it gave up, not why."""
@@ -251,7 +255,8 @@ class Orchestrator:
     # ------------------------------------------------------------------ writes
     def submit_run(self, pipeline: PipelineDefinition, *, project_id: str | None = None, subject_ref: str | None = None,
                    priority: int = 0, idempotency_key: str | None = None, budget_cap: float | None = None,
-                   now: float | None = None) -> str:
+                   now: float | None = None, lane: str | None = None) -> str:
+        """`lane`, when given, is where every stage of this run is done, in place of the lanes its pipeline names."""
         now = time.time() if now is None else now
         with db.write(self._conn) as c:
             if idempotency_key is not None:
@@ -268,7 +273,7 @@ class Orchestrator:
                 c.execute("INSERT INTO stages (stage_id, run_id, position, stage_key, depends_on, status, effect_class, costly, "
                           "gate, max_attempts, timeout_seconds, lane) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
                           (new_id("stg", now), run_id, position, s.key, json.dumps(list(s.depends_on)), status, s.effect_class,
-                           int(s.costly), int(s.gate), s.max_attempts, s.timeout_seconds, s.lane))
+                           int(s.costly), int(s.gate), s.max_attempts, s.timeout_seconds, lane or s.lane))
             self._event(c, run_id, "run.submitted", now, payload={"pipeline": pipeline.pipeline_id, "version": pipeline.version})
             return run_id
 

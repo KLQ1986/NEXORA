@@ -27,7 +27,8 @@ LOCATE_PROMPT = (
     "Đây là {n} khung hình liên tiếp, đánh số từ 1 đến {n}, của một đoạn video. Câu lời dẫn: \"{line}\".\n"
     "Khung hình số mấy cho thấy rõ nhất điều câu này nói? Chỉ trả về JSON với khoá khung (số từ 1 đến {n})."
 )
-MATCH = PipelineDefinition("sourcing.match", "1", [StageDef("match", gate=True, requires=("model",))])
+# A match takes about a minute a line on this Mac when every candidate is looked at: a fifteen-minute script, two hours or more.
+MATCH = PipelineDefinition("sourcing.match", "1", [StageDef("match", gate=True, requires=("model",), timeout_seconds=6 * 3600)])
 WORDS_PER_SECOND = 2.6
 MIN_SECONDS = 2.5
 QUOTE_FOUND = 0.6        # a typed quote is found in the speech that says it this well
@@ -124,10 +125,10 @@ class Sourcing:
     def register(self, registry: PipelineRegistry) -> None:
         registry.register(MATCH, {"match": self._match})
 
-    def start_match(self, script_id: str, *, wait=None) -> str:
+    def start_match(self, script_id: str, *, wait=None, lane: str | None = None) -> str:
         self._projects.set_match_approved(script_id, False)
         self._orch.supersede(MATCH.pipeline_id, script_id)
-        run_id = self._orch.submit_run(MATCH, subject_ref=script_id)
+        run_id = self._orch.submit_run(MATCH, subject_ref=script_id, lane=lane)
         if wait:
             wait()
         return run_id

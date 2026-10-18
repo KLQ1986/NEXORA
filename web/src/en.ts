@@ -2621,6 +2621,8 @@ const en: Record<string, string> = {
   "Bật": "On",
   "Tự duyệt": "Automatic approval",
   "Bạn tự bật hoặc tắt từng cổng, lúc nào cũng được, ở mọi mức. Mỗi lần tự duyệt đều được ghi lại, và không tính vào lịch sử duyệt của bạn.": "Turn each gate on or off yourself, at any time and at any level. Every automatic approval is logged, and none counts toward your own review record.",
+  "Làn của trợ lý": "Assistant lane",
+  "Làn Claude Code": "Claude Code lane",
 };
 
 export default en;

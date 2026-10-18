@@ -22,8 +22,8 @@ from nexora.core.pipeline import PipelineDefinition, PipelineRegistry, StageDef
 from nexora.core.projects import ProjectStore
 
 GENERATE = PipelineDefinition("sourcing.generate", "1", [
-    StageDef("keyframes", costly=True, gate=True, requires=("image_gen",)),                       # stills first: cheap to produce, cheap to correct
-    StageDef("clips", depends_on=("keyframes",), costly=True, gate=True, requires=("video_gen",)),
+    StageDef("keyframes", costly=True, gate=True, requires=("image_gen",), timeout_seconds=3 * 3600),   # stills first: cheap to produce, cheap to correct
+    StageDef("clips", depends_on=("keyframes",), costly=True, gate=True, requires=("video_gen",), timeout_seconds=8 * 3600),  # minutes a clip, sixty lines and more
 ])
 # A model of one character, trained from the operator's pictures of it. Long and paid for, so it runs in the background and is asked for by name.
 TRAIN = PipelineDefinition("sourcing.train", "1", [StageDef("train", costly=True, timeout_seconds=5 * 3600, lane="background", requires=("train",))])

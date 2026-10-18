@@ -16,11 +16,17 @@ class StageContext:
     inputs: dict[str, dict]                      # outputs of the stages this one depends on, by stage key
     subject_ref: str | None                      # what the run is about, for example an asset id
     _orch: Orchestrator = field(repr=False)
+    allowed: float | None = None                 # the stage's time, in seconds; a heartbeat after it stops the stage
+    began: float = field(default_factory=time.time)
 
     def should_stop(self) -> bool:
         return self._orch.should_stop(self.claim.attempt_id)
 
     def heartbeat(self) -> None:
+        """Alive, and within its time: a stage still going round past it is stopped here, since nothing else can stop work
+        running inside this process. One that has gone quiet is found by its lease instead."""
+        if self.allowed is not None and time.time() - self.began > self.allowed:
+            raise AdapterError(ErrorCode.TIMEOUT, f"the stage ran past its {self.allowed:g} s", retryable=False)
         self._orch.heartbeat(self.claim.attempt_id)
 
     def record_cost(self, *, provider: str, units: float, cost: float, currency: str = "USD") -> None:
@@ -51,7 +57,8 @@ class Worker:
         handler = self._registry.handler(self._orch.pipeline_of(claim.run_id), claim.stage_key)
         deps = {s.stage_key: (s.outputs or {}) for s in self._orch.stages(claim.run_id)}
         me = next(s for s in self._orch.stages(claim.run_id) if s.stage_id == claim.stage_id)
-        ctx = StageContext(claim, {k: deps[k] for k in me.depends_on}, self._orch.run_info(claim.run_id)["subject_ref"], self._orch)
+        ctx = StageContext(claim, {k: deps[k] for k in me.depends_on}, self._orch.run_info(claim.run_id)["subject_ref"], self._orch,
+                           allowed=self._orch.time_allowed(claim.stage_id))
         began, result = time.time(), "succeeded"
         try:
             outputs = handler(ctx)

@@ -317,7 +317,7 @@ def add_missions(app: FastAPI, system, *, health) -> None:
         window = system.orch.setting("background_window", "")
         stalled = [r for r in system.orch.runs() if system.orch.run_status(r).value == "running" and system.orch.stalled(r)]
         workers = []
-        for lane, name in (("interactive", "Làn tương tác"), ("background", "Làn chạy nền")):
+        for lane, name in (("interactive", "Làn tương tác"), ("agent", "Làn của trợ lý"), ("claude_code", "Làn Claude Code"), ("background", "Làn chạy nền")):
             q = load.get(lane, {"ready": 0, "running": 0, "retry_wait": 0, "costly_running": 0})
             held = lane == "background" and not in_window(window)
             if kill:

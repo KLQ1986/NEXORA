@@ -143,3 +143,25 @@ def test_a_failure_stops_counting_once_put_right_or_set_aside(tmp_path):
 
     assert orch.dismiss([other]) == 1 and orch.cleared(other)     # the operator sets it aside
     assert orch.dismiss([other]) == 0
+
+
+def test_a_stage_still_going_past_its_time_is_stopped_at_its_next_heartbeat(tmp_path):
+    import time
+    slow = PipelineDefinition("t.slow", "1", [StageDef("loop", timeout_seconds=0.05)])
+    def loop(ctx):
+        for _ in range(100):                               # going round, saying it is alive, never done
+            time.sleep(0.01)
+            ctx.heartbeat()
+        return {}
+    orch, worker = make(tmp_path, {"loop": loop}, pipeline=slow)
+    run = orch.submit_run(slow)
+    worker.run_once()
+    s = stage(orch, run, "loop")
+    assert s.status is StageStatus.FAILED and "0.05" in orch.why_stopped(s)
+
+
+def test_a_run_may_be_done_in_a_lane_of_its_own(tmp_path):
+    orch, worker = make(tmp_path, {"probe": lambda ctx: {}, "describe": lambda ctx: {}})
+    run = orch.submit_run(PIPE, lane="agent")
+    assert not Worker(orch, worker._registry, worker_id="w2", lanes=frozenset({"interactive"})).run_once()
+    assert Worker(orch, worker._registry, worker_id="w3", lanes=frozenset({"agent"})).run_once()
