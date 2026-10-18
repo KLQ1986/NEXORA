@@ -2482,6 +2482,8 @@ const en: Record<string, string> = {
   "{0} footage": "{0} footage",
   "kịch bản v{0}": "script v{0}",
   "Đã lập kế hoạch": "Planned",
+  "Thành phẩm": "Finished",
+  "Đã duyệt, chưa đăng": "Approved, not yet out",
 };
 
 export default en;

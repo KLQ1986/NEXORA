@@ -848,10 +848,13 @@ function Viewer({ item, items, start, assets, close, reload, similar, pick, comp
 /* ───────────────────────── the page ───────────────────────── */
 
 type Sort = "new" | "name" | "long" | "rating";
-type Shelf = "" | "footage" | "video" | "image" | "audio" | "made" | "draft" | "render" | "published";
+type Shelf = "" | "footage" | "video" | "image" | "audio" | "made" | "draft" | "render" | "finished" | "approved" | "published";
 const ON_SHELF: Record<Shelf, (i: Item) => boolean> = {
   "": () => true, footage: (i) => i.kind === "video" || i.kind === "image" || i.kind === "audio", video: (i) => i.kind === "video", image: (i) => i.kind === "image", audio: (i) => i.kind === "audio",
-  made: (i) => i.kind === "draft" || i.kind === "render", draft: (i) => i.kind === "draft", render: (i) => i.kind === "render", published: (i) => i.status === "published",
+  // Products still in the making; what is finished (approved or out) has its own place.
+  made: (i) => i.kind === "draft" || (i.kind === "render" && i.status !== "approved" && i.status !== "published"), draft: (i) => i.kind === "draft",
+  render: (i) => i.kind === "render" && i.status !== "approved" && i.status !== "published",
+  finished: (i) => i.kind === "render" && (i.status === "approved" || i.status === "published"), approved: (i) => i.kind === "render" && i.status === "approved", published: (i) => i.status === "published",
 };
 
 /** One line of the tree on the left: a place to look, with its children folded under it. */
@@ -884,10 +887,10 @@ export default function Library() {
   const items = useMemo(() => gather(assets, projects ?? [], pub ?? null, book), [assets, projects, pub, book]);
   const params = new URLSearchParams(window.location.search);
   const [adding, setAdding] = useState(params.get("them") === "1");
-  const [shelf, setShelf] = useState<Shelf>(({ video: "video", image: "image", audio: "audio" } as Record<string, Shelf>)[params.get("loai") ?? ""] ?? ""), [project, setProject] = useState(""), [status, setStatus] = useState<Status | "">("");
+  const [shelf, setShelf] = useState<Shelf>(({ video: "video", image: "image", audio: "audio", "thanh-pham": "finished", "da-dang": "published" } as Record<string, Shelf>)[params.get("loai") ?? ""] ?? ""), [project, setProject] = useState(""), [status, setStatus] = useState<Status | "">("");
   const [group, setGroup] = useState(params.get("bo") ?? ""), [platform, setPlatform] = useState(""), [days, setDays] = useState(0), [session, setSession] = useState(""), [use, setUse] = useState<"" | "unused" | "used" | "rejected">("");
   const [sort, setSort] = useState<Sort>("new"), [view, setView] = useState<"grid" | "list">(params.get("xem") === "list" ? "list" : "grid");
-  const [open, setOpen] = useState<Record<string, boolean>>({ footage: true, made: true }), fold = (k: string) => setOpen((o) => ({ ...o, [k]: !o[k] }));
+  const [open, setOpen] = useState<Record<string, boolean>>({ footage: true, made: true, finished: true }), fold = (k: string) => setOpen((o) => ({ ...o, [k]: !o[k] }));
   const [panel, setPanel] = useState<"" | "filter" | "sort" | "keys">(""), [finding, setFinding] = useState(!!params.get("q"));
   const [q, setQ] = useState(""), [mode, setMode] = useState("all"), [hits, setHits] = useState<Hit[] | null>(null), [searching, setSearching] = useState(false), [similarOf, setSimilarOf] = useState<string | null>(null);
   // Visual Quality, which lives here: where each item stands, a filter by it, and the files outside the library opened for it alone.
@@ -996,7 +999,7 @@ export default function Library() {
   const reset = () => { setShelf(""); setProject(""); setStatus(""); setGroup(""); setPlatform(""); setDays(0); setSession(""); setUse(""); };
   const place = (s: Shelf, st: Status | "" = "") => { setShelf(s); setStatus(st); setProject(""); setGroup(""); setVqState(""); };
   const here = shelf === "" && !status && !project && !group;
-  const where = project ? (projects ?? []).find((p) => p.project_id === project)?.title : group === "__fav" ? tr("Yêu thích") : group || (status ? STATUS[status][0] : { "": tr("Tất cả"), footage: tr("Footage"), video: tr("Video"), image: tr("Ảnh"), audio: tr("Âm thanh"), made: tr("Sản phẩm"), draft: tr("Bản nháp"), render: tr("Bản dựng"), published: tr("Đã đăng") }[shelf]);
+  const where = project ? (projects ?? []).find((p) => p.project_id === project)?.title : group === "__fav" ? tr("Yêu thích") : group || (status ? STATUS[status][0] : { "": tr("Tất cả"), footage: tr("Footage"), video: tr("Video"), image: tr("Ảnh"), audio: tr("Âm thanh"), made: tr("Sản phẩm"), draft: tr("Bản nháp"), render: tr("Bản dựng"), finished: tr("Thành phẩm"), approved: tr("Đã duyệt, chưa đăng"), published: tr("Đã đăng") }[shelf]);
 
   const side = (
     <nav className="flex h-full min-h-0 flex-col" aria-label={tr("Kho")}>
@@ -1013,7 +1016,11 @@ export default function Library() {
         {open.made && <>
           <Node depth={1} on={shelf === "draft"} icon="edit" label={tr("Bản nháp")} n={count(ON_SHELF.draft)} click={() => place("draft")} />
           <Node depth={1} on={shelf === "render" && !status} icon="scissors" label={tr("Bản dựng")} n={count(ON_SHELF.render)} click={() => place("render")} open={open.render} fold={() => fold("render")} />
-          {open.render && (["review", "returned", "approved"] as Status[]).map((s) => <Node key={s} depth={2} on={status === s} icon={s === "approved" ? "check" : s === "review" ? "eye" : "alert"} label={STATUS[s][0]} n={count((i) => i.status === s)} click={() => place("render", s)} />)}
+          {open.render && (["review", "returned"] as Status[]).map((s) => <Node key={s} depth={2} on={status === s} icon={s === "approved" ? "check" : s === "review" ? "eye" : "alert"} label={STATUS[s][0]} n={count((i) => i.status === s)} click={() => place("render", s)} />)}
+        </>}
+        <Node on={shelf === "finished"} icon="star" label={tr("Thành phẩm")} n={count(ON_SHELF.finished)} click={() => place("finished")} open={open.finished} fold={() => fold("finished")} />
+        {open.finished && <>
+          <Node depth={1} on={shelf === "approved"} icon="check" label={tr("Đã duyệt, chưa đăng")} n={count(ON_SHELF.approved)} click={() => place("approved")} />
           <Node depth={1} on={shelf === "published"} icon="globe" label={tr("Đã đăng")} n={count(ON_SHELF.published)} click={() => place("published")} />
         </>}
         <div className="mt-4"><Head title={tr("Bộ sưu tập")} add={() => setNewGroup(newGroup === null ? "" : null)} /></div>

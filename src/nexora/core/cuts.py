@@ -97,6 +97,11 @@ class CutStore:
     def latest(self, project_id: str) -> dict | None:
         return next(iter(self.versions(project_id)), None)
 
+    def forget_project(self, project_id: str) -> int:
+        """A project has been deleted: every version of its cut goes with it. Returns how many versions were dropped."""
+        with db.write(self._conn) as c:
+            return c.execute("DELETE FROM edit_cuts WHERE project_id = ?", (project_id,)).rowcount
+
     def restore(self, project_id: str, version: int, *, made_by: str) -> dict:
         """An earlier version saved again as the newest; nothing is overwritten."""
         r = self._conn.execute("SELECT document FROM edit_cuts WHERE project_id = ? AND version = ?", (project_id, int(version))).fetchone()

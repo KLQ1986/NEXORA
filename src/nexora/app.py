@@ -217,7 +217,7 @@ def _to_trash(path: Path, trash: str | Path | None = None) -> str:
 
 
 def remove_project(system: "System", project_id: str, *, trash: str | Path | None = None) -> dict:
-    """Delete a project. Work still running for it is stopped, its scripts, lines, choices and cuts are forgotten, and the
+    """Delete a project. Work still running for it is stopped, its scripts, lines, choices, storyboard, cut versions and cuts are forgotten, and the
     cut files are moved to the Trash, not erased. A project with a video already published is refused: the record of what
     went out, and the figures gathered for it, must not vanish with it. The footage it used stays in the library."""
     if system.projects.project(project_id) is None:
@@ -227,13 +227,16 @@ def remove_project(system: "System", project_id: str, *, trash: str | Path | Non
     title = system.projects.project(project_id)["title"]
     tasks = system.producer.forget_project(project_id)
     removed = system.projects.remove(project_id)
+    boards = system.storyboard.forget_project(project_id) if system.storyboard is not None else 0
+    cuts = system.cuts.forget_project(project_id) if getattr(system, "cuts", None) is not None else 0
     media = (system.data_dir / "media").resolve()
     trashed = []
     for render in removed["renders"]:
         path = Path(render["path"])
         if path.is_file() and media in path.resolve().parents:            # only cuts NEXORA made itself; an imported finished file stays where the operator keeps it
             trashed.append(_to_trash(path, trash))
-    return {"title": title, "scripts": len(removed["scripts"]), "lines": len(removed["shots"]), "renders": len(removed["renders"]), "tasks": tasks, "trashed": trashed}
+    return {"title": title, "scripts": len(removed["scripts"]), "lines": len(removed["shots"]), "renders": len(removed["renders"]), "tasks": tasks,
+            "storyboard_shots": boards, "cut_versions": cuts, "trashed": trashed}
 
 
 def remove_render(system: "System", render_id: str, *, trash: str | Path | None = None) -> dict:

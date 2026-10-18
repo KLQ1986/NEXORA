@@ -392,12 +392,26 @@ def test_a_project_can_be_deleted_with_its_cuts_unless_a_video_of_it_went_out(tm
     system.projects.add_render(project, second, str(outside), {"duration": 3.0, "external": True})
     with sqlite3.connect(tmp_path / "data" / "nexora.db") as c:
         c.execute("INSERT INTO agent_tasks (task_id, project_id, goal, status, step, options, created_at, updated_at) VALUES ('tsk_1', ?, 'x', 'done', 'done', '{}', 0, 0)", (project,))
+    scene = system.storyboard.add_scene(project, {"title": "Cảnh 1"})
+    sb_shot = system.storyboard.add_shot(project, scene, {"line": "Câu một."}, position=1, made_by="operator")
+    system.storyboard.say(project, "director", "Đề xuất", proposal={"ops": []})
+    system.cuts.save(project, '{"format": 1, "project": {"items": {}}}', made_by="operator")
     staying = system.projects.create_project("Ở lại")
     system.projects.save_script(staying, ["Câu ở lại."])
+    kept_scene = system.storyboard.add_scene(staying, {"title": "Cảnh ở lại"})
+    system.cuts.save(staying, '{"format": 1, "project": {"items": {}}}', made_by="operator")
 
     assert client.delete("/api/v1/projects/nope").status_code == 404
     out = remove_project(system, project, trash=tmp_path / "bin")
-    assert out == {"title": "Dự án thử", "scripts": 2, "lines": 3, "renders": 2, "tasks": 1, "trashed": [str(tmp_path / "bin" / "cut.mp4")]}
+    assert out == {"title": "Dự án thử", "scripts": 2, "lines": 3, "renders": 2, "tasks": 1, "storyboard_shots": 1, "cut_versions": 1,
+                   "trashed": [str(tmp_path / "bin" / "cut.mp4")]}
+    # The storyboard and the Edit step's cut versions go with the project; another project's stay.
+    with sqlite3.connect(tmp_path / "data" / "nexora.db") as c:
+        for table in ("sb_boards", "sb_scenes", "sb_shots", "sb_messages", "edit_cuts"):
+            assert c.execute(f"SELECT COUNT(*) FROM {table} WHERE project_id = ?", (project,)).fetchone()[0] == 0, table
+        assert c.execute("SELECT COUNT(*) FROM sb_versions WHERE shot_id = ?", (sb_shot,)).fetchone()[0] == 0
+        assert c.execute("SELECT COUNT(*) FROM sb_scenes WHERE scene_id = ?", (kept_scene,)).fetchone()[0] == 1
+    assert len(system.cuts.versions(staying)) == 1
     assert not cut.exists() and outside.is_file()                       # an imported finished file stays where the operator keeps it
     assert system.projects.project(project) is None and system.projects.script(first) is None and system.projects.selection(shot.shot_id) is None
     assert system.projects.renders(project) == [] and system.producer.tasks(project_id=project) == []

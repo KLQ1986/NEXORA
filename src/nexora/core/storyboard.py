@@ -113,6 +113,18 @@ class Storyboard:
         with db.write(self._conn) as c:
             c.execute("UPDATE sb_scenes SET data = ? WHERE scene_id = ?", (json.dumps(data, ensure_ascii=False), scene_id))
 
+    def forget_project(self, project_id: str) -> int:
+        """A project has been deleted: its storyboard goes with it (board, scenes, shots and their versions, the conversation).
+        Returns how many shots were dropped."""
+        with db.write(self._conn) as c:
+            shots = [r[0] for r in c.execute("SELECT shot_id FROM sb_shots WHERE project_id = ?", (project_id,))]
+            for i in range(0, len(shots), 500):
+                part = shots[i:i + 500]
+                c.execute(f"DELETE FROM sb_versions WHERE shot_id IN ({','.join('?' * len(part))})", part)
+            for table in ("sb_shots", "sb_scenes", "sb_messages", "sb_boards"):
+                c.execute(f"DELETE FROM {table} WHERE project_id = ?", (project_id,))
+        return len(shots)
+
     def remove_scene(self, scene_id: str) -> None:
         with db.write(self._conn) as c:
             c.execute("DELETE FROM sb_scenes WHERE scene_id = ?", (scene_id,))
