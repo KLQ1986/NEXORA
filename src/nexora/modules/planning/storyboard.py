@@ -426,16 +426,38 @@ class StoryboardPlanner:
         raise ValueError(f"không có thao tác {kind}")
 
     def apply(self, project_id: str, ops: list[dict], *, made_by: str, note: str | None = None) -> list[dict]:
-        """Apply valid operations in order, each change a new version of the shots it touches; returns what was done."""
-        done = []
-        for o in ops:
+        """Apply valid operations in order, each change a new version of the shots it touches; returns what was done. Fields
+        set one after another on the same shot are one change (the card's editor sets a line and the intent that repeated it):
+        one version, one step to undo."""
+        done, k = [], 0
+        while k < len(ops):
+            o = ops[k]
             codes = self.codes(project_id)
             try:
                 d = self._diff(project_id, o, codes)
             except ValueError:
+                k += 1
+                continue
+            if o.get("op") == "set":
+                shot = self.resolve(project_id, o.get("shot"))
+                sets, j = [o], k + 1
+                while j < len(ops) and ops[j].get("op") == "set" and self.resolve(project_id, ops[j].get("shot")) == shot:
+                    try:
+                        done.append(self._diff(project_id, ops[j], codes))
+                        sets.append(ops[j])
+                    except ValueError:
+                        pass
+                    j += 1
+                spec = copy.deepcopy(shot.spec)
+                for x in sets:
+                    _set(spec, x["field"], x.get("value"))
+                self._store.revise(shot.shot_id, normalise(spec), made_by=made_by, note=note or "đổi " + ", ".join(LABEL[x["field"]] for x in sets))
+                done.insert(len(done) - (len(sets) - 1), d)
+                k = j
                 continue
             self._apply_one(project_id, o, made_by=made_by, note=note)
             done.append(d)
+            k += 1
         return done
 
     def _apply_one(self, project_id: str, o: dict, *, made_by: str, note: str | None) -> None:

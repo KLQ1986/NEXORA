@@ -212,3 +212,20 @@ def test_the_storyboard_is_where_pictures_are_chosen_ordered_treated_and_approve
     assert script["match_approved"]
     sel = system.projects.selection(script["shots"][0].shot_id)
     assert sel.status == "accepted" and (sel.t_in, sel.t_out) == (0.5, 2.5) and sel.alternates and sel.extras["speed"] == 0.5 and sel.extras["stabilise"]
+
+
+def test_a_cards_words_edited_in_place_change_its_line_and_the_intent_that_repeated_it(tmp_path):
+    # The card's own editor sends the line and, when the intent only repeated it (a shot made from a script line without a
+    # brief), the intent too, in one operation: one new version, both changed, nothing else touched.
+    system, _, client = _system(tmp_path)
+    project = _project(system, ["Mỗi sáng bắt đầu từ hàng dừa."])
+    client.post(f"/api/v1/projects/{project}/storyboard/from-script")
+    before = system.storyboard.shots(project)[0]
+    assert before.spec["line"] == before.spec["intent"] == "Mỗi sáng bắt đầu từ hàng dừa."
+    said = "Mỗi sáng của tôi bắt đầu từ hàng dừa sau nhà."
+    view = client.post(f"/api/v1/projects/{project}/storyboard/ops", json={"ops": [{"op": "set", "shot": "SC1", "field": "line", "value": said},
+                                                                                {"op": "set", "shot": "SC1", "field": "intent", "value": said}], "note": "sửa lời thoại"}).json()
+    after = system.storyboard.shots(project)[0]
+    assert after.spec["line"] == after.spec["intent"] == said and after.version == before.version + 1
+    assert after.spec["framing"] == before.spec["framing"] and after.spec["duration"] == before.spec["duration"]
+    assert view["storyboard"]["shots"][0]["spec"]["line"] == said

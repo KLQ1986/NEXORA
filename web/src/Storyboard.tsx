@@ -202,7 +202,7 @@ export default function Storyboard({ projectId, back }: { projectId: string; bac
             <Button size="sm" kind="quiet" onClick={() => ops([{ op: "insert", after: cur?.shot_id, spec: { intent: tr("Shot mới"), duration: 4, source: "any" } }], tr("thêm shot"))}><Icon name="plus" size={13} />{tr("Thêm shot")}</Button>
           </div>
           {view === "board" && <BoardView board={data} cur={cur} seam={seam} tone={tone} pick={(id) => { setSel(id); setSeam(null); }} pickSeam={setSeam}
-                                          move={(o) => ops([{ op: "move", ...o }], tr("đổi thứ tự"))} />}
+                                          move={(o) => ops([{ op: "move", ...o }], tr("đổi thứ tự"))} ops={ops} />}
           {view === "time" && <TimeView board={data} cur={cur} tone={tone} pick={(id) => { setSel(id); setSeam(null); }} pickSeam={setSeam} />}
           {view === "copilot" && <CopilotView url={url} board={data} shots={shots.length} onApplied={() => { reload(); setView("board"); }} />}
           {view === "plan" && <PlanView board={data} cur={cur} pick={(id) => { setSel(id); setSeam(null); }} flip={(id) => ops([{ op: "flip_camera", shot: id }], tr("lật sang bên kia trục"))} />}
@@ -300,11 +300,12 @@ function Shared({ board, url, open, setOpen, onSaved }: { board: Board; url: str
 }
 
 /* ----------------------------------------------------------------------------------------------------- the board, by scene */
-function BoardView({ board, cur, seam, tone, pick, pickSeam, move }: { board: Board; cur?: SbShot; seam: string | null; tone: (s: SbShot) => string; pick: (id: string) => void; pickSeam: (id: string) => void;
-  move: (op: { shot: string; before?: string; scene?: string }) => void }) {
+function BoardView({ board, cur, seam, tone, pick, pickSeam, move, ops }: { board: Board; cur?: SbShot; seam: string | null; tone: (s: SbShot) => string; pick: (id: string) => void; pickSeam: (id: string) => void;
+  move: (op: { shot: string; before?: string; scene?: string }) => void; ops: (list: object[], note?: string) => void }) {
   const seamBefore = new Map(board.seams.map((x) => [x.b, x]));
   // A card is carried by hand: dropped on another it goes before it, dropped on a scene's last place it ends that scene.
   const [drag, setDrag] = useState<string | null>(null), [over, setOver] = useState<string | null>(null);
+  const [writing, setWriting] = useState<string | null>(null);         // the card whose words are being edited in place: not draggable meanwhile
   const end = () => { setDrag(null); setOver(null); };
   const drop = (e: React.DragEvent, target: { before?: string; scene?: string }) => {
     e.preventDefault();
@@ -325,7 +326,7 @@ function BoardView({ board, cur, seam, tone, pick, pickSeam, move }: { board: Bo
               const sm = seamBefore.get(s.shot_id);
               const flagged = sm && sm.worst !== "pass";
               return (
-                <div key={s.shot_id} draggable onDragStart={(e) => { setDrag(s.shot_id); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", s.shot_id); }}
+                <div key={s.shot_id} draggable={writing !== s.shot_id} onDragStart={(e) => { setDrag(s.shot_id); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", s.shot_id); }}
                      onDragEnd={end} onDragOver={(e) => { if (drag && drag !== s.shot_id) { e.preventDefault(); setOver(s.shot_id); } }} onDragLeave={() => setOver((o) => (o === s.shot_id ? null : o))}
                      onDrop={(e) => drop(e, { before: s.shot_id })}
                      className={`relative grid min-w-0 cursor-grab content-start gap-2 active:cursor-grabbing ${drag === s.shot_id ? "opacity-40" : ""}`}>
@@ -335,7 +336,10 @@ function BoardView({ board, cur, seam, tone, pick, pickSeam, move }: { board: Bo
                                             style={{ color: SEAM[sm.worst][1], background: `${SEAM[sm.worst][1]}1f`, borderColor: seam === `${sm.a}-${sm.b}` ? undefined : `${SEAM[sm.worst][1]}66` }}>
                     {tv`Mối nối ${sm.a_code} → ${sm.b_code}: ${SEAM[sm.worst][0]}`}</button>}
                   {!flagged && <span className="h-[22px]" aria-hidden="true" />}{/* the chip's line kept, so the cards of a row stay level */}
-                  <ShotCard s={s} on={s.shot_id === cur?.shot_id && !seam} tone={tone(s)} pick={() => pick(s.shot_id)} />
+                  <ShotCard s={s} on={s.shot_id === cur?.shot_id && !seam} tone={tone(s)} pick={() => pick(s.shot_id)}
+                            editing={writing === s.shot_id} edit={(on) => setWriting(on ? s.shot_id : null)}
+                            say={(text) => { setWriting(null); const same = !s.spec.line || sameWords(s.spec.line, s.spec.intent);
+                              ops([{ op: "set", shot: s.shot_id, field: "line", value: text }, ...(same ? [{ op: "set", shot: s.shot_id, field: "intent", value: text }] : [])], tr("sửa lời thoại")); }} />
                 </div>);
             })}
             {drag && <div onDragOver={(e) => { e.preventDefault(); setOver(`end-${sc.scene_id}`); }} onDragLeave={() => setOver(null)} onDrop={(e) => drop(e, { scene: sc.scene_id })}
@@ -495,13 +499,18 @@ function Frame({ src, className = "absolute inset-0 h-full w-full object-cover" 
   );
 }
 
-function ShotCard({ s, on, tone, pick }: { s: SbShot; on: boolean; tone: string; pick: () => void }) {
+function ShotCard({ s, on, tone, pick, editing, edit, say }: { s: SbShot; on: boolean; tone: string; pick: () => void; editing: boolean; edit: (on: boolean) => void; say: (text: string) => void }) {
+  const words = s.spec.line || s.spec.intent;
+  const [draft, setDraft] = useState(words);
+  useEffect(() => { if (editing) setDraft(words); }, [editing, words]);
+  const finish = () => { const t = draft.trim(); if (t && t !== words.trim()) say(t); else edit(false); };
   const [label, t] = STATE[s.state];
   const passed = s.checks.filter((c) => c.st === "pass").length, of = s.checks.length || s.spec.criteria.length;
   const dot = ({ proof: "bg-proof", ai: "bg-ai", accent: "bg-accent", cue: "bg-cue", mute: "bg-faint" } as Record<string, string>)[t] ?? "bg-faint";
   const f = s.spec.framing;
   return (
-    <button type="button" onClick={pick} className="grid w-full min-w-0 gap-2 text-left">
+    <div className="group/card grid w-full min-w-0 gap-2 text-left">
+     <button type="button" onClick={pick} className="grid w-full min-w-0 gap-2 text-left">
       <span className={`relative block aspect-video overflow-hidden rounded-lg ${on ? "outline outline-2 outline-offset-2 outline-accent" : "outline outline-1 outline-line"}`} style={{ background: tone }}>
         {s.frame_url && <Frame src={s.frame_url} />}
         <span className="mono absolute left-1.5 top-1.5 rounded bg-black/70 px-1.5 text-[11px] font-semibold ring-1 ring-white/25">{s.code}</span>
@@ -509,11 +518,25 @@ function ShotCard({ s, on, tone, pick }: { s: SbShot; on: boolean; tone: string;
         {s.version > 1 && <span className="mono absolute bottom-1.5 left-1.5 rounded bg-black/60 px-1.5 text-[11px] text-mute">v{s.version}</span>}
       </span>
       <span className="text-[11px] font-semibold uppercase leading-snug tracking-wide text-ink">{`${s.code}: ${f.lens} | ${s.spec.duration.target}s | ${f.move} | ${f.size} · ${f.angle}`}</span>
-      <Clamp className="text-[12.5px] leading-relaxed text-mute">{s.spec.intent}</Clamp>
-      {s.spec.line && !sameWords(s.spec.line, s.spec.intent) && <Clamp className="border-l-2 border-accent/40 pl-2 text-[12px] italic leading-snug text-mute">“{s.spec.line}”</Clamp>}
+     </button>
+      {editing ? (
+        <span className="grid gap-1.5">
+          <textarea autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} rows={Math.min(8, Math.max(3, Math.ceil(draft.length / 38)))} aria-label={tv`Lời thoại của ${s.code}`}
+                    onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); edit(false); } if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); finish(); } }}
+                    onBlur={finish} className="w-full resize-y p-2 text-[12.5px] leading-relaxed" />
+          <span className="text-[11px] text-faint">{tr("⌘↵ hoặc bấm ra ngoài để lưu · Esc để huỷ")}</span>
+        </span>
+      ) : (
+        <span className="relative grid gap-2" onDoubleClick={() => edit(true)}>
+          <Clamp className="text-[12.5px] leading-relaxed text-mute">{s.spec.intent}</Clamp>
+          {s.spec.line && !sameWords(s.spec.line, s.spec.intent) && <Clamp className="border-l-2 border-accent/40 pl-2 text-[12px] italic leading-snug text-mute">“{s.spec.line}”</Clamp>}
+          <button type="button" onClick={() => edit(true)} title={tr("Sửa lời thoại (hoặc nhấp đúp)")} aria-label={tv`Sửa lời thoại của ${s.code}`}
+                  className="absolute -right-1 -top-1 grid h-6 w-6 place-items-center rounded-md border border-edge bg-overlay text-mute opacity-0 transition-opacity hover:text-ink focus-visible:opacity-100 group-hover/card:opacity-100"><Icon name="edit" size={12} /></button>
+        </span>
+      )}
       <span className="flex items-center gap-1.5 text-[11px] text-faint"><span className={`h-1.5 w-1.5 rounded-full ${dot}`} aria-hidden="true" />{label}
         {of > 0 && <><span aria-hidden="true">·</span><span className={of && passed === of ? "text-proof" : passed ? "text-cue" : "text-faint"}>{tv`nghiệm thu ${passed}/${of}`}</span></>}</span>
-    </button>
+    </div>
   );
 }
 

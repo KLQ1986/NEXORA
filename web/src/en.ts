@@ -2499,6 +2499,11 @@ const en: Record<string, string> = {
   "Cảm giác cần có": "Wanted feel",
   "Theo mẫu video": "As the template says",
   "Pha trộn (máy chọn từng câu)": "Mixed (chosen per line)",
+  "⌘↵ hoặc bấm ra ngoài để lưu · Esc để huỷ": "⌘↵ or click outside to save · Esc to cancel",
+  "Sửa lời thoại (hoặc nhấp đúp)": "Edit the line (or double-click)",
+  "Sửa lời thoại của {0}": "Edit the line of {0}",
+  "Lời thoại của {0}": "Line of {0}",
+  "sửa lời thoại": "edit the line",
 };
 
 export default en;
