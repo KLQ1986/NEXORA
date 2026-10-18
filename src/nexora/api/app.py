@@ -1282,11 +1282,19 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             raise HTTPException(422, "Hãy nói chủ đề của video")
         if "model.claude_code" not in {c.name for c in system.adapters.describe()}:
             raise HTTPException(503, "Máy này chưa có Claude Code. Cài Claude Code và đăng nhập một lần bằng lệnh claude.")
-        try:
-            lines = max(3, min(30, int(body.get("lines") or 8)))
-        except (TypeError, ValueError):
-            lines = 8
-        return {"run_id": system.topics.start(project_id, topic, goal=str(body.get("goal") or ""), lines=lines)}
+        from nexora.modules.planning.topic import FORMS, clamp_seconds
+        form = str(body.get("form") or "reportage")
+        if form not in FORMS:
+            raise HTTPException(422, "Không có thể loại này")
+        seconds = clamp_seconds(body.get("seconds") if body.get("seconds") is not None else float(body.get("minutes") or 3) * 60)
+        return {"run_id": system.topics.start(project_id, topic, goal=str(body.get("goal") or ""), seconds=seconds, form=form)}
+
+    @app.get("/api/v1/topic/forms")
+    def topic_forms():
+        """The kinds of video a script from a topic can be, and the lengths it can be asked for."""
+        from nexora.modules.planning.topic import DEFAULT_FORM, DEFAULT_SECONDS, FORMS, MAX_SECONDS, MIN_SECONDS
+        return {"forms": [{"key": k, "name": name} for k, (name, _) in FORMS.items()], "default": DEFAULT_FORM,
+                "seconds": {"min": MIN_SECONDS, "max": MAX_SECONDS, "default": DEFAULT_SECONDS}}
 
     @app.get("/api/v1/projects/{project_id}/draft-from-topic")
     def topic_draft(project_id: str):
@@ -1307,13 +1315,15 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             system.topics.mark(got["run_id"], "offered")
             got["state"] = "offered"
         if got["state"] != "offered" or not got["package"]:
-            return {"state": got["state"], "status": status, "reason": reason, "topic": got["topic"], "created_at": got["created_at"]}
+            return {"state": got["state"], "status": status, "reason": reason, "topic": got["topic"], "created_at": got["created_at"],
+                    "target_seconds": got.get("seconds"), "form": got.get("form")}
         lines = script_lines(got["package"])
         system.projects.keep_draft(project_id, [l for l in lines if isinstance(l, dict)])
         package = got["package"]
         return {"state": "offered", "status": status, "topic": got["topic"], "created_at": got["created_at"], "title": package["title"], "angle": package["angle"],
                 "lines": [l if isinstance(l, str) else l["text"] for l in lines], "sources": package["sources"], "unverified": package["unverified"],
-                "warnings": package["warnings"], "api_equivalent": package.get("api_equivalent", 0.0)}
+                "warnings": package["warnings"], "api_equivalent": package.get("api_equivalent", 0.0),
+                "seconds": package.get("seconds"), "target_seconds": got.get("seconds"), "form": got.get("form")}
 
     @app.post("/api/v1/projects/{project_id}/draft")
     def draft_script(project_id: str, body: dict):

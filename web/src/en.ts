@@ -2590,8 +2590,14 @@ const en: Record<string, string> = {
   "Nguồn được ghi vào dự án khi bạn lưu kịch bản.": "The sources are added to the project when you save the script.",
   "Claude Code tìm nguồn trên web và viết kịch bản theo một chủ đề": "Claude Code finds sources on the web and writes a script on a topic",
   "Từ chủ đề…": "From a topic…",
-  "Claude Code đang tìm nguồn và viết về “{0}”. Việc này mất vài phút; bạn có thể làm việc khác.": "Claude Code is finding sources and writing about “{0}”. This takes a few minutes; you can do other work meanwhile.",
   "{0} câu · {1} nguồn": "{0} lines · {1} sources",
+  "Thời lượng lời dẫn mỗi video (phút)": "Narration length per video (minutes)",
+  "Thể loại": "Kind of video",
+  "{0} video · {1} · {2} phút · {3}": "{0} video · {1} · {2} min · {3}",
+  "Phóng sự": "Reportage",
+  "Dài khoảng": "About",
+  "phút": "min",
+  "Claude Code đang tìm nguồn và viết về “{0}”. Việc này mất vài phút, lâu hơn với video dài; bạn có thể làm việc khác.": "Claude Code is finding sources and writing about “{0}”. This takes a few minutes, longer for a long video; you can do other work meanwhile.",
 };
 
 export default en;

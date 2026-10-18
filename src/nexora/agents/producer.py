@@ -50,7 +50,7 @@ class Producer:
         self._fill_gap = fill_gap                    # (shot_id, query) -> {"found": bool, ...}; given by the composition root
         self._style = style or (lambda project_id: "mixed")     # (project_id) -> how its pictures illustrate the words
         self._to_storyboard = to_storyboard          # (project_id) -> None: the chosen clips laid out on the storyboard, where they are approved
-        # A video on a topic (design 2026-10-18, Claude Code as NEXORA's writer): (project_id, topic, lines) -> run_id writes it,
+        # A video on a topic (design 2026-10-18, Claude Code as NEXORA's writer): (project_id, topic, seconds, form) -> run_id writes it,
         # (run_id) -> state says where it is, (project_id, run_id) -> script_id saves it; (script_id, shot_ids) -> run_id makes
         # pictures for the lines still without one, within the budget.
         self._write_topic, self._topic_state, self._apply_topic, self._generate = write_topic, topic_state, apply_topic, generate
@@ -64,14 +64,14 @@ class Producer:
     # ------------------------------------------------------------------ tasks
     def start(self, goal: str, *, title: str | None = None, format: str = "landscape", lines: int = 5, use_stock: bool = True,
               urls: list[str] | None = None, critique: bool = True, find_sources: bool = False, production_id: str | None = None,
-              topic: bool = False, paid: bool = False) -> str:
+              topic: bool = False, paid: bool = False, seconds: int = 180, form: str = "reportage") -> str:
         project_id = self._planning.create_project(short_title(title or goal), format=format, production_id=production_id)
         task_id, now = new_id("tsk"), time.time()
         with db.write(self._conn) as c:
             c.execute("INSERT INTO agent_tasks (task_id, project_id, goal, status, step, options, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
                       (task_id, project_id, goal, "working", "topic" if topic else "research" if urls or find_sources else "write",
                        json.dumps({"lines": lines, "use_stock": use_stock, "urls": list(urls or [])[:MAX_SOURCES], "critique": critique, "find_sources": find_sources,
-                                   "topic": topic, "paid": paid, "steps": 0, "revisions": 0}), now, now))
+                                   "topic": topic, "paid": paid, "seconds": seconds, "form": form, "steps": 0, "revisions": 0}), now, now))
         self._say(task_id, LEAD, f"Nhận việc: {goal}")
         return task_id
 
@@ -201,7 +201,7 @@ class Producer:
                 self._say(task_id, RESEARCHER, "Máy này chưa có Claude Code để viết video theo chủ đề.")
                 self._move(task_id, status="failed")
                 return True
-            self._option(task_id, "topic_run", self._write_topic(project_id, task["goal"], task["options"]["lines"]))
+            self._option(task_id, "topic_run", self._write_topic(project_id, task["goal"], task["options"].get("seconds", 180), task["options"].get("form", "reportage")))
             self._say(task_id, RESEARCHER, "Giao Claude Code tìm nguồn trên web và viết kịch bản. Việc này mất vài phút.")
             self._move(task_id, step="topic_wait")
             return True

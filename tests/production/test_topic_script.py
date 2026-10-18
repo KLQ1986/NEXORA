@@ -61,10 +61,18 @@ def test_a_package_with_nothing_usable_is_refused():
 
 
 def test_the_prompt_carries_the_voice_the_structure_and_the_siblings():
-    system, prompt = topic_prompt("rừng bạch đàn Israel", goal="vì sao", lines=8, structure=[{"name": "Mở đầu", "min": 5, "max": 10}],
+    system, prompt = topic_prompt("rừng bạch đàn Israel", goal="vì sao", seconds=300, form="science", structure=[{"name": "Mở đầu", "min": 5, "max": 10}],
                                   voice="Giọng miền Nam.", style="mixed", siblings=["Bạch đàn và nước ngầm"])
     assert "Giọng miền Nam." in system and "nguồn" in system and "WebSearch" in system
-    assert "rừng bạch đàn Israel" in prompt and "Mở đầu" in prompt and "Bạch đàn và nước ngầm" in prompt and "8" in prompt
+    assert "Diễn giải khoa học" in system and "so sánh đời thường" in system                  # the kind of video, and how it tells its story
+    assert "rừng bạch đàn Israel" in prompt and "Mở đầu" in prompt and "Bạch đàn và nước ngầm" in prompt
+    assert "khoảng 5 phút (300 giây)" in prompt and "780 chữ" in prompt
+
+
+def test_a_draft_much_shorter_or_longer_than_asked_is_said_to_be():
+    p = check_package(PACKAGE, seconds=600)
+    assert p["seconds"] == 10 and any("ngắn hơn nhiều so với 10 phút 00 giây" in w for w in p["warnings"])
+    assert not any("phút" in w for w in check_package(PACKAGE, seconds=11)["warnings"])
 
 
 def _topic_system(tmp_path, answer=PACKAGE):
@@ -76,7 +84,7 @@ def test_a_topic_is_written_by_the_researching_writer_and_applied_with_its_sourc
     system, client = _topic_system(tmp_path)
     project = system.planning.create_project("Rừng")
     sibling = system.planning.create_project("Bạch đàn và nước ngầm", production_id=system.projects.project(project)["production_id"])
-    run_id = system.topics.start(project, "rừng bạch đàn Israel", goal="vì sao", lines=6)
+    run_id = system.topics.start(project, "rừng bạch đàn Israel", goal="vì sao", seconds=240, form="history")
     assert system.orch.lane_load()["claude_code"]["ready"] == 1                  # on a lane of its own
     drain(system)
     got = system.topics.get(run_id)
@@ -84,6 +92,7 @@ def test_a_topic_is_written_by_the_researching_writer_and_applied_with_its_sourc
     asked = system.adapters._adapters["model.claude_code"].asked[-1]
     assert asked.operation == "research" and "rừng bạch đàn Israel" in asked.params["prompt"] and asked.params["schema"]
     assert "Bạch đàn và nước ngầm" in asked.params["prompt"] and "miền Nam" in asked.params["system"]       # the other videos, the house voice
+    assert "240 giây" in asked.params["prompt"] and "Tài liệu lịch sử" in asked.params["system"] and asked.deadline_seconds == 1080
     script_id = apply_topic(system, project, run_id)
     shots = system.projects.script(script_id)["shots"]
     assert shots[0].text == "Năm 1950 người ta trồng bạch đàn khắp nơi." and shots[0].scene == "Mở đầu" and shots[0].source == "Bài A"
@@ -109,12 +118,15 @@ def test_the_editor_gets_the_topic_draft_unsaved_and_its_sources_on_save_only(tm
     project = system.planning.create_project("Rừng")
     assert client.post(f"/api/v1/projects/{project}/draft-from-topic", json={"topic": " "}).status_code == 422
     assert client.get(f"/api/v1/projects/{project}/draft-from-topic").json() == {"state": None}
-    client.post(f"/api/v1/projects/{project}/draft-from-topic", json={"topic": "rừng bạch đàn Israel", "lines": 6})
+    assert client.post(f"/api/v1/projects/{project}/draft-from-topic", json={"topic": "rừng", "form": "không có"}).status_code == 422
+    forms = client.get("/api/v1/topic/forms").json()
+    assert {f["key"] for f in forms["forms"]} >= {"reportage", "science", "history"} and forms["seconds"]["max"] == 900
+    client.post(f"/api/v1/projects/{project}/draft-from-topic", json={"topic": "rừng bạch đàn Israel", "minutes": 5, "form": "science"})
     assert client.get(f"/api/v1/projects/{project}/draft-from-topic").json()["state"] == "asked"
     drain(system)
     got = client.get(f"/api/v1/projects/{project}/draft-from-topic").json()
     assert got["state"] == "offered" and got["lines"][0] == "# Mở đầu" and got["sources"][0]["url"] == "https://example.org/a"
-    assert got["unverified"] == ["con số chính xác diện tích"] and got["warnings"]
+    assert got["unverified"] == ["con số chính xác diện tích"] and got["warnings"] and got["target_seconds"] == 300 and got["form"] == "science" and got["seconds"] == 10
     assert system.projects.current_script(project) is None and system.planning.research(project) == []       # nothing saved yet
     client.put(f"/api/v1/projects/{project}/script", json={"lines": got["lines"]})
     first = system.projects.current_script(project)["shots"][0]
@@ -141,10 +153,12 @@ def test_the_editor_is_told_when_claude_code_is_missing_or_the_writing_failed(tm
 
 def test_a_topic_mission_researches_then_carries_on_like_any_video(tmp_path):
     system, client = _topic_system(tmp_path)
-    plan = {"loai": "topic", "muc_tieu": "khủng hoảng rừng bạch đàn Israel", "tieu_de": "Rừng bạch đàn", "so_video": 1, "dinh_dang": "landscape", "so_cau": 20}
+    plan = {"loai": "topic", "muc_tieu": "khủng hoảng rừng bạch đàn Israel", "tieu_de": "Rừng bạch đàn", "so_video": 1, "dinh_dang": "landscape",
+            "thoi_luong_phut": 5, "the_loai": "analysis"}
     system.adapters._adapters["model"].answers["mission_plan"] = plan
     m = client.post("/api/v1/missions", json={"text": "sản xuất video về khủng hoảng rừng bạch đàn của Israel"}).json()
-    assert m["plan"]["kind"] == "topic" and m["plan"]["critique"] is False and m["plan"]["lines"] == 20 and m["state"] == "planned"
+    assert m["plan"]["kind"] == "topic" and m["plan"]["critique"] is False and m["state"] == "planned"
+    assert m["plan"]["seconds"] == 300 and m["plan"]["form"] == "analysis"
     done = client.post(f"/api/v1/missions/{m['mission_id']}/confirm").json()
     task_id, project = done["links"]["tasks"][0], done["links"]["projects"][0]
     assert system.producer.task(task_id)["step"] == "topic"
@@ -155,7 +169,8 @@ def test_a_topic_mission_researches_then_carries_on_like_any_video(tmp_path):
     said = " ".join(e["text"] for e in task["log"])
     assert system.projects.current_script(project)["shots"][0].text == "Năm 1950 người ta trồng bạch đàn khắp nơi."
     assert "Claude Code viết 3 câu dựa trên 1 nguồn; 1 câu nêu dữ kiện chưa có nguồn." in said and "câu nêu dữ kiện" in said      # written, then checked
-    assert system.adapters._adapters["model.claude_code"].asked[-1].params["prompt"].count("20") >= 1
+    asked = system.adapters._adapters["model.claude_code"].asked[-1]
+    assert "300 giây" in asked.params["prompt"] and "Phân tích / bình luận" in asked.params["system"]
     assert task["step"] in ("review", "cut", "cutting") and len(system.planning.research(project)) == 1
 
 
@@ -179,7 +194,7 @@ def test_pictures_are_made_for_the_lines_named_only(tmp_path):
 
 def test_a_topic_mission_allowed_to_pay_asks_pictures_for_the_lines_left_without_one(tmp_path):
     system, client = _topic_system(tmp_path)
-    plan = {"loai": "topic", "muc_tieu": "rừng bạch đàn Israel", "tieu_de": "Rừng", "so_video": 1, "so_cau": 6, "dung_dich_vu_tra_tien": True, "ngan_sach_usd": 2}
+    plan = {"loai": "topic", "muc_tieu": "rừng bạch đàn Israel", "tieu_de": "Rừng", "so_video": 1, "thoi_luong_phut": 2, "dung_dich_vu_tra_tien": True, "ngan_sach_usd": 2}
     system.adapters._adapters["model"].answers["mission_plan"] = plan
     m = client.post("/api/v1/missions", json={"text": "video về rừng bạch đàn, được dùng dịch vụ trả tiền tối đa 2 USD"}).json()
     done = client.post(f"/api/v1/missions/{m['mission_id']}/confirm").json()

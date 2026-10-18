@@ -402,12 +402,16 @@ function SpeechDraft({ id, topic, done }: { id: string; topic: string; done: (li
 
 type TopicSource = { id: string; url: string; title: string; publisher: string | null; date: string | null; passage: string };
 type TopicState = { state: "asked" | "written" | "offered" | "applied" | null; status?: string; reason?: string | null; topic?: string; title?: string; angle?: string;
-  lines?: string[]; sources?: TopicSource[]; unverified?: string[]; warnings?: string[]; api_equivalent?: number };
+  lines?: string[]; sources?: TopicSource[]; unverified?: string[]; warnings?: string[]; api_equivalent?: number; seconds?: number; target_seconds?: number; form?: string };
+type TopicForms = { forms: { key: string; name: string }[]; default: string; seconds: { min: number; max: number; default: number } };
+const MINUTES = [1, 2, 3, 5, 8, 10, 15];
+const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
 
 /** A script from a topic, written by Claude Code from what it reads on the web, in the background (minutes); the result goes into
     the editor like a draft, and its sources reach the project when the script is saved. */
 function TopicDraft({ id, topic, done, fill }: { id: string; topic: string; done: (lines: string[]) => void; fill: boolean }) {
-  const [subject, setSubject] = useState(topic), [goal, setGoal] = useState(""), [n, setN] = useState(10), [err, setErr] = useState<string | null>(null);
+  const { data: kinds } = usePoll<TopicForms>("/api/v1/topic/forms", 600000);
+  const [subject, setSubject] = useState(topic), [goal, setGoal] = useState(""), [minutes, setMinutes] = useState(3), [form, setForm] = useState("reportage"), [err, setErr] = useState<string | null>(null);
   const [got, setGot] = useState<TopicState | null>(null), [waiting, setWaiting] = useState(false);
   const read = useCallback(async () => { try { const r = await call<TopicState>(`/api/v1/projects/${id}/draft-from-topic`); setGot(r); return r; } catch (e) { setErr((e as Error).message); return null; } }, [id]);
   // An empty editor of a video with no script yet takes the draft at once: there is nothing of the operator's to replace.
@@ -420,7 +424,7 @@ function TopicDraft({ id, topic, done, fill }: { id: string; topic: string; done
   }, [running, waiting, read, done]);
   const write = async () => {
     setErr(null);
-    try { await post(`/api/v1/projects/${id}/draft-from-topic`, { topic: subject, goal, lines: n }); setWaiting(true); await read(); } catch (e) { setErr((e as Error).message); }
+    try { await post(`/api/v1/projects/${id}/draft-from-topic`, { topic: subject, goal, minutes, form }); setWaiting(true); await read(); } catch (e) { setErr((e as Error).message); }
   };
   return (
     <div className="border-t border-line bg-ai/[0.04] px-4 py-3 text-[13px]">
@@ -429,15 +433,19 @@ function TopicDraft({ id, topic, done, fill }: { id: string; topic: string; done
       <div className="flex flex-wrap items-center gap-2">
         <input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder={tr("Chủ đề, ví dụ: khủng hoảng rừng bạch đàn ở Israel")} aria-label={tr("Chủ đề")} className="h-8 min-w-0 flex-[2] px-2.5" />
         <input value={goal} onChange={(e) => setGoal(e.target.value)} placeholder={tr("Mục tiêu (không bắt buộc)")} aria-label={tr("Mục tiêu")} className="h-8 min-w-0 flex-1 px-2.5" />
-        <label className="flex items-center gap-1.5 text-[12.5px] text-mute">{tr("Khoảng")}<input type="number" min={3} max={30} value={n} onChange={(e) => setN(Number(e.target.value))} className="mono h-8 w-16 px-2" />{tr("câu")}</label>
+        <select value={form} onChange={(e) => setForm(e.target.value)} aria-label={tr("Thể loại")} className="h-8 pl-2.5 text-[12.5px]">
+          {(kinds?.forms ?? [{ key: "reportage", name: tr("Phóng sự") }]).map((f) => <option key={f.key} value={f.key}>{f.name}</option>)}</select>
+        <label className="flex items-center gap-1.5 text-[12.5px] text-mute">{tr("Dài khoảng")}<select value={minutes} onChange={(e) => setMinutes(Number(e.target.value))} className="mono h-8 pl-2">
+          {MINUTES.map((m) => <option key={m} value={m}>{m}</option>)}</select>{tr("phút")}</label>
         <Button size="sm" kind="ai" busy={running} disabled={running || !subject.trim()} onClick={write}>{running ? <Spinner /> : <Icon name="sparkles" size={13} />}{running ? tr("Đang viết…") : tr("Viết bằng Claude Code")}</Button>
       </div>
-      {running && <p className="mt-2 text-mute">{tv`Claude Code đang tìm nguồn và viết về “${got?.topic ?? subject}”. Việc này mất vài phút; bạn có thể làm việc khác.`}</p>}
+      {running && <p className="mt-2 text-mute">{tv`Claude Code đang tìm nguồn và viết về “${got?.topic ?? subject}”. Việc này mất vài phút, lâu hơn với video dài; bạn có thể làm việc khác.`}</p>}
       {got && ["failed", "blocked"].includes(got.status ?? "") && got.state === "asked" && <p className="mt-2 text-tally">{tr("Claude Code không viết được kịch bản.")} {got.reason}</p>}
       {got?.state === "offered" && got.lines && (
         <div className="mt-3 grid gap-2">
           <div className="flex flex-wrap items-center gap-2"><span className="font-medium">{got.title || got.topic}</span>{got.angle && <span className="text-faint">· {got.angle}</span>}
-            <span className="mono text-[12px] text-faint">{tv`${got.lines.filter((l) => !l.startsWith("#")).length} câu · ${got.sources?.length ?? 0} nguồn`}{got.api_equivalent ? ` · ≈$${got.api_equivalent.toFixed(2)} API` : ""}</span>
+            <span className="mono text-[12px] text-faint">{tv`${got.lines.filter((l) => !l.startsWith("#")).length} câu · ${got.sources?.length ?? 0} nguồn`}
+              {got.seconds ? ` · ≈${clock(got.seconds)}${got.target_seconds ? ` / ${clock(got.target_seconds)}` : ""}` : ""}{got.api_equivalent ? ` · ≈$${got.api_equivalent.toFixed(2)} API` : ""}</span>
             <span className="ml-auto"><Button size="sm" onClick={() => done(got.lines!)}><Icon name="edit" size={13} />{tr("Đưa vào ô soạn")}</Button></span></div>
           <ol className="grid max-h-80 gap-1 overflow-y-auto rounded-lg border border-line bg-surface/60 px-3 py-2">{got.lines.map((l, i) => l.startsWith("#")
             ? <li key={i} className="mt-1.5 text-[12px] font-semibold uppercase tracking-wide text-ai first:mt-0">{l.replace(/^#\s*/, "")}</li>

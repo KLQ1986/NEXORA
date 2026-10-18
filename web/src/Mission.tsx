@@ -8,7 +8,7 @@ import { ask, Button, Empty, goTo, Icon, Meter, OpsSide, Page, Seg, Spinner, Tab
 
 type Tone = "mute" | "cue" | "proof" | "tally" | "ai" | "accent";
 type Plan = { kind: string; goal: string; title: string; count: number; format: string; lines: number; channel: string | null; template: string | null; budget: number | null;
-  paid: boolean; stock: boolean; critique: boolean; constraints: string[]; acceptance: string[]; autonomy: number };
+  paid: boolean; stock: boolean; critique: boolean; constraints: string[]; acceptance: string[]; autonomy: number; seconds?: number; form?: string };
 type Child = { kind: "task" | "run"; id: string; project_id?: string; pipeline?: string; status: string; state: string; step?: string; note: string | null };
 type MissionEvent = { at: number; kind: string; text: string | null };
 type Mission = { mission_id: string; text: string; plan: Plan; problems: string[]; state: string; status: string; kind_name: string | null; children: Child[];
@@ -20,7 +20,7 @@ type RunDetail = { run_id: string; pipeline: string; name: string; status: strin
 type Task = { task_id: string; project_id: string; goal: string; status: string; step: string; log: { at: number; role: string; text: string }[] };
 type Detail = Mission & { runs: RunDetail[]; tasks: Task[]; projects: { project_id: string; title: string }[] };
 type SystemRun = { run_id: string; pipeline: string; name: string; status: string; created_at: number; project_id: string | null; title: string | null };
-type MissionList = { missions: Mission[]; productions: { production_id: string; title: string }[]; system: SystemRun[]; kinds: { kind: string; name: string }[]; channels: string[]; templates: string[] };
+type MissionList = { forms?: { key: string; name: string }[]; missions: Mission[]; productions: { production_id: string; title: string }[]; system: SystemRun[]; kinds: { kind: string; name: string }[]; channels: string[]; templates: string[] };
 type Approval = { key: string; kind: string; id: string; title: string; asked_by: string; why: string; touches: string; cost: number | null; next: string; at: number; actions: string[]; link: string | null };
 type Unit = { key: string; name: string; group: string; role?: string; state: string; detail: string; fix?: string | null; queue?: Record<string, number> };
 type Fleet = { agents: Unit[]; workers: Unit[]; engines: Unit[]; live_pipelines: string[] };
@@ -227,7 +227,7 @@ function Composer({ onPlanned, autonomy }: { onPlanned: (m: Mission) => void; au
   );
 }
 
-function PlanEditor({ m, kinds, channels, templates, done }: { m: Mission; kinds: { kind: string; name: string }[]; channels: string[]; templates: string[]; done: () => void }) {
+function PlanEditor({ m, kinds, forms, channels, templates, done }: { m: Mission; kinds: { kind: string; name: string }[]; forms: { key: string; name: string }[]; channels: string[]; templates: string[]; done: () => void }) {
   const [plan, setPlan] = useState<Plan>(m.plan), [busy, setBusy] = useState<string | null>(null);
   useEffect(() => { setPlan(m.plan); }, [m.plan]);
   const set = (k: keyof Plan, v: unknown) => setPlan({ ...plan, [k]: v });
@@ -247,7 +247,9 @@ function PlanEditor({ m, kinds, channels, templates, done }: { m: Mission; kinds
           <select value={plan.kind} onChange={(e) => set("kind", e.target.value)} className="w-full pl-3"><option value="">{tr("Chọn…")}</option>{kinds.map((k) => <option key={k.kind} value={k.kind}>{k.name}</option>)}</select></label>
         {video && <label><span className="field-label">{tr("Số video")}</span><input type="number" min={1} max={10} value={plan.count} onChange={(e) => set("count", Number(e.target.value))} className="mono w-full px-3" /></label>}
         {video && <div><span className="field-label">{tr("Khung hình")}</span><Seg items={FORMATS} value={plan.format} onChange={(v) => set("format", v)} label={tr("Khung hình")} /></div>}
-        {video && <label><span className="field-label">{tr("Số câu lời dẫn mỗi video")}</span><input type="number" min={2} max={plan.kind === "topic" ? 30 : 12} value={plan.lines} onChange={(e) => set("lines", Number(e.target.value))} className="mono w-full px-3" /></label>}
+        {plan.kind === "video" && <label><span className="field-label">{tr("Số câu lời dẫn mỗi video")}</span><input type="number" min={2} max={12} value={plan.lines} onChange={(e) => set("lines", Number(e.target.value))} className="mono w-full px-3" /></label>}
+        {plan.kind === "topic" && <label><span className="field-label">{tr("Thời lượng lời dẫn mỗi video (phút)")}</span><input type="number" min={1} max={15} step={0.5} value={(plan.seconds ?? 180) / 60} onChange={(e) => set("seconds", Math.round(Number(e.target.value) * 60))} className="mono w-full px-3" /></label>}
+        {plan.kind === "topic" && <label><span className="field-label">{tr("Thể loại")}</span><select value={plan.form ?? "reportage"} onChange={(e) => set("form", e.target.value)} className="w-full pl-3">{forms.map((f) => <option key={f.key} value={f.key}>{f.name}</option>)}</select></label>}
         {video && <label><span className="field-label">{tr("Kênh")}</span><select value={plan.channel ?? ""} onChange={(e) => set("channel", e.target.value || null)} className="w-full pl-3"><option value="">{tr("Không chọn")}</option>{channels.map((c) => <option key={c}>{c}</option>)}</select></label>}
         {video && <label><span className="field-label">{tr("Mẫu video")}</span><select value={plan.template ?? ""} onChange={(e) => set("template", e.target.value || null)} className="w-full pl-3"><option value="">{tr("Không chọn")}</option>{templates.map((c) => <option key={c}>{c}</option>)}</select></label>}
         <label><span className="field-label">{tr("Ngân sách tối đa (USD)")}</span><input type="number" min={0} step={0.1} value={plan.budget ?? ""} onChange={(e) => set("budget", e.target.value === "" ? null : Number(e.target.value))} placeholder={tr("không giới hạn riêng")} className="mono w-full px-3" /></label>
@@ -335,9 +337,9 @@ function Monitor({ id, back }: { id: string; back: () => void }) {
         {["failed", "partially_completed", "blocked"].includes(m.status) && <Button size="sm" busy={busy === "retry"} onClick={() => act("retry", tr("Đã cho chạy lại các bước lỗi."))}><Icon name="refresh" size={14} />{tr("Chạy lại bước lỗi")}</Button>}
         {!planning && m.status !== "cancelled" && m.status !== "completed" && <Button size="sm" kind="danger" busy={busy === "cancel"} onClick={() => act("cancel", tr("Đã huỷ nhiệm vụ."))}>{tr("Huỷ")}</Button>}
       </div>
-      {planning ? <Bento label={tr("Kế hoạch")} code="PLN.EDIT"><PlanEditor m={m} kinds={list?.kinds ?? []} channels={list?.channels ?? []} templates={list?.templates ?? []} done={reload} /></Bento> : (
+      {planning ? <Bento label={tr("Kế hoạch")} code="PLN.EDIT"><PlanEditor m={m} kinds={list?.kinds ?? []} forms={list?.forms ?? []} channels={list?.channels ?? []} templates={list?.templates ?? []} done={reload} /></Bento> : (
         <div className="grid gap-4 xl:grid-cols-12">
-          <Bento label={tr("Kế hoạch đã xác nhận")} code="PLN.LOCK" className="xl:col-span-4"><PlanFacts m={m} /></Bento>
+          <Bento label={tr("Kế hoạch đã xác nhận")} code="PLN.LOCK" className="xl:col-span-4"><PlanFacts m={m} forms={list?.forms} /></Bento>
           <Bento label={tr("Theo dõi trực tiếp")} code="LIVE.MON" className="xl:col-span-8">
             {m.tasks.length === 0 && m.runs.length === 0 && <p className="text-[13px] text-mute">{tr("Nhiệm vụ này không tạo việc nào.")}</p>}
             <div className="grid gap-3">
@@ -357,12 +359,13 @@ function Monitor({ id, back }: { id: string; back: () => void }) {
 const EVENT: Record<string, string> = { created: tr("Giao việc"), planned: tr("Đã lập kế hoạch"), edited: tr("Sửa kế hoạch"), confirmed: tr("Xác nhận"), paused: tr("Tạm dừng"), resumed: tr("Tiếp tục"),
   cancelled: tr("Huỷ"), retried: tr("Chạy lại"), note: tr("Ghi chú") };
 
-function PlanFacts({ m }: { m: Mission }) {
+function PlanFacts({ m, forms: list }: { m: Mission; forms?: { key: string; name: string }[] }) {
   const p = m.plan;
   const rows: [string, React.ReactNode][] = [[tr("Loại việc"), m.kind_name ?? p.kind], [tr("Mục tiêu"), p.goal], ...(makesVideos(p.kind) && p.title ? [[tr("Tên video"), p.title] as [string, React.ReactNode]] : [])];
   if (makesVideos(p.kind)) rows.push([tr("Dự án"), m.production ? <button type="button" className="link" onClick={() => goTo(`/du-an/${m.production!.production_id}`)}>{m.production.title}</button>
     : <span className="text-mute">{tr("một dự án mới, khi xác nhận")}</span>]);
-  if (makesVideos(p.kind)) rows.push([tr("Video"), tv`${p.count} video · ${FORMATS.find((f) => f[0] === p.format)?.[1] ?? p.format} · ${p.lines} câu`], [tr("Kênh / mẫu"), [p.channel, p.template].filter(Boolean).join(" · ") || "–"]);
+  if (makesVideos(p.kind)) rows.push([tr("Video"), p.kind === "topic" ? tv`${p.count} video · ${FORMATS.find((f) => f[0] === p.format)?.[1] ?? p.format} · ${(p.seconds ?? 180) / 60} phút · ${list?.find((f) => f.key === p.form)?.name ?? p.form ?? ""}`
+    : tv`${p.count} video · ${FORMATS.find((f) => f[0] === p.format)?.[1] ?? p.format} · ${p.lines} câu`], [tr("Kênh / mẫu"), [p.channel, p.template].filter(Boolean).join(" · ") || "–"]);
   rows.push([tr("Ngân sách"), p.budget != null ? usd(p.budget) : tr("theo hạn mức chung")], [tr("Dịch vụ trả tiền"), p.paid ? tr("được dùng") : tr("không")], [tr("Đã tiêu"), usd(m.spent)]);
   return (
     <div className="grid gap-3 text-[13px]">

@@ -972,7 +972,7 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
                                fill_gap=lambda shot_id, query: fill_gap_from_stock(system, shot_id, query),
                                to_storyboard=lambda project_id: lay_out_storyboard(system, project_id),
                                style=lambda project_id: illustration_style(system, projects.project(project_id)),
-                               write_topic=lambda project_id, topic, lines: system.topics.start(project_id, topic, lines=lines),
+                               write_topic=lambda project_id, topic, seconds, form: system.topics.start(project_id, topic, seconds=seconds, form=form),
                                topic_state=lambda run_id: (system.topics.get(run_id) or {}).get("state", "asked"),
                                apply_topic=lambda project_id, run_id: apply_topic(system, project_id, run_id),
                                generate=lambda script_id, shot_ids: system.generation.start(script_id, only=shot_ids))

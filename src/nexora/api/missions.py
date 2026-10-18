@@ -48,6 +48,7 @@ def verdict(qc: dict) -> str:
 def add_missions(app: FastAPI, system, *, health) -> None:
     import json
     from nexora.agents.missions import KINDS
+    from nexora.modules.planning.topic import FORMS as TOPIC_FORMS
     from nexora.app import PIPELINE_NAMES, capabilities, templates
     channels = lambda: json.loads(system.orch.setting("channels", "[]"))
     missions = system.missions
@@ -108,7 +109,8 @@ def add_missions(app: FastAPI, system, *, health) -> None:
         every = [with_production(m) for m in missions.missions(production_id=production.strip() or None)]
         named = {m["production"]["production_id"]: m["production"] for m in every if m["production"]}
         return {"missions": every, "productions": sorted(named.values(), key=lambda d: d["title"].lower()), "system": sorted(system_work, key=lambda r: -r["created_at"])[:60],
-                "kinds": [{"kind": k, "name": v["name"]} for k, v in KINDS.items()], "channels": [c["name"] for c in channels()], "templates": [t["name"] for t in templates(system)]}
+                "kinds": [{"kind": k, "name": v["name"]} for k, v in KINDS.items()],
+                "forms": [{"key": k, "name": name} for k, (name, _) in TOPIC_FORMS.items()], "channels": [c["name"] for c in channels()], "templates": [t["name"] for t in templates(system)]}
 
     @app.post("/api/v1/missions", status_code=201)
     def plan_mission(body: dict):
