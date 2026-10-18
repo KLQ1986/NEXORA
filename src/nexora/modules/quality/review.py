@@ -23,7 +23,9 @@ def review_cut(shots: list[dict]) -> list[dict]:
             add("Nhịp", i, "vừa", f"Cảnh dài {s['duration']:.1f} giây, dễ làm người xem chán.", "Tách câu thành hai câu ngắn hơn.")
         if s["duration"] < MIN_SHOT:
             add("Nhịp", i, "thấp", f"Cảnh chỉ dài {s['duration']:.1f} giây, có thể lướt qua quá nhanh.", "Gộp với câu bên cạnh.")
-        if i and not s["gap"] and not shots[i - 1]["gap"] and s["asset_id"] == shots[i - 1]["asset_id"] and abs(s["t_in"] - shots[i - 1]["t_in"]) < 6:
+        # Two pieces of one recording heard with their own sound are someone talking, cut to their words, not one picture twice.
+        spoken = s.get("live_sound") and shots[i - 1].get("live_sound") if i else False
+        if i and not spoken and not s["gap"] and not shots[i - 1]["gap"] and s["asset_id"] == shots[i - 1]["asset_id"] and abs(s["t_in"] - shots[i - 1]["t_in"]) < 6:
             add("Lặp hình", i, "vừa", "Cảnh này gần như trùng với cảnh ngay trước nó.", "Đổi một trong hai cảnh sang phương án khác.")
     if shots and shots[0]["gap"]:
         add("Mở đầu", 0, "cao", "Video mở đầu bằng nền trơn.", "Bắt đầu bằng một câu có hình mạnh.")

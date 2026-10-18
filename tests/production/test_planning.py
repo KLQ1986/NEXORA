@@ -256,3 +256,11 @@ def test_channels_have_a_cadence_and_the_calendar_says_which_weeks_fall_short(tm
     assert len(calendar["cadence"]) == 1 and kitchen["channel"] == "Bếp nhà"                    # a channel without a cadence promises nothing
     assert [(w["planned"], w["short"]) for w in kitchen["weeks"]] == [(2, 0), (1, 1), (0, 2), (0, 2)] and kitchen["short"] == 5
     assert {p["title"]: p["channel"] for p in calendar["projects"]} == {"Phở": "Bếp nhà", "Bún chả": "Bếp nhà", "Cao lầu": "Bếp nhà"}
+
+
+def test_pieces_of_one_recording_heard_with_their_own_sound_are_not_one_picture_twice():
+    talk = [{"text": "Đây là khu vui chơi,", "duration": 1.9, "gap": False, "asset_id": "a", "t_in": 0.9, "live_sound": True},
+            {"text": "có tàu lượn Wonder Hill.", "duration": 2.9, "gap": False, "asset_id": "a", "t_in": 2.7, "live_sound": True}]
+    assert not any(f["check"] == "Lặp hình" for f in review_cut(talk))
+    pictures = [{**s, "live_sound": False} for s in talk]
+    assert any(f["check"] == "Lặp hình" for f in review_cut(pictures))          # narrated over, the same stretch twice is still flagged
