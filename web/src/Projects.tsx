@@ -829,6 +829,8 @@ function Detail({ id, back }: { id: string; back: (to?: string) => void }) {
   const [span, setSpan] = useState<{ first: number; last: number } | null>(null);       // the lines the cursor or the selection is on
   const [quotes, setQuotes] = useState<Record<string, Quote>>({});                      // quotes picked in this editor, by their words, until saved
   const [quoting, setQuoting] = useState(false), [fromSpeech, setFromSpeech] = useState(false), [fromTopic, setFromTopic] = useState(false);
+  // A script from a topic waiting for the operator (or still being written) is shown at once, not hidden behind its button.
+  useEffect(() => { call<{ state: string | null }>(`/api/v1/projects/${id}/draft-from-topic`).then((r) => { if (r.state === "asked" || r.state === "offered") setFromTopic(true); }).catch(() => {}); }, [id]);
   const [lineView, setLineView] = useState(() => { try { return localStorage.getItem("nx.script.view") === "lines"; } catch { return false; } });
   useEffect(() => { try { localStorage.setItem("nx.script.view", lineView ? "lines" : "text"); } catch { /* private window */ } }, [lineView]);
   // A "> " line the operator picked from what the footage says goes with its stretch of the recording; any other line as written.
