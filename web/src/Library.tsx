@@ -1157,7 +1157,7 @@ export default function Library() {
           </section>); })}</div>))
           : searching ? <p className="flex items-center justify-center gap-2 py-10 text-[13px] text-mute"><Spinner size={13} />{tr("Đang tìm theo nội dung…")}</p>
           : data && shown.length === 0 ? <div className="py-10 text-center text-[13px] text-mute">{items.length ? <>{tr("Không có mục nào khớp bộ lọc.")} <button type="button" className="link" onClick={reset}>{tr("Bỏ lọc")}</button></> : tr("Thư viện còn trống. Bấm + để thêm footage.")}</div>
-          : view === "grid" ? <ul className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" }}>{shown.map((i) => <Card key={i.key} vq={i.asset ? vqMap.get(i.asset.asset_id) : undefined} item={i} on={picked === i.key} chosen={chosen.has(i.key)} choosing={chosen.size > 0} pick={() => show(i.key)} choose={() => choose(i.key)} acts={actsOf(i)} remove={i.asset ? (forGood) => removeOne(i.asset!, forGood) : undefined} again={again} />)}</ul>
+          : view === "grid" ? <ul className="grid grid-cols-2 gap-3">{shown.map((i) => <Card key={i.key} vq={i.asset ? vqMap.get(i.asset.asset_id) : undefined} item={i} on={picked === i.key} chosen={chosen.has(i.key)} choosing={chosen.size > 0} pick={() => show(i.key)} choose={() => choose(i.key)} acts={actsOf(i)} remove={i.asset ? (forGood) => removeOne(i.asset!, forGood) : undefined} again={again} />)}</ul>
           : <ul className="grid gap-0.5">{shown.map((i) => <Row key={i.key} vq={i.asset ? vqMap.get(i.asset.asset_id) : undefined} item={i} on={picked === i.key} chosen={chosen.has(i.key)} choosing={chosen.size > 0} pick={() => show(i.key)} choose={() => choose(i.key)} />)}</ul>}
       </div>
       {chosen.size > 0 && (
