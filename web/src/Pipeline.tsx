@@ -153,7 +153,7 @@ export default function Pipeline({ project: p, place, onScreen, compact = false,
               {folded ? (
                 <button type="button" onClick={() => fold(g.key)} title={g.children.map((c) => c.label).join(" · ")}
                         className="pipe-step ui mt-auto flex flex-col items-center gap-1.5 rounded-lg px-2 py-2 text-center">
-                  <span className="whitespace-nowrap text-[15px] font-semibold text-ink">{tv`${g.children.length} bước xong`}</span>
+                  <span className="whitespace-nowrap text-[13px] font-semibold text-ink">{tv`${g.children.length} bước xong`}</span>
                   <span className="pipe-node done relative grid h-16 w-16 shrink-0 place-items-center rounded-full border-2 border-proof/60 bg-proof/10 text-proof"><span className="grid justify-items-center gap-[3px]"><Icon name="check" size={17} /><span className="text-[10.5px] font-semibold leading-none">{SAID.done}</span></span></span>
                 </button>
               ) : (
@@ -182,7 +182,7 @@ export default function Pipeline({ project: p, place, onScreen, compact = false,
                         </span>
                         {!compact && (
                           <span className="grid justify-items-center gap-0.5 leading-tight">
-                            <span className="whitespace-nowrap text-[15px] font-semibold text-ink"><span className="mono mr-1.5 text-[11px] font-normal text-faint">{`N${String(i + 1).padStart(2, "0")}`}</span>{c.label}</span>
+                            <span className="whitespace-nowrap text-[13px] font-semibold text-ink"><span className="mono mr-1 text-[10px] font-normal text-faint">{`N${String(i + 1).padStart(2, "0")}`}</span>{c.label}</span>
                             {!quiet && <span className="whitespace-nowrap text-[12.5px] text-faint">{figure(c.key, p, task, !!data)}</span>}
                           </span>)}
                       </button>
