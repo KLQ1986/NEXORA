@@ -104,12 +104,22 @@ export default function Pipeline({ project: p, place, onScreen, compact = false,
   // Every parent task shows its steps (all eleven fit a desktop screen); one that is done may be folded to one mark by hand.
   const [folds, setFolds] = useState<Set<string>>(new Set());
   const fold = (key: string) => setFolds((u) => { const n = new Set(u); if (n.has(key)) n.delete(key); else n.add(key); return n; });
-  // The whole line is scaled down, in proportion, to fit the width it is given (never below 60 %; past that it scrolls).
+  // The line fills the width it is given, as the cards under it do: its parents share the room by their number of steps.
+  // Where its natural width does not fit, the whole line is scaled down in proportion (never below 60 %; past that it scrolls).
+  // Set on the element itself, not through React's style, so the 4 s polls do not undo it.
   const frame = useRef<HTMLDivElement>(null), line = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(1);
   useLayoutEffect(() => {
     if (compact || !frame.current || !line.current) return;
-    const fit = () => { const room = frame.current!.clientWidth, need = line.current!.scrollWidth; setZoom(need > 0 ? Math.max(0.6, Math.min(1, room / need)) : 1); };
+    const fit = () => {
+      const el = line.current!, room = frame.current!.clientWidth - 2;   // 2 px for rounding, so the last frame's edge shows
+      el.style.zoom = "1"; el.style.width = "max-content";
+      const need = el.getBoundingClientRect().width;
+      const z = need > 0 ? Math.max(0.6, Math.min(1, Math.floor((room / need) * 1000) / 1000)) : 1;
+      el.style.zoom = String(z);
+      el.style.width = need * z <= room + 1 ? `${room / z}px` : "max-content";
+      setZoom(z);
+    };
     fit();
     const watch = new ResizeObserver(fit);
     watch.observe(frame.current);
@@ -130,16 +140,16 @@ export default function Pipeline({ project: p, place, onScreen, compact = false,
   let k = -1;
   return (
     <div ref={frame} className={`pipe-grid ${zoom < 0.6 + 1e-6 ? "scroll-x" : "overflow-hidden"} ${compact ? "py-1" : "py-3"}`} role="navigation" aria-label={tr("Dây chuyền sản xuất video")}>
-    <div ref={line} className={`flex w-max items-stretch ${compact ? "" : "mx-auto"}`} style={compact ? undefined : { zoom }}>
+    <div ref={line} className={`flex items-stretch ${compact ? "w-max" : ""}`}>
       {GROUPS.map((g, gi) => {
         const gs = groupState(g);
         const done = g.children.filter((c) => st[NODES.findIndex((n) => n.key === c.key)] === "done").length;
         const folded = !compact && gs === "done" && folds.has(g.key) && place !== g.screen;
         const quiet = !compact && gs === "later";                  // not reached yet: names only, the card has the rest
         return (
-          <div key={g.key} className="flex shrink-0 items-stretch">
+          <div key={g.key} className="flex shrink-0 items-stretch" style={compact ? undefined : { flexGrow: g.children.length }}>
             {gi > 0 && <span className={`pipe-link self-center ${compact ? "w-3" : "w-4"} ${gs === "later" ? "" : gs === "now" && st[NODES.findIndex((n) => n.key === g.children[0].key) - 1] === "done" ? "live" : "done"}`} aria-hidden="true" />}
-            <section className={`pipe-group ${gs} relative flex flex-col rounded-lg border ${place === g.screen ? "border-accent/70" : "border-white/[0.18]"} bg-black/30 backdrop-blur-sm ${compact ? "px-1.5 py-1" : "px-2 pb-2 pt-2"}`}>
+            <section className={`pipe-group ${gs} relative flex flex-1 flex-col rounded-lg border ${place === g.screen ? "border-accent/70" : "border-white/[0.18]"} bg-black/30 backdrop-blur-sm ${compact ? "px-1.5 py-1" : "px-2 pb-2 pt-2"}`}>
               {!compact && (
                 <header className="mb-1.5 flex items-center gap-2">
                   <span className="mono text-[11px] text-faint">{`G${gi + 1}`}</span>
@@ -162,12 +172,12 @@ export default function Pipeline({ project: p, place, onScreen, compact = false,
                   k = NODES.findIndex((n) => n.key === c.key);
                   const s = st[k], i = k;
                   return (
-                    <span key={c.key} className={`flex ${compact ? "items-center" : "items-end"}`}>
+                    <span key={c.key} className={`flex ${compact ? "items-center" : "flex-1 items-end"}`}>
                       {ci > 0 && compact && <span className={`pipe-link w-2 ${st[i - 1] === "done" ? (s === "now" ? "live" : s === "later" ? "" : "done") : ""}`} aria-hidden="true" />}
                       <button type="button" onClick={c.ui ? () => open(g.screen) : undefined} aria-disabled={!c.ui || undefined}
                               onMouseEnter={(e) => show(i, e.currentTarget)} onMouseLeave={hide} onFocus={(e) => show(i, e.currentTarget)} onBlur={hide}
                               aria-label={`${c.label}: ${SAID[s]}${c.ui ? "" : ` (${tr("bước tự động, không có màn hình riêng")})`}`}
-                              className={`pipe-step ${c.ui ? "ui" : "auto"} group relative flex items-center rounded-lg text-left ${compact ? "gap-1.5 px-0.5 py-0.5" : `flex-col-reverse gap-1.5 py-2 text-center px-4`}`}>
+                              className={`pipe-step ${c.ui ? "ui" : "auto"} group relative flex items-center rounded-lg text-left ${compact ? "gap-1.5 px-0.5 py-0.5" : `w-full flex-col-reverse gap-1.5 py-2 text-center px-4`}`}>
                         {/* The line between steps, drawn by each step as two halves meeting its neighbours', so it is one line whatever the labels' widths. */}
                         {!compact && ci > 0 && <span aria-hidden="true" className={`pipe-link pointer-events-none absolute bottom-[39px] left-0 right-1/2 mr-8 ${st[i - 1] === "done" ? (s === "now" ? "live" : s === "later" ? "" : "done") : ""}`} />}
                         {!compact && ci < g.children.length - 1 && <span aria-hidden="true" className={`pipe-link pointer-events-none absolute bottom-[39px] left-1/2 right-0 ml-8 ${s === "done" ? (st[i + 1] === "now" ? "live" : st[i + 1] === "later" ? "" : "done") : ""}`} />}

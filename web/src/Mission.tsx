@@ -171,7 +171,7 @@ function FocusPicker() {
 /** One video's whole pipeline across the top of Mission Control, each step a way to its screen below. */
 function FocusLine() {
   const { p } = useFocus();
-  return p ? <Pipeline project={p} from="board" /> : null;
+  return p ? <div className="mx-auto max-w-[1680px]"><Pipeline project={p} from="board" /></div> : null;
 }
 
 /** Every video at work, each as its own line of nodes: where it stands at a glance, any node a click from its screen. */
