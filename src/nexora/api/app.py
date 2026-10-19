@@ -956,6 +956,13 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         seams = SB.seams(shots, scene_of, colour_gap=gap)
         for x in seams:
             x["a_code"], x["b_code"] = codes[x["a"]], codes[x["b"]]
+
+        def still(sh) -> bool:
+            """The shot's picture is a still (a photograph, a generated image) where the storyboard promised moving footage."""
+            a = sh.assignment or {}
+            if not a.get("asset_id") or not system.assets.asset(a["asset_id"]):
+                return a.get("kind") == "generated" and not a.get("video")
+            return bool(system.assets.original(a["asset_id"]).metadata.get("probe", {}).get("still"))
         cost_cap = project.get("budget_cap")
         return {"project": {"project_id": project_id, "title": project["title"], "format": project["format"], "budget_cap": cost_cap,
                             "spent": round(system.generation.spent(project_id), 2)},
@@ -964,6 +971,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
                             "script": " ".join(sh.spec["line"] for sh in shots if sh.scene_id == sc.scene_id and sh.spec["line"]),
                             "seconds": round(sum(sh.spec["duration"]["target"] for sh in shots if sh.scene_id == sc.scene_id), 1)} for sc in scenes],
                 "shots": [shot_view(sh) for sh in shots], "seams": seams, "plans": SB.camera_plan(shots, scenes),
+                "rhythm": SB.rhythm(shots, codes, still=still),
                 "messages": store.messages(project_id), "seconds": round(sum(sh.spec["duration"]["target"] for sh in shots), 1),
                 "vocabulary": {"sizes": SB.SIZES, "angles": SB.ANGLES, "moves": SB.MOVES, "lenses": SB.LENSES, "sources": SB.SOURCES, "times": SB.TIMES,
                                "checks": {k: {"text": v[0], "by": v[1], "op": v[2], "value": v[3]} for k, v in SB.CHECKS.items()}},

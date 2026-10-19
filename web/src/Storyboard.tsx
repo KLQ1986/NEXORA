@@ -32,11 +32,38 @@ type Seam = { a: string; b: string; a_code: string; b_code: string; same_scene: 
 type Plan = { scene_id: string; subject: { x: number; y: number; label: string; path?: number[] }; cams: { shot_id: string; x: number; y: number; end?: { x: number; y: number }; fov: number; crossed: boolean; aim: number }[]; crossed: string[] };
 type Diff = { title: string; old: string; new: string };
 type Msg = { message_id: string; role: "you" | "director"; text: string; status: string | null; proposal: { kind: string; diff: Diff[]; scope: string; summary?: string; problems?: string[] } | null };
+type Rhythm = { score: number; verdict: "strong" | "acceptable" | "revise" | "fail"; label: string;
+  dimensions: { key: string; name: string; score: number | null; shots: string[]; count: number; detail: string }[] };
+
+/** The storyboard read as a whole for what makes a video feel like a slideshow: a score per fault, the shots that cause it. */
+function RhythmCard({ r, pick, codes }: { r: Rhythm; pick: (id: string) => void; codes: Map<string, string> }) {
+  const [open, setOpen] = useState(r.verdict === "revise" || r.verdict === "fail");
+  const tone = { strong: "text-proof", acceptable: "text-proof", revise: "text-cue", fail: "text-tally" }[r.verdict];
+  return (
+    <section className="rounded-lg border border-line bg-raised/30 px-3 py-2">
+      <button type="button" onClick={() => setOpen(!open)} className="flex w-full items-center gap-2 text-left text-[12.5px]"
+              title={tr("Chấm theo 6 lỗi làm video giống trình chiếu ảnh (0 tốt, 5 tệ); mượn từ OpenMontage")}>
+        <span className="font-semibold">{tr("Nhịp và đa dạng")}</span>
+        <span className={`mono font-semibold ${tone}`}>{r.score.toFixed(1)}</span><span className={tone}>{r.label}</span>
+        <Icon name="next" size={11} className={`ml-auto text-faint transition-transform ${open ? "rotate-90" : ""}`} />
+      </button>
+      {open && <ul className="mt-2 grid gap-1 text-[12px]">
+        {r.dimensions.map((d) => (
+          <li key={d.key} className="flex flex-wrap items-baseline gap-x-2">
+            <span className={`mono w-7 text-right ${d.score == null ? "text-faint" : d.score >= 4 ? "text-tally" : d.score >= 2 ? "text-cue" : "text-faint"}`}>{d.score == null ? "—" : d.score.toFixed(1)}</span>
+            <span className="w-44 shrink-0">{d.name}</span>
+            <span className="text-faint">{d.score == null || d.count ? d.detail : tr("không có")}</span>
+            {d.shots.map((c) => <button key={c} type="button" onClick={() => { const id = codes.get(c); if (id) pick(id); }} className="mono text-[11px] text-accent hover:underline">{c}</button>)}
+          </li>))}
+      </ul>}
+    </section>);
+}
+
 type Board = {
   project: { project_id: string; title: string; format: string; budget_cap: number | null; spent: number };
   shared: { idea: string; seconds: number; palette: { name: string; hex: string }[]; fingerprint: string; moods: string[]; style_notes: string[]; autonomy: number };
   scenes: { scene_id: string; title: string; purpose: string; script: string; seconds: number; subject: { x: number; y: number; label: string } | null }[];
-  shots: SbShot[]; seams: Seam[]; plans: Plan[]; messages: Msg[]; seconds: number; remote?: string[]; effects?: { asset_id: string; name: string }[];
+  shots: SbShot[]; seams: Seam[]; plans: Plan[]; rhythm?: Rhythm; messages: Msg[]; seconds: number; remote?: string[]; effects?: { asset_id: string; name: string }[];
   vocabulary: { sizes: string[]; angles: string[]; moves: string[]; lenses: string[]; sources: string[]; times: string[]; checks: Record<string, { text: string; by: string; op: string; value: unknown }> };
   providers: { image_providers?: { name: string; label: string; runs: string }[]; video_providers?: { name: string; label: string; runs: string }[] };
 };
@@ -323,6 +350,7 @@ function BoardView({ board, cur, seam, tone, pick, pickSeam, move, ops, remove, 
   };
   return (
     <div className="grid min-h-0 flex-1 content-start gap-5 overflow-y-auto p-3">
+      {board.rhythm && board.shots.length > 1 && <RhythmCard r={board.rhythm} pick={pick} codes={new Map(board.shots.map((s) => [s.code, s.shot_id]))} />}
       {board.scenes.map((sc) => (
         <section key={sc.scene_id} className="grid gap-2.5">
           <div className="flex flex-wrap items-baseline gap-2.5"><h2 className="text-[14px] font-semibold">{sc.title}</h2><span className="text-[12px] text-faint">{sc.purpose}</span><span className="mono text-[11px] text-mute">{sc.seconds}s</span></div>

@@ -652,3 +652,69 @@ def camera_plan(shots: list[Shot], scenes: list) -> list[dict]:
                          "aim": round(math.degrees(math.atan2(subj["y"] - cam["y"], subj["x"] - cam["x"])), 1)})
         out.append({"scene_id": sc.scene_id, "subject": subj, "cams": cams, "crossed": [c["shot_id"] for c in cams if c["crossed"]]})
     return out
+
+
+RHYTHM_VERDICTS = ((2.0, "strong", "Tốt"), (3.0, "acceptable", "Chấp nhận được"), (4.0, "revise", "Nên sửa trước khi dựng"), (99.0, "fail", "Dễ thành slideshow: không nên dựng"))
+HOLD = (1.5, 8.0)            # a shot shorter or longer than this, without its own sound, drags or flickers (OpenMontage documentary holds)
+
+
+def rhythm(shots: list[Shot], codes: dict[str, str], *, still=lambda shot: False) -> dict:
+    """The whole storyboard read for the faults that make a video feel like a slideshow (OpenMontage's slideshow risk, research
+    2026-10-19), each scored 0 to 5 (lower is better) from what is measured on the shots, with the shots that cause it:
+    repetition (the same picture, or the same size, angle and movement, twice in a row), one clip used again and again,
+    stills where video was promised (`still(shot)`), holds out of range, one framing size through a whole scene, and long
+    runs of static shots. The mean gives the verdict: under 2 strong, under 3 acceptable, under 4 revise, else fail."""
+    n = len(shots)
+    if n < 2:
+        return {"score": 0.0, "verdict": "strong", "label": RHYTHM_VERDICTS[0][2], "dimensions": []}
+    code = lambda s: codes.get(s.shot_id, s.shot_id)
+    asset = lambda s: (s.assignment or {}).get("asset_id")
+    f = lambda s: s.spec["framing"]
+    pairs = list(zip(shots, shots[1:]))
+    # A storyboard laid out without framing (every shot left at the defaults) says nothing about its pictures' sizes and
+    # movement: those faults are left unmeasured rather than charged (seen on a topic video: 78 shots, all "trung, đứng yên").
+    framed = any((f(s)["size"], f(s)["angle"], f(s)["move"]) != ("trung", "ngang mắt", "đứng yên") for s in shots)
+    same_frame = lambda a, b: framed and (f(a)["size"], f(a)["angle"], f(a)["move"]) == (f(b)["size"], f(b)["angle"], f(b)["move"])
+    repeated = [b for a, b in pairs if (asset(a) and asset(a) == asset(b)) or same_frame(a, b)]
+    uses: dict[str, list] = {}
+    for s in shots:
+        if asset(s):
+            uses.setdefault(asset(s), []).append(s)
+    reused = [s for group in uses.values() if len(group) >= 3 for s in group[2:]]
+    pictured = [s for s in shots if asset(s)]
+    stills = [s for s in pictured if still(s)]
+    holds = [s for s in shots if not (s.assignment or {}).get("treat", {}).get("live_sound")
+             and not HOLD[0] <= float(s.spec["duration"]["target"]) <= HOLD[1]]
+    by_scene: dict[str, list] = {}
+    for s in shots:
+        by_scene.setdefault(s.scene_id, []).append(s)
+    flat = [scene for scene in by_scene.values() if len(scene) >= 4 and len({f(s)["size"] for s in scene}) < 2]
+    static, run = [], []
+    for s in shots + [None]:
+        if s is not None and f(s)["move"] == "đứng yên":
+            run.append(s)
+            continue
+        if len(run) >= 5:
+            static += run
+        run = []
+    dims = [
+        ("repetition", "Lặp lại liền nhau", min(5.0, 10 * len(repeated) / max(1, len(pairs))), repeated,
+         "cùng một hình, hoặc cùng cỡ cảnh, góc máy và chuyển động hai shot liền"),
+        ("reuse", "Một clip dùng nhiều lần", min(5.0, 10 * len(reused) / n), reused, "một clip xuất hiện từ lần thứ ba"),
+        ("stills", "Ảnh tĩnh thay cho video", 5.0 * len(stills) / max(1, len(pictured)), stills, "hình của shot là ảnh tĩnh, không phải video"),
+        ("holds", "Độ dài shot", min(5.0, 10 * len(holds) / n), holds, f"ngoài khoảng {HOLD[0]:g}–{HOLD[1]:g} s"),
+        ("variety", "Cỡ cảnh đơn điệu", min(5.0, 5.0 * len(flat) / max(1, sum(1 for sc in by_scene.values() if len(sc) >= 4))), [s for sc in flat for s in sc],
+         "cả cảnh chỉ một cỡ cảnh"),
+        ("motion", "Chuỗi shot đứng yên", min(5.0, 10 * len(static) / n), static, "năm shot đứng yên liền nhau trở lên"),
+    ]
+    unframed = "chưa đo: các shot chưa được đặt khung hình (đang để mặc định)"
+    out = [{"key": k, "name": name, "score": None if not framed and k in ("variety", "motion") else round(score, 1),
+            "shots": [] if not framed and k in ("variety", "motion") else [code(s) for s in hit][:12],
+            "count": 0 if not framed and k in ("variety", "motion") else len(hit), "detail": unframed if not framed and k in ("variety", "motion") else detail}
+           for k, name, score, hit, detail in dims]
+    measured = [d["score"] for d in out if d["score"] is not None]
+    mean = round(sum(measured) / len(measured), 2)
+    verdict = next(v for v in RHYTHM_VERDICTS if mean < v[0])
+    if max(measured) >= 4.0 and verdict[1] in ("strong", "acceptable"):
+        verdict = RHYTHM_VERDICTS[2]               # one grave fault is not averaged away (OpenMontage only averages)
+    return {"score": mean, "verdict": verdict[1], "label": verdict[2], "dimensions": out, "framed": framed}

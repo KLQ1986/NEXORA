@@ -60,6 +60,8 @@ const en: Record<string, string> = {
   "Tìm cảnh “{0}” trong footage": "Find “{0}” in the footage",
   "{0} việc đang chạy": "{0} jobs running",
   "Bỏ clip này": "Remove this clip",
+  "Nhịp và đa dạng": "Rhythm and variety",
+  "Chấm theo 6 lỗi làm video giống trình chiếu ảnh (0 tốt, 5 tệ); mượn từ OpenMontage": "Scored on 6 faults that make a video feel like a slideshow (0 good, 5 bad); borrowed from OpenMontage",
   "Tự do": "Free",
   "Cần ghi công": "Credit required",
   "Share-alike": "Share-alike",
