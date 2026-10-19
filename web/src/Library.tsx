@@ -827,7 +827,7 @@ function Viewer({ item, items, start, assets, close, reload, similar, pick, comp
       <div className={theater ? "flex min-h-0 flex-1" : "contents"}>
       <div className={theater ? "flex min-h-0 shrink-0 flex-col overflow-y-auto border-r border-line" : "contents"} style={theater ? { width: THEATRE_WIDTH } : undefined}>
       <div className={`shrink-0 ${small ? "flex border-b border-line" : ""}`}>
-        <div className={small ? "w-[60%] shrink-0" : ""}>
+        <div className={small ? "w-[70%] shrink-0" : ""}>
         {comparing ? <div className="p-3"><VQStage vq={vq} /></div>
           : feeds.length ? <Screen feeds={feeds} start={start} marks={marks} cuts={cuts} onTime={setT} jump={jump} small={small} tall={theater} onTheater={grow} />
           : item.kind === "image" && item.thumb ? (better && sight === "both"
