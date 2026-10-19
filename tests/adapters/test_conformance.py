@@ -71,3 +71,24 @@ def test_the_model_adapter_sends_each_kind_of_work_to_the_model_chosen_for_it():
     assert many.model_for(Request("describe", params={"prompt": "x"})) == "see"
     assert many.model_for(Request("describe", params={"prompt": "x", "task": "focus"})) == "judge"
     assert many.model_for(Request("chat", params={"prompt": "x"})) == "write"
+
+
+def test_stock_searches_pexels_and_pixabay_once_their_keys_are_given_and_hands_the_keys_to_the_child(tmp_path, monkeypatch):
+    import json as _json
+    from nexora.adapters import openmontage
+    from nexora.core.adapter import Request
+    from nexora.core.process import Completed
+    (tmp_path / "om").mkdir()
+    seen = {}
+
+    def fake(cmd, *, timeout, cwd=None, stdin=None, env=None):
+        seen.update(payload=_json.loads(stdin), env=env)
+        return Completed(0, "@@NEXORA@@" + _json.dumps({"success": True, "data": {"clips": []}, "artifacts": [], "error": None, "cost_usd": 0}), "")
+    monkeypatch.setattr(openmontage, "run_process", fake)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "never-passed")
+
+    assert openmontage.OpenMontageStock(tmp_path / "om").sources() == ["archive_org", "nasa", "wikimedia"]
+    stock = openmontage.OpenMontageStock(tmp_path / "om", keys={"pexels": "pk", "pixabay_video": ""})
+    stock.submit(Request("search", inputs={"queries": ["chợ nổi"]}, params={"out_dir": str(tmp_path / "out")}))
+    assert seen["payload"]["inputs"]["sources"] == ["pexels", "archive_org", "nasa", "wikimedia"]
+    assert seen["env"]["PEXELS_API_KEY"] == "pk" and "PIXABAY_API_KEY" not in seen["env"] and "ANTHROPIC_API_KEY" not in seen["env"]

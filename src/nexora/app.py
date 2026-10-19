@@ -1065,7 +1065,7 @@ def build_from_config(config, **overrides) -> System:
                  model=OllamaAdapter(host=config.ollama_host, vision_model=config.vision_model, embed_model=config.embed_model,
                                      judge_model=config.judge_model, writer_model=config.writer_model),
                  voice=SayVoice(), voice_name=config.voice, match_threshold=config.match_threshold,
-                 stock=OpenMontageStock(config.openmontage_repo), desktop=DesktopNotifier(), web=WebReader(),
+                 stock=OpenMontageStock(config.openmontage_repo, keys={"pexels": _os.environ.get("PEXELS_API_KEY") or config.pexels_api_key, "pixabay_video": _os.environ.get("PIXABAY_API_KEY") or config.pixabay_api_key}), desktop=DesktopNotifier(), web=WebReader(),
                  pictures=_pictures(config),
                  recognisers=[AppleVision(AppleTool(Path(config.data_dir) / "tools")), AppleSound(AppleTool(Path(config.data_dir) / "tools"))] if AppleTool(Path(config.data_dir) / "tools").available() else [],
                  speech=WhisperCpp(config.speech_model, language=config.speech_language, vad_model=config.speech_vad_model or None) if config.speech_model else None,

@@ -25,13 +25,18 @@ print('\\n@@NEXORA@@' + json.dumps({'success': result.success, 'data': result.da
 """
 DEPENDENCIES = ["requests", "pyyaml", "pydantic", "jsonschema", "python-dotenv", "numpy", "pillow"]
 KEYLESS_SOURCES = ["archive_org", "nasa", "wikimedia"]
+KEYED_SOURCES = {"pexels": "PEXELS_API_KEY", "pixabay_video": "PIXABAY_API_KEY"}     # free sign-up keys; a source joins when its key is set
 
 
 class OpenMontageStock(Adapter):
-    """Free stock footage through OpenMontage's stock sources that need no API key."""
+    """Free stock footage through OpenMontage's stock sources: those that need no key, and Pexels and Pixabay once their keys are given."""
 
-    def __init__(self, repo: str | Path = "~/openmontage"):
+    def __init__(self, repo: str | Path = "~/openmontage", *, keys: dict[str, str] | None = None):
         self._repo = Path(repo).expanduser()
+        self._keys = {source: key for source, key in (keys or {}).items() if key}
+
+    def sources(self) -> list[str]:
+        return [*self._keys, *KEYLESS_SOURCES]
 
     def describe(self) -> Capability:
         return Capability(name="stock", operations=("search",), runs="cloud")
@@ -48,11 +53,13 @@ class OpenMontageStock(Adapter):
         out_dir = Path(request.params["out_dir"])
         out_dir.mkdir(parents=True, exist_ok=True)
         payload = {"tool": "direct_clip_search", "inputs": {
-            "output_dir": str(out_dir), "queries": [{"query": q, "kind": "video"} for q in request.inputs["queries"]], "sources": request.params.get("sources", KEYLESS_SOURCES),
+            "output_dir": str(out_dir), "queries": [{"query": q, "kind": "video"} for q in request.inputs["queries"]], "sources": request.params.get("sources") or self.sources(),
             "clips_per_query": int(request.params.get("clips_per_query", 1)), "extract_thumbnails": False,
             "timeout_seconds": int(request.params.get("search_seconds", 90))}}
         cmd = ["uv", "run", "-q", "--no-project", *[a for dep in DEPENDENCIES for a in ("--with", dep)], "python", "-I", "-c", RUNNER]
-        done = run_process(cmd, timeout=request.deadline_seconds or 240, cwd=str(self._repo), stdin=json.dumps(payload))
+        env = {**os.environ, **{KEYED_SOURCES[source]: key for source, key in self._keys.items()}}
+        env.pop("ANTHROPIC_API_KEY", None)
+        done = run_process(cmd, timeout=request.deadline_seconds or 240, cwd=str(self._repo), stdin=json.dumps(payload), env=env)
         marker = done.stdout.rfind("@@NEXORA@@")
         if done.returncode != 0 or marker < 0:
             raise AdapterError(ErrorCode.UNAVAILABLE, f"the OpenMontage tool did not answer: {done.stderr.strip()[-200:]}")
