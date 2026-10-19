@@ -699,12 +699,12 @@ function VideoPicker({ id }: { id: string }) {
     goTo(`/du-an/${next}${here}`);
   };
   return (
-    <span className="flex min-w-0 shrink-0 items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-      <Icon name="clapper" size={14} className="text-faint" />
-      <select value={id} onChange={(e) => go(e.target.value)} aria-label={tr("Video đang mở")} className="h-8 max-w-[280px] truncate pl-2 text-[13px] font-medium text-ink">
+    <div className="flex shrink-0 items-center gap-2 self-start rounded-xl border border-line bg-surface/60 px-3 py-2.5">
+      <Icon name="clapper" size={15} className="text-faint" />
+      <select value={id} onChange={(e) => go(e.target.value)} aria-label={tr("Video đang mở")} className="h-8 w-[380px] max-w-[42vw] truncate pl-2 text-[13.5px] font-medium text-ink">
         {list.map((p) => <option key={p.project_id} value={p.project_id}>{p.title}</option>)}
       </select>
-    </span>);
+    </div>);
 }
 
 function AgentLog({ projectId, compact = false }: { projectId: string; compact?: boolean }) {
@@ -712,7 +712,7 @@ function AgentLog({ projectId, compact = false }: { projectId: string; compact?:
   const task = data?.tasks[0];
   const [all, setAll] = useState(false);
   // The video's own name, to switch video, heads the assistant's row; without an assistant, the row holds it alone.
-  if (!task) return data ? <div className={`flex items-center gap-2.5 rounded-xl border border-line px-4 py-2 ${compact ? "" : "mb-6"}`}><VideoPicker id={projectId} /><span className="text-[12.5px] text-faint">{tr("Không có trợ lý cho video này")}</span></div> : null;
+  if (!task) return data ? <div className={`flex items-center gap-3 ${compact ? "" : "mb-6"}`}><VideoPicker id={projectId} /><span className="text-[12.5px] text-faint">{tr("Không có trợ lý cho video này")}</span></div> : null;
   // The same words said again (a step taken up again says them once more) are one line with how often and when last;
   // the newest eight show, the rest on asking.
   const lines: { role: string; text: string; at: number; times: number }[] = [];
@@ -723,9 +723,10 @@ function AgentLog({ projectId, compact = false }: { projectId: string; compact?:
   }
   const shown = all ? lines : lines.slice(-8);
   return (
-    <details className={`ai-card px-4 py-3 ${compact ? "" : "mb-6"}`} open={!compact && task.status !== "done"}>
+    <div className={`flex items-start gap-3 ${compact ? "" : "mb-6"}`}>
+    <VideoPicker id={projectId} />
+    <details className="ai-card min-w-0 flex-1 px-4 py-3" open={!compact && task.status !== "done"}>
       <summary className="flex cursor-pointer list-none items-center gap-2.5 font-medium">
-        <VideoPicker id={projectId} /><span className="h-5 w-px bg-line" aria-hidden="true" />
         <span className="grid h-7 w-7 place-items-center rounded-lg bg-ai/15 text-ai"><Icon name="sparkles" size={15} /></span>{tr("Trợ lý sản xuất")}
         <Tag tone={task.status === "waiting_operator" ? "cue" : task.status === "failed" ? "tally" : task.status === "done" ? "proof" : "ai"}>{TASK_STATES[task.status] ?? task.status}</Tag>
         <span className="ml-auto truncate text-[12.5px] font-normal text-mute">{task.goal}</span><Icon name="down" size={14} className="text-faint" />
@@ -737,6 +738,7 @@ function AgentLog({ projectId, compact = false }: { projectId: string; compact?:
         {all && lines.length > 8 && <li><button type="button" onClick={() => setAll(false)} className="link text-[12.5px]">{tr("Chỉ xem 8 dòng mới nhất")}</button></li>}
       </ol>
     </details>
+    </div>
   );
 }
 
