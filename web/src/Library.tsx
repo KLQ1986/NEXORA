@@ -310,7 +310,7 @@ function Card({ item, on, chosen, choosing, pick, choose, acts, vq, remove, agai
 
 /* Where an item stands in Visual Quality, on its card: a dot of the state's colour (hollow before any analysis) and its name. */
 const VQ_DOT: Record<string, string> = { mute: "border border-faint", cue: "bg-cue", proof: "bg-proof", tally: "bg-tally", accent: "bg-accent", ai: "bg-ai" };
-function VQMark({ row }: { row: VQRow }) {
+function VQMark({ row, tail }: { row: VQRow; tail?: string }) {
   const [label, tone] = VQ_STATE[row.state] ?? [row.state, "mute"];
   const verdict = row.verdict ? ({ pass: [tr("QA đạt"), "text-proof"], warn: [tr("QA cảnh báo"), "text-cue"], fail: [tr("QA hỏng"), "text-tally"] } as Record<string, [string, string]>)[row.verdict] : null;
   return (
@@ -321,20 +321,21 @@ function VQMark({ row }: { row: VQRow }) {
       {verdict && <span className={verdict[1]}>· {verdict[0]}</span>}
       {row.generative > 0 && <span className="text-ai">· AI {row.generative}</span>}
       {row.worst && row.state !== "none" && <span className="truncate text-faint">· {DEFECT[row.worst.kind] ?? row.worst.kind} {Math.round(row.worst.severity * 100)}%</span>}
+      {tail && <span className="mono text-faint">· {tail}</span>}
     </span>
   );
 }
 
-function Row({ item, on, chosen, choosing, pick, choose }: { item: Item; on: boolean; chosen: boolean; choosing: boolean; pick: () => void; choose: () => void }) {
+function Row({ item, on, chosen, choosing, pick, choose, vq }: { item: Item; on: boolean; chosen: boolean; choosing: boolean; pick: () => void; choose: () => void; vq?: VQRow }) {
+  const tail = [item.duration ? timecode(item.duration) : null, res(item.width, item.height) ?? (item.format ? FORMAT[item.format] : null), item.size ? megabytes(item.size) : null].filter(Boolean).join(" · ");
   return (
     <li>
       <button type="button" onClick={choosing ? choose : pick} className={`flex w-full items-center gap-3 rounded-lg px-2 py-1.5 text-left ${on || chosen ? "bg-accent/10" : "hover:bg-raised/60"}`}>
         {choosing && <span className={`grid h-4 w-4 shrink-0 place-items-center rounded border ${chosen ? "border-accent bg-accent text-canvas" : "border-edge"}`}>{chosen && <Icon name="check" size={11} />}</span>}
         <Frame item={item} className="aspect-video w-20 shrink-0 rounded" />
         <span className="min-w-0 flex-1"><span className="block truncate text-[13px]">{item.title}{item.version ? <span className="mono ml-1.5 text-[11px] text-faint">v{item.version}</span> : null}</span>
-          <span className="mono block truncate text-[11px] text-faint">{[item.duration ? timecode(item.duration) : null, res(item.width, item.height) ?? (item.format ? FORMAT[item.format] : null)].filter(Boolean).join(" · ")}</span></span>
+          {vq ? <VQMark row={vq} tail={tail} /> : <span className="mono block truncate text-[11px] text-faint">{tail}</span>}</span>
         {item.status && <Badge s={item.status} />}
-        {item.size ? <span className="mono w-16 shrink-0 text-right text-[12px] text-mute">{megabytes(item.size)}</span> : null}
       </button>
     </li>
   );
@@ -1159,7 +1160,7 @@ export default function Library() {
           : searching ? <p className="flex items-center justify-center gap-2 py-10 text-[13px] text-mute"><Spinner size={13} />{tr("Đang tìm theo nội dung…")}</p>
           : data && shown.length === 0 ? <div className="py-10 text-center text-[13px] text-mute">{items.length ? <>{tr("Không có mục nào khớp bộ lọc.")} <button type="button" className="link" onClick={reset}>{tr("Bỏ lọc")}</button></> : tr("Thư viện còn trống. Bấm + để thêm footage.")}</div>
           : view === "grid" ? <ul className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" }}>{shown.map((i) => <Card key={i.key} vq={i.asset ? vqMap.get(i.asset.asset_id) : undefined} item={i} on={picked === i.key} chosen={chosen.has(i.key)} choosing={chosen.size > 0} pick={() => show(i.key)} choose={() => choose(i.key)} acts={actsOf(i)} remove={i.asset ? (forGood) => removeOne(i.asset!, forGood) : undefined} again={again} />)}</ul>
-          : <ul className="grid gap-0.5">{shown.map((i) => <Row key={i.key} item={i} on={picked === i.key} chosen={chosen.has(i.key)} choosing={chosen.size > 0} pick={() => show(i.key)} choose={() => choose(i.key)} />)}</ul>}
+          : <ul className="grid gap-0.5">{shown.map((i) => <Row key={i.key} vq={i.asset ? vqMap.get(i.asset.asset_id) : undefined} item={i} on={picked === i.key} chosen={chosen.has(i.key)} choosing={chosen.size > 0} pick={() => show(i.key)} choose={() => choose(i.key)} />)}</ul>}
       </div>
       {chosen.size > 0 && (
         <div className="flex h-12 shrink-0 items-center gap-2 border-t border-line px-3 text-[13px]">
