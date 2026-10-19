@@ -165,8 +165,8 @@ function Bell({ go, unread }: { go: (to: string) => void; unread: number }) {
 /* The sections of the studio, left to right in the top bar. Operations gathers the screens that look after the machine. */
 const SECTIONS = [
   { key: "home", label: tr("Tổng quan"), icon: "home", to: "/", paths: ["/"] },
-  { key: "ops", label: tr("Vận hành"), icon: "pulse", to: "/phong-may", paths: ["/phong-may", "/tien-trinh", "/chi-phi", "/thong-bao", "/thung-rac", "/he-thong"] },
-  { key: "projects", label: tr("Dự án"), icon: "clapper", to: "/du-an", paths: ["/du-an"] },
+  // Mission Control holds the projects too (design 2026-10-19): one side menu for missions, approvals, the machine and the videos.
+  { key: "ops", label: tr("Mission Control"), icon: "gauge", to: "/phong-may", paths: ["/phong-may", "/du-an", "/tien-trinh", "/chi-phi", "/thong-bao", "/thung-rac", "/he-thong"] },
   { key: "review", label: tr("Phòng chiếu"), icon: "screen", to: "/phong-chieu", paths: ["/phong-chieu"] },
   { key: "library", label: tr("Thư viện"), icon: "film", to: "/thu-vien", paths: ["/thu-vien", "/chat-luong-hinh"] },
   { key: "plan", label: tr("Kế hoạch"), icon: "calendar", to: "/ke-hoach", paths: ["/ke-hoach"] },

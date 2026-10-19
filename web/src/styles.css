@@ -217,3 +217,14 @@ html[lang="vi"] .display { letter-spacing: -0.012em; }
 .font-bold { font-weight: 650; }
 .display { font-weight: 550; }
 .eyebrow, .field-label, .chip { font-weight: 450; }
+
+/* The production pipeline (Mission Control): a lit line flows into the node at work; a waiting node breathes. */
+@keyframes pipe-flow { to { background-position: 24px 0; } }
+@keyframes pipe-breathe { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-cue) 45%, transparent); } 50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--color-cue) 0%, transparent); } }
+.pipe-grid { background-image: linear-gradient(to right, color-mix(in srgb, var(--color-accent) 7%, transparent) 1px, transparent 1px), linear-gradient(to bottom, color-mix(in srgb, var(--color-accent) 7%, transparent) 1px, transparent 1px); background-size: 18px 18px; }
+.pipe-link { height: 2px; background: var(--color-line); }
+.pipe-link.done { background: color-mix(in srgb, var(--color-proof) 70%, transparent); }
+.pipe-link.live { background: repeating-linear-gradient(90deg, var(--color-accent) 0 8px, transparent 8px 12px); background-size: 24px 2px; animation: pipe-flow .8s linear infinite; }
+.pipe-node.now { box-shadow: 0 0 0 1px var(--color-accent), 0 0 18px -2px color-mix(in srgb, var(--color-accent) 60%, transparent); }
+.pipe-node.wait { animation: pipe-breathe 1.8s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .pipe-link.live, .pipe-node.wait { animation: none; } }

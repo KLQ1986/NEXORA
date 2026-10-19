@@ -57,3 +57,47 @@ Thẻ "Trợ lý sản xuất" (trợ lý đang làm gì, đang chờ gì) hiệ
   - Storyboard là bước ②;
   - form "Video mới" có ba cách bắt đầu, và "Theo chủ đề" mở sẵn bảng chủ đề.
 - Không tạo video thật cho cách "Giao trợ lý" trong lúc kiểm tra, vì cách đó gọi Claude Code của người vận hành.
+
+## Bổ sung: Mission Control là nhà chung (cùng ngày)
+
+Người vận hành yêu cầu:
+
+> "Trang vận hành đổi lên thành Mission Control luôn… gom luôn menu dự án… sơ đồ workflow theo style hitech… click vào node nào thì màn hình chức năng của node đó hiện ra bên dưới."
+
+**Điều hướng**
+- Mục "Vận hành" trên thanh trên cùng đổi tên thành **Mission Control**.
+- Mục **Dự án được gộp vào** Mission Control. Các đường dẫn `/du-an/...` vẫn giữ.
+
+**Một menu trái** (`OpsSide`), dùng giống nhau ở mọi trang của Mission Control, dự án và vận hành. Menu có bốn nhóm:
+
+1. **Mission Control:** Board, Nhiệm vụ, Phê duyệt, Agents, Chất lượng, Artifacts, Ngân sách & tài nguyên, Nhật ký. Phê duyệt và Nhiệm vụ có số đếm.
+2. **Vận hành:** Tiến trình, Chi phí, Thông báo, Thùng rác, Hệ thống.
+3. **Video:** các bộ lọc.
+4. **Dự án:** danh sách video.
+
+Tab của Mission Control lấy từ địa chỉ trang (`?tab=`), nên các mục trong menu trái mở đúng tab.
+
+**Sơ đồ dây chuyền** (`web/src/Pipeline.tsx`) thay cho thanh tab ngang và thanh 4 bước. Có 11 node:
+
+N01 Nhiệm vụ → N02 Nghiên cứu → N03 Kịch bản → N04 Kiểm chứng → N05 Tìm clip → N06 Stock → N07 Storyboard → N08 Dựng → N09 QC → N10 Duyệt → N11 Xuất bản.
+
+- **Trạng thái node:** xong, đang chạy, chờ bạn, lỗi hoặc chưa tới.
+  - Khi có trợ lý làm video đó, trạng thái lấy từ bước của trợ lý.
+  - Khi không có, lấy theo tiến độ của dự án.
+  - Node QC báo lỗi khi bản dựng không qua QC.
+- **Hình thức:** lưới mờ; node có mã `Nxx` viết bằng chữ đơn cách; đường nối chảy sáng vào node đang chạy; node chờ bạn nhấp nháy.
+- **Bấm vào node** mở màn hình của nhóm node đó ngay bên dưới:
+
+  | Node | Màn hình mở ra |
+  |---|---|
+  | N01–N04 | Kịch bản |
+  | N05–N07 | Storyboard |
+  | N08–N10 | Dựng |
+  | N11 | Xuất bản |
+
+  Nhóm node của màn hình đang mở được khoanh viền.
+
+**Vị trí của sơ đồ**
+- Đầu trang Mission Control: pipeline của video đang theo dõi, có ô chọn video. Mặc định là video đang làm.
+- Trên Board: bảng **"Dây chuyền đang chạy"**, mỗi video đang làm một hàng pipeline thu gọn, kèm việc trợ lý vừa làm.
+- Đầu trang dự án và trang Storyboard, thay cho thanh 4 bước.

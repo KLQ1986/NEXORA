@@ -146,13 +146,31 @@ export function Icon({ name, size = 16, className = "" }: { name: keyof typeof I
 }
 
 /** The operations section's side menu: the four screens that look after the machine. The open one may hang its own places beneath. */
-export function OpsSide({ children }: { children?: React.ReactNode }) {
+/* The projects' part of Mission Control's side menu is the projects page's own (videos by where they stand); it is handed in
+   here so this file does not import that page. */
+let ProjectsMenu: ((props: Record<string, unknown>) => React.ReactNode) | null = null;
+export function registerProjectsMenu(menu: (props: Record<string, unknown>) => React.ReactNode) { ProjectsMenu = menu; }
+
+export const MISSION_TABS: [string, string, string][] = [["overview", tr("Board"), "gauge"], ["missions", tr("Nhiệm vụ"), "bolt"], ["approvals", tr("Phê duyệt"), "check"],
+  ["agents", tr("Agents"), "cpu"], ["quality", tr("Chất lượng"), "shield"], ["artifacts", tr("Artifacts"), "layers"], ["resources", tr("Ngân sách & tài nguyên"), "coins"], ["logs", tr("Nhật ký"), "list"]];
+
+/** Mission Control's side menu, the same on every screen of it (design 2026-10-19): its own views, the machine's pages, and the
+    projects with their videos. `projects`: the projects part with the open video unfolded (the projects page passes its own). */
+export function OpsSide({ children, projects, counts }: { children?: React.ReactNode; projects?: React.ReactNode; counts?: Record<string, number | undefined> }) {
   const path = window.location.pathname;
-  const items: [string, string, string][] = [["/phong-may", tr("Mission Control"), "gauge"], ["/tien-trinh", tr("Tiến trình"), "pulse"], ["/chi-phi", tr("Chi phí"), "coins"], ["/thong-bao", tr("Thông báo"), "bell"], ["/thung-rac", tr("Thùng rác"), "trash"], ["/he-thong", tr("Hệ thống"), "sliders"]];
+  const tab = path.startsWith("/phong-may") ? new URLSearchParams(window.location.search).get("tab") || "overview" : null;
+  const ops: [string, string, string][] = [["/tien-trinh", tr("Tiến trình"), "pulse"], ["/chi-phi", tr("Chi phí"), "coins"], ["/thong-bao", tr("Thông báo"), "bell"], ["/thung-rac", tr("Thùng rác"), "trash"], ["/he-thong", tr("Hệ thống"), "sliders"]];
   return (
-    <SideGroup label={tr("Vận hành")}>
-      {items.map(([to, label, icon]) => { const on = path.startsWith(to); return <SideLink key={to} label={label} icon={icon} on={on && !children} onClick={() => goTo(to)}>{on ? children : null}</SideLink>; })}
-    </SideGroup>
+    <>
+      <SideGroup label={tr("Mission Control")}>
+        {MISSION_TABS.map(([k, label, icon]) => <SideLink key={k} label={label} icon={icon} on={tab === k} count={counts?.[k]} tone={k === "approvals" ? "cue" : undefined}
+                                                          onClick={() => goTo(k === "overview" ? "/phong-may" : `/phong-may?tab=${k}`)} />)}
+      </SideGroup>
+      <SideGroup label={tr("Vận hành")}>
+        {ops.map(([to, label, icon]) => { const on = path.startsWith(to); return <SideLink key={to} label={label} icon={icon} on={on && !children} onClick={() => goTo(to)}>{on ? children : null}</SideLink>; })}
+      </SideGroup>
+      {projects ?? (ProjectsMenu ? ProjectsMenu({}) : null)}
+    </>
   );
 }
 

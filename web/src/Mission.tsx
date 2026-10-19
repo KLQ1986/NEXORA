@@ -1,7 +1,8 @@
 import { t as tr, tv, locale } from "./i18n";
 import { useEffect, useState } from "react";
-import { megabytes, post, stageName, usePoll } from "./api";
-import { ask, Button, Empty, goTo, Icon, Meter, OpsSide, Page, Seg, Spinner, Tabs, Tag, toast } from "./parts";
+import { megabytes, post, stageName, usePoll, type AgentTask, type Project } from "./api";
+import Pipeline from "./Pipeline";
+import { ask, Button, Empty, goTo, Icon, Meter, OpsSide, Page, Seg, Spinner, Tag, toast } from "./parts";
 
 /* Mission Control (design 2026-10-18): the control plane. Every service keeps its own state; this screen reads them and
    sends commands through their own endpoints. A mission keeps only what was asked, the plan and what it started. */
@@ -97,18 +98,23 @@ function Kpi({ label, value, sub, tone = "accent", code, onClick }: { label: str
 }
 
 export default function MissionControl() {
-  const [tab, setTab] = useState<TabKey>(() => (TABS.find((t) => t.key === new URLSearchParams(window.location.search).get("tab"))?.key ?? "overview"));
-  const [open, setOpen] = useState<string | null>(() => new URLSearchParams(window.location.search).get("nv"));
-  const choose = (k: TabKey) => { setTab(k); setOpen(null); window.history.replaceState(null, "", k === "overview" ? window.location.pathname : `?tab=${k}`); };
-  const show = (id: string) => { setTab("missions"); setOpen(id); window.history.replaceState(null, "", `?tab=missions&nv=${id}`); };
+  // The view is the address's (the side menu moves between them, design 2026-10-19); the mission opened is too.
+  const q = new URLSearchParams(window.location.search);
+  const tab: TabKey = TABS.find((t) => t.key === q.get("tab"))?.key ?? "overview";
+  const open = q.get("nv");
+  const choose = (k: TabKey) => goTo(k === "overview" ? "/phong-may" : `/phong-may?tab=${k}`);
+  const show = (id: string) => goTo(`/phong-may?tab=missions&nv=${id}`);
   const { data: ov, reload } = usePoll<Overview>("/api/v1/mission-control", 4000);
+  const name = TABS.find((t) => t.key === tab)?.label ?? "";
   return (
-    <Page full title={tr("Mission Control")} side={<OpsSide />}
-          tabs={<Tabs items={TABS.map((t) => ({ ...t, count: t.key === "approvals" ? ov?.kpis.awaiting : t.key === "missions" ? ov?.kpis.active : undefined }))} value={tab} onChange={choose} />}
+    <Page full title={tab === "overview" ? tr("Mission Control") : `${tr("Mission Control")} · ${name}`}
+          side={<OpsSide counts={{ approvals: ov?.kpis.awaiting, missions: ov?.kpis.active }} />}
+          tabs={<FocusLine />}
           actions={ov && <Kill on={ov.kill_switch} done={reload} />}>
       <div className="mx-auto max-w-[1680px]">
+        {tab === "overview" && <Lines />}
         {tab === "overview" && <OverviewTab ov={ov} go={choose} show={show} />}
-        {tab === "missions" && (open ? <Monitor id={open} back={() => { setOpen(null); window.history.replaceState(null, "", "?tab=missions"); }} /> : <MissionsTab show={show} />)}
+        {tab === "missions" && (open ? <Monitor id={open} back={() => goTo("/phong-may?tab=missions")} /> : <MissionsTab show={show} />)}
         {tab === "approvals" && <ApprovalsTab show={show} />}
         {tab === "agents" && <FleetTab />}
         {tab === "quality" && <QualityTab />}
@@ -118,6 +124,54 @@ export default function MissionControl() {
       </div>
     </Page>
   );
+}
+
+/* ───────────────────────────────── the production line, atop Mission Control ───────────────────────────────── */
+const live = (t?: AgentTask) => !!t && (t.status === "working" || t.status === "waiting_operator" || t.status === "failed");
+
+/** The videos at work: their assistant's latest task, the newest first; videos without one follow, newest first. */
+function useLines() {
+  const { data: projects } = usePoll<Project[]>("/api/v1/projects", 6000);
+  const { data: agent } = usePoll<{ tasks: AgentTask[] }>("/api/v1/agent/tasks", 6000);
+  const latest = new Map<string, AgentTask>();
+  for (const t of agent?.tasks ?? []) if (!latest.has(t.project_id) || latest.get(t.project_id)!.created_at < t.created_at) latest.set(t.project_id, t);
+  const all = (projects ?? []).filter((p) => !p.trashed_at);
+  const busy = all.filter((p) => live(latest.get(p.project_id)) || ["queued", "running", "waiting_review"].some((s) => p.match?.status === s || p.render?.status === s));
+  return { all, busy, task: (id: string) => latest.get(id) };
+}
+
+/** One video's whole pipeline across the top of Mission Control: the video followed (chosen, or the one at work), each node a
+    way to that step's screen below it. */
+function FocusLine() {
+  const { all, busy } = useLines();
+  const wanted = new URLSearchParams(window.location.search).get("video");
+  const p = all.find((x) => x.project_id === wanted) ?? busy[0] ?? all[0];
+  if (!p) return null;
+  return (
+    <div className="flex min-w-0 items-center gap-3">
+      <select value={p.project_id} onChange={(e) => goTo(`/phong-may?video=${e.target.value}${new URLSearchParams(window.location.search).get("tab") ? `&tab=${new URLSearchParams(window.location.search).get("tab")}` : ""}`)}
+              aria-label={tr("Video đang theo dõi")} className="h-8 max-w-[220px] shrink-0 truncate pl-2 text-[12.5px]">
+        {[...busy, ...all.filter((x) => !busy.includes(x))].map((x) => <option key={x.project_id} value={x.project_id}>{busy.includes(x) ? "● " : ""}{x.title}</option>)}
+      </select>
+      <div className="min-w-0 flex-1"><Pipeline project={p} /></div>
+    </div>);
+}
+
+/** Every video at work, each as its own line of nodes: where it stands at a glance, any node a click from its screen. */
+function Lines() {
+  const { busy, task } = useLines();
+  if (!busy.length) return null;
+  return (
+    <Bento label={tr("Dây chuyền đang chạy")} code="PIPE.01" className="mb-4" end={<span className="mono text-[11px] text-faint">{busy.length}</span>}>
+      <ul className="grid gap-1.5">
+        {busy.map((p) => { const t = task(p.project_id); return (
+          <li key={p.project_id} className="flex min-w-0 items-center gap-3">
+            <button type="button" onClick={() => goTo(`/du-an/${p.project_id}`)} className="w-48 shrink-0 truncate text-left text-[12.5px] font-medium hover:text-accent" title={p.title}>{p.title}</button>
+            <div className="min-w-0 flex-1"><Pipeline project={p} compact /></div>
+            {t && <span className="hidden w-56 shrink-0 truncate text-[11.5px] text-faint xl:block" title={t.log[t.log.length - 1]?.text}>{t.log[t.log.length - 1]?.text}</span>}
+          </li>); })}
+      </ul>
+    </Bento>);
 }
 
 function Kill({ on, done }: { on: boolean; done: () => void }) {
