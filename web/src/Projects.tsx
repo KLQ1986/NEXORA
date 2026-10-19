@@ -4,7 +4,6 @@ import { createPortal } from "react-dom";
 import { call, post, projectNext, projectState, scriptText, stageName, timecode, usePoll, type Idea, type Source, type AgentTask, type Asset, type Settings, type Candidate, type Project, type RenderItem, type Shot, type BibleEntry, type GapPlan, type Op, type Rights, type Publishing, type Channel, type Variant, type Illustration, type Quote, type Production, type ProductionMission, type Template } from "./api";
 import Board from "./Board";
 import { ask, Button, DropList, Empty, Filmstrip, goTo, Icon, Meter, OpsSide, Page, registerProjectsMenu, Section, Seg, SideFrame, SideGroup, SideLink, SkeletonCards, Spinner, StageRail, Steps, Tabs, Tag, TimeChip, toast, TONE_DOT, Readout } from "./parts";
-import Pipeline, { type Screen } from "./Pipeline";
 import Timeline from "./Timeline";
 import EditStep from "./EditStep";
 import Storyboard from "./Storyboard";
@@ -834,14 +833,19 @@ function ProjectSide({ current, place, lamps, onView, filter, production }: { cu
   );
 }
 
-/** The video's pipeline and its assistant atop the storyboard, as on the video's own page, so the storyboard is not a page apart. */
+/** A step's page opened from Mission Control's Board leads back there (design change 2026-10-20: the pipeline stands on the
+ *  Board only and each node opens its page whole); read once, so moving between the video's views keeps the way back. */
+function useFromBoard() { return useState(() => new URLSearchParams(window.location.search).get("from") === "board")[0]; }
+
+/** The way back and the video's assistant atop the storyboard, so the storyboard is not a page apart. */
 function VideoSteps({ id }: { id: string }) {
-  const { data: p } = usePoll<Project>(`/api/v1/projects/${id}`, 4000);
-  if (!p) return null;
+  const fromBoard = useFromBoard();
   return (
-    <div className="shrink-0 border-b border-line">
-      <div className="px-4"><Pipeline project={p} place="storyboard" /></div>
-      <div className="px-4 pb-2 empty:hidden"><AgentLog projectId={id} compact /></div>
+    <div className="flex shrink-0 items-start gap-3 border-b border-line px-4 py-2.5">
+      <button type="button" onClick={() => goTo(fromBoard ? `/phong-may?video=${id}` : `/du-an/${id}`)}
+              className="flex h-[54px] shrink-0 items-center gap-1.5 rounded-xl border border-line px-3 text-[13px] text-mute hover:border-accent/50 hover:text-ink">
+        <Icon name="back" size={15} />{fromBoard ? tr("Board") : tr("Kịch bản")}</button>
+      <div className="min-w-0 flex-1"><AgentLog projectId={id} compact /></div>
     </div>);
 }
 
@@ -861,6 +865,7 @@ function Drawer({ title, close, children }: { title: string; close: () => void; 
 
 function Detail({ id, back }: { id: string; back: (to?: string) => void }) {
   const { data: p, reload } = usePoll<Project>(`/api/v1/projects/${id}`, 2500);
+  const fromBoard = useFromBoard();
   const [text, setText] = useState<string | null>(null);
   const [topic, setTopic] = useState("");
   const editor = useRef<HTMLTextAreaElement>(null);
@@ -949,7 +954,8 @@ function Detail({ id, back }: { id: string; back: (to?: string) => void }) {
   const previewing = !!p?.preview && ["queued", "running"].includes(p.preview.status);
   const facts = (p?.shots ?? []).filter((s) => s.is_fact);
   return (
-    <Page title={p.title} back={{ label: p.production?.title ?? tr("Dự án"), onClick: () => back(p.production ? `/du-an/${p.production.production_id}` : undefined) }} wide full={view === "cut"}
+    <Page title={p.title} back={fromBoard ? { label: tr("Board"), onClick: () => goTo(`/phong-may?video=${id}`) }
+                                 : { label: p.production?.title ?? tr("Dự án"), onClick: () => back(p.production ? `/du-an/${p.production.production_id}` : undefined) }} wide full={view === "cut"}
           note={<Slate state={<Tag tone={st.tone}>{st.label}</Tag>} items={[
             [String(p.shots.length), tr("câu")],
             [String(new Set(p.shots.map((s) => s.scene).filter(Boolean)).size || "–"), tr("cảnh")],
@@ -957,9 +963,8 @@ function Detail({ id, back }: { id: string; back: (to?: string) => void }) {
             [latest ? timecode(latest.qc.duration) : "–", tr("thời lượng")],
           ]} extra={<>{FORMATS[p.format] ?? p.format}{p.template ? <span className="ml-3">{p.template}</span> : null}</>} />}
           side={<OpsSide projects={<ProjectSide current={id} place={view} lamps={{ step, reviewing: !!reviewing, renderReview: !!renderReview, packaged: !!latest?.package }} onView={setView} />} />}
-          tabs={<Pipeline project={p} place={(["script", "cut", "publish"] as View[]).includes(view) ? view as Screen : undefined} onScreen={(s) => setView(s as View)}
-                          extra={<><button type="button" onClick={() => setView("timeline")} className={`flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-[12.5px] ${view === "timeline" ? "bg-white/[0.07] text-ink" : "text-mute hover:text-ink"}`}><Icon name="timeline" size={14} />{tr("Dòng thời gian")}</button>
-                                 <button type="button" onClick={() => setView("board")} className={`flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-[12.5px] ${view === "board" ? "bg-white/[0.07] text-ink" : "text-mute hover:text-ink"}`}><Icon name="board" size={14} />{tr("Bảng theo dõi")}</button></>} />}
+          tabs={<div className="flex items-center justify-end gap-1 py-1.5"><button type="button" onClick={() => setView("timeline")} className={`flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-[12.5px] ${view === "timeline" ? "bg-white/[0.07] text-ink" : "text-mute hover:text-ink"}`}><Icon name="timeline" size={14} />{tr("Dòng thời gian")}</button>
+                                 <button type="button" onClick={() => setView("board")} className={`flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-[12.5px] ${view === "board" ? "bg-white/[0.07] text-ink" : "text-mute hover:text-ink"}`}><Icon name="board" size={14} />{tr("Bảng theo dõi")}</button></div>}
           actions={<><Button onClick={() => setSettings(true)} title={tr("Mẫu, khung hình, nhạc, lời dẫn, kênh, ngày đăng")}><Icon name="sliders" size={15} />{tr("Thiết lập")}</Button>{next && <Button kind="primary" busy={busy} disabled={next.label === tr("Lưu kịch bản") && !(text ?? "").trim()} onClick={next.go}>{!busy && <Icon name={next.icon} />}{next.label}</Button>}</>}>
       {p.trashed_at && <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-cue/40 bg-cue/10 px-4 py-3 text-cue"><Icon name="trash" />
         <span className="min-w-0 flex-1">{tr("Dự án này đang ở Thùng rác. Nó không hiện trong danh sách và trợ lý không làm tiếp cho tới khi bạn khôi phục.")}</span>

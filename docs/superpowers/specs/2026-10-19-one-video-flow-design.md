@@ -101,3 +101,15 @@ N01 Nhiệm vụ → N02 Nghiên cứu → N03 Kịch bản → N04 Kiểm chứ
 - Đầu trang Mission Control: pipeline của video đang theo dõi, có ô chọn video. Mặc định là video đang làm.
 - Trên Board: bảng **"Dây chuyền đang chạy"**, mỗi video đang làm một hàng pipeline thu gọn, kèm việc trợ lý vừa làm.
 - Đầu trang dự án và trang Storyboard, thay cho thanh 4 bước.
+
+## Đổi hướng: node mở trang riêng (2026-10-20)
+
+Người vận hành thấy cách "bấm node thì màn hình hiện ngay bên dưới" không còn đủ chiều cao để xem hết thông tin. Đổi lại:
+
+- **Sơ đồ dây chuyền chỉ còn trên Board** của Mission Control: sơ đồ lớn của video đang theo dõi, và các hàng thu gọn trong "Dây chuyền đang chạy". Các tab khác của Mission Control, trang dự án và trang Storyboard không còn sơ đồ.
+- **Bấm một node thì sang hẳn trang của bước đó**: `/du-an/<id>?tab=…&from=board`, hoặc `/du-an/<id>/storyboard?from=board`.
+- **Trang mở từ Board có nút "‹ Board"** để quay về `/phong-may?video=<id>`:
+  - ở trang dự án, nút nằm chỗ đường dẫn quay lại trên đầu trang;
+  - ở trang Storyboard, nút nằm đầu hàng trợ lý.
+  - Đổi bước bằng menu trái vẫn giữ nút này.
+- Mở thẳng trang dự án (không qua Board) thì nút quay lại như cũ: về sản phẩm hoặc danh sách dự án; từ Storyboard thì về Kịch bản.

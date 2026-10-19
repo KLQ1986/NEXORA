@@ -94,8 +94,9 @@ function ago(at: number): string {
 type Hover = { i: number; x: number; y: number } | null;
 
 /** `place`: the screen open below, whose parent is marked; `onScreen`: open a screen in place (else the page goes there). */
-export default function Pipeline({ project: p, place, onScreen, compact = false, extra }: { project: Project; place?: Screen; onScreen?: (s: Screen) => void;
-  compact?: boolean; extra?: React.ReactNode }) {
+/** `from`: where the step's page leads back to (Mission Control's Board passes "board"). */
+export default function Pipeline({ project: p, place, onScreen, compact = false, extra, from }: { project: Project; place?: Screen; onScreen?: (s: Screen) => void;
+  compact?: boolean; extra?: React.ReactNode; from?: string }) {
   const { data } = usePoll<{ tasks: AgentTask[] }>(`/api/v1/agent/tasks?project_id=${p.project_id}`, 4000);
   const task = data?.tasks[0];
   const st = states(p, task);
@@ -117,7 +118,8 @@ export default function Pipeline({ project: p, place, onScreen, compact = false,
   const timer = useRef<number | undefined>(undefined);
   const open = (s: Screen) => {
     if (onScreen && s !== "storyboard" && place !== "storyboard") return onScreen(s);
-    goTo(s === "storyboard" ? `/du-an/${p.project_id}/storyboard` : `/du-an/${p.project_id}?tab=${s}`);
+    const back = from ? `from=${from}` : "";
+    goTo(s === "storyboard" ? `/du-an/${p.project_id}/storyboard${back ? `?${back}` : ""}` : `/du-an/${p.project_id}?tab=${s}${back ? `&${back}` : ""}`);
   };
   const show = (i: number, el: HTMLElement) => { window.clearTimeout(timer.current); const r = el.getBoundingClientRect(); setHover({ i, x: r.left + r.width / 2, y: r.bottom + 8 }); };
   const hide = () => { timer.current = window.setTimeout(() => setHover(null), 80); };
