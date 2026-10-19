@@ -26,9 +26,9 @@ Mỗi file gồm:
 |---|---|---|---|
 | 1 | **Phân loại giấy phép** (tự do / cần ghi công / share-alike / cấm thương mại / chưa rõ). Scout không đưa ra ứng viên cấm thương mại, chỉ tự lấy loại an toàn. Cổng đăng chặn ba loại xấu, ghi công cho CC BY, lưu bằng chứng lúc tải. | Báo cáo bản quyền | `29be82d` |
 | 2 | **Chấm "nhịp và đa dạng"** cho storyboard, 6 tiêu chí 0–5: lặp liền nhau, một clip dùng nhiều lần, ảnh tĩnh thay video (delivery promise), độ dài shot, cỡ cảnh đơn điệu, chuỗi shot đứng yên. Mỗi tiêu chí kèm danh sách shot gây lỗi. | slideshow_risk, documentary edit-director, animated-explainer đề xuất 1 | `16dd8d4` |
-| 3 | **Luật CHAI** cho người phản biện kịch bản: chỉ đúng câu và trích cụm từ, rà hết lỗi cùng loại, cách sửa phải cụ thể. | reviewer.md | `55b0f3e` |
-| 4 | **QC "3 giây đầu"**: không mở bằng màn đen ≥1 s; có tiếng trong 3 giây đầu. | clip-factory đề xuất 2 | commit này |
-| 5 | **Chấm nhịp trên clip thật**: cỡ cảnh (mô tả của moment) và chuyển động máy (đo) của clip đã chọn được ưu tiên hơn khung trong spec; spec chỉ được dùng khi storyboard đã đặt khung. Đây là lỗ hổng 1 ở dưới. | phát hiện thêm | commit này |
+| 3 | **Luật CHAI** cho người phản biện kịch bản: chỉ đúng câu và trích cụm từ, rà hết lỗi cùng loại, cách sửa phải cụ thể. | reviewer.md | `d4f9ef5` |
+| 4 | **QC "3 giây đầu"**: không mở bằng màn đen ≥1 s; có tiếng trong 3 giây đầu. | clip-factory đề xuất 2 | `cd18ccd` |
+| 5 | **Chấm nhịp trên clip thật**: cỡ cảnh (mô tả của moment) và chuyển động máy (đo) của clip đã chọn được ưu tiên hơn khung trong spec; spec chỉ được dùng khi storyboard đã đặt khung. Đây là lỗ hổng 1 ở dưới. | phát hiện thêm | `cd18ccd` |
 
 Hai chỗ **NEXORA làm tốt hơn bản gốc**:
 - OpenMontage lấy điểm trung bình, nên một lỗi nặng có thể bị "trung bình hoá" mất. NEXORA ép kết luận xuống ít nhất "Nên sửa" khi có một tiêu chí ≥4.
