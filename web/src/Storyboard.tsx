@@ -267,7 +267,7 @@ function Start({ url, title, back, onMade, messages, shared }: { url: string; ti
           <div className="grid gap-2 rounded-xl border border-line p-4">
             <label className="grid gap-1 text-meta text-faint">{tr("Ý tưởng")}
               <textarea rows={3} value={idea} onChange={(e) => setIdea(e.target.value)} placeholder={tr("Ví dụ: một ngày làm vườn của chú Tư ở Bến Tre, từ bình minh tới hoàng hôn; nhẹ nhàng, ấm")}
-                        className="rounded-md border border-line bg-canvas px-3 py-2 text-ui text-ink outline-none focus:border-accent" /></label>
+                        className="rounded-md border border-line bg-canvas px-3 py-2 text-ui-l text-ink outline-none focus:border-accent" /></label>
             <div className="flex flex-wrap items-center gap-2">
               <label className="flex items-center gap-2 text-meta text-faint">{tr("Thời lượng (giây)")}<input type="number" value={seconds} min={10} max={1800} onChange={(e) => setSeconds(Number(e.target.value))} className="h-8 w-20 rounded-md border border-line bg-canvas px-2 text-ink" /></label>
               <span className="flex-1" />

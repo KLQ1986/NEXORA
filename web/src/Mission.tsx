@@ -207,7 +207,7 @@ function OverviewTab({ ov, go, show }: { ov: Overview | null; go: (k: TabKey) =>
   const budget = r.budget_day ? r.spent_today / r.budget_day : null;
   return (
     <div className="grid gap-4">
-      {ov.kill_switch && <p className="bento border-tally/40 px-4 py-3 text-ui text-tally"><Icon name="power" size={15} className="mr-2 inline" />{tr("Dừng khẩn cấp đang bật: không bước nào được bắt đầu.")}</p>}
+      {ov.kill_switch && <p className="bento border-tally/40 px-4 py-3 text-ui-l text-tally"><Icon name="power" size={15} className="mr-2 inline" />{tr("Dừng khẩn cấp đang bật: không bước nào được bắt đầu.")}</p>}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
         <Kpi code="MSN.ACT" label={tr("Nhiệm vụ đang chạy")} value={ov.kpis.active} sub={tv`${ov.kpis.missions} nhiệm vụ tất cả`} tone="ai" onClick={() => go("missions")} />
         <Kpi code="APR.Q" label={tr("Chờ bạn duyệt")} value={ov.kpis.awaiting} sub={tr("Im lặng không phải đồng ý")} tone={ov.kpis.awaiting ? "cue" : "mute"} onClick={() => go("approvals")} />
@@ -220,7 +220,7 @@ function OverviewTab({ ov, go, show }: { ov: Overview | null; go: (k: TabKey) =>
         <Bento label={tr("Chờ bạn duyệt")} code="APR.02" className="xl:col-span-5" end={<button type="button" className="link text-meta" onClick={() => go("approvals")}>{tr("Xem hết")}</button>}>
           {ov.approvals.length ? <ul className="grid gap-2">{ov.approvals.slice(0, 4).map((a) => (
             <li key={a.key}><button type="button" onClick={() => (a.kind === "mission" ? show(a.id) : a.link ? goTo(a.link) : go("approvals"))} className="tile flex w-full items-start gap-3 px-3 py-2.5 text-left">
-              <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-cue" /><span className="min-w-0 flex-1"><span className="block truncate text-ui">{a.title}</span>
+              <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-cue" /><span className="min-w-0 flex-1"><span className="block truncate text-ui-l">{a.title}</span>
               <span className="block truncate text-mini text-faint">{a.asked_by} · {a.why}</span></span></button></li>))}</ul>
             : <p className="text-ui text-mute">{tr("Không có gì đang chờ bạn.")}</p>}
         </Bento>
@@ -367,7 +367,7 @@ function MissionRow({ m, onOpen }: { m: Mission; onOpen: () => void }) {
   const done = m.children.filter((c) => c.state === "done").length;
   return (
     <li><button type="button" onClick={onOpen} className="tile flex w-full flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2.5 text-left">
-      <span className="min-w-0 flex-1"><span className="block truncate text-ui">{m.text}</span>
+      <span className="min-w-0 flex-1"><span className="block truncate text-ui-l">{m.text}</span>
         <span className="block truncate text-mini text-faint">{m.production && <span className="text-mute">{m.production.title} · </span>}{m.kind_name ?? tr("Chưa rõ loại việc")} · {clock(m.created_at)}{m.children.length ? ` · ${tv`${done}/${m.children.length} xong`}` : ""}</span></span>
       {m.spent > 0 && <span className="mono text-mini text-faint">{usd(m.spent)}</span>}
       <State map={STATUS} value={m.status} />
@@ -610,7 +610,7 @@ function ArtifactsTab({ show }: { show: (id: string) => void }) {
         {data.projects.length === 0 ? <p className="text-ui text-mute">{tr("Chưa có dự án nào.")}</p> : (
           <ul className="grid gap-2">{data.projects.map((p) => (
             <li key={p.project_id} className="tile flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2.5">
-              <span className="min-w-0 flex-1"><button type="button" className="block truncate text-left text-ui hover:text-accent" onClick={() => goTo(`/du-an/${p.project_id}`)}>{p.title}</button>
+              <span className="min-w-0 flex-1"><button type="button" className="block truncate text-left text-ui-l hover:text-accent" onClick={() => goTo(`/du-an/${p.project_id}`)}>{p.title}</button>
                 {p.mission_id && <button type="button" className="link text-mini" onClick={() => show(p.mission_id!)}>{tr("thuộc một nhiệm vụ")}</button>}</span>
               <span className="flex flex-wrap items-center gap-1.5 text-mini">
                 <span className="chip">{tv`${p.sources} footage`}</span><Icon name="next" size={12} className="text-faint" />

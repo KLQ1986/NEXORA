@@ -516,7 +516,7 @@ function StepCard({ step, index, onEdit }: { step: Step; index: number; onEdit: 
         <div className="grid min-w-0 flex-1 gap-1">
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="mono text-mini text-faint">{index + 1}</span>
-            <span className={`text-ui ${step.off ? "line-through" : "text-ink"}`}>{OP[step.op] ?? step.op}</span>
+            <span className={`text-ui-l ${step.off ? "line-through" : "text-ink"}`}>{OP[step.op] ?? step.op}</span>
             {step.tier && <span className="rounded bg-white/[0.05] px-1.5 text-mini text-mute">{TIER[step.tier] ?? step.tier}</span>}
             {step.generative && <Tag tone="ai" dot={false}>{tr("AI sinh chi tiết")}</Tag>}
             {step.remote && <Tag tone="cue" dot={false}>{tr("gửi lên GPU thuê")}</Tag>}

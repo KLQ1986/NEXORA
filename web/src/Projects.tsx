@@ -592,7 +592,7 @@ function CoWrite({ id, lines, span, replace }: { id: string; lines: string[]; sp
         <li key={k} className="rounded-lg border border-line bg-surface/70 px-3 py-2.5">
           <div className="mb-1.5 flex items-center gap-2"><span className="text-mini font-medium text-ai">{p.label}</span><span className="flex-1" />
             <Button size="sm" kind="primary" onClick={() => { replace(got.first, got.last, p.lines); setGot(null); }}><Icon name="check" size={13} />{tr("Dùng cách này")}</Button></div>
-          <ol className="grid gap-0.5 text-ui leading-relaxed">{p.lines.map((l, i) => <li key={i}>{l}</li>)}</ol>
+          <ol className="grid gap-0.5 text-ui-l leading-relaxed">{p.lines.map((l, i) => <li key={i}>{l}</li>)}</ol>
           {p.flags.map((f) => <p key={f} className="mt-1 text-mini text-cue">{f}</p>)}
         </li>))}</ul>}
       {got && stale && <p className="mt-2 text-mini text-faint">{tr("Đoạn đã đổi từ lúc hỏi; các phương án trước là cho đoạn cũ.")} <button type="button" className="link" onClick={() => setGot(null)}>{tr("Ẩn")}</button></p>}
@@ -1424,7 +1424,7 @@ function GivenMissions({ list, production, go }: { list: ProductionMission[]; pr
         const [label, tone] = MISSION_STATUS[m.status] ?? [m.status, "mute"];
         return (
           <li key={m.mission_id}><button type="button" onClick={() => go(`/phong-may?tab=missions&nv=${m.mission_id}`)} className="tile flex w-full flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5 text-left">
-            <span className="min-w-0 flex-1"><span className="block truncate text-ui">{m.title || m.text}</span>
+            <span className="min-w-0 flex-1"><span className="block truncate text-ui-l">{m.title || m.text}</span>
               <span className="block truncate text-mini text-faint">{m.kind_name ?? tr("Chưa rõ loại việc")} · {new Date(m.created_at * 1000).toLocaleDateString(locale)}{m.count ? ` · ${tv`${m.done}/${m.count} xong`}` : ""}</span></span>
             {m.spent > 0 && <span className="mono text-mini text-faint">${m.spent.toFixed(2)}</span>}
             <Tag tone={tone}>{label}</Tag></button></li>);
@@ -1555,7 +1555,7 @@ export default function Projects({ sub, go }: { sub: string | null; go: (to: str
                ["agent", "sparkles", tr("Giao trợ lý làm"), tr("Trợ lý viết, tìm hình, chuẩn bị dựng; chỉ dừng ở chỗ cần bạn duyệt")]] as const).map(([k, icon, name, hint]) => (
               <button key={k} type="button" role="radio" aria-checked={start === k} onClick={() => setStart(k)}
                       className={`grid gap-1 rounded-lg border p-3 text-left ${start === k ? "border-accent bg-accent/10" : "border-line hover:border-edge"}`}>
-                <span className="flex items-center gap-2 text-ui font-medium"><Icon name={icon} size={15} className={start === k ? "text-accent" : "text-mute"} />{name}</span>
+                <span className="flex items-center gap-2 text-ui-l font-medium"><Icon name={icon} size={15} className={start === k ? "text-accent" : "text-mute"} />{name}</span>
                 <span className="text-mini leading-snug text-mute">{hint}</span>
               </button>))}
           </div>

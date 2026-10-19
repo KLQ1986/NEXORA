@@ -71,7 +71,7 @@ export function Button({ children, onClick, kind = "plain", disabled, busy, size
     : kind === "quiet" ? "text-mute hover:bg-raised hover:text-ink disabled:opacity-40"
     : kind === "ai" ? "border border-ai/35 bg-ai/10 text-ai hover:bg-ai/20 disabled:opacity-40"
     : "border border-edge bg-raised text-ink hover:border-[#454c5c] hover:bg-overlay disabled:border-line disabled:text-faint disabled:hover:bg-raised";
-  return <button type={type} title={title} onClick={onClick} disabled={disabled || busy} aria-busy={busy || undefined} className={`btn inline-flex shrink-0 items-center justify-center gap-2 rounded-lg font-medium ${size === "sm" ? "h-7 px-2.5 text-meta" : "h-9 px-3.5 text-ui"} ${look}`}>{busy && <Spinner size={size === "sm" ? 12 : 14} />}{children}</button>;
+  return <button type={type} title={title} onClick={onClick} disabled={disabled || busy} aria-busy={busy || undefined} className={`btn inline-flex shrink-0 items-center justify-center gap-2 rounded-lg font-medium ${size === "sm" ? "h-7 px-2.5 text-meta" : "h-9 px-3.5 text-ui-l"} ${look}`}>{busy && <Spinner size={size === "sm" ? 12 : 14} />}{children}</button>;
 }
 
 const ICONS: Record<string, string> = {
@@ -208,7 +208,7 @@ export function SideLink({ label, icon, lead, on, onClick, count, tone, small, t
   return (
     <>
       <button type="button" onClick={onClick} aria-current={on ? "page" : undefined} title={title}
-              className={`flex w-full min-w-0 items-center gap-2.5 rounded-lg px-2.5 text-left transition-colors ${small ? "h-8 text-ui" : "h-9 text-ui"} ${on ? "bg-accent/10 font-medium text-accent shadow-[inset_0_0_0_1px_rgba(70,200,224,0.18)]" : "text-mute hover:bg-raised/60 hover:text-ink"}`}>
+              className={`flex w-full min-w-0 items-center gap-2.5 rounded-lg px-2.5 text-left transition-colors ${small ? "h-8 text-ui" : "h-9 text-ui-l"} ${on ? "bg-accent/10 font-medium text-accent shadow-[inset_0_0_0_1px_rgba(70,200,224,0.18)]" : "text-mute hover:bg-raised/60 hover:text-ink"}`}>
         {lead ?? (icon && <Icon name={icon} size={small ? 15 : 16} />)}<span className="min-w-0 flex-1 truncate">{label}</span>
         {count != null && count > 0 && <span className={`mono shrink-0 rounded-md px-1.5 text-mini font-medium leading-[18px] ${badge}`}>{count}</span>}
       </button>
@@ -308,7 +308,7 @@ export function Tabs<T extends string>({ items, value, onChange }: { items: { ke
     <div ref={row} className="scroll-x -mb-px flex gap-1" role="tablist">
       {items.map((t) => (
         <button key={t.key} type="button" role="tab" aria-selected={value === t.key} onClick={() => onChange(t.key)}
-                className={`flex h-10 items-center gap-2 whitespace-nowrap border-b-2 px-3 text-ui transition-colors ${value === t.key ? "border-accent font-medium text-ink" : "border-transparent text-mute hover:text-ink"}`}>
+                className={`flex h-10 items-center gap-2 whitespace-nowrap border-b-2 px-3 text-ui-l transition-colors ${value === t.key ? "border-accent font-medium text-ink" : "border-transparent text-mute hover:text-ink"}`}>
           {t.icon && <Icon name={t.icon} size={15} />}{t.label}{t.count ? <span className="mono rounded bg-overlay px-1.5 text-mini leading-[18px] text-mute">{t.count}</span> : null}
         </button>
       ))}
@@ -538,7 +538,7 @@ export function Dialogs() {
         {q.body && <div className="mt-1.5 text-ui text-mute">{q.body}</div>}
         <div className="mt-5 flex justify-end gap-2">
           <Button onClick={() => q.resolve(false)}>{tr("Thôi")}</Button>
-          <button ref={yes} type="button" onClick={() => q.resolve(true)} className={`btn inline-flex h-9 items-center rounded-lg px-3.5 text-ui font-medium ${q.danger ? "bg-tally text-white hover:bg-tally/85" : "brand-button"}`}>{q.confirm}</button>
+          <button ref={yes} type="button" onClick={() => q.resolve(true)} className={`btn inline-flex h-9 items-center rounded-lg px-3.5 text-ui-l font-medium ${q.danger ? "bg-tally text-white hover:bg-tally/85" : "brand-button"}`}>{q.confirm}</button>
         </div>
       </div>
     </div>

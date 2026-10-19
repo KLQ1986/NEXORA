@@ -153,7 +153,7 @@ export default function Pipeline({ project: p, place, onScreen, compact = false,
               {!compact && (
                 <header className="mb-1.5 flex items-center gap-2">
                   <span className="mono text-mini text-faint">{`G${gi + 1}`}</span>
-                  <button type="button" onClick={() => open(g.screen)} className={`text-ui font-semibold uppercase tracking-[0.1em] ${TEXT[gs]} hover:underline`}>{g.label}</button>
+                  <button type="button" onClick={() => open(g.screen)} className={`text-ui-l font-semibold uppercase tracking-[0.1em] ${TEXT[gs]} hover:underline`}>{g.label}</button>
                   <span className={`text-mini ${TEXT[gs]}`}>{SAID[gs]}</span>
                   <span className="ml-auto mono text-mini text-faint">{done}/{g.children.length}</span>
                   {gs === "done" && place !== g.screen && <button type="button" onClick={() => fold(g.key)} title={folded ? tr("Mở ra xem từng bước") : tr("Thu gọn")} aria-label={folded ? tr("Mở ra xem từng bước") : tr("Thu gọn")}

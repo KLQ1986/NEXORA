@@ -483,7 +483,7 @@ function Notes({ subject, t, seek, notes, ready, reload, fix }: { subject: strin
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-center gap-2 px-4 pb-1 pt-3">
-        <select value={only} onChange={(e) => setOnly(e.target.value as "all" | "open")} aria-label={tr("Lọc ghi chú")} className="bare h-7 pr-1 text-ui font-medium"><option value="all">{tr("Mọi ghi chú")}</option><option value="open">{tr("Chưa xử lý")}</option></select>
+        <select value={only} onChange={(e) => setOnly(e.target.value as "all" | "open")} aria-label={tr("Lọc ghi chú")} className="bare h-7 pr-1 text-ui-l font-medium"><option value="all">{tr("Mọi ghi chú")}</option><option value="open">{tr("Chưa xử lý")}</option></select>
         <span className="ml-auto text-mini text-faint">{tv`${notes.length} ghi chú`}</span>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-2">
@@ -797,7 +797,7 @@ function Viewer({ item, items, start, assets, close, reload, similar, pick, comp
       <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-3">
         {theater && <button type="button" onClick={() => setTheater?.(false)} title={tr("Về thư viện (t)")}
           className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-line px-2.5 text-ui text-mute hover:border-edge hover:text-ink"><Icon name="back" size={14} />{tr("Thư viện")}</button>}
-        <span className="hidden shrink-0 text-ui text-faint xl:inline">{({ video: tr("Footage"), image: tr("Ảnh"), audio: tr("Âm thanh"), draft: tr("Bản nháp"), render: tr("Bản dựng") } as Record<Kind, string>)[item.kind]}</span>
+        <span className="hidden shrink-0 text-ui-l text-faint xl:inline">{({ video: tr("Footage"), image: tr("Ảnh"), audio: tr("Âm thanh"), draft: tr("Bản nháp"), render: tr("Bản dựng") } as Record<Kind, string>)[item.kind]}</span>
         <span className="hidden shrink-0 text-faint xl:inline">/</span>
         <Name item={item} reload={reload} />
         {versions.length > 1 && item.kind === "render" ? <select value={item.key} onChange={(e) => pick(e.target.value)} aria-label={tr("Phiên bản")} className="mono h-7 shrink-0 pl-2 text-mini">{versions.map((v) => <option key={v.key} value={v.key}>v{v.version}{v.status ? ` · ${STATUS[v.status][0]}` : ""}</option>)}</select>
@@ -887,7 +887,7 @@ const ON_SHELF: Record<Shelf, (i: Item) => boolean> = {
 /** One line of the tree on the left: a place to look, with its children folded under it. */
 function Node({ depth = 0, on, icon, label, click, open, fold, n, tone, more }: { depth?: number; on: boolean; icon: string; label: string; click: () => void; open?: boolean; fold?: () => void; n?: number; tone?: string; more?: React.ReactNode }) {
   return (
-    <div className={`group/n flex h-9 items-center rounded-lg pr-2 text-ui transition-colors ${on ? "bg-white/[0.07] text-ink" : "text-mute hover:bg-white/[0.04] hover:text-ink"}`} style={{ paddingLeft: 4 + depth * 18 }}>
+    <div className={`group/n flex h-9 items-center rounded-lg pr-2 text-ui-l transition-colors ${on ? "bg-white/[0.07] text-ink" : "text-mute hover:bg-white/[0.04] hover:text-ink"}`} style={{ paddingLeft: 4 + depth * 18 }}>
       {fold ? <button type="button" onClick={fold} aria-label={open ? tr("Thu gọn") : tr("Mở ra")} className="grid h-6 w-5 shrink-0 place-items-center text-faint hover:text-ink"><Icon name="next" size={11} className={`transition-transform ${open ? "rotate-90" : ""}`} /></button> : <span className="w-5 shrink-0" />}
       <button type="button" onClick={click} aria-pressed={on} className="flex min-w-0 flex-1 items-center gap-2.5 text-left"><Icon name={icon} size={16} className={on ? "text-accent" : tone ?? "text-faint"} /><span className="truncate">{label}</span></button>
       {n !== undefined && n > 0 && <span className={`mono text-mini text-faint opacity-0 group-hover/n:opacity-100 ${more ? "group-hover/n:hidden" : ""}`}>{n}</span>}
@@ -1129,7 +1129,7 @@ export default function Library() {
       {finding && <form className="shrink-0 border-b border-line p-2.5" onSubmit={(e) => { e.preventDefault(); runSearch(q); }}>
         <div className="relative">
           <Icon name="search" size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
-          <input autoFocus value={q} onChange={(e) => { setQ(e.target.value); if (!e.target.value) { setHits(null); setSimilarOf(null); } }} placeholder={tr("Mã video, tên, cảnh, lời thoại, chữ trên hình…")} aria-label={tr("Tìm trong thư viện")} className="h-9 w-full pl-9 pr-24 text-ui" />
+          <input autoFocus value={q} onChange={(e) => { setQ(e.target.value); if (!e.target.value) { setHits(null); setSimilarOf(null); } }} placeholder={tr("Mã video, tên, cảnh, lời thoại, chữ trên hình…")} aria-label={tr("Tìm trong thư viện")} className="h-9 w-full pl-9 pr-24 text-ui-l" />
           <span className="absolute right-1 top-1/2 -translate-y-1/2"><Button size="sm" kind="primary" type="submit" disabled={!q.trim() || searching}>{searching ? <Spinner size={12} /> : tr("Tìm cảnh")}</Button></span>
         </div>
         {hits && <div className="scroll-x mt-2 flex gap-1">{MODES.map(([k, label, lv]) => { const n = (hits ?? []).filter((h) => !lv.length || lv.includes(h.level ?? "segment")).length; return (
@@ -1198,7 +1198,7 @@ export default function Library() {
     <div className="grid h-full place-items-center p-8 text-center">
       <div className="max-w-sm"><span className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-2xl bg-raised text-faint"><Icon name="play" size={22} /></span>
         <p className="text-title font-medium">{tr("Chọn một mục để xem")}</p>
-        <p className="mt-1 text-ui text-mute">{tr("Phát, tua, xem phụ đề và lời thoại, ghi chú theo thời điểm, so sánh phiên bản và duyệt bản dựng ngay tại đây.")}</p></div>
+        <p className="mt-1 text-ui-l text-mute">{tr("Phát, tua, xem phụ đề và lời thoại, ghi chú theo thời điểm, so sánh phiên bản và duyệt bản dựng ngay tại đây.")}</p></div>
     </div>
   );
 
@@ -1206,7 +1206,7 @@ export default function Library() {
     <Page full flush title={tr("Thư viện")}>
       <div className={`grid h-full min-h-0 gap-2 overflow-y-auto bg-canvas p-2 lg:overflow-hidden ${wide ? "lg:grid-cols-1" : "lg:grid-cols-[minmax(210px,18fr)_minmax(340px,37fr)_minmax(0,45fr)]"}`}>
         <div className={`hidden min-h-0 overflow-hidden rounded-xl border border-line bg-surface ${wide ? "" : "lg:block"}`}>{side}</div>
-        <details className="rounded-xl border border-line bg-surface lg:hidden"><summary className="flex h-11 cursor-pointer list-none items-center gap-2 px-3 text-ui font-medium"><Icon name="folder" size={15} />{where}</summary><div className="max-h-[60vh] overflow-y-auto border-t border-line">{side}</div></details>
+        <details className="rounded-xl border border-line bg-surface lg:hidden"><summary className="flex h-11 cursor-pointer list-none items-center gap-2 px-3 text-ui-l font-medium"><Icon name="folder" size={15} />{where}</summary><div className="max-h-[60vh] overflow-y-auto border-t border-line">{side}</div></details>
         <div className={`min-h-[60vh] overflow-hidden rounded-xl border border-line bg-surface lg:min-h-0 ${wide ? "lg:hidden" : ""}`}>{browser}</div>
         <div className={`overflow-hidden border-line bg-surface lg:static lg:z-auto lg:min-h-0 lg:rounded-xl lg:border ${current ? "fixed inset-0 z-40" : "hidden lg:block"}`}>{viewer}</div>
       </div>

@@ -264,7 +264,7 @@ function App() {
         <nav aria-label={tr("Điều hướng chính")} className="hidden min-w-0 items-center gap-0.5 md:flex">
           {SECTIONS.map((x) => { const on = x === section; return (
             <a key={x.key} href={x.to} onClick={(e) => { e.preventDefault(); go(x.to); }} aria-current={on ? "page" : undefined} title={x.label}
-               className={`relative flex h-9 shrink-0 items-center gap-2 rounded-lg px-2.5 text-ui transition-colors lg:px-3 ${on ? "bg-accent/10 font-medium text-accent shadow-[inset_0_0_0_1px_rgba(70,200,224,0.18)]" : "text-mute hover:bg-raised/60 hover:text-ink"}`}>
+               className={`relative flex h-9 shrink-0 items-center gap-2 rounded-lg px-2.5 text-ui-l transition-colors lg:px-3 ${on ? "bg-accent/10 font-medium text-accent shadow-[inset_0_0_0_1px_rgba(70,200,224,0.18)]" : "text-mute hover:bg-raised/60 hover:text-ink"}`}>
               <Icon name={x.icon} size={16} /><span className="hidden lg:inline">{x.label}</span>{badge(x.key)}
               {on && <span className="absolute inset-x-3 -bottom-[11px] h-[2px] rounded-full bg-accent" />}
             </a>); })}
@@ -284,7 +284,7 @@ function App() {
                   className={`grid h-full w-8 place-items-center rounded-r-lg border-l border-line transition-colors ${kill ? "bg-proof/15 text-proof" : "text-faint hover:bg-tally/10 hover:text-tally"}`}><Icon name="power" size={14} /></button>
         </div>
         <span className="hidden lg:block"><LangSwitch /></span>
-        <button type="button" onClick={() => go("/du-an?moi=1")} title={tr("Làm video mới")} className="brand-button hidden h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-ui font-medium sm:flex"><Icon name="plus" size={16} /><span className="hidden lg:inline">{tr("Làm video mới")}</span></button>
+        <button type="button" onClick={() => go("/du-an?moi=1")} title={tr("Làm video mới")} className="brand-button hidden h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-ui-l font-medium sm:flex"><Icon name="plus" size={16} /><span className="hidden lg:inline">{tr("Làm video mới")}</span></button>
       </header>
       {drawer && <div className="fixed inset-0 z-50 md:hidden" onClick={() => setDrawer(false)}><div className="scrim absolute inset-0" /><div className="relative h-full w-fit" onClick={(e) => e.stopPropagation()}>{phoneMenu}</div></div>}
       {!online && <div role="alert" className="flex shrink-0 items-center gap-3 border-b border-tally/30 bg-tally/10 px-4 py-2 text-ui text-tally md:px-8"><Icon name="alert" size={15} />{tr("Không kết nối được với máy chủ NEXORA. Màn hình giữ số liệu cũ cho tới khi nối lại; kiểm tra xem")} <span className="mono">nexora serve</span> {tr("còn chạy không.")}</div>}
