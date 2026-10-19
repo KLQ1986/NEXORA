@@ -15,20 +15,20 @@
 @custom-variant short (@media (max-height: 860px));
 
 @theme {
-  /* The type scale (operator's choice 2026-10-20), one place for every screen: */
-  --text-mini: 10px;     /* labels, chips, codes, secondary lines */
-  --text-meta: 12px;     /* larger secondary lines, field labels */
-  --text-ui: 13px;       /* controls, tabs, lists, step names */
-  --text-ui-l: 14px;     /* larger controls: side menu, main actions */
-  --text-body: 11px;     /* running text (the body's own size) */
-  --text-read: 11px;     /* text to read: script lines, narration */
-  --text-title: 13px;    /* card titles */
-  --text-page: 14px;     /* page titles */
-  --text-num: 18px;      /* figures */
-  --text-kpi-s: 22px;    /* big figures */
-  --text-kpi-m: 24px;
-  --text-kpi-l: 26px;
-  --text-kpi-xl: 30px;
+  /* The type scale (operator's choice 2026-10-20, then one size and 50 of weight up on every level), one place for every screen: */
+  --text-mini: 11px;     /* labels, chips, codes, secondary lines */
+  --text-meta: 13px;     /* larger secondary lines, field labels */
+  --text-ui: 14px;       /* controls, tabs, lists, step names */
+  --text-ui-l: 15px;     /* larger controls: side menu, main actions */
+  --text-body: 12px;     /* running text (the body's own size) */
+  --text-read: 12px;     /* text to read: script lines, narration */
+  --text-title: 14px;    /* card titles */
+  --text-page: 15px;     /* page titles */
+  --text-num: 19px;      /* figures */
+  --text-kpi-s: 23px;    /* big figures */
+  --text-kpi-m: 25px;
+  --text-kpi-l: 27px;
+  --text-kpi-xl: 31px;
   --color-canvas: #0a0b0e;
   --color-surface: #111318;
   --color-raised: #171a21;
@@ -64,7 +64,7 @@ html[lang="vi"] h1, html[lang="vi"] h2, html[lang="vi"] h3 { letter-spacing: -0.
 @media (pointer: fine) { html { overscroll-behavior: none; } }
 body, #root { height: 100%; }
 body {
-  background: var(--color-canvas); color: var(--color-ink); font-family: var(--font-sans); font-size: var(--text-body); font-weight: 350; line-height: 1.55;
+  background: var(--color-canvas); color: var(--color-ink); font-family: var(--font-sans); font-size: var(--text-body); font-weight: 400; line-height: 1.55;
   -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; -webkit-tap-highlight-color: transparent;
 }
 /* Light from above, a faint violet key and a cooler fill at the corner, falling off into a vignette; over it a still grain. */
@@ -80,9 +80,9 @@ button, a, [role="button"], input, select, textarea, summary { touch-action: man
 .tc { font-variant-numeric: tabular-nums; letter-spacing: 0.01em; }
 /* Readings: figures in Geist Mono so they line up and read as instruments. */
 .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
-.eyebrow { font-size: var(--text-mini); font-weight: 500; color: var(--color-faint); }
+.eyebrow { font-size: var(--text-mini); font-weight: 550; color: var(--color-faint); }
 /* Titles and the figures on a project header: the same face, heavier and tighter. */
-.display { font-family: var(--font-display); font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.display { font-family: var(--font-display); font-weight: 650; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 html[lang="vi"] .display { letter-spacing: -0.012em; }
 :focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; border-radius: var(--radius-chip); }
 ::selection { background: color-mix(in srgb, var(--color-accent) 35%, transparent); }
@@ -91,7 +91,7 @@ html[lang="vi"] .display { letter-spacing: -0.012em; }
 .dots { background-image: radial-gradient(#3a3f4a 1px, transparent 1.2px); background-size: 5px 5px; }
 
 /* The one way in for keyboard users: hidden until it has focus. */
-.skip { position: fixed; top: 8px; left: 8px; z-index: 100; padding: 8px 14px; border-radius: var(--radius-control); background: var(--color-accent); color: var(--color-canvas); font-weight: 500;
+.skip { position: fixed; top: 8px; left: 8px; z-index: 100; padding: 8px 14px; border-radius: var(--radius-control); background: var(--color-accent); color: var(--color-canvas); font-weight: 550;
   transform: translateY(-200%); transition: transform 160ms var(--ease-out); }
 .skip:focus { transform: none; }
 
@@ -114,7 +114,7 @@ html[lang="vi"] .display { letter-spacing: -0.012em; }
   select option { background: var(--color-surface); color: var(--color-ink); }
   button { cursor: pointer; }
   button:disabled { cursor: default; }
-  table th { font-weight: 500; }
+  table th { font-weight: 550; }
   details > summary::-webkit-details-marker { display: none; }
   main .grid > * { min-width: 0; }
   ::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -155,20 +155,20 @@ html[lang="vi"] .display { letter-spacing: -0.012em; }
   .glow { box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-accent) 50%, transparent), var(--shadow-card); border-color: transparent; }
   .ai-card { background: color-mix(in srgb, var(--color-ai) 5%, var(--color-surface)); border: 1px solid color-mix(in srgb, var(--color-ai) 20%, var(--color-line)); border-radius: var(--radius-card); }
   .cue-card { background: color-mix(in srgb, var(--color-cue) 5%, var(--color-surface)); border: 1px solid color-mix(in srgb, var(--color-cue) 30%, var(--color-line)); border-radius: var(--radius-card); }
-  .chip { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: var(--radius-chip); font-size: var(--text-mini); font-weight: 500;
+  .chip { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: var(--radius-chip); font-size: var(--text-mini); font-weight: 550;
     background: color-mix(in srgb, #000 62%, transparent); color: var(--color-ink); backdrop-filter: blur(6px); white-space: nowrap; }
   .seg { display: inline-flex; padding: 2px; gap: 2px; border-radius: var(--radius-panel); background: var(--color-field); border: 1px solid var(--color-line); }
   .seg > button { height: 28px; padding: 0 11px; border-radius: 6px; font-size: var(--text-ui); color: var(--color-mute); transition: background-color 120ms, color 120ms; white-space: nowrap; }
   .seg > button:hover { color: var(--color-ink); }
-  .seg > button[aria-checked="true"], .seg > button[aria-selected="true"] { background: var(--color-overlay); color: var(--color-ink); font-weight: 500; box-shadow: inset 0 0 0 1px #343944, 0 1px 2px rgba(0, 0, 0, 0.4); }
+  .seg > button[aria-checked="true"], .seg > button[aria-selected="true"] { background: var(--color-overlay); color: var(--color-ink); font-weight: 550; box-shadow: inset 0 0 0 1px #343944, 0 1px 2px rgba(0, 0, 0, 0.4); }
   .link { color: var(--color-mute); text-decoration: underline; text-decoration-color: var(--color-edge); text-underline-offset: 3px; transition: color 120ms, text-decoration-color 120ms; }
   .link:hover { color: var(--color-ink); text-decoration-color: var(--color-mute); }
   .link:disabled { color: var(--color-faint); text-decoration: none; }
-  .field-label { display: block; margin-bottom: 6px; font-size: var(--text-meta); font-weight: 500; color: var(--color-mute); }
+  .field-label { display: block; margin-bottom: 6px; font-size: var(--text-meta); font-weight: 550; color: var(--color-mute); }
   /* Buttons press: they move one pixel on the way down and settle back. */
   .btn { transition: background-color 140ms, border-color 140ms, color 140ms, box-shadow 140ms, transform 80ms; }
   .btn:active:not(:disabled) { transform: translateY(1px); }
-  .brand-button { background: var(--color-accent); color: #04161b; font-weight: 600; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 1px 2px rgba(0, 0, 0, 0.5); }
+  .brand-button { background: var(--color-accent); color: #04161b; font-weight: 650; box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28), 0 1px 2px rgba(0, 0, 0, 0.5); }
   .brand-button:hover:not(:disabled) { background: #6dd6ea; }
   .brand-button:disabled { background: var(--color-raised); color: var(--color-faint); box-shadow: none; }
   /* A place where content will be: the shape of it, breathing slowly. */
@@ -218,17 +218,18 @@ html[lang="vi"] .display { letter-spacing: -0.012em; }
   .working { background: var(--color-ai); }
 }
 
-/* ── Legibility: faint and muted type on dark backgrounds is drawn at 400, not the body's 350. Every size is drawn as the
+/* ── Legibility: faint and muted type on dark backgrounds is drawn at 450, not the body's 400. Every size is drawn as the
    scale above says (the rule that set everything under 12 px at 11 px is gone, 2026-10-20). ── */
-:where(.text-faint, .text-mute):not([class*="font-"]) { font-weight: 400; }
+:where(.text-faint, .text-mute):not([class*="font-"]) { font-weight: 450; }
 
-/* Lexend draws heavier than most faces at the same number, so the weight scale steps down by one notch:
-   body 350, medium 450, semibold 550, bold 650. */
-.font-medium { font-weight: 450; }
-.font-semibold { font-weight: 550; }
-.font-bold { font-weight: 650; }
-.display { font-weight: 550; }
-.eyebrow, .field-label, .chip { font-weight: 450; }
+/* Lexend draws heavier than most faces at the same number; the scale (one notch heavier than it was, 2026-10-20):
+   body 400, normal and faint 450, medium 500, semibold 600, bold 700. */
+.font-medium { font-weight: 500; }
+.font-semibold { font-weight: 600; }
+.font-bold { font-weight: 700; }
+.font-normal { font-weight: 450; }
+.display { font-weight: 600; }
+.eyebrow, .field-label, .chip { font-weight: 500; }
 
 /* The production pipeline (Mission Control): a lit line flows into the node at work; a waiting node breathes. */
 @keyframes pipe-flow { to { background-position: 24px 0; } }
