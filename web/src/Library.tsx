@@ -699,7 +699,7 @@ function Glance({ item, reload, wide = false }: { item: Item; reload: () => void
   ];
   return (
     <div className="min-w-0 flex-1 overflow-y-auto p-3 text-[13px]">
-      <dl className={`grid gap-x-3 gap-y-2 ${wide ? "grid-cols-4" : "grid-cols-2"}`}>{rows.map(([k, v]) => <div key={k} className="min-w-0"><dt className="text-[11.5px] text-faint">{k}</dt><dd className="mono truncate">{v}</dd></div>)}</dl>
+      <dl className={`grid gap-x-3 gap-y-2 ${wide ? "grid-cols-4" : "grid-cols-1"}`}>{rows.map(([k, v]) => <div key={k} className="min-w-0"><dt className="text-[11.5px] text-faint">{k}</dt><dd className="mono truncate">{v}</dd></div>)}</dl>
       <div className="mt-3 flex flex-wrap items-center gap-1.5">
         {item.status && <Badge s={item.status} />}
         {item.ai && <span className="inline-flex h-[20px] items-center gap-1 rounded-full border border-ai/40 px-2 text-[11px] text-ai"><Icon name="sparkles" size={10} />{tr("AI đã hiểu")}</span>}
