@@ -152,7 +152,7 @@ export default function Pipeline({ project: p, place, onScreen, compact = false,
                 <button type="button" onClick={() => fold(g.key)} title={g.children.map((c) => c.label).join(" · ")}
                         className="pipe-step ui mt-auto flex flex-col items-center gap-1.5 rounded-lg px-2 py-2 text-center">
                   <span className="whitespace-nowrap text-[15px] font-semibold text-ink">{tv`${g.children.length} bước xong`}</span>
-                  <span className="pipe-node done relative grid h-14 w-14 shrink-0 place-items-center rounded-full border-2 border-proof/60 bg-proof/10 text-proof"><Icon name="check" size={24} /></span>
+                  <span className="pipe-node done relative grid h-16 w-16 shrink-0 place-items-center rounded-full border-2 border-proof/60 bg-proof/10 text-proof"><span className="grid justify-items-center gap-[3px]"><Icon name="check" size={17} /><span className="text-[10.5px] font-semibold leading-none">{SAID.done}</span></span></span>
                 </button>
               ) : (
               <div className={`flex ${compact ? "items-center" : "mt-auto items-end"}`}>
@@ -165,18 +165,23 @@ export default function Pipeline({ project: p, place, onScreen, compact = false,
                       <button type="button" onClick={c.ui ? () => open(g.screen) : undefined} aria-disabled={!c.ui || undefined}
                               onMouseEnter={(e) => show(i, e.currentTarget)} onMouseLeave={hide} onFocus={(e) => show(i, e.currentTarget)} onBlur={hide}
                               aria-label={`${c.label}: ${SAID[s]}${c.ui ? "" : ` (${tr("bước tự động, không có màn hình riêng")})`}`}
-                              className={`pipe-step ${c.ui ? "ui" : "auto"} group relative flex items-center rounded-lg text-left ${compact ? "gap-1.5 px-0.5 py-0.5" : `flex-col-reverse gap-1.5 py-2 text-center ${quiet ? "px-3" : "px-4"}`}`}>
+                              className={`pipe-step ${c.ui ? "ui" : "auto"} group relative flex items-center rounded-lg text-left ${compact ? "gap-1.5 px-0.5 py-0.5" : `flex-col-reverse gap-1.5 py-2 text-center px-4`}`}>
                         {/* The line between steps, drawn by each step as two halves meeting its neighbours', so it is one line whatever the labels' widths. */}
-                        {!compact && ci > 0 && <span aria-hidden="true" className={`pipe-link pointer-events-none absolute bottom-[35px] left-0 right-1/2 mr-7 ${st[i - 1] === "done" ? (s === "now" ? "live" : s === "later" ? "" : "done") : ""}`} />}
-                        {!compact && ci < g.children.length - 1 && <span aria-hidden="true" className={`pipe-link pointer-events-none absolute bottom-[35px] left-1/2 right-0 ml-7 ${s === "done" ? (st[i + 1] === "now" ? "live" : st[i + 1] === "later" ? "" : "done") : ""}`} />}
-                        <span className={`pipe-node ${s} relative grid shrink-0 place-items-center rounded-full border ${RING[s]} ${compact ? "h-5 w-5" : "h-14 w-14 border-2"}`}>
-                          <Icon name={s === "done" ? "check" : s === "fail" ? "alert" : c.icon} size={compact ? 10 : 24} />
+                        {!compact && ci > 0 && <span aria-hidden="true" className={`pipe-link pointer-events-none absolute bottom-[39px] left-0 right-1/2 mr-8 ${st[i - 1] === "done" ? (s === "now" ? "live" : s === "later" ? "" : "done") : ""}`} />}
+                        {!compact && ci < g.children.length - 1 && <span aria-hidden="true" className={`pipe-link pointer-events-none absolute bottom-[39px] left-1/2 right-0 ml-8 ${s === "done" ? (st[i + 1] === "now" ? "live" : st[i + 1] === "later" ? "" : "done") : ""}`} />}
+                        <span className={`pipe-node ${s} relative grid shrink-0 place-items-center rounded-full border ${RING[s]} ${compact ? "h-5 w-5" : "h-16 w-16 border-2"}`}>
+                          {compact ? <Icon name={s === "done" ? "check" : s === "fail" ? "alert" : c.icon} size={10} /> : (
+                            // The state is said in the node itself, under the step's mark.
+                            <span className="grid justify-items-center gap-[3px]">
+                              <Icon name={s === "done" ? "check" : s === "fail" ? "alert" : c.icon} size={17} />
+                              <span className="whitespace-nowrap text-[10.5px] font-semibold leading-none tracking-tight">{SAID[s]}</span>
+                            </span>)}
                           {(s === "now" || s === "wait") && <span className={`absolute rounded-full ${compact ? "-right-0.5 -top-0.5 h-2 w-2" : "-right-0.5 -top-0.5 h-3.5 w-3.5"} ${s === "now" ? "bg-accent" : "bg-cue"}`}><span className={`ping absolute inset-0 rounded-full ${s === "now" ? "bg-accent" : "bg-cue"}`} /></span>}
                         </span>
                         {!compact && (
                           <span className="grid justify-items-center gap-0.5 leading-tight">
                             <span className="whitespace-nowrap text-[15px] font-semibold text-ink"><span className="mono mr-1.5 text-[11px] font-normal text-faint">{`N${String(i + 1).padStart(2, "0")}`}</span>{c.label}</span>
-                            {!quiet && <span className={`whitespace-nowrap text-[12.5px] ${TEXT[s]}`}>{SAID[s]}<span className="text-faint"> · {figure(c.key, p, task, !!data)}</span></span>}
+                            {!quiet && <span className="whitespace-nowrap text-[12.5px] text-faint">{figure(c.key, p, task, !!data)}</span>}
                           </span>)}
                       </button>
                     </span>);
