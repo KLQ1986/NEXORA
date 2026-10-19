@@ -26,6 +26,9 @@ def test_register_starts_an_ingest_run_and_the_run_can_be_followed(client_and_sy
         pass
     run = client.get(f"/api/v1/runs/{body['run_id']}").json()
     assert run["status"] == "succeeded" and all(s["status"] == "succeeded" for s in run["stages"])
+    # The list every page polls leaves out what each stage produced; the run's own page keeps it.
+    assert all("outputs" not in s for r in client.get("/api/v1/runs").json() for s in r["stages"])
+    assert any(s["outputs"] for s in run["stages"])
     assets = client.get("/api/v1/assets").json()
     assert assets[0]["asset_id"] == body["asset_id"] and "proxy" in assets[0]["roles"]
 

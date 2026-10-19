@@ -23,7 +23,7 @@ class RegisterRequest(BaseModel):
     path: str
 
 
-def run_view(system, run_id: str) -> dict:
+def run_view(system, run_id: str, *, outputs: bool = True) -> dict:
     from nexora.core.schedule import in_window
     info = system.orch.run_info(run_id)
     stages = system.orch.stages(run_id)
@@ -40,7 +40,7 @@ def run_view(system, run_id: str) -> dict:
         "cleared": status == "failed" and system.orch.cleared(run_id),      # a failure set aside, or put right by a later run
         "cost": system.orch.run_cost(run_id),
         "stages": [{"stage_id": s.stage_id, "stage_key": s.stage_key, "status": s.status.value, "blocked_reason": s.blocked_reason,
-                    "attempts": len(system.orch.attempts(s.stage_id)), "outputs": s.outputs}
+                    "attempts": len(system.orch.attempts(s.stage_id)), **({"outputs": s.outputs} if outputs else {})}
                    for s in system.orch.stages(run_id)],
     }
 
@@ -221,7 +221,8 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
 
     @app.get("/api/v1/runs")
     def list_runs():
-        return [run_view(system, run_id) for run_id in system.orch.runs()]
+        # Polled every few seconds by every open page: without what each stage produced, which was 5 MB of a 5.6 MB answer.
+        return [run_view(system, run_id, outputs=False) for run_id in system.orch.runs()]
 
     @app.get("/api/v1/runs/{run_id}")
     def get_run(run_id: str):
