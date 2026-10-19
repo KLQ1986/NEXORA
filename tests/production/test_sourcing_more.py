@@ -272,4 +272,4 @@ def test_the_operator_chooses_which_stock_libraries_are_searched(tmp_path):
     client.post(f"/api/v1/projects/{pid}/match"); drain(system)
     shot = client.get(f"/api/v1/projects/{pid}").json()["shots"][0]["shot_id"]
     assert client.post(f"/api/v1/shots/{shot}/stock", json={"query": "rocket launch"}).status_code == 200
-    assert stock.params[-1]["sources"] == ["nasa"]
+    assert [p["sources"] for p in stock.params if "per_query" in p] == [["nasa"]]          # the search; then the chosen one is fetched

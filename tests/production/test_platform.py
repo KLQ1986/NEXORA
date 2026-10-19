@@ -227,13 +227,13 @@ def test_the_operator_turns_approving_on_their_own_and_off_gate_by_gate(tmp_path
     client = TestClient(create_app(system))
     system.library.ingest(make_video(tmp_path / "a.mp4", picture=20)); drain(system)
     system.orch.set_setting("autonomy_level", "0")                                   # whatever the level: the switches are the operator's own
-    assert client.get("/api/v1/autonomy").json()["switches"] == {"clips": False, "renders": False, "pictures": False}
+    assert client.get("/api/v1/autonomy").json()["switches"] == {"clips": False, "renders": False, "pictures": False, "stock": False}
 
     off = cut(system, client, tmp_path, "Chưa bật", approve_clips=False)
     assert system.autonomy.tick() == [] and client.get(f"/api/v1/projects/{off}").json()["match"]["status"] == "waiting_review"
 
     switched = client.post("/api/v1/autonomy/switches", json={"clips": True, "renders": True}).json()["switches"]
-    assert switched == {"clips": True, "renders": True, "pictures": False}             # no record needs earning first
+    assert switched == {"clips": True, "renders": True, "pictures": False, "stock": False}             # no record needs earning first
     assert system.autonomy.tick() == [f"clips:{off}"]
     client.post(f"/api/v1/projects/{off}/render"); drain(system)
     view = client.get(f"/api/v1/projects/{off}").json()
