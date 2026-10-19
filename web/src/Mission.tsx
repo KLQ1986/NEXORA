@@ -109,8 +109,8 @@ export default function MissionControl() {
   return (
     <Page full title={tab === "overview" ? tr("Mission Control") : `${tr("Mission Control")} · ${name}`}
           side={<OpsSide counts={{ approvals: ov?.kpis.awaiting, missions: ov?.kpis.active }} />}
-          note={<FocusPicker />}
-          tabs={<FocusLine />}
+          note={tab === "overview" ? <FocusPicker /> : <span className="text-[15px] font-semibold text-ink">{name}</span>}
+          tabs={tab === "overview" ? <FocusLine /> : undefined}
           actions={ov && <Kill on={ov.kill_switch} done={reload} />}>
       <div className="mx-auto max-w-[1680px]">
         {tab === "overview" && <Lines />}
