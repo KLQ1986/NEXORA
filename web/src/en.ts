@@ -60,6 +60,8 @@ const en: Record<string, string> = {
   "Tìm cảnh “{0}” trong footage": "Find “{0}” in the footage",
   "{0} việc đang chạy": "{0} jobs running",
   "Bỏ clip này": "Remove this clip",
+  "Video đang mở": "Video open",
+  "Không có trợ lý cho video này": "No assistant on this video",
   "Xem tất cả {0} dòng ({1} lượt)": "See all {0} lines ({1} entries)",
   "Số lần trợ lý nói đúng câu này": "How often the assistant said exactly this",
   "Chỉ xem 8 dòng mới nhất": "Show the newest 8 only",
