@@ -553,6 +553,8 @@ def start_library_work(system: "System", kind: str) -> list[str]:
         if asset["kind"] != "video" or asset.get("rejected") or asset.get("trashed_at"):
             continue
         aid = asset["asset_id"]
+        if kind != "understand" and asset.get("origin") == "licensed":
+            continue                                   # stock is described, never listened to
         if kind == "understand":
             if system.index.moments(aid, level="video"):
                 continue
