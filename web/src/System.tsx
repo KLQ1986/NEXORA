@@ -496,7 +496,8 @@ export default function System() {
               <Icon name={icon} size={16} className={area === k ? "text-accent" : ""} />{name}</button>
           ))}
         </nav>
-        <div className="grid max-w-4xl gap-5">
+        {/* Two columns of cards on a wide screen, as the other screens fill their width; one card alone runs the whole width. */}
+        <div className="grid items-start gap-5 xl:grid-cols-2 xl:[&>*:only-child]:col-span-2">
           {area === "control" && (
             <>
               <Card title={tr("Dừng khẩn cấp")} icon="power" tone="tally" note={tr("Khi bật, hệ thống không bắt đầu thêm bước nào tốn tiền hoặc tác động ra bên ngoài. Việc đang chạy dở vẫn được giữ nguyên trạng thái.")}

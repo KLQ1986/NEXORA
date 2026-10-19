@@ -115,7 +115,8 @@ function Rhythm({ projects, posted }: { projects: Project[]; posted: number[] })
         <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: POST }} />{tr("Đã đăng")}<span className="mono text-ink">{sum(posts)}</span></span>
       </div>
       <div className="relative flex min-h-[150px] flex-1 flex-col xl:min-h-[90px]" onMouseLeave={() => setHover(null)}>
-        <div className="pointer-events-none absolute inset-x-0 top-0 border-t border-dashed border-white/[0.06]" /><span className="mono pointer-events-none absolute -top-2 right-0 text-mini text-faint">{top}</span>
+        <div className="pointer-events-none absolute inset-x-0 top-0 border-t border-dashed border-white/[0.06]" />
+        {sum(cuts) + sum(posts) === 0 && <p className="pointer-events-none absolute inset-0 grid place-items-center px-6 text-center text-ui text-faint">{tr("Chưa có bản dựng hay video đăng nào trong 14 ngày qua.")}</p>}<span className="mono pointer-events-none absolute -top-2 right-0 text-mini text-faint">{top}</span>
         <div className="flex min-h-0 flex-1 items-end gap-1 border-b border-line" role="img" aria-label={tr("Số bản dựng và số video đăng mỗi ngày trong 14 ngày qua")}>
           {days.map((d, k) => (
             <div key={k} className={`relative flex h-full flex-1 items-end justify-center gap-[2px] rounded-t-md transition-colors ${hover === k ? "bg-white/[0.04]" : ""}`} onMouseEnter={() => setHover(k)}>
@@ -321,6 +322,17 @@ export default function Home({ go }: { go: (to: string) => void }) {
                       <span className="block truncate text-meta text-mute">{many ? g.map((x) => x.p.title).join(", ") : n.hint}</span></span>
                     <span className={`inline-flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-mini font-medium ${TINT[n.tone]}`}><Icon name={n.icon} size={13} />{n.label}</span></a></li>); })}
               </ul>
+              {/* What was made last, under what waits: the panel is a share of the screen's height, and its foot is not left bare. */}
+              {d.recent.length > 0 && (
+                <div className="mt-auto border-t border-line pt-3">
+                  <p className="mb-1 px-2 text-meta text-faint">{tr("Video gần đây")}</p>
+                  <ul className="grid gap-0.5">{d.recent.slice(0, 4).map((r) => { const p = list.find((x) => x.project_id === r.project_id); const src = p ? poster(p) : null; return (
+                    <li key={r.project_id}><a href={`/du-an/${r.project_id}`} onClick={open(`/du-an/${r.project_id}`)} className="flex items-center gap-3 rounded-lg px-2 py-1.5 transition-colors hover:bg-white/[0.04]">
+                      {src ? <img src={src} alt="" className="h-8 w-12 shrink-0 rounded-md object-cover" /> : <span className="hatch h-8 w-12 shrink-0 rounded-md" />}
+                      <span className="min-w-0 flex-1 truncate text-ui font-medium">{r.title}</span>
+                      <span className="shrink-0 text-meta text-faint">{r.renders ? tv`${r.renders} bản dựng` : tr("chưa dựng")} · {new Date(r.created_at * 1000).toLocaleDateString(locale, { day: "numeric", month: "numeric" })}</span>
+                    </a></li>); })}</ul>
+                </div>)}
             </Panel>
 
             <Panel fill title={tr("Nhịp 14 ngày")} icon="pulse"><Rhythm projects={list} posted={posted} /></Panel>

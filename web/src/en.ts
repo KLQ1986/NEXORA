@@ -2704,6 +2704,8 @@ const en: Record<string, string> = {
   "Đã chấm: xem điểm trong phần nghiệm thu.": "Looked at: see the marks under the checks.",
   "Đang chấm…": "Looking…",
   "Cho mô hình chấm hình": "Have the model look",
+  "Video gần đây": "Recent videos",
+  "Chưa có bản dựng hay video đăng nào trong 14 ngày qua.": "No cuts made and no videos posted in the last 14 days.",
 };
 
 export default en;
