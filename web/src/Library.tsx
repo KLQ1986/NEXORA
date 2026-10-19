@@ -274,17 +274,13 @@ function CardDelete({ remove, again }: { remove: (forGood: boolean) => void; aga
 }
 
 function Card({ item, on, chosen, choosing, pick, choose, acts, vq, remove, again = null }: { item: Item; on: boolean; chosen: boolean; choosing: boolean; pick: () => void; choose: () => void; acts: Act[]; vq?: VQRow; remove?: (forGood: boolean) => void; again?: boolean | null }) {
-  const meta = [item.code, item.kind === "render" || item.kind === "draft" ? (item.version ? `v${item.version}` : tr("Xem trước")) : null, day(item.at)];
   return (
     <li className="group relative">
       <div className={`overflow-hidden rounded-xl border bg-raised/30 transition-[border-color,box-shadow] ${on || chosen ? "border-accent shadow-[0_0_0_1px_var(--color-accent)]" : "border-line hover:border-edge"}`}>
         <button type="button" onClick={choosing ? choose : pick} aria-pressed={choosing ? chosen : on} className="block w-full text-left">
           <span className="relative block">
             <Frame item={item} className="aspect-video" scrub />
-            {(item.duration || item.size) ? <span className="absolute bottom-2 right-2 flex gap-1">
-              {item.duration ? <TimeChip>{timecode(item.duration)}</TimeChip> : null}
-              {item.size ? <TimeChip>{megabytes(item.size)}</TimeChip> : null}
-            </span> : null}
+            {item.duration ? <TimeChip className="absolute bottom-2 right-2">{timecode(item.duration)}</TimeChip> : null}
             {item.status && item.status !== "draft" && <span className="absolute right-2 top-2"><Badge s={item.status} /></span>}
             {item.rating >= 4 && <span className="absolute bottom-2 left-2 text-cue drop-shadow"><svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2.5l2.3 4.7 5.2.8-3.8 3.7.9 5.2L10 14.4l-4.6 2.5.9-5.2L2.5 8l5.2-.8z" /></svg></span>}
             {item.asset?.rejected && <span className="absolute inset-0 grid place-items-center bg-canvas/70 text-[12.5px] font-medium text-mute">{tr("Đã gạt ra")}</span>}
@@ -294,12 +290,14 @@ function Card({ item, on, chosen, choosing, pick, choose, acts, vq, remove, agai
         {remove && !choosing && <CardDelete remove={remove} again={again} />}
         <div className="flex items-start gap-1 px-3 pb-2.5 pt-2">
           <button type="button" onClick={choosing ? choose : pick} className="min-w-0 flex-1 text-left">
-            <span className="block truncate text-[14px] font-medium leading-snug">{item.title}</span>
-            <span className="mono mt-0.5 block truncate text-[12px] text-faint">{meta.filter(Boolean).join(" · ")}</span>
-            {vq && <VQMark row={vq} />}
+            <span className="block truncate text-[11px] font-medium leading-snug">{item.title}</span>
           </button>
           <span className="-mr-1 mt-0.5 opacity-60 group-hover:opacity-100"><More acts={acts} /></span>
         </div>
+        {(vq || item.size) && <button type="button" onClick={choosing ? choose : pick} className="-mt-4 block w-full px-3 pb-2 text-left">
+          {vq ? <VQMark row={vq} compact tail={[item.duration ? timecode(item.duration) : null, item.size ? megabytes(item.size) : null].filter(Boolean).join(" · ")} />
+            : <span className="mono mt-1 flex text-[11.5px] text-faint"><span className="ml-auto">{[item.duration ? timecode(item.duration) : null, megabytes(item.size!)].filter(Boolean).join(" · ")}</span></span>}
+        </button>}
       </div>
       <span className={`absolute left-2 top-2 transition-opacity ${choosing || chosen ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}>
         <button type="button" onClick={choose} aria-label={chosen ? tr("Bỏ chọn") : tr("Chọn")} className={`grid h-5 w-5 place-items-center rounded-[5px] border ${chosen ? "border-accent bg-accent text-canvas" : "border-white/60 bg-black/40 text-transparent hover:text-white/70"}`}><Icon name="check" size={13} /></button>
@@ -310,18 +308,18 @@ function Card({ item, on, chosen, choosing, pick, choose, acts, vq, remove, agai
 
 /* Where an item stands in Visual Quality, on its card: a dot of the state's colour (hollow before any analysis) and its name. */
 const VQ_DOT: Record<string, string> = { mute: "border border-faint", cue: "bg-cue", proof: "bg-proof", tally: "bg-tally", accent: "bg-accent", ai: "bg-ai" };
-function VQMark({ row, tail }: { row: VQRow; tail?: string }) {
+function VQMark({ row, tail, compact = false }: { row: VQRow; tail?: string; compact?: boolean }) {
   const [label, tone] = VQ_STATE[row.state] ?? [row.state, "mute"];
   const verdict = row.verdict ? ({ pass: [tr("QA đạt"), "text-proof"], warn: [tr("QA cảnh báo"), "text-cue"], fail: [tr("QA hỏng"), "text-tally"] } as Record<string, [string, string]>)[row.verdict] : null;
   return (
-    <span className="mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 text-[11.5px] text-mute"
+    <span className={`mt-1 flex min-w-0 items-center gap-x-1.5 ${compact ? "whitespace-nowrap" : "flex-wrap"} text-[11.5px] text-mute`}
           title={[row.encoding_name, row.worst ? `${DEFECT[row.worst.kind] ?? row.worst.kind} ${Math.round(row.worst.severity * 100)}%` : null].filter(Boolean).join(" · ") || undefined}>
       <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${VQ_DOT[tone] ?? VQ_DOT.mute}`} />
-      {tr("VQ")}: {label}{row.recipe && row.state !== "none" ? ` v${row.recipe.version}` : ""}
-      {verdict && <span className={verdict[1]}>· {verdict[0]}</span>}
+      <span className={compact ? "min-w-0 truncate" : "contents"}>{tr("VQ")}: {label}{row.recipe && row.state !== "none" ? ` v${row.recipe.version}` : ""}
+      {verdict && <span className={verdict[1]}> · {verdict[0]}</span>}</span>
       {row.generative > 0 && <span className="text-ai">· AI {row.generative}</span>}
-      {row.worst && row.state !== "none" && <span className="truncate text-faint">· {DEFECT[row.worst.kind] ?? row.worst.kind} {Math.round(row.worst.severity * 100)}%</span>}
-      {tail && <span className="mono text-faint">· {tail}</span>}
+      {!compact && row.worst && row.state !== "none" && <span className="truncate text-faint">· {DEFECT[row.worst.kind] ?? row.worst.kind} {Math.round(row.worst.severity * 100)}%</span>}
+      {tail && <span className="mono ml-auto shrink-0 whitespace-nowrap text-faint">{tail}</span>}
     </span>
   );
 }
@@ -334,7 +332,7 @@ function Row({ item, on, chosen, choosing, pick, choose, vq }: { item: Item; on:
         {choosing && <span className={`grid h-4 w-4 shrink-0 place-items-center rounded border ${chosen ? "border-accent bg-accent text-canvas" : "border-edge"}`}>{chosen && <Icon name="check" size={11} />}</span>}
         <Frame item={item} className="aspect-video w-20 shrink-0 rounded" />
         <span className="min-w-0 flex-1"><span className="block truncate text-[13px]">{item.title}{item.version ? <span className="mono ml-1.5 text-[11px] text-faint">v{item.version}</span> : null}</span>
-          {vq ? <VQMark row={vq} tail={tail} /> : <span className="mono block truncate text-[11px] text-faint">{tail}</span>}</span>
+          {vq ? <VQMark row={vq} compact tail={tail} /> : <span className="mono block truncate text-[11px] text-faint">{tail}</span>}</span>
         {item.status && <Badge s={item.status} />}
       </button>
     </li>
