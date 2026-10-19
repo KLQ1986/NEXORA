@@ -281,7 +281,10 @@ function Card({ item, on, chosen, choosing, pick, choose, acts, vq, remove, agai
         <button type="button" onClick={choosing ? choose : pick} aria-pressed={choosing ? chosen : on} className="block w-full text-left">
           <span className="relative block">
             <Frame item={item} className="aspect-video" scrub />
-            {item.duration ? <TimeChip className="absolute bottom-2 right-2">{timecode(item.duration)}</TimeChip> : null}
+            {(item.duration || item.size) ? <span className="absolute bottom-2 right-2 flex gap-1">
+              {item.duration ? <TimeChip>{timecode(item.duration)}</TimeChip> : null}
+              {item.size ? <TimeChip>{megabytes(item.size)}</TimeChip> : null}
+            </span> : null}
             {item.status && item.status !== "draft" && <span className="absolute right-2 top-2"><Badge s={item.status} /></span>}
             {item.rating >= 4 && <span className="absolute bottom-2 left-2 text-cue drop-shadow"><svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2.5l2.3 4.7 5.2.8-3.8 3.7.9 5.2L10 14.4l-4.6 2.5.9-5.2L2.5 8l5.2-.8z" /></svg></span>}
             {item.asset?.rejected && <span className="absolute inset-0 grid place-items-center bg-canvas/70 text-[12.5px] font-medium text-mute">{tr("Đã gạt ra")}</span>}
