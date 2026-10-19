@@ -693,18 +693,29 @@ const TASK_STATES: Record<string, string> = { working: tr("Đang làm"), waiting
 function VideoPicker({ id }: { id: string }) {
   const { data } = usePoll<Project[]>("/api/v1/projects", 15000);
   const list = (data ?? []).filter((p) => !p.trashed_at || p.project_id === id);
-  if (!list.length) return null;
+  // Until the list comes, a frame of the same size holds the place, so the row does not jump.
+  if (!list.length) return <div aria-busy="true" className="h-[54px] w-full shrink-0 self-start rounded-xl border border-line bg-surface/40 sm:w-[340px] sm:max-w-[44vw] 2xl:w-[420px]" />;
   const go = (next: string) => {
     const here = window.location.pathname.endsWith("/storyboard") ? "/storyboard" : window.location.search;
     goTo(`/du-an/${next}${here}`);
   };
+  const here = list.find((p) => p.project_id === id);
+  const st = here ? projectState(here) : null;
+  const dot = st ? ({ mute: "bg-faint", cue: "bg-cue", proof: "bg-proof", tally: "bg-tally" } as Record<string, string>)[st.tone] ?? "bg-faint" : "bg-faint";
+  // The card is the control: the list covers it whole, borderless, so there is one frame, not a box inside a box.
   return (
-    <div className="flex shrink-0 items-center gap-2 self-start rounded-xl border border-line bg-surface/60 px-3 py-2.5">
-      <Icon name="clapper" size={15} className="text-faint" />
-      <select value={id} onChange={(e) => go(e.target.value)} aria-label={tr("Video đang mở")} className="h-8 w-[380px] max-w-[42vw] truncate pl-2 text-[13.5px] font-medium text-ink">
-        {list.map((p) => <option key={p.project_id} value={p.project_id}>{p.title}</option>)}
+    <label className="group relative flex h-[54px] w-full sm:w-[340px] sm:max-w-[44vw] 2xl:w-[420px] shrink-0 cursor-pointer items-center gap-3 self-start rounded-xl border border-line bg-surface/70 px-3.5 transition-colors hover:border-accent/50 focus-within:border-accent">
+      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/[0.05] text-mute group-hover:text-accent"><Icon name="clapper" size={15} /></span>
+      <span className="grid min-w-0 flex-1 leading-tight">
+        <span className="mono text-[10px] uppercase tracking-[0.12em] text-faint">{tr("Video")} · {list.findIndex((p) => p.project_id === id) + 1}/{list.length}</span>
+        <span className="flex min-w-0 items-center gap-1.5"><span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} title={st?.label} />
+          <span className="truncate text-[14px] font-semibold text-ink" title={here?.title}>{here?.title}</span></span>
+      </span>
+      <Icon name="down" size={14} className="shrink-0 text-faint group-hover:text-ink" />
+      <select value={id} onChange={(e) => go(e.target.value)} aria-label={tr("Video đang mở")} className="absolute inset-0 cursor-pointer opacity-0">
+        {list.map((p) => <option key={p.project_id} value={p.project_id}>{p.title}{p.project_id === id ? "" : ` — ${projectState(p).label}`}</option>)}
       </select>
-    </div>);
+    </label>);
 }
 
 function AgentLog({ projectId, compact = false }: { projectId: string; compact?: boolean }) {
@@ -712,7 +723,8 @@ function AgentLog({ projectId, compact = false }: { projectId: string; compact?:
   const task = data?.tasks[0];
   const [all, setAll] = useState(false);
   // The video's own name, to switch video, heads the assistant's row; without an assistant, the row holds it alone.
-  if (!task) return data ? <div className={`flex items-center gap-3 ${compact ? "" : "mb-6"}`}><VideoPicker id={projectId} /><span className="text-[12.5px] text-faint">{tr("Không có trợ lý cho video này")}</span></div> : null;
+  if (!task) return data ? <div className={`flex flex-col gap-3 sm:flex-row sm:items-center ${compact ? "" : "mb-6"}`}><VideoPicker id={projectId} /><span className="text-[12.5px] text-faint">{tr("Không có trợ lý cho video này")}</span></div>
+    : <div className={`flex flex-col gap-3 sm:flex-row sm:items-start ${compact ? "" : "mb-6"}`} aria-busy="true"><VideoPicker id={projectId} /><div className="ai-card h-[54px] min-w-0 flex-1 opacity-50" /></div>;
   // The same words said again (a step taken up again says them once more) are one line with how often and when last;
   // the newest eight show, the rest on asking.
   const lines: { role: string; text: string; at: number; times: number }[] = [];
@@ -723,15 +735,15 @@ function AgentLog({ projectId, compact = false }: { projectId: string; compact?:
   }
   const shown = all ? lines : lines.slice(-8);
   return (
-    <div className={`flex items-start gap-3 ${compact ? "" : "mb-6"}`}>
+    <div className={`flex flex-col gap-3 sm:flex-row sm:items-start ${compact ? "" : "mb-6"}`}>
     <VideoPicker id={projectId} />
-    <details className="ai-card min-w-0 flex-1 px-4 py-3" open={!compact && task.status !== "done"}>
-      <summary className="flex cursor-pointer list-none items-center gap-2.5 font-medium">
-        <span className="grid h-7 w-7 place-items-center rounded-lg bg-ai/15 text-ai"><Icon name="sparkles" size={15} /></span>{tr("Trợ lý sản xuất")}
+    <details className="ai-card min-w-0 flex-1 px-4" >
+      <summary className="flex h-[52px] cursor-pointer list-none items-center gap-2.5 font-medium">
+        <span className="grid h-7 w-7 place-items-center rounded-lg bg-ai/15 text-ai"><Icon name="sparkles" size={15} /></span><span className="shrink-0 whitespace-nowrap">{tr("Trợ lý sản xuất")}</span>
         <Tag tone={task.status === "waiting_operator" ? "cue" : task.status === "failed" ? "tally" : task.status === "done" ? "proof" : "ai"}>{TASK_STATES[task.status] ?? task.status}</Tag>
         <span className="ml-auto truncate text-[12.5px] font-normal text-mute">{task.goal}</span><Icon name="down" size={14} className="text-faint" />
       </summary>
-      <ol className="mt-3 grid gap-1.5 border-t border-ai/15 pt-3">
+      <ol className="mb-3 grid gap-1.5 border-t border-ai/15 pt-3">
         {lines.length > shown.length && <li><button type="button" onClick={() => setAll(true)} className="link text-[12.5px]">{tv`Xem tất cả ${lines.length} dòng (${task.log.length} lượt)`}</button></li>}
         {shown.map((e, i) => <li key={i} className="grid grid-cols-[4.5rem_7rem_minmax(0,1fr)] gap-2 text-[13px]"><span className="mono text-faint">{new Date(e.at * 1000).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" })}</span><span className="truncate text-ai">{e.role}</span>
           <span>{e.text}{e.times > 1 && <span className="mono ml-1.5 rounded bg-white/[0.06] px-1 text-[11px] text-faint" title={tr("Số lần trợ lý nói đúng câu này")}>×{e.times}</span>}</span></li>)}
@@ -1606,8 +1618,9 @@ function Slate({ state, items, extra }: { state: React.ReactNode; items: [string
   return (
     <span className="flex flex-wrap items-center gap-x-4 gap-y-2">
       {state}
-      {items.map(([n, label]) => <span key={label} className="flex items-baseline gap-1.5"><span className="mono text-[14px] font-medium leading-none text-ink">{n}</span><span className="text-[12.5px] text-faint">{label}</span></span>)}
-      {extra && <span className="text-[12.5px] text-faint">{extra}</span>}
+      {/* The header row is one line: below 2xl only the first two figures fit beside the actions (the pipeline has the rest). */}
+      {items.map(([n, label], i) => <span key={label} className={`items-baseline gap-1.5 ${i < 2 ? "flex" : "hidden 2xl:flex"}`}><span className="mono text-[14px] font-medium leading-none text-ink">{n}</span><span className="text-[12.5px] text-faint">{label}</span></span>)}
+      {extra && <span className="hidden text-[12.5px] text-faint 2xl:inline">{extra}</span>}
     </span>
   );
 }

@@ -1,6 +1,6 @@
 import { t as tr, tv, locale } from "./i18n";
 import { useEffect, useState } from "react";
-import { megabytes, post, stageName, usePoll, type AgentTask, type Project } from "./api";
+import { megabytes, post, projectState, stageName, usePoll, type AgentTask, type Project } from "./api";
 import Pipeline from "./Pipeline";
 import { ask, Button, Empty, goTo, Icon, Meter, OpsSide, Page, Seg, Spinner, Tag, toast } from "./parts";
 
@@ -153,10 +153,18 @@ function FocusPicker() {
   const { all, busy, p } = useFocus();
   if (!p) return null;
   const tab = new URLSearchParams(window.location.search).get("tab");
+  const st = projectState(p);
+  const dot = ({ cue: "bg-cue", proof: "bg-proof", tally: "bg-tally" } as Record<string, string>)[st.tone] ?? "bg-faint";
+  // Drawn like the video card on a video's own pages, sized for the header row: the card is the control.
   return (
-    <label className="flex min-w-0 items-center gap-2 text-[12.5px] text-faint"><Icon name="clapper" size={14} />
+    <label className="group relative flex h-9 w-[340px] min-w-0 max-w-[40vw] cursor-pointer items-center gap-2.5 rounded-lg border border-line bg-surface/70 px-3 transition-colors hover:border-accent/50 focus-within:border-accent">
+      <Icon name="clapper" size={14} className="shrink-0 text-faint group-hover:text-accent" />
+      <span className="mono shrink-0 text-[10px] uppercase tracking-[0.12em] text-faint">{tr("Video")}</span>
+      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} title={st.label} />
+      <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink" title={p.title}>{p.title}</span>
+      <Icon name="down" size={13} className="shrink-0 text-faint group-hover:text-ink" />
       <select value={p.project_id} onChange={(e) => goTo(`/phong-may?video=${e.target.value}${tab ? `&tab=${tab}` : ""}`)}
-              aria-label={tr("Video đang theo dõi")} className="h-8 max-w-[320px] truncate pl-2 text-[13px] text-ink">
+              aria-label={tr("Video đang theo dõi")} className="absolute inset-0 cursor-pointer opacity-0">
         {[...busy, ...all.filter((x) => !busy.includes(x))].map((x) => <option key={x.project_id} value={x.project_id}>{busy.includes(x) ? "● " : ""}{x.title}</option>)}
       </select>
     </label>);
