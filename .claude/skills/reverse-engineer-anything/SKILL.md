@@ -1,17 +1,74 @@
 ---
 name: reverse-engineer-anything
-description: Reverse engineer native, managed, Electron/JavaScript, packaged, firmware, and browser targets with REA. Use shipped-artifact or requested runtime evidence to explain features, compare versions, decompile code, or guide a reconstruction. Skip REA for ordinary source-repository architecture analysis.
+description: Reverse engineer any tool NEXORA may borrow from or compete with. A source repository (cloned, e.g. ~/openmontage) is taken apart with the source-repository method below: methodology, algorithms, data flow, licences and rights, checked against real runtime data. Shipped binaries, Electron/JavaScript apps, packages, firmware and websites use the REA MCP tools. Use when the operator asks to "dùng rea", reverse engineer, or deeply analyse how a tool works.
 metadata:
-  version: "42"
+  version: "42-nexora.1"
 ---
 
 # REA
 
-Use REA when a claim depends on a shipped binary or package, decompilation,
-passive application runtime evidence, or comparison with
-behavior not established by available source. For ordinary analysis of a
-complete source repository, use normal repository tools and do not run REA
-readiness or provider commands.
+Two routes, chosen by the target:
+
+- **A source repository** (the code is there to read): follow
+  [Source repositories](#source-repositories) below. Do not run REA readiness or
+  provider commands for it; the code itself is the evidence.
+- **A shipped artifact** (binary, package, ASAR/Electron app, firmware, website,
+  capture): use REA's tools as described in the rest of this skill, when a claim
+  depends on decompilation, runtime evidence, or behaviour the source does not
+  establish.
+
+A repository that ships a built artifact (an Electron app, a CLI binary) can use
+both: the source route for its design, REA for what the shipped build really does.
+
+## Source repositories
+
+NEXORA's own method for taking apart a tool from its source (first used on
+OpenMontage, `docs/research/2026-10-19-openmontage-stock-rights.md`).
+
+1. **Pin the target.** Record the path and the exact commit (`git -C <repo>
+   rev-parse --short HEAD`). Never analyse a moving tree without saying which.
+2. **Write the checklist.** Turn the request into numbered questions, each with
+   the evidence it needs (code path, data, a run). Typical questions for a tool
+   NEXORA borrows from: what it does end to end; its algorithms and their
+   parameters; where data enters and leaves the machine; licences of the code,
+   of the models and of the material it fetches; failure handling; what NEXORA
+   does differently.
+3. **Map before reading.** Use the repository's own docs (README, AGENTS/CLAUDE,
+   `skills/`, `docs/`), then `graphify` or `grep -rn` for entry points,
+   registries and the functions the questions touch. Read the code that answers
+   each question, not the whole tree. Quote file:line for every claim.
+4. **Look for what is absent, with a bounded search.** A rule the tool does not
+   enforce (a licence filter, a timeout, a validation) is a finding. State the
+   exact search (directories and patterns) so the negative stays bounded.
+5. **Corroborate with real data.** Where NEXORA already runs the tool, read what
+   it actually returned (e.g. `stock_candidates`, asset `rights`, run logs) and
+   compare with what the code claims. Run the tool yourself only within the
+   operator's request, never with paid services or outward actions they have
+   not approved, and prefer a scratch NEXORA for anything that writes.
+6. **Label every conclusion.** **[QS]** observed (code or data), **[SR]**
+   inferred, **[?]** unknown. Never present an inference as observed.
+7. **Write the report** to `docs/research/YYYY-MM-DD-<tool>-<topic>.md`:
+   the target and commit, the checklist with each question's status
+   (answered / partly / open), findings per question with file:line evidence,
+   real-data findings, unknowns, and "what this means for NEXORA" as concrete,
+   numbered proposals. Commit it, then answer the operator in Vietnamese with
+   the essentials and the proposals; implement nothing without their word.
+8. **Keep it reusable.** Note in memory any recurring fact about the tool
+   (pinned commit, where it lives, its traps), so the next analysis starts there.
+
+Licence and rights checks deserve their own pass whenever the tool fetches or
+generates material NEXORA might publish: for each source, what licence string it
+records, whether it verifies it, and whether anything filters non-commercial,
+no-derivatives, share-alike or unverified items.
+
+## REA for shipped artifacts
+
+In this project the REA package is pinned: `rea-agents` 6.7.0 in
+`data/tools/rea`, run with Node 22 (`/opt/homebrew/opt/node@22/bin/node`); see
+`PROVENANCE.md`. The CLI is
+`/opt/homebrew/opt/node@22/bin/node data/tools/rea/node_modules/rea-agents/scripts/rea.mjs`.
+Use it in place of `npx -y rea-agents@latest` below; do not fetch another version
+unless the operator asks for an update.
 
 ## Connect only when needed
 
