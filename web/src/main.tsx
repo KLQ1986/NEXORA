@@ -198,7 +198,11 @@ function App() {
   };
   useEffect(() => { setNavigator(go); });
   const { data: runs } = usePoll<Run[]>("/api/v1/runs", 4000);
-  const working = (runs ?? []).filter((r) => r.status === "running" && !r.held).length;
+  // A run "running" has started and is not done; most are only waiting their turn for a worker. Only stages a worker holds are running.
+  const started = (runs ?? []).filter((r) => r.status === "running" && !r.held);
+  const working = started.reduce((n, r) => n + r.stages.filter((s) => s.status === "running").length, 0);
+  const waitingTurn = started.filter((r) => !r.stages.some((s) => s.status === "running")).length;
+  const busyText = waitingTurn ? tv`${working} đang chạy · ${waitingTurn} đang chờ` : tv`${working} việc đang chạy`;
   const queued = (runs ?? []).filter((r) => r.status === "queued").length;
   const { data: home } = usePoll<HomeLite>("/api/v1/home", 4000);
   const waiting = home ? home.attention.length + home.gaps.length + home.offline_volumes.length + home.problems.length : 0;
@@ -217,7 +221,7 @@ function App() {
   // One lamp that says how the machine is: stopped, busy, missing an engine, or ready. The engines are named in its tooltip.
   const engines = ENGINES.map(([key, name]) => ({ name, c: caps?.pipelines.find((x) => x.pipeline === key) }));
   const missing = engines.filter((e) => e.c && !e.c.available);
-  const status = kill ? { tone: "tally", text: tr("Dừng khẩn cấp") } : working ? { tone: "ai", text: tv`${working} việc đang chạy` }
+  const status = kill ? { tone: "tally", text: tr("Dừng khẩn cấp") } : working || waitingTurn ? { tone: "ai", text: busyText }
     : missing.length ? { tone: "cue", text: tv`Thiếu ${missing.length} bộ máy` } : { tone: "proof", text: tr("Sẵn sàng") };
   const lamp = ({ tally: "bg-tally", ai: "bg-ai", cue: "bg-cue", proof: "bg-proof" } as Record<string, string>)[status.tone];
   const engineNote = engines.map((e) => `${e.name}: ${!e.c ? "…" : e.c.available ? tr("sẵn sàng") : tv`thiếu ${e.c.missing.join(", ")}`}`).join("\n");
@@ -266,7 +270,7 @@ function App() {
             </a>); })}
         </nav>
         <span className="flex-1" />
-        {working > 0 && <button type="button" onClick={() => go("/tien-trinh")} title={tr("Xem tiến trình")} className="hidden h-9 shrink-0 items-center gap-2 rounded-lg border border-ai/30 bg-ai/10 px-3 text-[12.5px] font-medium text-ai transition-colors hover:bg-ai/15 xl:flex"><Spinner size={13} />{tv`${working} việc đang chạy`}</button>}
+        {(working > 0 || waitingTurn > 0) && <button type="button" onClick={() => go("/tien-trinh")} title={tr("Xem tiến trình")} className="hidden h-9 shrink-0 items-center gap-2 rounded-lg border border-ai/30 bg-ai/10 px-3 text-[12.5px] font-medium text-ai transition-colors hover:bg-ai/15 xl:flex"><Spinner size={13} />{busyText}</button>}
         <button type="button" onClick={() => setPalette(true)} title={tr("Tìm dự án, màn hình, cảnh…")} aria-label={tr("Tìm dự án, màn hình, cảnh…")}
                 className="flex h-9 w-9 shrink-0 items-center justify-center gap-2.5 rounded-lg border border-line bg-surface text-[13px] text-faint transition-colors hover:border-edge hover:text-mute 2xl:w-52 2xl:justify-start 2xl:px-3">
           <Icon name="search" size={15} /><span className="hidden flex-1 truncate text-left 2xl:inline">{tr("Tìm…")}</span><kbd className="mono hidden rounded border border-line px-1.5 text-[11px] 2xl:inline">⌘K</kbd>

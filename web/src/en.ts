@@ -59,6 +59,7 @@ const en: Record<string, string> = {
   "Hôm nay": "Today",
   "Tìm cảnh “{0}” trong footage": "Find “{0}” in the footage",
   "{0} việc đang chạy": "{0} jobs running",
+  "{0} đang chạy · {1} đang chờ": "{0} running · {1} waiting",
   // parts.tsx
   "Thanh thời gian của video": "Video timeline",
   "Khung đen, không dùng được": "Black frames, unusable",
