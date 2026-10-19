@@ -252,7 +252,26 @@ function More({ acts }: { acts: Act[] }) {
   );
 }
 
-function Card({ item, on, chosen, choosing, pick, choose, acts, vq }: { item: Item; on: boolean; chosen: boolean; choosing: boolean; pick: () => void; choose: () => void; acts: Act[]; vq?: VQRow }) {
+/** Delete on the card itself: the first press asks once, Trash or for good, and the question goes away by itself after 10 seconds. */
+function CardDelete({ remove }: { remove: (forGood: boolean) => void }) {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => { if (!armed) return; const t = window.setTimeout(() => setArmed(false), 10000); return () => window.clearTimeout(t); }, [armed]);
+  if (!armed) return (
+    <button type="button" onClick={(e) => { e.stopPropagation(); setArmed(true); }} aria-label={tr("Xoá")} title={tr("Xoá")}
+            className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-md bg-black/55 text-white opacity-75 transition-opacity hover:bg-tally hover:opacity-100 group-hover:opacity-100 focus-visible:opacity-100"><Icon name="trash" size={14} /></button>);
+  const go = (forGood: boolean) => (e: React.MouseEvent) => { e.stopPropagation(); setArmed(false); remove(forGood); };
+  return (
+    <span className="absolute inset-0 z-20 grid place-items-center bg-canvas/90 p-2" onClick={(e) => e.stopPropagation()}>
+      <span className="grid w-full max-w-[220px] gap-1.5 text-center">
+        <span className="text-[12.5px] font-medium">{tr("Xoá clip này?")}</span>
+        <button type="button" onClick={go(false)} className="h-7 rounded-md border border-line bg-surface text-[12px] hover:border-accent">{tr("Vào thùng rác")}</button>
+        <button type="button" onClick={go(true)} className="h-7 rounded-md bg-tally text-[12px] font-medium text-canvas hover:opacity-90">{tr("Xoá vĩnh viễn")}</button>
+        <button type="button" onClick={(e) => { e.stopPropagation(); setArmed(false); }} className="text-[11.5px] text-faint hover:text-ink">{tr("Thôi")}</button>
+      </span>
+    </span>);
+}
+
+function Card({ item, on, chosen, choosing, pick, choose, acts, vq, remove }: { item: Item; on: boolean; chosen: boolean; choosing: boolean; pick: () => void; choose: () => void; acts: Act[]; vq?: VQRow; remove?: (forGood: boolean) => void }) {
   const meta = [item.code, item.kind === "render" || item.kind === "draft" ? (item.version ? `v${item.version}` : tr("Xem trước")) : null, day(item.at)];
   return (
     <li className="group relative">
@@ -267,6 +286,7 @@ function Card({ item, on, chosen, choosing, pick, choose, acts, vq }: { item: It
             {item.asset && !item.asset.online && <span className="absolute inset-x-0 top-0 bg-cue/95 px-2 py-0.5 text-[11.5px] font-medium text-canvas">{tr("Không tìm thấy file gốc")}</span>}
           </span>
         </button>
+        {remove && !choosing && <CardDelete remove={remove} />}
         <div className="flex items-start gap-1 px-3 pb-2.5 pt-2">
           <button type="button" onClick={choosing ? choose : pick} className="min-w-0 flex-1 text-left">
             <span className="block truncate text-[14px] font-medium leading-snug">{item.title}</span>
@@ -957,6 +977,17 @@ export default function Library() {
     await post("/api/v1/trash", { assets: ids }); if (picked && ids.includes(picked)) setPicked(null); setChosen(new Set()); reload();
     toast(tv`Đã chuyển ${ids.length} nguyên liệu vào thùng rác.`, { undo: () => { post("/api/v1/trash/restore", { assets: ids }).then(reload).catch(() => {}); } });
   };
+  // From the card's own delete, already confirmed there: to the Trash (with undo), or for good (the file on disk stays).
+  const removeOne = async (a: Asset, forGood: boolean) => {
+    try {
+      await post("/api/v1/trash", { assets: [a.asset_id] });
+      if (forGood) await post("/api/v1/trash/purge", { assets: [a.asset_id] });
+    } catch (e) { toast((e as Error).message, { tone: "tally" }); return; }
+    if (picked === a.asset_id) setPicked(null);
+    reload();
+    if (forGood) toast(tr("Đã xoá vĩnh viễn clip."));
+    else toast(tr("Đã chuyển clip vào thùng rác."), { undo: () => { post("/api/v1/trash/restore", { assets: [a.asset_id] }).then(reload).catch(() => {}); } });
+  };
   const actsOf = (i: Item): Act[] => [
     ...(playable(i) && current && current.key !== i.key && playable(current) ? [[tr("So sánh với mục đang xem"), "layers", () => setCompare(i.key)] as Act] : []),
     [chosen.has(i.key) ? tr("Bỏ chọn") : tr("Chọn"), "check", () => choose(i.key)],
@@ -1118,7 +1149,7 @@ export default function Library() {
           </section>); })}</div>))
           : searching ? <p className="flex items-center justify-center gap-2 py-10 text-[13px] text-mute"><Spinner size={13} />{tr("Đang tìm theo nội dung…")}</p>
           : data && shown.length === 0 ? <div className="py-10 text-center text-[13px] text-mute">{items.length ? <>{tr("Không có mục nào khớp bộ lọc.")} <button type="button" className="link" onClick={reset}>{tr("Bỏ lọc")}</button></> : tr("Thư viện còn trống. Bấm + để thêm footage.")}</div>
-          : view === "grid" ? <ul className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" }}>{shown.map((i) => <Card key={i.key} vq={i.asset ? vqMap.get(i.asset.asset_id) : undefined} item={i} on={picked === i.key} chosen={chosen.has(i.key)} choosing={chosen.size > 0} pick={() => show(i.key)} choose={() => choose(i.key)} acts={actsOf(i)} />)}</ul>
+          : view === "grid" ? <ul className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" }}>{shown.map((i) => <Card key={i.key} vq={i.asset ? vqMap.get(i.asset.asset_id) : undefined} item={i} on={picked === i.key} chosen={chosen.has(i.key)} choosing={chosen.size > 0} pick={() => show(i.key)} choose={() => choose(i.key)} acts={actsOf(i)} remove={i.asset ? (forGood) => removeOne(i.asset!, forGood) : undefined} />)}</ul>
           : <ul className="grid gap-0.5">{shown.map((i) => <Row key={i.key} item={i} on={picked === i.key} chosen={chosen.has(i.key)} choosing={chosen.size > 0} pick={() => show(i.key)} choose={() => choose(i.key)} />)}</ul>}
       </div>
       {chosen.size > 0 && (
