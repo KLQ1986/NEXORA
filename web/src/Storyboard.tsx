@@ -202,7 +202,10 @@ export default function Storyboard({ projectId, back }: { projectId: string; bac
             <Button size="sm" kind="quiet" onClick={() => ops([{ op: "insert", after: cur?.shot_id, spec: { intent: tr("Shot mới"), duration: 4, source: "any" } }], tr("thêm shot"))}><Icon name="plus" size={13} />{tr("Thêm shot")}</Button>
           </div>
           {view === "board" && <BoardView board={data} cur={cur} seam={seam} tone={tone} pick={(id) => { setSel(id); setSeam(null); }} pickSeam={setSeam}
-                                          move={(o) => ops([{ op: "move", ...o }], tr("đổi thứ tự"))} ops={ops} />}
+                                          move={(o) => ops([{ op: "move", ...o }], tr("đổi thứ tự"))} ops={ops}
+                                          remove={(s) => act(`remove-${s.shot_id}`, () => post(`${url}/shots/${s.shot_id}/remove`), tv`Đã bỏ clip khỏi ${s.code}.`)}
+                                          change={(s) => { setSel(s.shot_id); setSeam(null); setTab("source");
+                                            window.setTimeout(() => { const el = document.querySelector<HTMLInputElement>("[data-lib-search]"); el?.scrollIntoView({ block: "center", behavior: "smooth" }); el?.focus(); }, 150); }} />}
           {view === "time" && <TimeView board={data} cur={cur} tone={tone} pick={(id) => { setSel(id); setSeam(null); }} pickSeam={setSeam} />}
           {view === "copilot" && <CopilotView url={url} board={data} shots={shots.length} onApplied={() => { reload(); setView("board"); }} />}
           {view === "plan" && <PlanView board={data} cur={cur} pick={(id) => { setSel(id); setSeam(null); }} flip={(id) => ops([{ op: "flip_camera", shot: id }], tr("lật sang bên kia trục"))} />}
@@ -300,7 +303,8 @@ function Shared({ board, url, open, setOpen, onSaved }: { board: Board; url: str
 }
 
 /* ----------------------------------------------------------------------------------------------------- the board, by scene */
-function BoardView({ board, cur, seam, tone, pick, pickSeam, move, ops }: { board: Board; cur?: SbShot; seam: string | null; tone: (s: SbShot) => string; pick: (id: string) => void; pickSeam: (id: string) => void;
+function BoardView({ board, cur, seam, tone, pick, pickSeam, move, ops, remove, change }: { board: Board; cur?: SbShot; seam: string | null; tone: (s: SbShot) => string; pick: (id: string) => void; pickSeam: (id: string) => void;
+  remove: (s: SbShot) => void; change: (s: SbShot) => void;
   move: (op: { shot: string; before?: string; scene?: string }) => void; ops: (list: object[], note?: string) => void }) {
   const seamBefore = new Map(board.seams.map((x) => [x.b, x]));
   // A card is carried by hand: dropped on another it goes before it, dropped on a scene's last place it ends that scene.
@@ -338,6 +342,7 @@ function BoardView({ board, cur, seam, tone, pick, pickSeam, move, ops }: { boar
                   {!flagged && <span className="h-[22px]" aria-hidden="true" />}{/* the chip's line kept, so the cards of a row stay level */}
                   <ShotCard s={s} on={s.shot_id === cur?.shot_id && !seam} tone={tone(s)} pick={() => pick(s.shot_id)}
                             editing={writing === s.shot_id} edit={(on) => setWriting(on ? s.shot_id : null)}
+                            remove={s.assignment?.asset_id ? () => remove(s) : undefined} change={s.spec.source.policy === "generate" ? undefined : () => change(s)}
                             say={(text) => { setWriting(null); const same = !s.spec.line || sameWords(s.spec.line, s.spec.intent);
                               ops([{ op: "set", shot: s.shot_id, field: "line", value: text }, ...(same ? [{ op: "set", shot: s.shot_id, field: "intent", value: text }] : [])], tr("sửa lời thoại")); }} />
                 </div>);
@@ -499,7 +504,8 @@ function Frame({ src, className = "absolute inset-0 h-full w-full object-cover" 
   );
 }
 
-function ShotCard({ s, on, tone, pick, editing, edit, say }: { s: SbShot; on: boolean; tone: string; pick: () => void; editing: boolean; edit: (on: boolean) => void; say: (text: string) => void }) {
+function ShotCard({ s, on, tone, pick, editing, edit, say, remove, change }: { s: SbShot; on: boolean; tone: string; pick: () => void; editing: boolean; edit: (on: boolean) => void; say: (text: string) => void;
+  remove?: () => void; change?: () => void }) {
   const words = s.spec.line || s.spec.intent;
   const [draft, setDraft] = useState(words);
   useEffect(() => { if (editing) setDraft(words); }, [editing, words]);
@@ -509,16 +515,22 @@ function ShotCard({ s, on, tone, pick, editing, edit, say }: { s: SbShot; on: bo
   const dot = ({ proof: "bg-proof", ai: "bg-ai", accent: "bg-accent", cue: "bg-cue", mute: "bg-faint" } as Record<string, string>)[t] ?? "bg-faint";
   const f = s.spec.framing;
   return (
-    <div className="group/card grid w-full min-w-0 gap-2 text-left">
+    <div className="group/card relative grid w-full min-w-0 gap-2 text-left">
      <button type="button" onClick={pick} className="grid w-full min-w-0 gap-2 text-left">
       <span className={`relative block aspect-video overflow-hidden rounded-lg ${on ? "outline outline-2 outline-offset-2 outline-accent" : "outline outline-1 outline-line"}`} style={{ background: tone }}>
         {s.frame_url && <Frame src={s.frame_url} />}
         <span className="mono absolute left-1.5 top-1.5 rounded bg-black/70 px-1.5 text-[11px] font-semibold ring-1 ring-white/25">{s.code}</span>
-        <span className="absolute right-1.5 top-1.5 rounded px-1.5 text-[11px] font-semibold text-canvas" style={{ background: SRC[s.spec.source.policy][1] }}>{SRC[s.spec.source.policy][0]}</span>
+        <span className={`absolute right-1.5 top-1.5 rounded px-1.5 text-[11px] font-semibold text-canvas ${change ? "group-hover/card:opacity-0" : ""}`} style={{ background: SRC[s.spec.source.policy][1] }}>{SRC[s.spec.source.policy][0]}</span>
         {s.version > 1 && <span className="mono absolute bottom-1.5 left-1.5 rounded bg-black/60 px-1.5 text-[11px] text-mute">v{s.version}</span>}
       </span>
       <span className="text-[11px] font-semibold uppercase leading-snug tracking-wide text-ink">{`${s.code}: ${f.lens} | ${s.spec.duration.target}s | ${f.move} | ${f.size} · ${f.angle}`}</span>
      </button>
+      {change && <span className="absolute right-1.5 top-1.5 flex gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover/card:opacity-100">
+        <button type="button" onClick={change} title={tr("Đổi clip: tìm clip khác trong Thư viện hoặc chọn phương án khác")}
+                className="flex h-6 items-center gap-1 rounded bg-black/75 px-1.5 text-[11px] font-medium text-white ring-1 ring-white/25 hover:bg-accent hover:text-canvas"><Icon name="search" size={11} />{tr("Đổi clip")}</button>
+        {remove && <button type="button" onClick={remove} title={tr("Bỏ clip này khỏi shot; các phương án khác vẫn giữ để chọn")}
+                className="flex h-6 items-center gap-1 rounded bg-black/75 px-1.5 text-[11px] font-medium text-white ring-1 ring-white/25 hover:bg-tally"><Icon name="trash" size={11} />{tr("Bỏ clip")}</button>}
+      </span>}
       {editing ? (
         <span className="grid gap-1.5">
           <textarea autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} rows={Math.min(8, Math.max(3, Math.ceil(draft.length / 38)))} aria-label={tv`Lời thoại của ${s.code}`}
@@ -777,7 +789,7 @@ function PictureTab({ shot: s, board, url, set, act, busy }: { shot: SbShot; boa
             <button type="button" className="link text-[12.5px]" onClick={() => act("none", () => post(`${shotUrl}/none-fits`), tr("Đã ghi nhận: các clip này không hợp với shot."))}>{tr("Không clip nào hợp")}</button>
           </span>}
           <form className="flex gap-1.5" onSubmit={(e) => { e.preventDefault(); findInLibrary(); }}>
-            <input value={libQuery} onChange={(e) => setLibQuery(e.target.value)} placeholder={tr("Tìm clip khác trong Thư viện, ví dụ: chợ nổi buổi sáng")} aria-label={tr("Tìm clip trong Thư viện")}
+            <input data-lib-search value={libQuery} onChange={(e) => setLibQuery(e.target.value)} placeholder={tr("Tìm clip khác trong Thư viện, ví dụ: chợ nổi buổi sáng")} aria-label={tr("Tìm clip trong Thư viện")}
                    className="h-8 min-w-0 flex-1 rounded-md border border-line bg-canvas px-2.5 text-[12.5px] outline-none focus:border-accent" />
             <Button size="sm" type="submit" busy={libBusy} disabled={!libQuery.trim()}><Icon name="search" size={13} />{tr("Tìm trong Thư viện")}</Button>
           </form>
