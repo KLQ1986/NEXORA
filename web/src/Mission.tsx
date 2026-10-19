@@ -107,9 +107,9 @@ export default function MissionControl() {
   const { data: ov, reload } = usePoll<Overview>("/api/v1/mission-control", 4000);
   const name = TABS.find((t) => t.key === tab)?.label ?? "";
   return (
-    <Page full title={tab === "overview" ? tr("Mission Control") : `${tr("Mission Control")} · ${name}`}
+    <Page full title={tab === "overview" ? tr("Mission Control") : name}
           side={<OpsSide counts={{ approvals: ov?.kpis.awaiting, missions: ov?.kpis.active }} />}
-          note={tab === "overview" ? <FocusPicker /> : <span className="text-title font-semibold text-ink">{name}</span>}
+          note={tab === "overview" ? <FocusPicker /> : undefined}
           tabs={tab === "overview" ? <FocusLine /> : undefined}
           actions={ov && <Kill on={ov.kill_switch} done={reload} />}>
       <div className="mx-auto max-w-[1680px]">

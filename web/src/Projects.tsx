@@ -961,11 +961,10 @@ function Detail({ id, back }: { id: string; back: (to?: string) => void }) {
             [String(new Set(p.shots.map((s) => s.scene).filter(Boolean)).size || "–"), tr("cảnh")],
             [String(p.renders.length || "–"), tr("bản dựng")],
             [latest ? timecode(latest.qc.duration) : "–", tr("thời lượng")],
-          ]} extra={<>{FORMATS[p.format] ?? p.format}{p.template ? <span className="ml-3">{p.template}</span> : null}</>} />}
+          ]} />}
           side={<OpsSide projects={<ProjectSide current={id} place={view} lamps={{ step, reviewing: !!reviewing, renderReview: !!renderReview, packaged: !!latest?.package }} onView={setView} />} />}
-          tabs={<div className="flex items-center justify-end gap-1 py-1.5"><button type="button" onClick={() => setView("timeline")} className={`flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-meta ${view === "timeline" ? "bg-white/[0.07] text-ink" : "text-mute hover:text-ink"}`}><Icon name="timeline" size={14} />{tr("Dòng thời gian")}</button>
-                                 <button type="button" onClick={() => setView("board")} className={`flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-meta ${view === "board" ? "bg-white/[0.07] text-ink" : "text-mute hover:text-ink"}`}><Icon name="board" size={14} />{tr("Bảng theo dõi")}</button></div>}
-          actions={<><Button onClick={() => setSettings(true)} title={tr("Mẫu, khung hình, nhạc, lời dẫn, kênh, ngày đăng")}><Icon name="sliders" size={15} />{tr("Thiết lập")}</Button>{next && <Button kind="primary" busy={busy} disabled={next.label === tr("Lưu kịch bản") && !(text ?? "").trim()} onClick={next.go}>{!busy && <Icon name={next.icon} />}{next.label}</Button>}</>}>
+          actions={<><button type="button" onClick={() => setView("timeline")} title={tr("Dòng thời gian")} aria-label={tr("Dòng thời gian")} className={`flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-meta ${view === "timeline" ? "bg-white/[0.07] text-ink" : "text-mute hover:text-ink"}`}><Icon name="timeline" size={14} /><span className="hidden 2xl:inline">{tr("Dòng thời gian")}</span></button>
+                                 <button type="button" onClick={() => setView("board")} title={tr("Bảng theo dõi")} aria-label={tr("Bảng theo dõi")} className={`flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-meta ${view === "board" ? "bg-white/[0.07] text-ink" : "text-mute hover:text-ink"}`}><Icon name="board" size={14} /><span className="hidden 2xl:inline">{tr("Bảng theo dõi")}</span></button><span className="mx-1 h-5 w-px bg-line" aria-hidden="true" /><Button onClick={() => setSettings(true)} title={tr("Mẫu, khung hình, nhạc, lời dẫn, kênh, ngày đăng")}><Icon name="sliders" size={15} />{tr("Thiết lập")}</Button>{next && <Button kind="primary" busy={busy} disabled={next.label === tr("Lưu kịch bản") && !(text ?? "").trim()} onClick={next.go}>{!busy && <Icon name={next.icon} />}{next.label}</Button>}</>}>
       {p.trashed_at && <div className="mb-5 flex flex-wrap items-center gap-3 rounded-xl border border-cue/40 bg-cue/10 px-4 py-3 text-cue"><Icon name="trash" />
         <span className="min-w-0 flex-1">{tr("Dự án này đang ở Thùng rác. Nó không hiện trong danh sách và trợ lý không làm tiếp cho tới khi bạn khôi phục.")}</span>
         <Button size="sm" disabled={busy} onClick={() => run(() => post("/api/v1/trash/restore", { projects: [id] }))}><Icon name="undo" size={14} />{tr("Khôi phục")}</Button></div>}
@@ -1620,8 +1619,8 @@ function Slate({ state, items, extra }: { state: React.ReactNode; items: [string
   return (
     <span className="flex flex-wrap items-center gap-x-4 gap-y-2">
       {state}
-      {/* The header row is one line: below 2xl only the first two figures fit beside the actions (the pipeline has the rest). */}
-      {items.map(([n, label], i) => <span key={label} className={`items-baseline gap-1.5 ${i < 2 ? "flex" : "hidden 2xl:flex"}`}><span className="mono text-body font-medium leading-none text-ink">{n}</span><span className="text-meta text-faint">{label}</span></span>)}
+      {/* The header row is one line: below 2xl only the first figure fits beside the actions and the video's views. */}
+      {items.map(([n, label], i) => <span key={label} className={`items-baseline gap-1.5 ${i < 1 ? "flex" : "hidden 2xl:flex"}`}><span className="mono text-body font-medium leading-none text-ink">{n}</span><span className="text-meta text-faint">{label}</span></span>)}
       {extra && <span className="hidden text-meta text-faint 2xl:inline">{extra}</span>}
     </span>
   );

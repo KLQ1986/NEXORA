@@ -233,8 +233,9 @@ export function SideFrame({ side, children }: { side: React.ReactNode; children:
 
 export function Page({ title, note, actions, back, tabs, side, children, wide = false, full = false, flush = false }: { title: React.ReactNode; eyebrow?: React.ReactNode; note?: React.ReactNode; actions?: React.ReactNode;
   back?: { label: string; onClick: () => void }; tabs?: React.ReactNode; side?: React.ReactNode; children: React.ReactNode; wide?: boolean; full?: boolean; flush?: boolean }) {
-  // How wide the content may run: a reading measure, a wide one for work surfaces, or the whole window for the overview.
-  const measure = full ? "max-w-none" : wide ? "max-w-[1600px]" : "max-w-[1240px]";
+  // How wide the content may run: one measure for every screen (Mission Control's 1680 px), or the whole window.
+  // `wide` is kept for the screens that ask for it; it is the same measure now (design review 2026-10-20).
+  const measure = full ? "max-w-none" : "max-w-[1680px]";
   // Coming back to a screen finds it where it was left.
   const scroller = useRef<HTMLDivElement>(null);
   const place = window.location.pathname + window.location.search;
@@ -254,8 +255,9 @@ export function Page({ title, note, actions, back, tabs, side, children, wide = 
   // A sentence about what the screen is for waits behind an (i); short facts stay in view.
   const explain = typeof note === "string" && note.length > 40;
   const facts = note && !explain ? note : null;
-  // A bar with nothing but the (i) is not worth its height: then the screen starts straight with its content.
-  const bar = !!(back || facts || actions);
+  // Every screen has its bar with its name, so screens read alike (design review 2026-10-20); on a phone the bar shows only
+  // when it carries a way back or the menu, the bottom nav naming the screen.
+  const bar = true;
   return (
     <div className="flex min-h-0 min-w-0 flex-1">
       {side && !hidden && <aside aria-label={tr("Menu của mục này")} className="hidden w-[248px] shrink-0 overflow-y-auto overflow-x-hidden border-r border-line bg-surface/40 px-3 py-4 lg:block">{side}</aside>}
@@ -265,11 +267,12 @@ export function Page({ title, note, actions, back, tabs, side, children, wide = 
       <section className="flex min-h-0 min-w-0 flex-1 flex-col">
         <h1 className="sr-only">{title}</h1>
         {(bar || side) && (
-          <header className={`h-12 shrink-0 items-center gap-3 border-b border-line px-4 md:px-8 ${bar ? (side || back ? "flex" : "hidden md:flex") : "flex lg:hidden"}`}>
+          <header className={`h-12 shrink-0 items-center gap-3 border-b border-line px-4 md:px-8 ${side || back ? "flex" : "hidden md:flex"}`}>
             {side && <button type="button" onClick={() => setDrawer(true)} className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-line px-2.5 text-meta text-mute hover:bg-raised hover:text-ink lg:hidden" aria-label={tr("Mở menu của mục này")}><Icon name="sliders" size={14} />{tr("Menu mục")}</button>}
             {side && <button type="button" onClick={toggleSide} className="hidden h-8 w-8 shrink-0 place-items-center rounded-md text-faint hover:bg-raised hover:text-ink lg:grid" title={hidden ? tr("Hiện menu bên (phím [)") : tr("Ẩn menu bên (phím [)")} aria-label={hidden ? tr("Hiện menu bên (phím [)") : tr("Ẩn menu bên (phím [)")}><Icon name="collapse" size={16} className={hidden ? "rotate-180" : ""} /></button>}
             {back && <button type="button" onClick={back.onClick} title={back.label} className="flex shrink-0 items-center gap-1 rounded-md text-ui text-mute transition-colors hover:text-ink"><Icon name="back" size={16} /><span className="hidden sm:inline">{back.label}</span></button>}
-            {back && <><span className="hidden text-edge sm:inline">/</span><span className="display min-w-0 truncate text-page leading-tight sm:max-w-[45%] sm:shrink-0">{title}</span></>}
+            {back && <span className="hidden text-edge sm:inline">/</span>}
+            <span className={`display min-w-0 truncate text-page leading-tight ${back ? "sm:max-w-[45%] sm:shrink-0" : "shrink-0"}`}>{title}</span>
             {explain && <Hint text={note as string}><span className="sr-only">{title}</span></Hint>}
             {facts && <div className="hidden min-w-0 items-center overflow-hidden whitespace-nowrap text-ui text-faint md:flex [&>*]:flex-nowrap">{facts}</div>}
             {actions && <div className="ml-auto hidden shrink-0 items-center gap-2 md:flex">{actions}</div>}
@@ -420,7 +423,7 @@ export function Empty({ icon = "sparkles", title, children, action }: { icon?: s
   return (
     <div className="panel flex flex-col items-center px-6 py-10 text-center">
       <span className="mb-3 grid h-11 w-11 place-items-center rounded-xl bg-accent/12 text-accent"><Icon name={icon} size={20} /></span>
-      <p className="font-medium">{title}</p>
+      <p className="text-title font-semibold">{title}</p>
       {children && <div className="mt-1 max-w-md text-ui text-mute">{children}</div>}
       {action && <div className="mt-4">{action}</div>}
     </div>
