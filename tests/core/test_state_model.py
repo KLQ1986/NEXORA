@@ -220,3 +220,17 @@ def test_an_ended_attempt_cannot_be_changed(orch):
 def test_a_pipeline_cannot_depend_on_a_stage_declared_later():
     with pytest.raises(ValueError):
         PipelineDefinition("bad", "1", [StageDef("a", depends_on=("b",)), StageDef("b")])
+
+
+def test_open_runs_are_those_not_simply_over_and_every_other_run_succeeded_or_was_cancelled(orch):
+    done = orch.submit_run(two_step(), idempotency_key="done", now=T0)
+    for t in (1, 3):
+        orch.complete(orch.claim_next("w1", now=T0 + t).attempt_id, now=T0 + t + 1)
+    failed = orch.submit_run(two_step(), idempotency_key="failed", now=T0 + 10)
+    orch.fail(orch.claim_next("w1", now=T0 + 11).attempt_id, "invalid_request", retryable=False, now=T0 + 12)
+    cancelled = orch.submit_run(two_step(), idempotency_key="cancelled", now=T0 + 20)
+    orch.cancel_run(cancelled, now=T0 + 21)
+    queued = orch.submit_run(two_step(), idempotency_key="queued", now=T0 + 30)
+    assert orch.open_runs() == {failed, queued}
+    assert {r: orch.run_status(r) for r in orch.runs() if r not in orch.open_runs()} == {done: RunStatus.SUCCEEDED, cancelled: RunStatus.CANCELLED}
+    assert [r["run_id"] for r in orch.run_rows()] == orch.runs()                 # one read, the same order

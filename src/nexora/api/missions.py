@@ -4,6 +4,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import time
 
 from fastapi import FastAPI, HTTPException
@@ -15,6 +16,9 @@ GATES = {"sourcing.match": "Duyệt clip đã chọn", "edit.render": "Duyệt b
 HEAVY_RAM = 0.85                   # above this share of memory in use, a heavy 4K job should wait for the one before it
 
 
+_MEMSIZE: list[int] = []            # the Mac's memory never changes while NEXORA runs: asked of sysctl once
+
+
 def machine(data_dir) -> dict:
     """This Mac, measured now: memory in use, load, disk."""
     out = {"cpus": os.cpu_count() or 1, "load": None, "memory_total": None, "memory_used": None, "disk_free": None, "disk_total": None}
@@ -23,7 +27,9 @@ def machine(data_dir) -> dict:
     except OSError:
         pass
     try:
-        total = int(subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True, timeout=3).stdout.strip())
+        if not _MEMSIZE:
+            _MEMSIZE.append(int(subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True, timeout=3).stdout.strip()))
+        total = _MEMSIZE[0]
         vm = subprocess.run(["vm_stat"], capture_output=True, text=True, timeout=3).stdout
         page = int((re.search(r"page size of (\d+)", vm) or [None, 16384])[1])
         pages = {k.strip().lower(): int(v.strip().rstrip(".")) for k, v in re.findall(r"^([^:\n]+):\s+(\d+)\.?$", vm, re.M)}
@@ -52,11 +58,21 @@ def add_missions(app: FastAPI, system, *, health) -> None:
     from nexora.app import PIPELINE_NAMES, capabilities, templates
     channels = lambda: json.loads(system.orch.setting("channels", "[]"))
     missions = system.missions
-    seen_machine = {"at": 0.0, "value": None}
+    seen_machine = {"at": 0.0, "value": None, "busy": False}
 
     def measured() -> dict:
-        if time.time() - seen_machine["at"] > 5:
+        # Measuring runs vm_stat, which can take most of a second on a busy Mac: the first ask measures, after that a
+        # measurement older than 5 s is renewed in the background and the request answers with the one in hand.
+        if seen_machine["value"] is None:
             seen_machine.update(at=time.time(), value=machine(system.data_dir))
+        elif time.time() - seen_machine["at"] > 5 and not seen_machine["busy"]:
+            seen_machine["busy"] = True
+            def renew():
+                try:
+                    seen_machine.update(at=time.time(), value=machine(system.data_dir))
+                finally:
+                    seen_machine["busy"] = False
+            threading.Thread(target=renew, name="measure-machine", daemon=True).start()
         return seen_machine["value"]
 
     def project_title(pid: str | None) -> str:
@@ -165,13 +181,19 @@ def add_missions(app: FastAPI, system, *, health) -> None:
                             "actions": ["confirm", "cancel"], "link": None})
         seen = set()
         waiting_projects = set()
-        for run_id in sorted(system.orch.runs(), key=lambda r: system.orch.run_info(r)["created_at"], reverse=True):
-            info = system.orch.run_info(run_id)
-            project = subject_project(info["subject_ref"] or "")
+        # Newest first from one read; each subject's project is found once; a run simply over hides older ones but is not asked more.
+        open_, projects_of = system.orch.open_runs(), {}
+        for info in system.orch.run_rows():
+            run_id, subject = info["run_id"], info["subject_ref"] or ""
+            if subject not in projects_of:
+                projects_of[subject] = subject_project(subject)
+            project = projects_of[subject]
             key = (project["project_id"] if project else info["subject_ref"], info["pipeline_id"])
             if key in seen:
                 continue                                       # only the newest run of a piece of work speaks for it
             seen.add(key)
+            if run_id not in open_:
+                continue
             status = system.orch.run_status(run_id).value
             if status not in ("waiting_review", "blocked"):
                 continue
@@ -261,7 +283,7 @@ def add_missions(app: FastAPI, system, *, health) -> None:
         kill = system.orch.kill_switch()
         busy_engines = set()
         live_pipelines = set()
-        for run_id in system.orch.runs():
+        for run_id in system.orch.open_runs():                   # a run simply over is not running
             if system.orch.run_status(run_id).value != "running":
                 continue
             try:
@@ -393,7 +415,7 @@ def add_missions(app: FastAPI, system, *, health) -> None:
         waits = approvals()
         crew = fleet()
         states = [x["state"] for group in ("agents", "workers", "engines") for x in crew[group]]
-        failed = [r for r in system.orch.runs() if system.orch.run_status(r).value == "failed" and not system.orch.cleared(r)]
+        failed = [r for r in system.orch.open_runs() if system.orch.run_status(r).value == "failed" and not system.orch.cleared(r)]
         alerts = [{"kind": "offline", "text": f"{e['name']}: {e['detail']}", "link": "/he-thong"} for e in crew["engines"] if e["state"] == "offline"]
         alerts += [{"kind": "failed", "text": f"{len(failed)} lượt chạy lỗi chưa xem", "link": "/tien-trinh"}] if failed else []
         res = resources()

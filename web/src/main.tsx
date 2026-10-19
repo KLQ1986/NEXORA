@@ -197,7 +197,7 @@ function App() {
     if (doc.startViewTransition && !window.matchMedia("(prefers-reduced-motion: reduce)").matches) doc.startViewTransition(() => flushSync(apply)); else apply();
   };
   useEffect(() => { setNavigator(go); });
-  const { data: runs } = usePoll<Run[]>("/api/v1/runs", 4000);
+  const { data: runs } = usePoll<Run[]>("/api/v1/runs?active=1", 4000);   // only what is at work or waiting: the count is all the bar needs
   // A run "running" has started and is not done; most are only waiting their turn for a worker. Only stages a worker holds are running.
   const started = (runs ?? []).filter((r) => r.status === "running" && !r.held);
   const working = started.reduce((n, r) => n + r.stages.filter((s) => s.status === "running").length, 0);

@@ -173,6 +173,16 @@ class Orchestrator:
     def runs(self) -> list[str]:
         return [r[0] for r in self._conn.execute("SELECT run_id FROM runs ORDER BY created_at DESC, run_id DESC")]
 
+    def run_rows(self) -> list[dict]:
+        """Every run's own row, newest first, in one read: screens that look over all runs need not ask run by run."""
+        return [dict(r) for r in self._conn.execute("SELECT run_id, pipeline_id, project_id, subject_ref, budget_cap, created_at FROM runs "
+                                                    "ORDER BY created_at DESC, run_id DESC")]
+
+    def open_runs(self) -> set[str]:
+        """Runs that are not simply over: a stage not finished, or one failed. Every other run has succeeded or was cancelled
+        (`run_status`), so a screen looking for work in hand or something wrong need ask nothing more of it; of 629 runs, 20 (2026-10-20)."""
+        return {r[0] for r in self._conn.execute("SELECT DISTINCT run_id FROM stages WHERE status NOT IN ('succeeded', 'skipped', 'cancelled')")}
+
     def waiting_review(self, pipeline_id: str) -> list[tuple[str, str]]:
         """(run_id, stage_id) of every stage of a pipeline waiting at its gate, oldest first, for what decides on its own."""
         rows = self._conn.execute("SELECT r.run_id, s.stage_id FROM runs r JOIN stages s USING(run_id) WHERE r.pipeline_id = ? AND s.status = 'waiting_review' "

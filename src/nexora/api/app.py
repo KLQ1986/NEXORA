@@ -1,6 +1,7 @@
 """The HTTP API (design v4.0, section 25). It holds no business logic: it validates and delegates."""
 import shutil
 import json
+import threading
 import time
 from pathlib import Path
 
@@ -220,8 +221,13 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         return {"assets": [asset_view(system, a, used) for a in system.assets.assets()]}
 
     @app.get("/api/v1/runs")
-    def list_runs():
+    def list_runs(active: bool = False):
         # Polled every few seconds by every open page: without what each stage produced, which was 5 MB of a 5.6 MB answer.
+        # `active`: only runs at work or waiting their turn, for the top bar's count (about 20 runs to look at, not 629).
+        if active:
+            open_ = system.orch.open_runs()
+            views = [run_view(system, r, outputs=False) for r in system.orch.runs() if r in open_]
+            return [v for v in views if v["status"] in ("running", "queued")]
         return [run_view(system, run_id, outputs=False) for run_id in system.orch.runs()]
 
     @app.get("/api/v1/runs/{run_id}")
@@ -295,13 +301,22 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         system.assets.relink_volume(volume_id, mount)
         return {"volumes": system.assets.volumes()}
 
-    checked = {"at": 0.0, "checks": []}
+    checked = {"at": 0.0, "checks": [], "busy": False}
 
     def health() -> list[dict]:
-        """The system check starts other programs, so its answer is kept for half a minute instead of being asked on every poll."""
+        """The system check starts other programs, so its answer is kept for half a minute instead of being asked on every poll;
+        once there is an answer, an old one is renewed in the background, so no request waits the two seconds the check takes."""
         from nexora.app import doctor
-        if time.time() - checked["at"] > 30:
+        if checked["at"] == 0.0:
             checked.update(at=time.time(), checks=doctor(system, config))
+        elif time.time() - checked["at"] > 30 and not checked["busy"]:
+            checked["busy"] = True
+            def renew():
+                try:
+                    checked.update(at=time.time(), checks=doctor(system, config))
+                finally:
+                    checked["busy"] = False
+            threading.Thread(target=renew, name="system-check", daemon=True).start()
         return checked["checks"]
 
     @app.get("/api/v1/doctor")
@@ -459,18 +474,25 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         for p in system.projects.projects():
             for sid in system.projects.script_ids(p["project_id"]):
                 titles[sid] = p
-        asset_names = {}
+        asset_names, cut_projects = {}, {}
         attention, running, seen = [], [], set()
-        for run_id in sorted(system.orch.runs(), key=lambda r: system.orch.run_info(r)["created_at"], reverse=True):
-            view = run_view(system, run_id)
-            subject = view["subject_ref"] or ""
+        # Newest first, from one read of the runs; a run that has simply succeeded or was cancelled still hides older runs of
+        # the same work, but is not looked at further (Mission Control's Board waited on this: 629 runs built in full every 4 s).
+        open_ = system.orch.open_runs()
+        for row in system.orch.run_rows():
+            run_id, subject, pipeline = row["run_id"], row["subject_ref"] or "", row["pipeline_id"]
             project = titles.get(subject)
             if not project and subject.startswith("cut_") and getattr(system, "cuts", None) is not None:
-                cut = system.cuts.get(subject)                   # an export of the Edit step names its project
-                project = system.projects.project(cut["project_id"]) if cut else None
-            if (project["project_id"] if project and subject.startswith("cut_") else subject, view["pipeline"]) in seen:
+                if subject not in cut_projects:
+                    cut = system.cuts.get(subject)               # an export of the Edit step names its project
+                    cut_projects[subject] = system.projects.project(cut["project_id"]) if cut else None
+                project = cut_projects[subject]
+            if (project["project_id"] if project and subject.startswith("cut_") else subject, pipeline) in seen:
                 continue                                  # only the newest run of a piece of work speaks for it
-            seen.add((project["project_id"] if project and subject.startswith("cut_") else subject, view["pipeline"]))
+            seen.add((project["project_id"] if project and subject.startswith("cut_") else subject, pipeline))
+            if run_id not in open_:
+                continue                                  # succeeded or cancelled: nothing to say
+            view = run_view(system, run_id, outputs=False)
             if subject and subject not in asset_names and not project and system.assets.asset(subject):
                 asset_names[subject] = system.assets.path_of(system.assets.original(subject)).name
             elif subject and subject not in asset_names and not project and system.vq_reader is not None and (vq := system.vq_reader.subject(subject)):
