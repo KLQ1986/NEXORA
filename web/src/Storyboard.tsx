@@ -145,22 +145,20 @@ export default function Storyboard({ projectId, back }: { projectId: string; bac
   const counts = shots.reduce((c, s) => ({ ...c, [s.state]: (c[s.state] ?? 0) + 1 }), {} as Record<string, number>);
   const curSeam = data.seams.find((x) => `${x.a}-${x.b}` === seam);
   const cap = data.project.budget_cap;
+  // The progress inside step ② of the video (the script before it and the cut after it are the video's own steps above).
   const stages: [string, string, () => void][] = [
-    [tr("Kịch bản"), tv`${shots.filter((s) => s.spec.line).length} câu`, () => goTo(`/du-an/${projectId}?tab=script`)],
     [tr("Storyboard"), tv`${data.scenes.length} cảnh · ${shots.length} shot`, () => setView("board")],
     [tr("Shot plan"), tv`${shots.reduce((n, s) => n + s.spec.criteria.length, 0)} tiêu chí`, () => { setView("board"); setTab("crit"); }],
     [tr("Gán asset"), tv`${counts.accepted ?? 0}/${shots.length} đạt`, () => { setView("board"); setTab("source"); }],
     [tr("Timeline nháp"), `${data.seconds}s`, () => setView("time")],
-    [tr("Render"), tr("ở trang dự án"), () => goTo(`/du-an/${projectId}?tab=cut`)],
   ];
-  const stageNow = view === "time" ? 4 : tab === "crit" ? 2 : tab === "source" ? 3 : 1;
+  const stageNow = view === "time" ? 3 : tab === "crit" ? 1 : tab === "source" ? 2 : 0;
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line px-4 py-2.5">
         <button type="button" onClick={toggleSide} className="hidden h-8 w-8 shrink-0 place-items-center rounded-md text-faint hover:bg-raised hover:text-ink lg:grid" title={tr("Ẩn/hiện menu bên (phím [)")} aria-label={tr("Ẩn/hiện menu bên (phím [)")}><Icon name="collapse" size={16} /></button>
-        <button type="button" onClick={back} title={tr("Về trang dự án")} className="flex min-w-0 shrink items-center gap-1 text-[13px] text-mute transition-colors hover:text-ink"><Icon name="back" size={16} /><span className="truncate">{data.project.title}</span></button>
-        <span className="text-edge">/</span>
+        {/* The video's name and its way back are in the steps above (① Kịch bản), as on every page of the video. */}
         <h1 className="display shrink-0 text-[16px]">{tr("Storyboard")}</h1>
         <span className="mono rounded border border-line px-1.5 text-[11px] text-faint">{({ landscape: "16:9", portrait: "9:16", square: "1:1" } as Record<string, string>)[data.project.format] ?? data.project.format} · {data.seconds}s / {data.shared.seconds}s</span>
         <span className="flex-1" />
@@ -191,7 +189,7 @@ export default function Storyboard({ projectId, back }: { projectId: string; bac
           <span key={label} className="flex items-center gap-1">
             <button type="button" onClick={go} aria-current={k === stageNow ? "step" : undefined}
                     className={`flex h-9 items-center gap-2 whitespace-nowrap rounded-lg border px-3 text-[13px] ${k === stageNow ? "border-accent/40 bg-accent/10 text-ink" : "border-transparent text-mute hover:text-ink"}`}>
-              <span className={`grid h-5 w-5 place-items-center rounded-full text-[11px] font-semibold ${k < stageNow ? "bg-proof text-canvas" : k === stageNow ? "bg-accent text-canvas" : "bg-white/[0.08] text-mute"}`}>{k + 1}</span>
+              <span className={`h-2 w-2 shrink-0 rounded-full ${k < stageNow ? "bg-proof" : k === stageNow ? "bg-accent" : "bg-white/[0.15]"}`} aria-hidden="true" />
               {label}<span className="text-[11px] text-faint">{note}</span></button>
             {k < stages.length - 1 && <span aria-hidden className="text-faint/50">›</span>}
           </span>

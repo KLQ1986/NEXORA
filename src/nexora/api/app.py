@@ -525,7 +525,9 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         task_id = system.producer.start(goal, format=body.get("format") if body.get("format") in ("landscape", "portrait", "square") else "landscape",
                                         lines=max(2, min(12, int(body.get("lines", 5)))), use_stock=bool(body.get("use_stock", True)),
                                         urls=[u for u in (str(u).strip() for u in body.get("urls") or []) if u.lower().startswith(("http://", "https://"))],
-                                        critique=bool(body.get("critique", True)), find_sources=bool(body.get("find_sources", False)))
+                                        critique=bool(body.get("critique", True)), find_sources=bool(body.get("find_sources", False)),
+                                        topic=bool(body.get("topic")), production_id=body.get("production_id") or None,
+                                        seconds=max(30, min(900, int(body.get("seconds") or 180))))
         return system.producer.task(task_id)
 
     @app.post("/api/v1/control/desktop-notifications")
