@@ -57,11 +57,11 @@ def cid_of(project_id: str, key: str, c: dict) -> str:
 def grab_frame(url: str, out: Path, *, seconds: float = 1.0, timeout: float = 25.0) -> Path | None:
     """One picture from a video on the web, read from its start by ffmpeg without downloading it: for a candidate whose library
     gives no preview picture."""
-    from nexora.adapters.web import public_address
+    from nexora.adapters.stock_api import resolve_public
     try:
-        public_address(url)
+        url = resolve_public(url)                      # redirects followed and checked here; ffmpeg gets the final public address
         out.parent.mkdir(parents=True, exist_ok=True)
-        subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-ss", str(seconds), "-i", url, "-frames:v", "1", "-vf", "scale=640:-2", str(out)],
+        subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-protocol_whitelist", "https,tls,tcp", "-ss", str(seconds), "-i", url, "-frames:v", "1", "-vf", "scale=640:-2", str(out)],
                        capture_output=True, timeout=timeout, check=True)
         return out if out.is_file() else None
     except (AdapterError, OSError, subprocess.SubprocessError):

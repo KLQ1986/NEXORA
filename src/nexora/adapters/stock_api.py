@@ -13,13 +13,27 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from nexora.adapters.web import public_address
+from nexora.adapters.web import _CheckedRedirects, public_address
 from nexora.core.adapter import Adapter, AdapterError, Capability, ErrorCode, Request, Result
 
 AGENT = "NEXORA/1.0 (personal video tool)"
 PEXELS = "https://api.pexels.com/videos/search"
 PIXABAY = "https://pixabay.com/api/videos/"
 LOCALES = {"vi": "vi-VN", "en": "en-US"}
+_OPEN = urllib.request.build_opener(_CheckedRedirects).open        # every redirect is checked to stay on the public web
+
+
+def resolve_public(url: str, *, timeout: float = 15.0) -> str:
+    """Where an address really leads, every hop checked to be on the public web: for a tool (ffmpeg) that follows redirects
+    on its own and would not check them."""
+    public_address(url)
+    try:
+        with _OPEN(urllib.request.Request(url, method="HEAD", headers={"User-Agent": AGENT}), timeout=timeout) as answer:
+            final = answer.geturl()
+    except (OSError, ValueError) as err:
+        raise AdapterError(ErrorCode.UNAVAILABLE, f"could not reach {urllib.parse.urlparse(url).hostname}: {err}") from None
+    public_address(final)
+    return final
 
 
 def fetch_public(url: str, path: str | Path, *, max_bytes: int = 2_000_000_000, timeout: float = 60.0, headers: dict | None = None) -> Path:
@@ -31,7 +45,7 @@ def fetch_public(url: str, path: str | Path, *, max_bytes: int = 2_000_000_000, 
     partial = path.with_suffix(path.suffix + ".part")
     req = urllib.request.Request(url, headers={"User-Agent": AGENT, **(headers or {})})
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as answer, open(partial, "wb") as out:
+        with _OPEN(req, timeout=timeout) as answer, open(partial, "wb") as out:
             written = 0
             while chunk := answer.read(1 << 16):
                 written += len(chunk)
@@ -51,7 +65,7 @@ def fetch_public(url: str, path: str | Path, *, max_bytes: int = 2_000_000_000, 
 def _get_json(url: str, headers: dict | None = None) -> dict:
     req = urllib.request.Request(url, headers={"User-Agent": AGENT, **(headers or {})})
     try:
-        with urllib.request.urlopen(req, timeout=30) as answer:
+        with _OPEN(req, timeout=30) as answer:
             return json.loads(answer.read().decode("utf-8"))
     except (OSError, ValueError) as err:
         raise AdapterError(ErrorCode.UNAVAILABLE, f"{urllib.parse.urlparse(url).hostname}: {err}") from None

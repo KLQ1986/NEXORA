@@ -62,7 +62,7 @@ PIXABAY = {"hits": [{"id": 22, "pageURL": "https://pixabay.com/videos/22/", "tag
 
 def test_pexels_and_pixabay_are_asked_in_the_language_of_the_words_and_give_a_small_file_to_watch_and_a_large_one_to_fetch(monkeypatch):
     answers = Answers({"api.pexels.com": PEXELS, "pixabay.com": PIXABAY})
-    monkeypatch.setattr(stock_api.urllib.request, "urlopen", answers)
+    monkeypatch.setattr(stock_api, "_OPEN", answers)
     api = stock_api.StockApi(pexels_key="pk", pixabay_key="xk")
     found = api.submit(Request("candidates", inputs={"queries": ["chợ nổi Cái Răng"]}, params={"lang": "vi", "per_query": 6})).outputs
     (pex_url, pex_headers), (pix_url, _) = answers.asked
@@ -76,7 +76,7 @@ def test_pexels_and_pixabay_are_asked_in_the_language_of_the_words_and_give_a_sm
 
 def test_a_library_that_fails_leaves_the_other_and_one_without_a_key_is_not_asked(monkeypatch):
     answers = Answers({"api.pexels.com": OSError("429 too many requests"), "pixabay.com": PIXABAY})
-    monkeypatch.setattr(stock_api.urllib.request, "urlopen", answers)
+    monkeypatch.setattr(stock_api, "_OPEN", answers)
     found = stock_api.StockApi(pexels_key="pk", pixabay_key="xk").submit(Request("candidates", inputs={"queries": ["boats"]})).outputs
     assert [c["source"] for c in found["candidates"]] == ["pixabay"] and "pexels" in found["errors"]
     only = stock_api.StockApi(pixabay_key="xk")
