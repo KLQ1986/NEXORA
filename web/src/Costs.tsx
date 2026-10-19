@@ -18,8 +18,8 @@ function Budget({ label, spent, cap }: { label: string; spent: number; cap: numb
   const share = cap ? Math.min(1, spent / cap) : 0;
   return (
     <div>
-      <div className="mb-2 flex items-baseline justify-between gap-4"><span className="text-[13px] text-mute">{label}</span>
-        <span className="mono text-[13px]"><span className="text-[17px] font-semibold">{spent.toFixed(2)}</span><span className="text-mute"> / {cap != null ? `${cap.toFixed(2)} USD` : tr("không giới hạn")}</span></span></div>
+      <div className="mb-2 flex items-baseline justify-between gap-4"><span className="text-ui text-mute">{label}</span>
+        <span className="mono text-ui"><span className="text-num font-semibold">{spent.toFixed(2)}</span><span className="text-mute"> / {cap != null ? `${cap.toFixed(2)} USD` : tr("không giới hạn")}</span></span></div>
       {cap != null ? <Meter share={Math.max(share, spent > 0 ? 0.01 : 0)} tone={share >= 1 ? "cue" : "accent"} /> : <div className="h-1.5 rounded-full border border-dashed border-line" />}
     </div>
   );
@@ -43,9 +43,9 @@ export default function Costs() {
     <Page side={<OpsSide />} eyebrow={tr("Vận hành")} title={tr("Chi phí")} note={tr("Tiền so với ngân sách, và thời gian máy đã dùng cho từng việc.")}>
       <div className="grid gap-8">
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <Stat label={tr("Hôm nay")} icon="coins" value={<>{u.spent_today.toFixed(2)}<span className="ml-1 text-[13px] font-medium text-mute">USD</span></>} sub={u.budget_day != null ? tv`Ngân sách ${u.budget_day.toFixed(2)} USD` : tr("Chưa đặt ngân sách")} />
-          <Stat label={tr("Tháng này")} icon="gauge" value={<>{u.spent_month.toFixed(2)}<span className="ml-1 text-[13px] font-medium text-mute">USD</span></>} sub={u.budget_month != null ? tv`Ngân sách ${u.budget_month.toFixed(2)} USD` : tr("Chưa đặt ngân sách")} />
-          <Stat label={tr("Từ trước tới nay")} icon="layers" tone="proof" value={<>{u.spent_total.toFixed(2)}<span className="ml-1 text-[13px] font-medium text-mute">USD</span></>} sub={tr("Chỉ dịch vụ trả tiền")} />
+          <Stat label={tr("Hôm nay")} icon="coins" value={<>{u.spent_today.toFixed(2)}<span className="ml-1 text-ui font-medium text-mute">USD</span></>} sub={u.budget_day != null ? tv`Ngân sách ${u.budget_day.toFixed(2)} USD` : tr("Chưa đặt ngân sách")} />
+          <Stat label={tr("Tháng này")} icon="gauge" value={<>{u.spent_month.toFixed(2)}<span className="ml-1 text-ui font-medium text-mute">USD</span></>} sub={u.budget_month != null ? tv`Ngân sách ${u.budget_month.toFixed(2)} USD` : tr("Chưa đặt ngân sách")} />
+          <Stat label={tr("Từ trước tới nay")} icon="layers" tone="proof" value={<>{u.spent_total.toFixed(2)}<span className="ml-1 text-ui font-medium text-mute">USD</span></>} sub={tr("Chỉ dịch vụ trả tiền")} />
           <Stat label={tr("Thời gian máy")} icon="cpu" tone="ai" value={long(tools.reduce((s, t) => s + t.seconds, 0))} sub={tv`${calls} lần gọi${fails ? tv`, ${fails} lỗi` : ""} · ${all ? tr("từ trước tới nay") : tr("hôm nay")}`} />
         </div>
 
@@ -67,14 +67,14 @@ export default function Costs() {
                 <>
                   <div className="flex h-40 items-end gap-1.5" role="img" aria-label={tr("Chi phí theo ngày")}>
                     {u.by_day.map((d) => <div key={d.day} className="group relative flex-1 rounded-t-md bg-accent/80 transition-[filter] hover:brightness-125" style={{ height: `${Math.max(3, (d.cost / peak) * 100)}%` }}>
-                      <span className="mono pointer-events-none absolute -top-6 left-1/2 hidden -translate-x-1/2 whitespace-nowrap rounded bg-overlay px-1.5 text-[10.5px] group-hover:block">{d.cost.toFixed(2)}</span></div>)}
+                      <span className="mono pointer-events-none absolute -top-6 left-1/2 hidden -translate-x-1/2 whitespace-nowrap rounded bg-overlay px-1.5 text-mini group-hover:block">{d.cost.toFixed(2)}</span></div>)}
                   </div>
-                  <div className="mono mt-2 flex justify-between text-[10.5px] text-faint"><span>{u.by_day[0].day}</span><span>{u.by_day[u.by_day.length - 1].day}</span></div>
+                  <div className="mono mt-2 flex justify-between text-mini text-faint"><span>{u.by_day[0].day}</span><span>{u.by_day[u.by_day.length - 1].day}</span></div>
                 </>
-              ) : <p className="grid h-40 place-items-center text-[13px] text-mute">{tr("Chưa có khoản chi nào.")}</p>}
+              ) : <p className="grid h-40 place-items-center text-ui text-mute">{tr("Chưa có khoản chi nào.")}</p>}
               {u.projects.length > 0 && (
                 <ul className="rows mt-5 border-t border-line pt-1">
-                  {u.projects.map((p) => <li key={p.project_id} className="flex justify-between gap-4 py-2 text-[13px]"><span className="min-w-0 truncate">{p.title}</span><span className="mono shrink-0 text-mute">{p.spent.toFixed(2)} USD{p.budget_cap != null ? ` / ${p.budget_cap.toFixed(2)}` : ""}</span></li>)}
+                  {u.projects.map((p) => <li key={p.project_id} className="flex justify-between gap-4 py-2 text-ui"><span className="min-w-0 truncate">{p.title}</span><span className="mono shrink-0 text-mute">{p.spent.toFixed(2)} USD{p.budget_cap != null ? ` / ${p.budget_cap.toFixed(2)}` : ""}</span></li>)}
                 </ul>
               )}
             </div>
@@ -83,12 +83,12 @@ export default function Costs() {
 
         <Section title={tr("Thời gian máy")} icon="cpu" actions={<Seg label={tr("Khoảng thời gian")} value={all} onChange={setAll} items={[[false, tr("Hôm nay")], [true, tr("Từ trước tới nay")]] as const} />}>
           {tools.length === 0 ? <p className="panel px-4 py-5 text-mute">{tr("Chưa có công cụ nào được gọi trong khoảng này.")}</p> : (
-            <div className="panel overflow-x-auto"><table className="w-full min-w-[620px] text-left text-[13px]">
+            <div className="panel overflow-x-auto"><table className="w-full min-w-[620px] text-left text-ui">
               <thead className="eyebrow"><tr className="[&>th]:px-4 [&>th]:py-3"><th>{tr("Việc")}</th><th>{tr("Số lần")}</th><th>{tr("Tổng thời gian")}</th><th className="w-1/3">{tr("Phần trong tổng")}</th><th className="text-right">{tr("Lỗi")}</th></tr></thead>
               <tbody className="divide-y divide-line border-t border-line">
                 {tools.map((t) => (
                   <tr key={`${t.adapter}.${t.operation}`} className="[&>td]:px-4 [&>td]:py-2.5">
-                    <td><span className="flex items-center gap-2.5"><span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-raised text-mute"><Icon name={TOOL_ICON[t.adapter] ?? "cpu"} size={14} /></span><span>{TOOLS[t.adapter] ?? t.adapter}: {OPS[t.operation] ?? t.operation}{t.runs === "cloud" && <span className="ml-1.5 rounded bg-ai/12 px-1.5 text-[11px] text-ai">cloud</span>}</span></span></td>
+                    <td><span className="flex items-center gap-2.5"><span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-raised text-mute"><Icon name={TOOL_ICON[t.adapter] ?? "cpu"} size={14} /></span><span>{TOOLS[t.adapter] ?? t.adapter}: {OPS[t.operation] ?? t.operation}{t.runs === "cloud" && <span className="ml-1.5 rounded bg-ai/12 px-1.5 text-mini text-ai">cloud</span>}</span></span></td>
                     <td className="mono text-mute">{t.calls}</td><td className="mono">{long(t.seconds)}</td>
                     <td><Meter share={t.seconds / total} tone="ai" /></td>
                     <td className={`mono text-right ${t.failures ? "text-tally" : "text-faint"}`}>{t.failures}</td>

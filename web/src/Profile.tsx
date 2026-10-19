@@ -19,7 +19,7 @@ function Fact({ name, label, text }: { name: string; label?: P; text?: string | 
   return (
     <span className={`inline-flex items-baseline gap-1.5 rounded-md border px-2 py-1 ${label.source === "model" ? "border-ai/30 bg-ai/5" : "border-line bg-raised/60"} ${low ? "opacity-60" : ""}`}
           title={tv`Nguồn: ${SOURCE[label.source] ?? label.source}, ${SURE[label.confidence] ?? label.confidence}`}>
-      <span className="text-faint">{name}</span><span>{text}</span><span className="text-[10.5px] text-faint">{SOURCE[label.source] ?? label.source}</span>
+      <span className="text-faint">{name}</span><span>{text}</span><span className="text-mini text-faint">{SOURCE[label.source] ?? label.source}</span>
     </span>
   );
 }
@@ -33,7 +33,7 @@ export function ProfileFacts({ beat }: { beat: BeatView }) {
   if (!Object.keys(p).length && !Object.keys(m).length) return null;
   const loud = p.loudness?.value != null ? `${p.loudness.value} LUFS` : null;
   return (
-    <div className="grid gap-1.5 text-[12px]">
+    <div className="grid gap-1.5 text-mini">
       <div className="flex flex-wrap gap-1.5">
         <Fact name={tr("Người")} label={p.people} text={p.people ? `${p.people.value}${p.people.count ? ` (${p.people.count})` : ""}` : null} />
         <Fact name={tr("Cỡ cảnh")} label={p.shot_size} text={p.shot_size ? String(p.shot_size.value) : null} />
@@ -78,7 +78,7 @@ export function BeatFlags({ beat, reload }: { beat: BeatView; reload: () => void
   if (!beat.moment || !flags.some((f) => f.state === "open")) return null;
   const settle = async (index: number, state: string) => { await post("/api/v1/flags", { moment_id: beat.moment!.moment_id, index, state }).catch(() => {}); reload(); };
   return (
-    <ul className="grid gap-1 text-[12px]">
+    <ul className="grid gap-1 text-mini">
       {flags.map((f, i) => f.state === "open" && (
         <li key={i} className="flex flex-wrap items-center gap-2 rounded-md border border-cue/30 bg-cue/5 px-2 py-1">
           <Tag tone="cue">{f.rule}</Tag><span className="min-w-0 flex-1">{f.message}</span>
@@ -112,7 +112,7 @@ export function GoldenLabels({ assetId, beat, reload }: { assetId: string; beat:
     setDraft({}); setBusy(false); reload();
   };
   return (
-    <details className="text-[12px]">
+    <details className="text-mini">
       <summary className="cursor-pointer list-none text-accent">{(beat.golden ?? []).length ? tv`Đáp án của bạn cho nhịp này (${(beat.golden ?? []).length} trường)` : tr("Ghi đáp án đúng cho nhịp này")}</summary>
       <p className="mt-1 text-faint">{tr("Mỗi đáp án dùng để đo độ chính xác của hệ thống. Ô đã điền sẵn giá trị hệ thống đang giữ: sửa ô sai rồi lưu.")}</p>
       <div className="mt-2 flex flex-wrap items-end gap-2">
@@ -140,13 +140,13 @@ export function FieldAccuracy() {
   return (
     <div className="panel p-5">
       <div className="mb-3 flex flex-wrap items-start gap-3">
-        <div className="min-w-0 grow basis-60"><h2 className="text-[15px] font-semibold">{tr("Độ chính xác từng trường")}</h2>
-          <p className="mt-0.5 max-w-2xl text-[13px] text-mute">{tv`So từng trường với đáp án bạn ghi ở Thư viện. Một trường chỉ được dùng để chọn clip khi đúng đủ thường xuyên trên ít nhất ${data?.min_labels ?? 10} đáp án. Đang có ${data?.labels ?? 0} đáp án.`}</p></div>
+        <div className="min-w-0 grow basis-60"><h2 className="text-title font-semibold">{tr("Độ chính xác từng trường")}</h2>
+          <p className="mt-0.5 max-w-2xl text-ui text-mute">{tv`So từng trường với đáp án bạn ghi ở Thư viện. Một trường chỉ được dùng để chọn clip khi đúng đủ thường xuyên trên ít nhất ${data?.min_labels ?? 10} đáp án. Đang có ${data?.labels ?? 0} đáp án.`}</p></div>
         <Button kind="ai" busy={busy} onClick={measure}>{tr("Đo độ chính xác")}</Button>
       </div>
-      {!!data?.regressions.length && <p className="mb-2 text-[13px] text-tally">{tr("Kém đi so với lần đo trước:")} {data.regressions.map((r) => `${r.field} ${pct(r.before)} → ${pct(r.now)}`).join("; ")}</p>}
+      {!!data?.regressions.length && <p className="mb-2 text-ui text-tally">{tr("Kém đi so với lần đo trước:")} {data.regressions.map((r) => `${r.field} ${pct(r.before)} → ${pct(r.now)}`).join("; ")}</p>}
       <div className="scroll-x">
-        <table className="w-full min-w-[640px] text-[12.5px]">
+        <table className="w-full min-w-[640px] text-meta">
           <thead className="text-left text-faint"><tr><th className="py-1.5 font-normal">{tr("Trường")}</th><th className="font-normal">{tr("Nguồn")}</th><th className="font-normal">{tr("Đáp án")}</th><th className="font-normal">{tr("Đúng")}</th><th className="font-normal">{tr("Ngưỡng")}</th><th className="font-normal">{tr("“Chắc” đúng")}</th><th className="font-normal">{tr("Trạng thái")}</th></tr></thead>
           <tbody className="rows">
             {data?.fields.map((f) => (
@@ -164,7 +164,7 @@ export function FieldAccuracy() {
           </tbody>
         </table>
       </div>
-      {!!data?.runs.length && <p className="mt-2 text-[12px] text-faint">{tr("Lần đo gần nhất:")} {new Date(data.runs[0].created_at * 1000).toLocaleString(locale)}</p>}
+      {!!data?.runs.length && <p className="mt-2 text-mini text-faint">{tr("Lần đo gần nhất:")} {new Date(data.runs[0].created_at * 1000).toLocaleString(locale)}</p>}
     </div>
   );
 }
@@ -177,12 +177,12 @@ export function ReviewQueue() {
   const settle = async (f: FlagRow, state: string) => { await call("/api/v1/flags", { method: "POST", body: JSON.stringify({ moment_id: f.moment_id, index: f.index, state }) }).catch(() => {}); reload(); };
   return (
     <div className="panel p-5">
-      <h2 className="text-[15px] font-semibold">{tr("Hàng chờ xem lại")}</h2>
-      <p className="mt-0.5 max-w-2xl text-[13px] text-mute">{tr("Những nhịp mà lời mô hình trái với số đo hoặc nhận diện của máy. Xem khung hình, rồi chọn: đã xử lý (bạn đã sửa, hoặc mô hình đúng) hay bỏ qua.")}</p>
-      {data && <p className="mt-2 flex flex-wrap gap-1.5 text-[12px]">{Object.entries(data.by_rule).map(([r, n]) => <Tag key={r} tone="cue">{`${r}: ${n}`}</Tag>)}{data.total === 0 && <span className="text-faint">{tr("Không có cờ nào đang mở.")}</span>}</p>}
+      <h2 className="text-title font-semibold">{tr("Hàng chờ xem lại")}</h2>
+      <p className="mt-0.5 max-w-2xl text-ui text-mute">{tr("Những nhịp mà lời mô hình trái với số đo hoặc nhận diện của máy. Xem khung hình, rồi chọn: đã xử lý (bạn đã sửa, hoặc mô hình đúng) hay bỏ qua.")}</p>
+      {data && <p className="mt-2 flex flex-wrap gap-1.5 text-mini">{Object.entries(data.by_rule).map(([r, n]) => <Tag key={r} tone="cue">{`${r}: ${n}`}</Tag>)}{data.total === 0 && <span className="text-faint">{tr("Không có cờ nào đang mở.")}</span>}</p>}
       <ul className="rows mt-3">
         {data?.flags.slice(0, 60).map((f) => (
-          <li key={`${f.moment_id}-${f.index}`} className="flex flex-wrap items-start gap-3 py-2.5 text-[12.5px]">
+          <li key={`${f.moment_id}-${f.index}`} className="flex flex-wrap items-start gap-3 py-2.5 text-meta">
             {f.frame && <img src={`/api/v1/moments/${f.moment_id}/frame`} alt="" className="h-16 w-28 shrink-0 rounded-md border border-line object-cover" loading="lazy" />}
             <div className="min-w-0 flex-1 basis-60">
               <p className="flex flex-wrap items-baseline gap-2"><Tag tone="cue">{f.rule}</Tag><span className="truncate">{f.name}</span><span className="mono text-faint">{timecode(f.t_start)}</span></p>
@@ -217,7 +217,7 @@ export function AssetProfile({ assetId }: { assetId: string }) {
   const a = data.asset;
   const mine = scenes?.scenes.filter((s) => s.assets.includes(assetId)) ?? [];
   return (
-    <details className="rounded-lg border border-line bg-raised/30 p-2.5 text-[12.5px]">
+    <details className="rounded-lg border border-line bg-raised/30 p-2.5 text-meta">
       <summary className="cursor-pointer list-none"><span className="eyebrow">{tr("Hồ sơ của cả video")}</span>
         <span className="ml-2 text-faint">{tv`${a.orientation}, ${a.pacing.shots} cú máy, mở đầu ${a.hook.strength}`}{a.log_profile ? tr(", quay log") : ""}</span></summary>
       <dl className="mt-2 grid gap-x-4 gap-y-1.5 sm:grid-cols-[9rem_1fr]">
@@ -262,11 +262,11 @@ export function PeopleCard() {
   const save = async (key: string) => { await post("/api/v1/people/name", { key, name: names[key] ?? "" }).catch(() => {}); reload(); };
   return (
     <div className="panel p-5">
-      <h2 className="text-[15px] font-semibold">{tr("Sổ người")}</h2>
-      <p className="mt-0.5 max-w-2xl text-[13px] text-mute">{tr("Khuôn mặt trong kho được gom theo độ giống nhau, mỗi nhóm là một người. Đặt tên để tìm và để ghi ai xuất hiện. Đặc trưng khuôn mặt chỉ lưu trên máy này.")}</p>
-      {!data?.people.length && <p className="mt-2 text-[13px] text-faint">{tr("Chưa thấy khuôn mặt nào đủ rõ trong kho.")}</p>}
+      <h2 className="text-title font-semibold">{tr("Sổ người")}</h2>
+      <p className="mt-0.5 max-w-2xl text-ui text-mute">{tr("Khuôn mặt trong kho được gom theo độ giống nhau, mỗi nhóm là một người. Đặt tên để tìm và để ghi ai xuất hiện. Đặc trưng khuôn mặt chỉ lưu trên máy này.")}</p>
+      {!data?.people.length && <p className="mt-2 text-ui text-faint">{tr("Chưa thấy khuôn mặt nào đủ rõ trong kho.")}</p>}
       <ul className="rows mt-2">{data?.people.map((p) => (
-        <li key={p.key} className="flex flex-wrap items-center gap-2 py-2 text-[13px]">
+        <li key={p.key} className="flex flex-wrap items-center gap-2 py-2 text-ui">
           <span className="min-w-0 flex-1">{p.name ?? tr("Chưa đặt tên")} <span className="text-faint">{tv`${p.faces} lần thấy, trong ${p.assets.length} video`}</span></span>
           <input className="h-8 w-40 rounded-md border border-line bg-raised px-2" placeholder={tr("Tên")} value={names[p.key] ?? p.name ?? ""} onChange={(e) => setNames({ ...names, [p.key]: e.target.value })} />
           <Button size="sm" onClick={() => save(p.key)}>{tr("Lưu")}</Button>

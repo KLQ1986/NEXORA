@@ -41,19 +41,19 @@ function RhythmCard({ r, pick, codes }: { r: Rhythm; pick: (id: string) => void;
   const tone = { strong: "text-proof", acceptable: "text-proof", revise: "text-cue", fail: "text-tally" }[r.verdict];
   return (
     <section className="rounded-lg border border-line bg-raised/30 px-3 py-2">
-      <button type="button" onClick={() => setOpen(!open)} className="flex w-full items-center gap-2 text-left text-[12.5px]"
+      <button type="button" onClick={() => setOpen(!open)} className="flex w-full items-center gap-2 text-left text-meta"
               title={tr("Chấm theo 6 lỗi làm video giống trình chiếu ảnh (0 tốt, 5 tệ); mượn từ OpenMontage")}>
         <span className="font-semibold">{tr("Nhịp và đa dạng")}</span>
         <span className={`mono font-semibold ${tone}`}>{r.score.toFixed(1)}</span><span className={tone}>{r.label}</span>
         <Icon name="next" size={11} className={`ml-auto text-faint transition-transform ${open ? "rotate-90" : ""}`} />
       </button>
-      {open && <ul className="mt-2 grid gap-1 text-[12px]">
+      {open && <ul className="mt-2 grid gap-1 text-mini">
         {r.dimensions.map((d) => (
           <li key={d.key} className="flex flex-wrap items-baseline gap-x-2">
             <span className={`mono w-7 text-right ${d.score == null ? "text-faint" : d.score >= 4 ? "text-tally" : d.score >= 2 ? "text-cue" : "text-faint"}`}>{d.score == null ? "—" : d.score.toFixed(1)}</span>
             <span className="w-44 shrink-0">{d.name}</span>
             <span className="text-faint">{d.score == null || d.count ? d.detail : tr("không có")}</span>
-            {d.shots.map((c) => <button key={c} type="button" onClick={() => { const id = codes.get(c); if (id) pick(id); }} className="mono text-[11px] text-accent hover:underline">{c}</button>)}
+            {d.shots.map((c) => <button key={c} type="button" onClick={() => { const id = codes.get(c); if (id) pick(id); }} className="mono text-mini text-accent hover:underline">{c}</button>)}
           </li>))}
       </ul>}
     </section>);
@@ -81,10 +81,10 @@ const lensFov = (lens: string) => { const n = parseInt(lens, 10) || 35; return n
 function Field({ value, onSave, area, label, placeholder }: { value: string; onSave: (v: string) => void; area?: boolean; label: string; placeholder?: string }) {
   const [v, setV] = useState(value);
   useEffect(() => setV(value), [value]);
-  const cls = "w-full rounded-md border border-line bg-canvas px-2.5 py-1.5 text-[13px] text-ink outline-none focus:border-accent";
+  const cls = "w-full rounded-md border border-line bg-canvas px-2.5 py-1.5 text-ui text-ink outline-none focus:border-accent";
   const save = () => { if (v.trim() !== value.trim()) onSave(v); };
   return (
-    <label className="grid gap-1 text-[12px] text-faint">{label}
+    <label className="grid gap-1 text-mini text-faint">{label}
       {area ? <textarea rows={2} value={v} onChange={(e) => setV(e.target.value)} onBlur={save} placeholder={placeholder} className={`${cls} resize-y leading-relaxed`} />
         : <input value={v} onChange={(e) => setV(e.target.value)} onBlur={save} onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }} placeholder={placeholder} className={cls} />}
     </label>
@@ -93,8 +93,8 @@ function Field({ value, onSave, area, label, placeholder }: { value: string; onS
 
 function Pick({ label, value, items, onPick }: { label: string; value: string; items: readonly string[]; onPick: (v: string) => void }) {
   return (
-    <label className="grid gap-1 text-[12px] text-faint">{label}
-      <select value={value} onChange={(e) => onPick(e.target.value)} className="h-8 rounded-md border border-line bg-canvas px-2 text-[13px] text-ink">
+    <label className="grid gap-1 text-mini text-faint">{label}
+      <select value={value} onChange={(e) => onPick(e.target.value)} className="h-8 rounded-md border border-line bg-canvas px-2 text-ui text-ink">
         {items.map((x) => <option key={x} value={x}>{x || "—"}</option>)}
       </select>
     </label>
@@ -159,15 +159,15 @@ export default function Storyboard({ projectId, back }: { projectId: string; bac
       <header className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line px-4 py-2.5">
         <button type="button" onClick={toggleSide} className="hidden h-8 w-8 shrink-0 place-items-center rounded-md text-faint hover:bg-raised hover:text-ink lg:grid" title={tr("Ẩn/hiện menu bên (phím [)")} aria-label={tr("Ẩn/hiện menu bên (phím [)")}><Icon name="collapse" size={16} /></button>
         {/* The video's name and its way back are in the steps above (① Kịch bản), as on every page of the video. */}
-        <h1 className="display shrink-0 text-[16px]">{tr("Storyboard")}</h1>
-        <span className="mono rounded border border-line px-1.5 text-[11px] text-faint">{({ landscape: "16:9", portrait: "9:16", square: "1:1" } as Record<string, string>)[data.project.format] ?? data.project.format} · {data.seconds}s / {data.shared.seconds}s</span>
+        <h1 className="display shrink-0 text-page">{tr("Storyboard")}</h1>
+        <span className="mono rounded border border-line px-1.5 text-mini text-faint">{({ landscape: "16:9", portrait: "9:16", square: "1:1" } as Record<string, string>)[data.project.format] ?? data.project.format} · {data.seconds}s / {data.shared.seconds}s</span>
         <span className="flex-1" />
-        <span className="flex items-center gap-2 text-[12px] text-mute">{tr("Chi phí")}
+        <span className="flex items-center gap-2 text-mini text-mute">{tr("Chi phí")}
           {cap ? <span className="h-1.5 w-24 overflow-hidden rounded bg-white/[0.08]"><span className="block h-full bg-accent" style={{ width: `${Math.min(100, (data.project.spent / cap) * 100)}%` }} /></span> : null}
           <span className="mono text-ink">${data.project.spent.toFixed(2)}{cap ? ` / $${cap}` : ""}</span></span>
-        <label className="flex items-center gap-1.5 text-[12px] text-mute">{tr("Tự chủ")}
+        <label className="flex items-center gap-1.5 text-mini text-mute">{tr("Tự chủ")}
           <select value={data.shared.autonomy} onChange={(e) => act("auto", () => call(`${url}/shared`, { method: "PATCH", body: JSON.stringify({ autonomy: Number(e.target.value) }) }))}
-                  className="h-8 rounded-md border border-line bg-canvas px-2 text-[12.5px] text-ink">
+                  className="h-8 rounded-md border border-line bg-canvas px-2 text-meta text-ink">
             <option value={1}>{tr("Mức 1: Director đề xuất, bạn duyệt")}</option>
             <option value={2}>{tr("Mức 2: tự nhận shot footage đạt")}</option>
             <option value={3}>{tr("Mức 3: tự nhận cả shot AI")}</option>
@@ -188,9 +188,9 @@ export default function Storyboard({ projectId, back }: { projectId: string; bac
         {stages.map(([label, note, go], k) => (
           <span key={label} className="flex items-center gap-1">
             <button type="button" onClick={go} aria-current={k === stageNow ? "step" : undefined}
-                    className={`flex h-9 items-center gap-2 whitespace-nowrap rounded-lg border px-3 text-[13px] ${k === stageNow ? "border-accent/40 bg-accent/10 text-ink" : "border-transparent text-mute hover:text-ink"}`}>
+                    className={`flex h-9 items-center gap-2 whitespace-nowrap rounded-lg border px-3 text-ui ${k === stageNow ? "border-accent/40 bg-accent/10 text-ink" : "border-transparent text-mute hover:text-ink"}`}>
               <span className={`h-2 w-2 shrink-0 rounded-full ${k < stageNow ? "bg-proof" : k === stageNow ? "bg-accent" : "bg-white/[0.15]"}`} aria-hidden="true" />
-              {label}<span className="text-[11px] text-faint">{note}</span></button>
+              {label}<span className="text-mini text-faint">{note}</span></button>
             {k < stages.length - 1 && <span aria-hidden className="text-faint/50">›</span>}
           </span>
         ))}
@@ -207,13 +207,13 @@ export default function Storyboard({ projectId, back }: { projectId: string; bac
                 <p className="eyebrow px-1.5 pb-1 pt-2.5">{sc.title}</p>
                 {shots.filter((s) => s.scene_id === sc.scene_id).map((s) => (
                   <button key={s.shot_id} type="button" onClick={() => { setSel(s.shot_id); setSeam(null); }}
-                          className={`flex w-full items-center gap-1.5 rounded-md px-1.5 py-1.5 text-left text-[12.5px] ${s.shot_id === cur?.shot_id && !seam ? "bg-accent/10 text-ink" : "text-mute hover:bg-raised hover:text-ink"}`}>
-                    <span className="mono w-8 shrink-0 text-[11px] text-faint">{s.code}</span><span className="min-w-0 flex-1 truncate">{s.spec.intent}</span>
+                          className={`flex w-full items-center gap-1.5 rounded-md px-1.5 py-1.5 text-left text-meta ${s.shot_id === cur?.shot_id && !seam ? "bg-accent/10 text-ink" : "text-mute hover:bg-raised hover:text-ink"}`}>
+                    <span className="mono w-8 shrink-0 text-mini text-faint">{s.code}</span><span className="min-w-0 flex-1 truncate">{s.spec.intent}</span>
                     <span className={`h-2 w-2 shrink-0 rounded-full ${s.state === "planned" ? "border border-faint" : ({ accepted: "bg-proof", needs: "bg-ai", running: "bg-accent", stale: "bg-cue" } as Record<string, string>)[s.state]}`} />
                   </button>))}
               </div>))}
           </div>
-          <div className="grid grid-cols-2 gap-1.5 border-t border-line px-3 py-2.5 text-[11.5px] text-mute">
+          <div className="grid grid-cols-2 gap-1.5 border-t border-line px-3 py-2.5 text-mini text-mute">
             {(["accepted", "needs", "running", "planned", "stale"] as const).filter((k) => counts[k]).map((k) => <span key={k}>{STATE[k][0]} {counts[k]}</span>)}
           </div>
         </aside>}
@@ -221,12 +221,12 @@ export default function Storyboard({ projectId, back }: { projectId: string; bac
         <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-surface">
           <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2">
             <button type="button" onClick={() => setOutline(!outline)} aria-pressed={outline} title={outline ? tr("Ẩn danh sách shot và ý tưởng") : tr("Hiện danh sách shot và ý tưởng")}
-                    className={`hidden h-8 items-center gap-1.5 rounded-md border px-2.5 text-[12.5px] lg:flex ${outline ? "border-accent/40 bg-accent/10 text-ink" : "border-line text-mute hover:text-ink"}`}><Icon name="list" size={14} />{tr("Danh sách shot")}</button>
+                    className={`hidden h-8 items-center gap-1.5 rounded-md border px-2.5 text-meta lg:flex ${outline ? "border-accent/40 bg-accent/10 text-ink" : "border-line text-mute hover:text-ink"}`}><Icon name="list" size={14} />{tr("Danh sách shot")}</button>
             <div className="seg" role="radiogroup" aria-label={tr("Cách xem")}>
               {([["board", tr("Storyboard")], ["time", tr("Timeline nháp")], ["plan", tr("Mặt bằng máy")], ["copilot", "Copilot"]] as const).map(([k, l]) =>
                 <button key={k} type="button" role="radio" aria-checked={view === k} onClick={() => setView(k)}>{l}</button>)}
             </div>
-            <span className="text-[12px] text-faint">{tv`${shots.length} shot · ${data.seconds}s / mục tiêu ${data.shared.seconds}s`}</span>
+            <span className="text-mini text-faint">{tv`${shots.length} shot · ${data.seconds}s / mục tiêu ${data.shared.seconds}s`}</span>
             <span className="flex-1" />
             <Button size="sm" kind="quiet" onClick={() => ops([{ op: "insert", after: cur?.shot_id, spec: { intent: tr("Shot mới"), duration: 4, source: "any" } }], tr("thêm shot"))}><Icon name="plus" size={13} />{tr("Thêm shot")}</Button>
           </div>
@@ -258,30 +258,30 @@ function Start({ url, title, back, onMade, messages, shared }: { url: string; ti
   return (
     <div className="flex flex-1 flex-col">
       <header className="flex items-center gap-3 border-b border-line px-4 py-2.5">
-        <button type="button" onClick={back} className="flex h-8 items-center gap-1.5 rounded-md border border-line px-2.5 text-[13px] text-mute hover:text-ink"><Icon name="back" size={14} />{tr("Dự án")}</button>
-        <h1 className="display text-[16px]">{title}</h1>
+        <button type="button" onClick={back} className="flex h-8 items-center gap-1.5 rounded-md border border-line px-2.5 text-ui text-mute hover:text-ink"><Icon name="back" size={14} />{tr("Dự án")}</button>
+        <h1 className="display text-page">{title}</h1>
       </header>
       <div className="grid flex-1 place-items-center p-6">
         <div className="grid w-full max-w-2xl gap-4">
           <Empty icon="layers" title={tr("Chưa có storyboard")}>{tr("Dựng từ ý tưởng (Director đề xuất cảnh và shot, bạn áp dụng) hoặc từ kịch bản dự án đang có (mỗi câu thành một shot).")}</Empty>
           <div className="grid gap-2 rounded-xl border border-line p-4">
-            <label className="grid gap-1 text-[12.5px] text-faint">{tr("Ý tưởng")}
+            <label className="grid gap-1 text-meta text-faint">{tr("Ý tưởng")}
               <textarea rows={3} value={idea} onChange={(e) => setIdea(e.target.value)} placeholder={tr("Ví dụ: một ngày làm vườn của chú Tư ở Bến Tre, từ bình minh tới hoàng hôn; nhẹ nhàng, ấm")}
-                        className="rounded-md border border-line bg-canvas px-3 py-2 text-[13.5px] text-ink outline-none focus:border-accent" /></label>
+                        className="rounded-md border border-line bg-canvas px-3 py-2 text-ui text-ink outline-none focus:border-accent" /></label>
             <div className="flex flex-wrap items-center gap-2">
-              <label className="flex items-center gap-2 text-[12.5px] text-faint">{tr("Thời lượng (giây)")}<input type="number" value={seconds} min={10} max={1800} onChange={(e) => setSeconds(Number(e.target.value))} className="h-8 w-20 rounded-md border border-line bg-canvas px-2 text-ink" /></label>
+              <label className="flex items-center gap-2 text-meta text-faint">{tr("Thời lượng (giây)")}<input type="number" value={seconds} min={10} max={1800} onChange={(e) => setSeconds(Number(e.target.value))} className="h-8 w-20 rounded-md border border-line bg-canvas px-2 text-ink" /></label>
               <span className="flex-1" />
               <Button kind="primary" busy={busy === "idea"} disabled={!idea.trim()} onClick={() => run("idea", () => post(`${url}/idea`, { idea, seconds }))}><Icon name="sparkles" size={14} />{tr("Director đề xuất storyboard")}</Button>
               <Button busy={busy === "script"} onClick={() => run("script", () => post(`${url}/from-script`))}>{tr("Từ kịch bản dự án")}</Button>
             </div>
           </div>
           <details className="group rounded-xl border border-line p-4" open={messages.some((m) => m.proposal?.kind === "copilot" && m.status === "open")}>
-            <summary className="flex cursor-pointer list-none items-center gap-2 text-[13px]"><Icon name="sparkles" size={14} className="text-ai" />
+            <summary className="flex cursor-pointer list-none items-center gap-2 text-ui"><Icon name="sparkles" size={14} className="text-ai" />
               <span className="font-medium">{tr("Copilot: dựng từ bản ghi có người nói")}</span><span className="text-faint">{tr("(phỏng vấn, nói trước máy: rút ngắn, giữ luận điểm, bỏ lặp)")}</span></summary>
             <div className="mt-3 -mx-3"><CopilotView url={url} board={{ messages }} onApplied={onMade} /></div>
           </details>
           {open && open.proposal?.kind !== "copilot" && <Proposal m={open} url={url} onDone={onMade} />}
-          {!open && messages.length > 0 && <p className="text-[12.5px] text-faint">{messages[messages.length - 1].text}</p>}
+          {!open && messages.length > 0 && <p className="text-meta text-faint">{messages[messages.length - 1].text}</p>}
         </div>
       </div>
     </div>
@@ -296,23 +296,23 @@ function Shared({ board, url, open, setOpen, onSaved }: { board: Board; url: str
     <section aria-label={tr("Chung cho mọi shot")} className="grid shrink-0 gap-2.5 border-b border-line px-4 py-2">
       <div className="flex min-h-7 flex-wrap items-center gap-3">
         <span className="eyebrow">{tr("Chung cho mọi shot")}</span>
-        <span className="mono rounded border border-line px-1.5 text-[11px] text-mute">{tv`${board.shots.length} cut`}</span>
+        <span className="mono rounded border border-line px-1.5 text-mini text-mute">{tv`${board.shots.length} cut`}</span>
         <span className="flex gap-1" role="img" aria-label={tr("Bảng màu")}>{s.palette.map((p) => <span key={p.hex + p.name} title={`${p.name} ${p.hex}`} className="h-[18px] w-[18px] rounded border border-white/20" style={{ background: p.hex }} />)}</span>
-        <span className="min-w-0 flex-[1_1_260px] truncate text-[12px] text-mute"><span className="text-faint">{tr("Bối cảnh")} </span>{s.fingerprint || "—"}</span>
-        <span className="flex flex-wrap gap-1.5">{s.moods.map((m) => <span key={m} className="rounded-full bg-white/[0.06] px-2 text-[11.5px] text-mute">{m}</span>)}</span>
-        <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className="h-7 rounded-md border border-line px-2.5 text-[12px] text-accent">{open ? tr("Thu gọn") : tr("Chi tiết")}</button>
+        <span className="min-w-0 flex-[1_1_260px] truncate text-mini text-mute"><span className="text-faint">{tr("Bối cảnh")} </span>{s.fingerprint || "—"}</span>
+        <span className="flex flex-wrap gap-1.5">{s.moods.map((m) => <span key={m} className="rounded-full bg-white/[0.06] px-2 text-mini text-mute">{m}</span>)}</span>
+        <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className="h-7 rounded-md border border-line px-2.5 text-mini text-accent">{open ? tr("Thu gọn") : tr("Chi tiết")}</button>
       </div>
       {open && (
         <div className="grid gap-4 pb-1 md:grid-cols-3">
           <div className="grid content-start gap-1.5">
-            <span className="text-[12px] text-faint">{tr("Bảng màu")}</span>
+            <span className="text-mini text-faint">{tr("Bảng màu")}</span>
             {[...s.palette, { name: "", hex: "#808080" }].map((p, k) => (
               <div key={k} className="flex items-center gap-2">
                 <input type="color" value={p.hex} aria-label={tr("Màu")} onChange={(e) => save({ palette: Object.assign([...s.palette], { [k]: { name: p.name || tr("Màu mới"), hex: e.target.value } }) })} className="h-6 w-8 rounded border-0 bg-transparent" />
                 <input defaultValue={p.name} placeholder={k === s.palette.length ? tr("Thêm màu…") : ""} aria-label={tr("Tên màu")}
                        onBlur={(e) => { const name = e.target.value.trim(); if (name === p.name) return; save({ palette: name || k < s.palette.length ? Object.assign([...s.palette], { [k]: { name, hex: p.hex } }).filter((x) => x.name) : s.palette }); }}
-                       className="h-7 min-w-0 flex-1 rounded-md border border-line bg-canvas px-2 text-[12.5px] text-ink" />
-                <span className="mono text-[11px] text-faint">{p.hex}</span>
+                       className="h-7 min-w-0 flex-1 rounded-md border border-line bg-canvas px-2 text-meta text-ink" />
+                <span className="mono text-mini text-faint">{p.hex}</span>
               </div>))}
           </div>
           <div className="grid content-start gap-2">
@@ -320,10 +320,10 @@ function Shared({ board, url, open, setOpen, onSaved }: { board: Board; url: str
             <Field label={tr("Giọng điệu (cách nhau bằng dấu phẩy)")} value={s.moods.join(", ")} onSave={(v) => save({ moods: v.split(",").map((x) => x.trim()).filter(Boolean) })} />
           </div>
           <div className="grid content-start gap-2">
-            <label className="grid gap-1 text-[12px] text-faint">{tr("Phong cách quay (mỗi dòng một ý)")}
+            <label className="grid gap-1 text-mini text-faint">{tr("Phong cách quay (mỗi dòng một ý)")}
               <textarea rows={4} defaultValue={s.style_notes.join("\n")} onBlur={(e) => save({ style_notes: e.target.value.split("\n").map((x) => x.trim()).filter(Boolean) })}
-                        className="rounded-md border border-line bg-canvas px-2.5 py-1.5 text-[13px] text-ink outline-none focus:border-accent" /></label>
-            <span className="text-[12px] text-faint">{tr("Director dùng các lựa chọn này khi dựng storyboard và tạo hình; ghi vào kịch bản thì chúng thành phong cách của dự án.")}</span>
+                        className="rounded-md border border-line bg-canvas px-2.5 py-1.5 text-ui text-ink outline-none focus:border-accent" /></label>
+            <span className="text-mini text-faint">{tr("Director dùng các lựa chọn này khi dựng storyboard và tạo hình; ghi vào kịch bản thì chúng thành phong cách của dự án.")}</span>
           </div>
         </div>
       )}
@@ -351,8 +351,8 @@ function BoardView({ board, cur, seam, tone, pick, pickSeam, move, ops, remove, 
       {board.rhythm && board.shots.length > 1 && <RhythmCard r={board.rhythm} pick={pick} codes={new Map(board.shots.map((s) => [s.code, s.shot_id]))} />}
       {board.scenes.map((sc) => (
         <section key={sc.scene_id} className="grid gap-2.5">
-          <div className="flex flex-wrap items-baseline gap-2.5"><h2 className="text-[14px] font-semibold">{sc.title}</h2><span className="text-[12px] text-faint">{sc.purpose}</span><span className="mono text-[11px] text-mute">{sc.seconds}s</span></div>
-          {sc.script && <p className="border-l-2 border-line pl-2.5 text-[12.5px] leading-relaxed text-mute"><span className="text-faint">{tr("Kịch bản cảnh · ")}</span>{sc.script}</p>}
+          <div className="flex flex-wrap items-baseline gap-2.5"><h2 className="text-body font-semibold">{sc.title}</h2><span className="text-mini text-faint">{sc.purpose}</span><span className="mono text-mini text-mute">{sc.seconds}s</span></div>
+          {sc.script && <p className="border-l-2 border-line pl-2.5 text-meta leading-relaxed text-mute"><span className="text-faint">{tr("Kịch bản cảnh · ")}</span>{sc.script}</p>}
           {/* Three shots a row, each as wide as its column, so a scene reads as a sheet and a long scene wraps onto rows. A seam that is
               clean stays out of the way; one that needs a look (or is broken) flags the shot it leads into, and opens its panel. */}
           <div className="grid grid-cols-3 items-start gap-x-4 gap-y-5 pb-1 max-md:grid-cols-2 max-[480px]:grid-cols-1">
@@ -366,7 +366,7 @@ function BoardView({ board, cur, seam, tone, pick, pickSeam, move, ops, remove, 
                      className={`relative grid min-w-0 cursor-grab content-start gap-2 active:cursor-grabbing ${drag === s.shot_id ? "opacity-40" : ""}`}>
                   {over === s.shot_id && <span className="pointer-events-none absolute -left-2.5 bottom-0 top-0 w-[3px] rounded-full bg-accent" aria-hidden="true" />}
                   {sm && flagged && <button type="button" onClick={() => pickSeam(`${sm.a}-${sm.b}`)} title={tv`Mối nối ${sm.a_code} → ${sm.b_code}: ${SEAM[sm.worst][0]}`}
-                                            className={`flex h-[22px] items-center justify-self-start rounded-full border px-2 text-[11px] ${seam === `${sm.a}-${sm.b}` ? "border-accent" : ""}`}
+                                            className={`flex h-[22px] items-center justify-self-start rounded-full border px-2 text-mini ${seam === `${sm.a}-${sm.b}` ? "border-accent" : ""}`}
                                             style={{ color: SEAM[sm.worst][1], background: `${SEAM[sm.worst][1]}1f`, borderColor: seam === `${sm.a}-${sm.b}` ? undefined : `${SEAM[sm.worst][1]}66` }}>
                     {tv`Mối nối ${sm.a_code} → ${sm.b_code}: ${SEAM[sm.worst][0]}`}</button>}
                   {!flagged && <span className="h-[22px]" aria-hidden="true" />}{/* the chip's line kept, so the cards of a row stay level */}
@@ -378,7 +378,7 @@ function BoardView({ board, cur, seam, tone, pick, pickSeam, move, ops, remove, 
                 </div>);
             })}
             {drag && <div onDragOver={(e) => { e.preventDefault(); setOver(`end-${sc.scene_id}`); }} onDragLeave={() => setOver(null)} onDrop={(e) => drop(e, { scene: sc.scene_id })}
-                          className={`mt-[30px] grid aspect-video place-items-center rounded-lg border-2 border-dashed text-[12px] ${over === `end-${sc.scene_id}` ? "border-accent bg-accent/10 text-ink" : "border-line text-faint"}`}>
+                          className={`mt-[30px] grid aspect-video place-items-center rounded-lg border-2 border-dashed text-mini ${over === `end-${sc.scene_id}` ? "border-accent bg-accent/10 text-ink" : "border-line text-faint"}`}>
               {tr("Thả vào cuối cảnh")}</div>}
           </div>
         </section>))}
@@ -446,30 +446,30 @@ function CopilotView({ url, board, onApplied, shots = 0 }: { url: string; board:
       <div className="grid min-w-0 content-start gap-3">
         <div className="grid gap-2 rounded-xl border border-line bg-raised/30 p-3">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[12px] text-faint">{tr("Bản ghi có lời nói")}</span>
-            {sources.length === 0 && <span className="text-[12.5px] text-mute">{tr("Thư viện chưa có bản ghi nào được chép lời.")}</span>}
+            <span className="text-mini text-faint">{tr("Bản ghi có lời nói")}</span>
+            {sources.length === 0 && <span className="text-meta text-mute">{tr("Thư viện chưa có bản ghi nào được chép lời.")}</span>}
             {sources.map((x) => (
               <button key={x.asset_id} type="button" onClick={() => setChosen(chosen.includes(x.asset_id) ? chosen.filter((a) => a !== x.asset_id) : [...chosen, x.asset_id])}
-                      className={`rounded-full border px-2.5 py-0.5 text-[12px] ${chosen.includes(x.asset_id) ? "border-accent bg-accent/10 text-ink" : "border-line text-mute hover:text-ink"}`}
+                      className={`rounded-full border px-2.5 py-0.5 text-mini ${chosen.includes(x.asset_id) ? "border-accent bg-accent/10 text-ink" : "border-line text-mute hover:text-ink"}`}
                       title={tv`${x.sentences} câu, ${x.spoken_seconds}s lời nói`}>{x.name} · {Math.round(x.spoken_seconds)}s</button>))}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {PRESET_NAMES.map(([k, l]) => (
               <button key={k} type="button" onClick={() => setPresets(presets.includes(k) ? presets.filter((x) => x !== k) : [...presets, k])}
-                      className={`rounded-md border px-2.5 py-1 text-[12.5px] ${presets.includes(k) ? "border-accent bg-accent/10 text-ink" : "border-line text-mute hover:text-ink"}`}>{l}</button>))}
-            {presets.includes("shorten") && <label className="flex items-center gap-1.5 text-[12.5px] text-mute">{tr("còn")}
+                      className={`rounded-md border px-2.5 py-1 text-meta ${presets.includes(k) ? "border-accent bg-accent/10 text-ink" : "border-line text-mute hover:text-ink"}`}>{l}</button>))}
+            {presets.includes("shorten") && <label className="flex items-center gap-1.5 text-meta text-mute">{tr("còn")}
               <input value={target} onChange={(e) => setTarget(e.target.value)} inputMode="numeric" className="h-7 w-14 rounded border border-line bg-canvas px-1.5 text-ink" />{tr("giây")}</label>}
           </div>
           <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); void propose(); }}>
             <input value={goal} onChange={(e) => setGoal(e.target.value)} placeholder={tr("Ví dụ: rút còn 45 giây, giữ luận điểm, mở đầu mạnh hơn, bỏ lặp, giữ nguyên ý nghĩa")}
-                   className="h-9 min-w-0 flex-1 rounded-md border border-line bg-canvas px-2.5 text-[13px] outline-none focus:border-accent" />
+                   className="h-9 min-w-0 flex-1 rounded-md border border-line bg-canvas px-2.5 text-ui outline-none focus:border-accent" />
             <Button kind="primary" type="submit" busy={busy === "propose"} disabled={!chosen.length}><Icon name="sparkles" size={14} />{tr("Đề xuất")}</Button>
           </form>
-          {busy === "propose" && <p className="text-[12px] text-ai">{tr("Copilot đang đọc lời nói và cân từng câu (mô hình trên máy, khoảng một phút)…")}</p>}
+          {busy === "propose" && <p className="text-mini text-ai">{tr("Copilot đang đọc lời nói và cân từng câu (mô hình trên máy, khoảng một phút)…")}</p>}
         </div>
 
         {p && <div className="grid gap-2">
-          <div className="flex flex-wrap items-center gap-2 text-[12.5px]">
+          <div className="flex flex-wrap items-center gap-2 text-meta">
             <span className="font-semibold">{tr("Quyết định dựng")}</span>
             <span className="text-faint">{tv`giữ ${p.summary.keep + p.summary.move} · bỏ ${p.summary.remove} · chờ bạn xem ${p.summary.review}`}</span>
             <span className="flex-1" />
@@ -480,7 +480,7 @@ function CopilotView({ url, board, onApplied, shots = 0 }: { url: string; board:
               <li key={d.decision_id} className={`grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-2.5 rounded-lg border p-2 ${keep[d.decision_id] ? "border-line" : "border-line/50 opacity-60"}`}>
                 <input type="checkbox" checked={!!keep[d.decision_id]} onChange={(e) => setKeep({ ...keep, [d.decision_id]: e.target.checked })} aria-label={tr("Giữ câu này")} className="mt-1" />
                 <span className="grid min-w-0 gap-1">
-                  <span className="flex flex-wrap items-center gap-2 text-[11.5px]">
+                  <span className="flex flex-wrap items-center gap-2 text-mini">
                     <span className={`mono font-semibold ${tone(d)}`}>{d.action}</span>
                     <span className="mono text-faint">{`${d.t_in.toFixed(1)}–${d.t_out.toFixed(1)}s`}</span>
                     {d.evidence.inferred.role && <span className="rounded bg-ai/10 px-1.5 text-ai" title={tr("Mô hình đọc ra, không phải số đo")}>{d.evidence.inferred.role}{d.evidence.inferred.weight != null ? ` · ${d.evidence.inferred.weight}` : ""}</span>}
@@ -488,9 +488,9 @@ function CopilotView({ url, board, onApplied, shots = 0 }: { url: string; board:
                     {d.review === "needs_review" && <span className="rounded bg-cue/15 px-1.5 text-cue">{tr("chờ bạn xem")}</span>}
                     <span className="text-faint">{tv`tin cậy ${Math.round(d.confidence * 100)}%`}</span>
                   </span>
-                  <span className="text-[13px] leading-snug text-ink">{d.text}</span>
-                  <span className="text-[11.5px] text-mute">{d.reasons.join(" · ")}</span>
-                  {(d.evidence.observed.length > 0 || d.evidence.inferred.why) && <span className="text-[11px] text-faint">
+                  <span className="text-ui leading-snug text-ink">{d.text}</span>
+                  <span className="text-mini text-mute">{d.reasons.join(" · ")}</span>
+                  {(d.evidence.observed.length > 0 || d.evidence.inferred.why) && <span className="text-mini text-faint">
                     {d.evidence.observed.length > 0 && <>{tr("Đo được: ")}{d.evidence.observed.join("; ")}</>}{d.evidence.observed.length > 0 && d.evidence.inferred.why ? " · " : ""}
                     {d.evidence.inferred.why && <>{tr("Mô hình: ")}{d.evidence.inferred.why}</>}</span>}
                 </span>
@@ -504,15 +504,15 @@ function CopilotView({ url, board, onApplied, shots = 0 }: { url: string; board:
         <video ref={player} className="aspect-video w-full rounded-lg bg-black" controls playsInline />
         {p && <>
           <div className="grid gap-1.5 rounded-xl border border-line p-3">
-            <span className="text-[12px] text-faint">{tr("Thời lượng dự kiến")}</span>
-            <span className="mono text-[20px]">{`${Math.round(p.summary.source_seconds)}s → ${Math.round(seconds)}s`}{p.target_seconds ? <span className="text-[13px] text-faint">{tv` / mục tiêu ${p.target_seconds}s`}</span> : null}</span>
+            <span className="text-mini text-faint">{tr("Thời lượng dự kiến")}</span>
+            <span className="mono text-num">{`${Math.round(p.summary.source_seconds)}s → ${Math.round(seconds)}s`}{p.target_seconds ? <span className="text-ui text-faint">{tv` / mục tiêu ${p.target_seconds}s`}</span> : null}</span>
             <span className="h-1.5 overflow-hidden rounded bg-white/[0.08]"><span className="block h-full bg-accent" style={{ width: `${Math.min(100, (seconds / Math.max(1, p.summary.source_seconds)) * 100)}%` }} /></span>
-            {p.notes.map((n) => <p key={n} className="rounded-md bg-cue/10 px-2 py-1.5 text-[12px] text-cue">{n}</p>)}
+            {p.notes.map((n) => <p key={n} className="rounded-md bg-cue/10 px-2 py-1.5 text-mini text-cue">{n}</p>)}
           </div>
           {p.coverage.length > 0 && <div className="grid gap-1 rounded-xl border border-line p-3">
-            <span className="text-[12px] text-faint">{tr("Luận điểm (mô hình đọc ra)")}</span>
+            <span className="text-mini text-faint">{tr("Luận điểm (mô hình đọc ra)")}</span>
             {p.coverage.map((c) => { const held = c.sentences.some((k) => keep[p.decisions[k - 1]?.decision_id]); return (
-              <span key={c.point} className={`flex items-start gap-1.5 text-[12.5px] ${held ? "text-ink" : "text-tally"}`}><Icon name={held ? "check" : "x"} size={13} className="mt-0.5" />{c.point}</span>); })}
+              <span key={c.point} className={`flex items-start gap-1.5 text-meta ${held ? "text-ink" : "text-tally"}`}><Icon name={held ? "check" : "x"} size={13} className="mt-0.5" />{c.point}</span>); })}
           </div>}
           <Button kind="primary" busy={busy === "apply"} disabled={!kept.length} onClick={() => void apply()}
                   title={tr("Thay storyboard bằng các câu được giữ: mỗi câu một shot, đúng đoạn của bản ghi, tiếng của chính nó")}><Icon name="check" size={14} />{tv`Áp dụng ${kept.length} câu vào storyboard`}</Button>
@@ -549,34 +549,34 @@ function ShotCard({ s, on, tone, pick, editing, edit, say, remove, change }: { s
      <button type="button" onClick={pick} className="grid w-full min-w-0 gap-2 text-left">
       <span className={`relative block aspect-video overflow-hidden rounded-lg ${on ? "outline outline-2 outline-offset-2 outline-accent" : "outline outline-1 outline-line"}`} style={{ background: tone }}>
         {s.frame_url && <Frame src={s.frame_url} />}
-        <span className="mono absolute left-1.5 top-1.5 rounded bg-black/70 px-1.5 text-[11px] font-semibold ring-1 ring-white/25">{s.code}</span>
-        <span className={`absolute right-1.5 top-1.5 rounded px-1.5 text-[11px] font-semibold text-canvas ${change ? "group-hover/card:opacity-0" : ""}`} style={{ background: SRC[s.spec.source.policy][1] }}>{SRC[s.spec.source.policy][0]}</span>
-        {s.version > 1 && <span className="mono absolute bottom-1.5 left-1.5 rounded bg-black/60 px-1.5 text-[11px] text-mute">v{s.version}</span>}
+        <span className="mono absolute left-1.5 top-1.5 rounded bg-black/70 px-1.5 text-mini font-semibold ring-1 ring-white/25">{s.code}</span>
+        <span className={`absolute right-1.5 top-1.5 rounded px-1.5 text-mini font-semibold text-canvas ${change ? "group-hover/card:opacity-0" : ""}`} style={{ background: SRC[s.spec.source.policy][1] }}>{SRC[s.spec.source.policy][0]}</span>
+        {s.version > 1 && <span className="mono absolute bottom-1.5 left-1.5 rounded bg-black/60 px-1.5 text-mini text-mute">v{s.version}</span>}
       </span>
-      <span className="text-[11px] font-semibold uppercase leading-snug tracking-wide text-ink">{`${s.code}: ${f.lens} | ${s.spec.duration.target}s | ${f.move} | ${f.size} · ${f.angle}`}</span>
+      <span className="text-mini font-semibold uppercase leading-snug tracking-wide text-ink">{`${s.code}: ${f.lens} | ${s.spec.duration.target}s | ${f.move} | ${f.size} · ${f.angle}`}</span>
      </button>
       {change && <span className="absolute right-1.5 top-1.5 flex gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover/card:opacity-100">
         <button type="button" onClick={change} title={tr("Đổi clip: tìm clip khác trong Thư viện hoặc chọn phương án khác")}
-                className="flex h-6 items-center gap-1 rounded bg-black/75 px-1.5 text-[11px] font-medium text-white ring-1 ring-white/25 hover:bg-accent hover:text-canvas"><Icon name="search" size={11} />{tr("Đổi clip")}</button>
+                className="flex h-6 items-center gap-1 rounded bg-black/75 px-1.5 text-mini font-medium text-white ring-1 ring-white/25 hover:bg-accent hover:text-canvas"><Icon name="search" size={11} />{tr("Đổi clip")}</button>
         {remove && <button type="button" onClick={remove} title={tr("Bỏ clip này khỏi shot; các phương án khác vẫn giữ để chọn")}
-                className="flex h-6 items-center gap-1 rounded bg-black/75 px-1.5 text-[11px] font-medium text-white ring-1 ring-white/25 hover:bg-tally"><Icon name="trash" size={11} />{tr("Bỏ clip")}</button>}
+                className="flex h-6 items-center gap-1 rounded bg-black/75 px-1.5 text-mini font-medium text-white ring-1 ring-white/25 hover:bg-tally"><Icon name="trash" size={11} />{tr("Bỏ clip")}</button>}
       </span>}
       {editing ? (
         <span className="grid gap-1.5">
           <textarea autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} rows={Math.min(8, Math.max(3, Math.ceil(draft.length / 38)))} aria-label={tv`Lời thoại của ${s.code}`}
                     onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); edit(false); } if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); finish(); } }}
-                    onBlur={finish} className="w-full resize-y p-2 text-[12.5px] leading-relaxed" />
-          <span className="text-[11px] text-faint">{tr("⌘↵ hoặc bấm ra ngoài để lưu · Esc để huỷ")}</span>
+                    onBlur={finish} className="w-full resize-y p-2 text-meta leading-relaxed" />
+          <span className="text-mini text-faint">{tr("⌘↵ hoặc bấm ra ngoài để lưu · Esc để huỷ")}</span>
         </span>
       ) : (
         <span className="relative grid gap-2" onDoubleClick={() => edit(true)}>
-          <Clamp className="text-[12.5px] leading-relaxed text-mute">{s.spec.intent}</Clamp>
-          {s.spec.line && !sameWords(s.spec.line, s.spec.intent) && <Clamp className="border-l-2 border-accent/40 pl-2 text-[12px] italic leading-snug text-mute">“{s.spec.line}”</Clamp>}
+          <Clamp className="text-meta leading-relaxed text-mute">{s.spec.intent}</Clamp>
+          {s.spec.line && !sameWords(s.spec.line, s.spec.intent) && <Clamp className="border-l-2 border-accent/40 pl-2 text-mini italic leading-snug text-mute">“{s.spec.line}”</Clamp>}
           <button type="button" onClick={() => edit(true)} title={tr("Sửa lời thoại (hoặc nhấp đúp)")} aria-label={tv`Sửa lời thoại của ${s.code}`}
                   className="absolute -right-1 -top-1 grid h-6 w-6 place-items-center rounded-md border border-edge bg-overlay text-mute opacity-0 transition-opacity hover:text-ink focus-visible:opacity-100 group-hover/card:opacity-100"><Icon name="edit" size={12} /></button>
         </span>
       )}
-      <span className="flex items-center gap-1.5 text-[11px] text-faint"><span className={`h-1.5 w-1.5 rounded-full ${dot}`} aria-hidden="true" />{label}
+      <span className="flex items-center gap-1.5 text-mini text-faint"><span className={`h-1.5 w-1.5 rounded-full ${dot}`} aria-hidden="true" />{label}
         {of > 0 && <><span aria-hidden="true">·</span><span className={of && passed === of ? "text-proof" : passed ? "text-cue" : "text-faint"}>{tv`nghiệm thu ${passed}/${of}`}</span></>}</span>
     </div>
   );
@@ -643,9 +643,9 @@ function TimeView({ board, cur, tone, pick, pickSeam }: { board: Board; cur?: Sb
       </div>
       {/* The shot and its words under the picture, as a caption strip, so nothing covers the frame. */}
       {now && <div className="mx-auto -mt-1.5 flex w-full max-w-[680px] shrink-0 items-start gap-3 rounded-lg border border-line bg-surface px-3.5 py-2.5">
-        <span className="mono shrink-0 pt-px text-[12px] text-accent">{now.code} · {mmss(at)}</span>
-        <span className="min-w-0 text-[13px] leading-snug">{now.spec.line || now.spec.intent}</span></div>}
-      <div className="flex items-center gap-2.5 text-[12px] text-faint">
+        <span className="mono shrink-0 pt-px text-mini text-accent">{now.code} · {mmss(at)}</span>
+        <span className="min-w-0 text-ui leading-snug">{now.spec.line || now.spec.intent}</span></div>}
+      <div className="flex items-center gap-2.5 text-mini text-faint">
         <Button size="sm" onClick={() => { if (at >= total) setAt(0); setPlaying(!playing); }}><Icon name={playing ? "pause" : "play"} size={13} />{playing ? tr("Dừng") : tr("Phát animatic")}</Button>
         <span className="mono">{mmss(at)}</span>
         <input type="range" min={0} max={total} step={0.1} value={at} onChange={(e) => setAt(Number(e.target.value))} aria-label={tr("Vị trí trên timeline")} className="min-w-0 flex-1 accent-[#46c8e0]" />
@@ -653,30 +653,30 @@ function TimeView({ board, cur, tone, pick, pickSeam }: { board: Board; cur?: Sb
       </div>
       {/* Each shot as its frame, so the order reads at a glance and a move shows at once (the codes follow the order and alone look the same). */}
       <Lane label={tr("Hình")}>{shots.map((s) => <button key={s.shot_id} type="button" onClick={() => { pick(s.shot_id); setAt(starts[shots.indexOf(s)]); }} title={s.spec.intent}
-                                                         className={`mono relative h-11 min-w-0 overflow-hidden rounded text-[11px] ${s.shot_id === cur?.shot_id ? "outline outline-2 outline-accent" : ""}`} style={{ flex: `${s.spec.duration.target} 1 0`, background: tone(s) }}>
+                                                         className={`mono relative h-11 min-w-0 overflow-hidden rounded text-mini ${s.shot_id === cur?.shot_id ? "outline outline-2 outline-accent" : ""}`} style={{ flex: `${s.spec.duration.target} 1 0`, background: tone(s) }}>
         {s.frame_url && <img src={s.frame_url} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-cover" />}
         <span className="relative rounded bg-black/65 px-1">{s.code}</span></button>)}</Lane>
-      <Lane label={tr("Lời dẫn")} top>{shots.map((s) => <div key={s.shot_id} className="line-clamp-4 min-w-0 border-t-2 border-accent/40 pt-1 text-[10.5px] leading-snug text-mute" style={{ flex: `${s.spec.duration.target} 1 0` }}>{s.spec.line}</div>)}</Lane>
+      <Lane label={tr("Lời dẫn")} top>{shots.map((s) => <div key={s.shot_id} className="line-clamp-4 min-w-0 border-t-2 border-accent/40 pt-1 text-mini leading-snug text-mute" style={{ flex: `${s.spec.duration.target} 1 0` }}>{s.spec.line}</div>)}</Lane>
       <div className="grid gap-1.5 border-t border-line pt-3">
-        <div className="flex items-baseline gap-2.5"><span className="font-semibold">{tr("Liền mạch")}</span><span className="text-[12px] text-faint">{tr("mỗi làn là một thực thể; vạch đứt là chỗ nó vắng mặt")}</span><span className="flex-1" />
-          <span className="text-[12px]" style={{ color: board.seams.some((x) => x.worst === "fail") ? "#ff6b6b" : board.seams.some((x) => x.worst === "warn") ? "#f5c451" : "#4fd1a5" }}>
+        <div className="flex items-baseline gap-2.5"><span className="font-semibold">{tr("Liền mạch")}</span><span className="text-mini text-faint">{tr("mỗi làn là một thực thể; vạch đứt là chỗ nó vắng mặt")}</span><span className="flex-1" />
+          <span className="text-mini" style={{ color: board.seams.some((x) => x.worst === "fail") ? "#ff6b6b" : board.seams.some((x) => x.worst === "warn") ? "#f5c451" : "#4fd1a5" }}>
             {tv`${board.seams.length} mối nối · ${board.seams.filter((x) => x.worst === "fail").length} đứt · ${board.seams.filter((x) => x.worst === "warn").length} cần xem`}</span></div>
         {entities.map((e, i) => <Lane key={e} label={e} thin>{shots.map((s) => <div key={s.shot_id} className="h-3 min-w-0 rounded-sm" style={{ flex: `${s.spec.duration.target} 1 0`, background: s.spec.continuity.entities.includes(e) ? ent[i % ent.length] : "transparent", border: s.spec.continuity.entities.includes(e) ? "none" : "1px dashed rgba(255,255,255,0.12)" }} />)}</Lane>)}
-        {!entities.length && <p className="text-[12px] text-faint">{tr("Chưa shot nào gắn thực thể (tab Liên tục); làn nhân vật, nơi chốn, đạo cụ sẽ hiện ở đây.")}</p>}
-        <Lane label={tr("Hướng")}>{shots.map((s) => <div key={s.shot_id} className="min-w-0 text-center text-[13px]" style={{ flex: `${s.spec.duration.target} 1 0`, color: s.spec.direction ? "var(--color-ink)" : "#3a3f4a" }}>{s.spec.direction === "phải" ? "→" : s.spec.direction === "trái" ? "←" : "·"}</div>)}</Lane>
-        <Lane label={tr("Thời điểm")}>{shots.map((s, i) => <div key={s.shot_id} className="min-w-0 truncate text-center text-[11px] text-mute" style={{ flex: `${s.spec.duration.target} 1 0` }}>{times[i] && times[i] !== times[i - 1] ? times[i] : times[i] ? "·" : ""}</div>)}</Lane>
+        {!entities.length && <p className="text-mini text-faint">{tr("Chưa shot nào gắn thực thể (tab Liên tục); làn nhân vật, nơi chốn, đạo cụ sẽ hiện ở đây.")}</p>}
+        <Lane label={tr("Hướng")}>{shots.map((s) => <div key={s.shot_id} className="min-w-0 text-center text-ui" style={{ flex: `${s.spec.duration.target} 1 0`, color: s.spec.direction ? "var(--color-ink)" : "#3a3f4a" }}>{s.spec.direction === "phải" ? "→" : s.spec.direction === "trái" ? "←" : "·"}</div>)}</Lane>
+        <Lane label={tr("Thời điểm")}>{shots.map((s, i) => <div key={s.shot_id} className="min-w-0 truncate text-center text-mini text-mute" style={{ flex: `${s.spec.duration.target} 1 0` }}>{times[i] && times[i] !== times[i - 1] ? times[i] : times[i] ? "·" : ""}</div>)}</Lane>
         <Lane label={tr("Mối nối")}>
           <div className="relative h-4 flex-1">{board.seams.map((x) => <button key={`${x.a}-${x.b}`} type="button" onClick={() => pickSeam(`${x.a}-${x.b}`)} title={tv`Mối nối ${x.a_code} → ${x.b_code}: ${SEAM[x.worst][0]}`}
                                                                          className="absolute top-0.5 h-3.5 w-3.5 rounded-full border-2 border-canvas" style={{ left: `calc(${(seamAt(x.b) / total) * 100}% - 7px)`, background: SEAM[x.worst][1] }} />)}</div>
         </Lane>
       </div>
-      <p className="text-[12px] text-faint">{tr("Animatic: mỗi shot là hình của nó (footage đã gán hoặc ảnh khung) giữ đúng thời lượng, kèm lời dẫn. Duyệt nhịp ở đây trước khi tạo video hay render.")}</p>
+      <p className="text-mini text-faint">{tr("Animatic: mỗi shot là hình của nó (footage đã gán hoặc ảnh khung) giữ đúng thời lượng, kèm lời dẫn. Duyệt nhịp ở đây trước khi tạo video hay render.")}</p>
     </div>
   );
 }
 
 function Lane({ label, children, top, thin }: { label: string; children: React.ReactNode; top?: boolean; thin?: boolean }) {
-  return <div className={`flex gap-2 ${top ? "items-start" : "items-center"}`}><span className={`w-16 shrink-0 truncate ${thin ? "text-[11px] text-mute" : "text-[11px] text-faint"}`}>{label}</span><div className="flex min-w-0 flex-1 gap-0.5">{children}</div></div>;
+  return <div className={`flex gap-2 ${top ? "items-start" : "items-center"}`}><span className={`w-16 shrink-0 truncate ${thin ? "text-mini text-mute" : "text-mini text-faint"}`}>{label}</span><div className="flex min-w-0 flex-1 gap-0.5">{children}</div></div>;
 }
 
 /* ------------------------------------------------------------------------------------------- the camera plan, seen from above */
@@ -685,24 +685,24 @@ function PlanView({ board, cur, pick, flip }: { board: Board; cur?: SbShot; pick
   const crossedCur = cur && board.plans.some((p) => p.crossed.includes(cur.shot_id));
   return (
     <div className="grid min-h-0 flex-1 content-start gap-4 overflow-y-auto p-3">
-      <p className="text-[12px] leading-relaxed text-faint">{tr("Nhìn từ trên xuống. Chấm cam là chủ thể, vùng sáng là góc nhìn của ống kính, nét đứt là máy đang chạy. Máy nằm khác phía trục 180° so với shot đầu của cảnh sẽ làm hình bị đảo hướng.")}</p>
+      <p className="text-mini leading-relaxed text-faint">{tr("Nhìn từ trên xuống. Chấm cam là chủ thể, vùng sáng là góc nhìn của ống kính, nét đứt là máy đang chạy. Máy nằm khác phía trục 180° so với shot đầu của cảnh sẽ làm hình bị đảo hướng.")}</p>
       {cur && <div className="flex flex-wrap items-center gap-2.5 rounded-lg border border-line bg-raised/30 px-3 py-2">
         <span className="mono text-faint">{cur.code}</span>
-        <span className="min-w-0 flex-[1_1_200px] text-[13px]">{tv`${cur.spec.framing.lens} · máy ở ${cur.spec.camera.y < 110 ? tr("phía trên") : tr("phía dưới")} trục · hướng ${cur.spec.direction || tr("không có")}`}{crossedCur ? tr(" · vượt trục so với shot đầu của cảnh") : ""}</span>
+        <span className="min-w-0 flex-[1_1_200px] text-ui">{tv`${cur.spec.framing.lens} · máy ở ${cur.spec.camera.y < 110 ? tr("phía trên") : tr("phía dưới")} trục · hướng ${cur.spec.direction || tr("không có")}`}{crossedCur ? tr(" · vượt trục so với shot đầu của cảnh") : ""}</span>
         <Button size="sm" onClick={() => flip(cur.shot_id)}>{tr("Lật sang bên kia trục")}</Button>
       </div>}
       {board.plans.map((pl) => {
         const sc = board.scenes.find((x) => x.scene_id === pl.scene_id);
         return (
           <section key={pl.scene_id} className="grid gap-2">
-            <div className="flex flex-wrap items-baseline gap-2.5"><h2 className="text-[14px] font-semibold">{sc?.title}</h2>
-              <span className={`rounded-full px-2 text-[11px] ${pl.crossed.length ? "bg-tally/15 text-tally" : "bg-proof/15 text-proof"}`}>
+            <div className="flex flex-wrap items-baseline gap-2.5"><h2 className="text-body font-semibold">{sc?.title}</h2>
+              <span className={`rounded-full px-2 text-mini ${pl.crossed.length ? "bg-tally/15 text-tally" : "bg-proof/15 text-proof"}`}>
                 {pl.crossed.length ? tv`${pl.crossed.length} shot vượt trục: ${pl.crossed.map((id) => codes.get(id)?.code).join(", ")}` : tr("giữ một phía trục")}</span></div>
             <div className="scroll-x pb-1">
               <div className="relative h-[220px] w-[560px] overflow-hidden rounded-lg border border-line bg-canvas" role="img" aria-label={tv`Mặt bằng ${sc?.title ?? ""}`}>
-                <div className="absolute left-0 top-[110px] h-0 w-full border-t border-dashed border-white/25" /><span className="absolute left-2 top-[94px] text-[10px] text-faint">{tr("trục 180°")}</span>
+                <div className="absolute left-0 top-[110px] h-0 w-full border-t border-dashed border-white/25" /><span className="absolute left-2 top-[94px] text-mini text-faint">{tr("trục 180°")}</span>
                 <div className="absolute h-3.5 w-3.5 rounded-full border-2 border-canvas bg-ai" style={{ left: pl.subject.x - 7, top: pl.subject.y - 7 }} />
-                {pl.subject.label && <span className="absolute w-[120px] text-center text-[10px] text-ai" style={{ left: pl.subject.x - 60, top: pl.subject.y + 12 }}>{pl.subject.label}</span>}
+                {pl.subject.label && <span className="absolute w-[120px] text-center text-mini text-ai" style={{ left: pl.subject.x - 60, top: pl.subject.y + 12 }}>{pl.subject.label}</span>}
                 {pl.cams.map((c) => {
                   const s = codes.get(c.shot_id)!, isSel = c.shot_id === cur?.shot_id, f = (lensFov(s.spec.framing.lens) * Math.PI) / 360, th = (c.aim * Math.PI) / 180, L = 85;
                   const pt = (a: number) => `${(c.x + L * Math.cos(a)).toFixed(0)}px ${(c.y + L * Math.sin(a)).toFixed(0)}px`;
@@ -711,13 +711,13 @@ function PlanView({ board, cur, pick, flip }: { board: Board; cur?: SbShot; pick
                     <span key={c.shot_id}>
                       <span className="pointer-events-none absolute inset-0" style={{ background: c.crossed ? "rgba(255,107,107,0.2)" : isSel ? "rgba(70,200,224,0.24)" : "rgba(132,138,151,0.12)", clipPath: `polygon(${c.x}px ${c.y}px, ${pt(th - f)}, ${pt(th + f)})` }} />
                       {c.end && <span className="pointer-events-none absolute h-0 origin-top-left border-t-2 border-dashed" style={{ left: c.x, top: c.y, width: Math.hypot(c.end.x - c.x, c.end.y - c.y), borderColor: col, transform: `rotate(${Math.atan2(c.end.y - c.y, c.end.x - c.x)}rad)` }} />}
-                      <button type="button" onClick={() => pick(c.shot_id)} title={s.code} className="mono absolute grid h-8 w-8 place-items-center rounded-full border-2 text-[10px] font-semibold"
+                      <button type="button" onClick={() => pick(c.shot_id)} title={s.code} className="mono absolute grid h-8 w-8 place-items-center rounded-full border-2 text-mini font-semibold"
                               style={{ left: c.x - 16, top: c.y - 16, background: isSel || c.crossed ? col : "#30353f", color: isSel || c.crossed ? "#0c0d11" : "#eceef2", borderColor: isSel ? "#eceef2" : "#0a0b0e" }}>{s.code}</button>
                     </span>);
                 })}
               </div>
             </div>
-            <div className="mono flex flex-wrap gap-3.5 text-[11px] text-faint">{pl.cams.map((c) => { const s = codes.get(c.shot_id)!; return <span key={c.shot_id}>{s.code} · {s.spec.framing.lens} · {s.spec.duration.target}s</span>; })}</div>
+            <div className="mono flex flex-wrap gap-3.5 text-mini text-faint">{pl.cams.map((c) => { const s = codes.get(c.shot_id)!; return <span key={c.shot_id}>{s.code} · {s.spec.framing.lens} · {s.spec.duration.target}s</span>; })}</div>
           </section>);
       })}
     </div>
@@ -738,16 +738,16 @@ function StockTile({ c, use, busy }: { c: StockOpt; use: () => void; busy: boole
       <span className="relative block aspect-video overflow-hidden rounded bg-black" onMouseEnter={() => setLive(true)} onMouseLeave={() => setLive(false)} onClick={() => setLive(!live)}>
         {c.thumb_url && <img src={c.thumb_url} alt="" className="absolute inset-0 h-full w-full object-cover" />}
         {live && !broken && c.preview_url && <video src={c.preview_url} autoPlay muted loop playsInline preload="none" onError={() => setBroken(true)} className="absolute inset-0 h-full w-full object-cover" />}
-        <span className="mono absolute bottom-1 left-1 rounded bg-black/70 px-1 text-[10px]">{c.source} · {c.duration ? `${c.duration.toFixed(0)}s` : "?"}</span>
-        <span className={`mono absolute right-1 top-1 rounded bg-black/75 px-1 text-[10px] font-semibold ${tone}`} title={c.why || undefined}>{c.look == null ? tr("chưa chấm") : `${c.look}/10`}</span>
+        <span className="mono absolute bottom-1 left-1 rounded bg-black/70 px-1 text-mini">{c.source} · {c.duration ? `${c.duration.toFixed(0)}s` : "?"}</span>
+        <span className={`mono absolute right-1 top-1 rounded bg-black/75 px-1 text-mini font-semibold ${tone}`} title={c.why || undefined}>{c.look == null ? tr("chưa chấm") : `${c.look}/10`}</span>
         {!live && c.preview_url && <span className="absolute inset-0 grid place-items-center opacity-0 transition-opacity hover:opacity-100"><Icon name="play" size={18} /></span>}
       </span>
-      {c.why && <span className="line-clamp-2 text-[11px] text-mute" title={c.why}>{c.why}</span>}
-      <span className="truncate text-[10.5px] text-faint" title={`${c.license}${c.creator ? ` · ${c.creator}` : ""}`}>
+      {c.why && <span className="line-clamp-2 text-mini text-mute" title={c.why}>{c.why}</span>}
+      <span className="truncate text-mini text-faint" title={`${c.license}${c.creator ? ` · ${c.creator}` : ""}`}>
         {c.licence_class && LICENCE[c.licence_class] && <span className={`mr-1 font-semibold ${LICENCE[c.licence_class][1]}`}>{LICENCE[c.licence_class][0]}</span>}{c.license}{c.creator ? ` · ${c.creator}` : ""}</span>
       <span className="grid grid-cols-2 gap-1">
-        <button type="button" onClick={use} disabled={busy} className="h-7 rounded-md border border-line text-[11.5px] text-ink hover:border-accent hover:bg-accent/10">{tr("Dùng cho shot")}</button>
-        <a href={c.source_url} target="_blank" rel="noopener noreferrer" className="flex h-7 items-center justify-center gap-1 rounded-md border border-line text-[11.5px] text-ink hover:border-accent hover:bg-accent/10"><Icon name="external" size={11} />{tr("Trang gốc")}</a>
+        <button type="button" onClick={use} disabled={busy} className="h-7 rounded-md border border-line text-mini text-ink hover:border-accent hover:bg-accent/10">{tr("Dùng cho shot")}</button>
+        <a href={c.source_url} target="_blank" rel="noopener noreferrer" className="flex h-7 items-center justify-center gap-1 rounded-md border border-line text-mini text-ink hover:border-accent hover:bg-accent/10"><Icon name="external" size={11} />{tr("Trang gốc")}</a>
       </span>
     </li>);
 }
@@ -781,37 +781,37 @@ function PictureTab({ shot: s, board, url, set, act, busy }: { shot: SbShot; boa
       <div className="seg w-fit" role="radiogroup" aria-label={tr("Nguồn")}>
         {v.sources.map((k) => <button key={k} type="button" role="radio" aria-checked={s.spec.source.policy === k} onClick={() => set(s, "source.policy", k)}>{SRC[k][0]}</button>)}
       </div>
-      {s.spec.source.policy === "generate" ? <p className="text-[12.5px] text-faint">{tr("Shot tạo bằng AI: xem tab Tạo sinh.")}</p> : <>
+      {s.spec.source.policy === "generate" ? <p className="text-meta text-faint">{tr("Shot tạo bằng AI: xem tab Tạo sinh.")}</p> : <>
         <Field label={tr("Tìm trong footage")} value={s.spec.source.query} onSave={(x) => set(s, "source.query", x)} />
 
         {has ? (
           <div className="grid gap-2 rounded-lg border border-accent/40 bg-accent/[0.04] p-2.5">
             <div className="flex items-start gap-2.5">
               <span className="relative block aspect-video w-[132px] shrink-0 overflow-hidden rounded bg-black">{s.frame_url && <Frame src={s.frame_url} />}</span>
-              <span className="grid min-w-0 flex-1 gap-0.5 text-[12.5px]">
-                <span className="flex items-center gap-1.5"><span className="text-[11px] font-semibold text-proof">{tr("Hình của shot")}</span>{a?.decided_by === "operator" && <span className="text-[11px] text-accent">{tr("bạn chọn")}</span>}
+              <span className="grid min-w-0 flex-1 gap-0.5 text-meta">
+                <span className="flex items-center gap-1.5"><span className="text-mini font-semibold text-proof">{tr("Hình của shot")}</span>{a?.decided_by === "operator" && <span className="text-mini text-accent">{tr("bạn chọn")}</span>}
                   <button type="button" disabled={!!busy} onClick={() => act("remove", () => post(`${shotUrl}/remove`), tv`Đã bỏ clip khỏi ${s.code}.`)} title={tr("Clip này không đúng kịch bản: bỏ khỏi shot, các phương án khác vẫn giữ để chọn")}
-                          className="ml-auto flex h-6 items-center gap-1 rounded-md border border-line px-2 text-[11.5px] text-tally hover:border-tally hover:bg-tally/10"><Icon name="trash" size={12} />{tr("Bỏ clip này")}</button></span>
+                          className="ml-auto flex h-6 items-center gap-1 rounded-md border border-line px-2 text-mini text-tally hover:border-tally hover:bg-tally/10"><Icon name="trash" size={12} />{tr("Bỏ clip này")}</button></span>
                 <span className="truncate" title={a?.name}>{a?.name}</span>
-                <span className="mono text-[11px] text-faint">{`${secs(a!.t_in)}–${secs(a!.t_out)} · ${(a!.t_out - a!.t_in).toFixed(1)}s`}{a?.score != null ? ` · ${tr("khớp")} ${a.score.toFixed(2)}` : ""}</span>
-                {a?.text && <span className="line-clamp-2 text-[11.5px] text-mute" title={a.text}>{a.text}</span>}
+                <span className="mono text-mini text-faint">{`${secs(a!.t_in)}–${secs(a!.t_out)} · ${(a!.t_out - a!.t_in).toFixed(1)}s`}{a?.score != null ? ` · ${tr("khớp")} ${a.score.toFixed(2)}` : ""}</span>
+                {a?.text && <span className="line-clamp-2 text-mini text-mute" title={a.text}>{a.text}</span>}
               </span>
             </div>
-            <form className="flex flex-wrap items-end gap-2 text-[12px] text-faint" onSubmit={(e) => { e.preventDefault(); act("trim", () => post(`${shotUrl}/trim`, { t_in: Number(inOut[0]), t_out: Number(inOut[1]) }), tr("Đã cắt lại đoạn.")); }}>
+            <form className="flex flex-wrap items-end gap-2 text-mini text-faint" onSubmit={(e) => { e.preventDefault(); act("trim", () => post(`${shotUrl}/trim`, { t_in: Number(inOut[0]), t_out: Number(inOut[1]) }), tr("Đã cắt lại đoạn.")); }}>
               <label className="grid gap-0.5">{tr("Vào (s)")}<input value={inOut[0]} onChange={(e) => setInOut([e.target.value, inOut[1]])} inputMode="decimal" className="h-7 w-16 rounded border border-line bg-canvas px-1.5 text-ink" /></label>
               <label className="grid gap-0.5">{tr("Ra (s)")}<input value={inOut[1]} onChange={(e) => setInOut([inOut[0], e.target.value])} inputMode="decimal" className="h-7 w-16 rounded border border-line bg-canvas px-1.5 text-ink" /></label>
               <Button size="sm" type="submit" busy={busy === "trim"} disabled={a && inOut[0] === a.t_in.toFixed(1) && inOut[1] === a.t_out.toFixed(1)}>{tr("Cắt lại")}</Button>
             </form>
-            <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1.5 text-[12px] text-mute">
-              <label className="flex items-center gap-1.5">{tr("Tốc độ")}<select value={t.speed ?? 1} onChange={(e) => treat({ speed: Number(e.target.value) })} className="h-7 rounded border border-line bg-canvas pl-1.5 text-[12px] text-ink">{SPEEDS.map((x) => <option key={x} value={x}>{x}×</option>)}</select></label>
+            <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1.5 text-mini text-mute">
+              <label className="flex items-center gap-1.5">{tr("Tốc độ")}<select value={t.speed ?? 1} onChange={(e) => treat({ speed: Number(e.target.value) })} className="h-7 rounded border border-line bg-canvas pl-1.5 text-mini text-ink">{SPEEDS.map((x) => <option key={x} value={x}>{x}×</option>)}</select></label>
               <label className="flex items-center gap-1.5"><input type="checkbox" checked={!!t.stabilise} onChange={(e) => treat({ stabilise: e.target.checked })} />{tr("Chống rung")}</label>
               <label className="flex items-center gap-1.5" title={tr("Giữ âm thanh của chính clip thay cho lời dẫn; độ dài cảnh bằng đúng đoạn đã chọn")}><input type="checkbox" checked={!!t.live_sound} onChange={(e) => treat({ live_sound: e.target.checked })} />{tr("Dùng âm thanh gốc")}</label>
               {remote.includes("lipsync") && <label className="flex items-center gap-1.5"><input type="checkbox" checked={!!t.lipsync && !t.live_sound} disabled={!!t.live_sound} onChange={(e) => treat({ lipsync: e.target.checked })} />{tr("Khớp khẩu hình")}</label>}
               {remote.includes("upscale") && <label className="flex items-center gap-1.5"><input type="checkbox" checked={!!t.upscale_ml} onChange={(e) => treat({ upscale_ml: e.target.checked })} />{tr("Phóng to bằng mô hình")}</label>}
-              {effects.length > 0 && <label className="flex items-center gap-1.5">{tr("Tiếng động")}<select value={t.sfx ?? ""} onChange={(e) => treat({ sfx: e.target.value || null })} className="h-7 max-w-[150px] rounded border border-line bg-canvas pl-1.5 text-[12px] text-ink"><option value="">{tr("Không")}</option>{effects.map((x) => <option key={x.asset_id} value={x.asset_id}>{x.name}</option>)}</select></label>}
+              {effects.length > 0 && <label className="flex items-center gap-1.5">{tr("Tiếng động")}<select value={t.sfx ?? ""} onChange={(e) => treat({ sfx: e.target.value || null })} className="h-7 max-w-[150px] rounded border border-line bg-canvas pl-1.5 text-mini text-ink"><option value="">{tr("Không")}</option>{effects.map((x) => <option key={x.asset_id} value={x.asset_id}>{x.name}</option>)}</select></label>}
             </div>
           </div>
-        ) : <p className="rounded-lg border border-dashed border-line p-2.5 text-[12.5px] text-faint">{tr("Shot chưa có hình. Bấm \"Chạy lại shot này\", đổi câu tìm, chọn một phương án bên dưới, hoặc tìm clip stock.")}</p>}
+        ) : <p className="rounded-lg border border-dashed border-line p-2.5 text-meta text-faint">{tr("Shot chưa có hình. Bấm \"Chạy lại shot này\", đổi câu tìm, chọn một phương án bên dưới, hoặc tìm clip stock.")}</p>}
 
         {others.length > 0 && <div className="grid gap-1.5">
           <span className="eyebrow">{tv`Phương án khác · ${others.length}`}</span>
@@ -820,17 +820,17 @@ function PictureTab({ shot: s, board, url, set, act, busy }: { shot: SbShot; boa
               <li key={c.asset_id + c.t_in} className="grid gap-1 rounded-lg border border-line p-1.5">
                 <span className="relative block aspect-video overflow-hidden rounded bg-black" title={c.text}>
                   <Frame src={c.frame_url} />
-                  <span className="mono absolute bottom-1 left-1 rounded bg-black/70 px-1 text-[10px]">{secs(c.t_in)} · {(c.t_out - c.t_in).toFixed(1)}s</span>
-                  {c.chosen_before && <span className="absolute right-1 top-1 rounded bg-accent px-1 text-[10px] font-semibold text-canvas">{tr("từng chọn")}</span>}
+                  <span className="mono absolute bottom-1 left-1 rounded bg-black/70 px-1 text-mini">{secs(c.t_in)} · {(c.t_out - c.t_in).toFixed(1)}s</span>
+                  {c.chosen_before && <span className="absolute right-1 top-1 rounded bg-accent px-1 text-mini font-semibold text-canvas">{tr("từng chọn")}</span>}
                 </span>
-                <span className="truncate text-[11.5px] text-mute" title={c.text || c.name}>{c.name}</span>
-                {c.of > 0 && <span className={`text-[11px] ${c.passed === c.of ? "text-proof" : c.passed ? "text-cue" : "text-faint"}`} title={c.failed.join("; ")}>{tv`nghiệm thu ${c.passed}/${c.of}`}</span>}
+                <span className="truncate text-mini text-mute" title={c.text || c.name}>{c.name}</span>
+                {c.of > 0 && <span className={`text-mini ${c.passed === c.of ? "text-proof" : c.passed ? "text-cue" : "text-faint"}`} title={c.failed.join("; ")}>{tv`nghiệm thu ${c.passed}/${c.of}`}</span>}
                 <span className="grid grid-cols-2 gap-1">
                   <button type="button" onClick={() => act(`use${i}`, () => post(`${shotUrl}/use`, { candidate: i }), tv`${s.code} dùng clip này.`)} disabled={!!busy}
-                          className="h-7 rounded-md border border-line text-[11.5px] text-ink hover:border-accent hover:bg-accent/10">{tr("Dùng cho shot")}</button>
+                          className="h-7 rounded-md border border-line text-mini text-ink hover:border-accent hover:bg-accent/10">{tr("Dùng cho shot")}</button>
                   <button type="button" onClick={() => act(`add${i}`, () => post(`${shotUrl}/add-clip`, { candidate: i }), tv`Đã thêm shot mới sau ${s.code}.`)} disabled={!!busy}
                           title={tr("Thêm clip này thành một shot mới ngay sau shot đang chọn")}
-                          className="flex h-7 items-center justify-center gap-1 rounded-md border border-line text-[11.5px] text-ink hover:border-accent hover:bg-accent/10"><Icon name="plus" size={12} />{tr("Thêm vào cảnh")}</button>
+                          className="flex h-7 items-center justify-center gap-1 rounded-md border border-line text-mini text-ink hover:border-accent hover:bg-accent/10"><Icon name="plus" size={12} />{tr("Thêm vào cảnh")}</button>
                 </span>
               </li>))}
           </ul>
@@ -838,27 +838,27 @@ function PictureTab({ shot: s, board, url, set, act, busy }: { shot: SbShot; boa
 
         <div className="grid gap-2 border-t border-line pt-2.5">
           {(has || others.length > 0) && <span className="flex flex-wrap gap-x-4 gap-y-1">
-            <button type="button" className="link text-[12.5px]" disabled={!!busy} title={tr("Mô hình nhìn khung hình của hình đang gán và hai phương án đầu, chấm xem có đúng câu không. Mất khoảng nửa phút mỗi hình; không đổi lựa chọn nào.")}
+            <button type="button" className="link text-meta" disabled={!!busy} title={tr("Mô hình nhìn khung hình của hình đang gán và hai phương án đầu, chấm xem có đúng câu không. Mất khoảng nửa phút mỗi hình; không đổi lựa chọn nào.")}
                     onClick={() => act("look", () => post(`${shotUrl}/look`), tr("Đã chấm: xem điểm trong phần nghiệm thu."))}>{busy === "look" ? tr("Đang chấm…") : tr("Cho mô hình chấm hình")}</button>
-            <button type="button" className="link text-[12.5px]" onClick={() => act("none", () => post(`${shotUrl}/none-fits`), tr("Đã ghi nhận: các clip này không hợp với shot."))}>{tr("Không clip nào hợp")}</button>
+            <button type="button" className="link text-meta" onClick={() => act("none", () => post(`${shotUrl}/none-fits`), tr("Đã ghi nhận: các clip này không hợp với shot."))}>{tr("Không clip nào hợp")}</button>
           </span>}
           <form className="flex gap-1.5" onSubmit={(e) => { e.preventDefault(); findInLibrary(); }}>
             <input data-lib-search value={libQuery} onChange={(e) => setLibQuery(e.target.value)} placeholder={tr("Tìm clip khác trong Thư viện, ví dụ: chợ nổi buổi sáng")} aria-label={tr("Tìm clip trong Thư viện")}
-                   className="h-8 min-w-0 flex-1 rounded-md border border-line bg-canvas px-2.5 text-[12.5px] outline-none focus:border-accent" />
+                   className="h-8 min-w-0 flex-1 rounded-md border border-line bg-canvas px-2.5 text-meta outline-none focus:border-accent" />
             <Button size="sm" type="submit" busy={libBusy} disabled={!libQuery.trim()}><Icon name="search" size={13} />{tr("Tìm trong Thư viện")}</Button>
           </form>
-          {libHits && (libHits.length === 0 ? <p className="text-[12px] text-faint">{tr("Thư viện không có đoạn nào hợp với từ này.")}</p> :
+          {libHits && (libHits.length === 0 ? <p className="text-mini text-faint">{tr("Thư viện không có đoạn nào hợp với từ này.")}</p> :
             <ul className="grid grid-cols-2 gap-2">
               {libHits.map((h) => (
                 <li key={h.moment_id} className="grid gap-1 rounded-lg border border-line p-1.5">
                   <span className="relative block aspect-video overflow-hidden rounded bg-black" title={h.text}>
                     {(h.frame_url || h.asset.thumbnail_url) && <Frame src={(h.frame_url || h.asset.thumbnail_url)!} />}
-                    <span className="mono absolute bottom-1 left-1 rounded bg-black/70 px-1 text-[10px]">{secs(h.t_start)} · {(h.t_end - h.t_start).toFixed(1)}s</span>
+                    <span className="mono absolute bottom-1 left-1 rounded bg-black/70 px-1 text-mini">{secs(h.t_start)} · {(h.t_end - h.t_start).toFixed(1)}s</span>
                   </span>
-                  <span className="truncate text-[11.5px] text-mute" title={h.text || h.asset.name}>{h.asset.name}</span>
-                  {h.text && <span className="line-clamp-2 text-[11px] text-faint">{h.text}</span>}
+                  <span className="truncate text-mini text-mute" title={h.text || h.asset.name}>{h.asset.name}</span>
+                  {h.text && <span className="line-clamp-2 text-mini text-faint">{h.text}</span>}
                   <button type="button" disabled={!!busy} onClick={() => act(`lib${h.moment_id}`, () => post(`${shotUrl}/use-moment`, { moment_id: h.moment_id }), tv`${s.code} dùng clip này.`)}
-                          className="h-7 rounded-md border border-line text-[11.5px] text-ink hover:border-accent hover:bg-accent/10">{tr("Dùng cho shot")}</button>
+                          className="h-7 rounded-md border border-line text-mini text-ink hover:border-accent hover:bg-accent/10">{tr("Dùng cho shot")}</button>
                 </li>))}
             </ul>)}
           {(s.stock_options ?? []).length > 0 && <div className="grid gap-1.5">
@@ -870,7 +870,7 @@ function PictureTab({ shot: s, board, url, set, act, busy }: { shot: SbShot; boa
           <form className="flex gap-1.5" onSubmit={(e) => { e.preventDefault(); act("stock", async () => { const r = await post<{ stock: { found: boolean; options: number; passed: number } }>(`${shotUrl}/stock`, { query });
             if (!r.stock?.found) toast(tr("Không tìm được clip stock nào."), { tone: "tally" }); else toast(tv`${r.stock.options} ứng viên, ${r.stock.passed} đạt. Rê chuột để xem, bấm Dùng cho shot để tải.`); }); }}>
             <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={tr("Từ khoá (tuỳ chọn), tiếng Việt hoặc Anh; trống thì dùng lời của shot")} aria-label={tr("Từ khoá tìm clip stock")}
-                   className="h-8 min-w-0 flex-1 rounded-md border border-line bg-canvas px-2.5 text-[12.5px] outline-none focus:border-accent" />
+                   className="h-8 min-w-0 flex-1 rounded-md border border-line bg-canvas px-2.5 text-meta outline-none focus:border-accent" />
             <Button size="sm" type="submit" busy={busy === "stock"}><Icon name="globe" size={13} />{tr("Tìm ứng viên stock")}</Button>
           </form>
         </div>
@@ -892,29 +892,29 @@ function Inspector({ shot: s, board, url, tab, setTab, set, ops, act, busy }: {
     <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-surface">
       <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2">
         <span className="mono text-faint">{s.code}</span><span className="min-w-0 flex-1 truncate font-semibold">{s.spec.intent}</span>
-        <span className={`rounded-full px-2 text-[11px] ${chip(t)}`}>{label}</span><span className="mono text-[11px] text-faint">v{s.version}</span>
+        <span className={`rounded-full px-2 text-mini ${chip(t)}`}>{label}</span><span className="mono text-mini text-faint">v{s.version}</span>
       </div>
       {(s.state === "needs" || s.state === "stale") && (
-        <div className="flex flex-wrap items-center gap-2 border-b border-line bg-ai/[0.05] px-3 py-2 text-[12.5px]">
+        <div className="flex flex-wrap items-center gap-2 border-b border-line bg-ai/[0.05] px-3 py-2 text-meta">
           <span className="min-w-0 flex-1 text-mute">{s.checks.filter((c) => c.st !== "pass").map((c) => c.text).slice(0, 2).join("; ") || tr("Chờ bạn xem")}</span>
           {s.assignment && <Button size="sm" kind="primary" onClick={() => act("decide", () => post(`${url}/shots/${s.shot_id}/decide`, { accept: true }), tr("Đã nhận shot."))}>{tr("Nhận shot")}</Button>}
           <Button size="sm" busy={busy === "one"} onClick={() => act("one", () => post(`${url}/run`, { shot: s.shot_id }))}>{tr("Chạy lại shot này")}</Button>
         </div>)}
       <div role="tablist" className="scroll-x flex gap-0.5 border-b border-line px-2">
         {tabs.map(([k, l]) => <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
-                                      className={`-mb-px h-9 whitespace-nowrap border-b-2 px-2.5 text-[12.5px] ${tab === k ? "border-accent text-ink" : "border-transparent text-mute hover:text-ink"}`}>{l}</button>)}
+                                      className={`-mb-px h-9 whitespace-nowrap border-b-2 px-2.5 text-meta ${tab === k ? "border-accent text-ink" : "border-transparent text-mute hover:text-ink"}`}>{l}</button>)}
       </div>
       <div className="grid min-h-0 flex-1 content-start gap-3 overflow-y-auto p-3">
         {tab === "goal" && <>
           <Field label={tr("Mục tiêu nội dung")} area value={s.spec.intent} onSave={(x) => set(s, "intent", x)} />
           <Field label={tr("Lời dẫn / thoại của shot")} area value={s.spec.line} onSave={(x) => set(s, "line", x)} />
-          <span className="-mt-1.5 text-[11px] text-faint">{tr("Câu này hiện trên thẻ shot và làn Lời dẫn của timeline; ghi vào kịch bản thì thành câu của dự án.")}</span>
-          <div className="grid gap-1.5"><span className="text-[12px] text-mute">{tr("Cách minh hoạ")}</span>
+          <span className="-mt-1.5 text-mini text-faint">{tr("Câu này hiện trên thẻ shot và làn Lời dẫn của timeline; ghi vào kịch bản thì thành câu của dự án.")}</span>
+          <div className="grid gap-1.5"><span className="text-mini text-mute">{tr("Cách minh hoạ")}</span>
             <Seg items={[["direct", tr("Trực tiếp")], ["associative", tr("Liên tưởng")], ["contrast", tr("Tương phản")]] as const} value={s.spec.illustration?.mode ?? "direct"}
                  onChange={(m) => set(s, "illustration.mode", m)} label={tr("Cách minh hoạ")} />
-            <span className="text-[11px] text-faint">{(s.spec.illustration?.mode ?? "direct") === "direct" ? tr("Hình cho thấy điều câu nói; tìm theo lời và mục tiêu.") : tr("Hình gợi ý của câu, không tả lại lời; tìm theo mục tiêu và điều hình gợi, xếp theo cảm giác đo được.")}</span></div>
+            <span className="text-mini text-faint">{(s.spec.illustration?.mode ?? "direct") === "direct" ? tr("Hình cho thấy điều câu nói; tìm theo lời và mục tiêu.") : tr("Hình gợi ý của câu, không tả lại lời; tìm theo mục tiêu và điều hình gợi, xếp theo cảm giác đo được.")}</span></div>
           {(s.spec.illustration?.mode ?? "direct") !== "direct" && <Field label={tr("Hình gợi điều gì")} value={s.spec.illustration?.evokes ?? ""} onSave={(x) => set(s, "illustration.evokes", x)} />}
-          {s.spec.illustration?.feel && Object.keys(s.spec.illustration.feel).length > 0 && <p className="text-[12px] text-faint">{tr("Cảm giác cần có")}: {Object.values(s.spec.illustration.feel).join(", ")}</p>}
+          {s.spec.illustration?.feel && Object.keys(s.spec.illustration.feel).length > 0 && <p className="text-mini text-faint">{tr("Cảm giác cần có")}: {Object.values(s.spec.illustration.feel).join(", ")}</p>}
           <div className="grid grid-cols-3 gap-2">
             {(["target", "min", "max"] as const).map((k) => <Field key={k} label={{ target: tr("Thời lượng (s)"), min: tr("Tối thiểu"), max: tr("Tối đa") }[k]} value={String(s.spec.duration[k])} onSave={(x) => set(s, `duration.${k}`, Number(x))} />)}
           </div>
@@ -929,33 +929,33 @@ function Inspector({ shot: s, board, url, tab, setTab, set, ops, act, busy }: {
         {tab === "gen" && <>
           <div className="grid grid-cols-2 gap-2">
             {([["provider", tr("Ảnh khung"), board.providers.image_providers], ["provider_video", tr("Video"), board.providers.video_providers]] as const).map(([k, l, list]) => (
-              <label key={k} className="grid gap-1 text-[12px] text-faint">{tv`Nhà cung cấp ${l}`}
-                <select value={s.spec.generation[k]} onChange={(e) => set(s, `generation.${k}`, e.target.value)} className="h-8 rounded-md border border-line bg-canvas px-2 text-[13px] text-ink">
+              <label key={k} className="grid gap-1 text-mini text-faint">{tv`Nhà cung cấp ${l}`}
+                <select value={s.spec.generation[k]} onChange={(e) => set(s, `generation.${k}`, e.target.value)} className="h-8 rounded-md border border-line bg-canvas px-2 text-ui text-ink">
                   <option value="">{tr("theo thứ tự của dự án")}</option>
                   {(list ?? []).map((p) => <option key={p.name} value={p.name}>{`${p.label} · ${p.runs === "local" ? tr("trên máy") : tr("cloud")}`}</option>)}
                 </select></label>))}
           </div>
-          {!(board.providers.image_providers ?? []).length && <p className="text-[12px] text-cue">{tr("Chưa có nhà cung cấp ảnh nào (RunPod, Pollinations…): cấu hình trong nexora.toml.")}</p>}
+          {!(board.providers.image_providers ?? []).length && <p className="text-mini text-cue">{tr("Chưa có nhà cung cấp ảnh nào (RunPod, Pollinations…): cấu hình trong nexora.toml.")}</p>}
           <Field label={tr("Model (ghi chú)")} value={s.spec.generation.model} placeholder={tr("mặc định của nhà cung cấp")} onSave={(x) => set(s, "generation.model", x)} />
           {(["subject", "action", "setting", "light", "camera"] as const).map((k) =>
             <Field key={k} label={{ subject: tr("Chủ thể"), action: tr("Hành động"), setting: tr("Bối cảnh"), light: tr("Ánh sáng"), camera: tr("Máy quay") }[k]} value={s.spec.generation.prompt[k] ?? ""} onSave={(x) => set(s, `generation.prompt.${k}`, x)} />)}
           <Field label={tr("Seed")} value={s.spec.generation.seed == null ? "" : String(s.spec.generation.seed)} placeholder={tr("ngẫu nhiên")} onSave={(x) => set(s, "generation.seed", x)} />
           {s.assignment?.kind === "generated" && s.frame_url && <img src={s.frame_url} alt={tr("Ảnh khung")} className="w-full rounded-lg" />}
-          <p className="text-[12px] text-faint">{tr("Ảnh khung được tạo trước và phải duyệt rồi mới trả tiền cho video. Bấm \"Tạo ảnh khung\" ở trên: storyboard được ghi vào kịch bản và phần tạo hình của dự án chạy cho các shot AI.")}</p>
+          <p className="text-mini text-faint">{tr("Ảnh khung được tạo trước và phải duyệt rồi mới trả tiền cho video. Bấm \"Tạo ảnh khung\" ở trên: storyboard được ghi vào kịch bản và phần tạo hình của dự án chạy cho các shot AI.")}</p>
         </>}
         {tab === "cont" && <>
           <div className="flex flex-wrap gap-1.5">
-            {s.spec.continuity.entities.map((e) => <span key={e} className="flex items-center gap-1 rounded-full border border-line px-2 py-0.5 text-[12.5px]">{e}
+            {s.spec.continuity.entities.map((e) => <span key={e} className="flex items-center gap-1 rounded-full border border-line px-2 py-0.5 text-meta">{e}
               <button type="button" aria-label={tv`Bỏ ${e}`} onClick={() => set(s, "continuity.entities", s.spec.continuity.entities.filter((x) => x !== e))} className="text-faint hover:text-tally"><Icon name="x" size={11} /></button></span>)}
             <form className="flex gap-1" onSubmit={(e) => { e.preventDefault(); if (newEnt.trim()) { set(s, "continuity.entities", [...s.spec.continuity.entities, newEnt.trim()]); setNewEnt(""); } }}>
-              <input value={newEnt} onChange={(e) => setNewEnt(e.target.value)} placeholder={tr("+ nhân vật, nơi, đạo cụ")} aria-label={tr("Thêm thực thể")} className="h-7 w-40 rounded-md border border-dashed border-line bg-transparent px-2 text-[12.5px]" /></form>
+              <input value={newEnt} onChange={(e) => setNewEnt(e.target.value)} placeholder={tr("+ nhân vật, nơi, đạo cụ")} aria-label={tr("Thêm thực thể")} className="h-7 w-40 rounded-md border border-dashed border-line bg-transparent px-2 text-meta" /></form>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <Pick label={tr("Hướng nhìn, hướng đi")} value={s.spec.direction} items={["", "phải", "trái"]} onPick={(x) => set(s, "direction", x)} />
             <Pick label={tr("Thời điểm trong ngày")} value={s.spec.continuity.time_of_day} items={v.times} onPick={(x) => set(s, "continuity.time_of_day", x)} />
           </div>
-          <label className="flex items-center gap-2 text-[13px]"><input type="checkbox" checked={s.spec.continuity.match_previous} onChange={(e) => set(s, "continuity.match_previous", e.target.checked)} />{tr("Nối màu và ánh sáng với shot trước")}</label>
-          <div className="flex items-center gap-2 text-[12.5px] text-mute">{tv`Máy ở ${s.spec.camera.y < 110 ? tr("phía trên") : tr("phía dưới")} trục`}<Button size="sm" kind="quiet" onClick={() => ops([{ op: "flip_camera", shot: s.shot_id }])}>{tr("Lật sang bên kia trục")}</Button></div>
+          <label className="flex items-center gap-2 text-ui"><input type="checkbox" checked={s.spec.continuity.match_previous} onChange={(e) => set(s, "continuity.match_previous", e.target.checked)} />{tr("Nối màu và ánh sáng với shot trước")}</label>
+          <div className="flex items-center gap-2 text-meta text-mute">{tv`Máy ở ${s.spec.camera.y < 110 ? tr("phía trên") : tr("phía dưới")} trục`}<Button size="sm" kind="quiet" onClick={() => ops([{ op: "flip_camera", shot: s.shot_id }])}>{tr("Lật sang bên kia trục")}</Button></div>
         </>}
         {tab === "crit" && <>
           {s.spec.criteria.map((c, i) => {
@@ -963,10 +963,10 @@ function Inspector({ shot: s, board, url, tab, setTab, set, ops, act, busy }: {
             const [m, cls] = MARK[r?.st ?? "wait"];
             return (
               <div key={i} className="flex items-center gap-2.5 rounded-lg border border-line px-2.5 py-2">
-                <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full text-[11px] font-semibold text-canvas ${cls}`}>{m}</span>
-                <span className="min-w-0 flex-1 text-[13px]">{c.text}{c.value != null && c.value !== "" ? <span className="mono text-[11px] text-faint">{` ${c.op} ${String(c.value)}`}</span> : null}</span>
-                <span className="text-[11px] text-faint">{c.by === "auto" ? tr("tự động") : tr("người duyệt")}</span>
-                <span className="mono w-[86px] truncate text-right text-[11px] text-mute">{r?.value ?? "—"}</span>
+                <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full text-mini font-semibold text-canvas ${cls}`}>{m}</span>
+                <span className="min-w-0 flex-1 text-ui">{c.text}{c.value != null && c.value !== "" ? <span className="mono text-mini text-faint">{` ${c.op} ${String(c.value)}`}</span> : null}</span>
+                <span className="text-mini text-faint">{c.by === "auto" ? tr("tự động") : tr("người duyệt")}</span>
+                <span className="mono w-[86px] truncate text-right text-mini text-mute">{r?.value ?? "—"}</span>
                 <button type="button" aria-label={tr("Bỏ tiêu chí")} onClick={() => ops([{ op: "remove_criterion", shot: s.shot_id, index: i }])} className="text-faint hover:text-tally"><Icon name="x" size={12} /></button>
               </div>);
           })}
@@ -974,23 +974,23 @@ function Inspector({ shot: s, board, url, tab, setTab, set, ops, act, busy }: {
             const [m, cls] = MARK[r.st ?? "wait"];                      // measured on request, beside the criteria (the model's look at the frames)
             return (
               <div key={r.check + r.text} className="flex items-center gap-2.5 rounded-lg border border-dashed border-line px-2.5 py-2">
-                <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full text-[11px] font-semibold text-canvas ${cls}`}>{m}</span>
-                <span className="min-w-0 flex-1 text-[13px]">{r.text}</span>
-                <span className="text-[11px] text-faint">{tr("mô hình")}</span>
-                <span className="mono w-[86px] truncate text-right text-[11px] text-mute">{r.value ?? "—"}</span>
+                <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full text-mini font-semibold text-canvas ${cls}`}>{m}</span>
+                <span className="min-w-0 flex-1 text-ui">{r.text}</span>
+                <span className="text-mini text-faint">{tr("mô hình")}</span>
+                <span className="mono w-[86px] truncate text-right text-mini text-mute">{r.value ?? "—"}</span>
               </div>);
           })}
           <form className="flex flex-wrap gap-1.5" onSubmit={(e) => { e.preventDefault(); ops([{ op: "add_criterion", shot: s.shot_id, criterion: { check: newCheck, text: newText.trim() || undefined } }]); setNewText(""); }}>
-            <select value={newCheck} onChange={(e) => setNewCheck(e.target.value)} aria-label={tr("Loại tiêu chí")} className="h-8 rounded-md border border-line bg-canvas px-2 text-[12.5px]">
+            <select value={newCheck} onChange={(e) => setNewCheck(e.target.value)} aria-label={tr("Loại tiêu chí")} className="h-8 rounded-md border border-line bg-canvas px-2 text-meta">
               {Object.entries(v.checks).map(([k, c]) => <option key={k} value={k}>{c.text}</option>)}</select>
-            <input value={newText} onChange={(e) => setNewText(e.target.value)} placeholder={tr("mô tả (với tiêu chí người duyệt)")} aria-label={tr("Mô tả tiêu chí")} className="h-8 min-w-0 flex-1 rounded-md border border-line bg-canvas px-2 text-[12.5px]" />
+            <input value={newText} onChange={(e) => setNewText(e.target.value)} placeholder={tr("mô tả (với tiêu chí người duyệt)")} aria-label={tr("Mô tả tiêu chí")} className="h-8 min-w-0 flex-1 rounded-md border border-line bg-canvas px-2 text-meta" />
             <Button size="sm" type="submit">{tr("Thêm")}</Button>
           </form>
-          <p className="text-[12px] text-faint">{tr("Tiêu chí máy đo được thì Director tự kiểm; tiêu chí người duyệt chờ bạn. Trường VI chưa kiểm định và footage VQ chưa đo hiện \"–\", không bao giờ được coi là đạt.")}</p>
+          <p className="text-mini text-faint">{tr("Tiêu chí máy đo được thì Director tự kiểm; tiêu chí người duyệt chờ bạn. Trường VI chưa kiểm định và footage VQ chưa đo hiện \"–\", không bao giờ được coi là đạt.")}</p>
         </>}
         {tab === "hist" && <div className="grid gap-1.5">
           {(hist?.versions ?? []).map((h) => (
-            <div key={h.version} className="flex items-center gap-2.5 text-[12.5px]"><span className="mono w-8 text-faint">v{h.version}</span>
+            <div key={h.version} className="flex items-center gap-2.5 text-meta"><span className="mono w-8 text-faint">v{h.version}</span>
               <span className="min-w-0 flex-1 text-mute">{h.note || h.made_by}<span className="text-faint"> · {h.made_by}</span></span>
               {h.version !== s.version && <button type="button" onClick={() => act("rev", () => post(`${url}/shots/${s.shot_id}/revert`, { version: h.version }), tv`Đã quay lại v${h.version}.`)} className="text-accent">{tr("quay lại")}</button>}
             </div>))}
@@ -1005,23 +1005,23 @@ function SeamPanel({ seam, board, tone, close, fix }: { seam: Seam; board: Board
   const a = board.shots.find((s) => s.shot_id === seam.a)!, b = board.shots.find((s) => s.shot_id === seam.b)!;
   const pic = (s: SbShot, label: string) => (
     <div className="grid gap-1"><div className="relative aspect-video overflow-hidden rounded-md" style={{ background: tone(s) }}>{s.frame_url && <Frame src={s.frame_url} />}</div>
-      <span className="truncate text-[11px] text-faint">{label} {s.code} · {s.spec.intent}</span></div>);
+      <span className="truncate text-mini text-faint">{label} {s.code} · {s.spec.intent}</span></div>);
   return (
     <section aria-label={tr("Mối nối")} className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-surface">
       <div className="flex items-center gap-2 border-b border-line px-3 py-2">
         <span className="font-semibold">{tv`Mối nối ${seam.a_code} → ${seam.b_code}`}</span>
-        <span className="rounded-full px-2 text-[11px]" style={{ color: SEAM[seam.worst][1], background: `${SEAM[seam.worst][1]}22` }}>{SEAM[seam.worst][0]}</span>
+        <span className="rounded-full px-2 text-mini" style={{ color: SEAM[seam.worst][1], background: `${SEAM[seam.worst][1]}22` }}>{SEAM[seam.worst][0]}</span>
         <span className="flex-1" /><Button size="sm" kind="quiet" onClick={close}>{tr("Về shot")}</Button>
       </div>
       <div className="grid min-h-0 flex-1 content-start gap-3 overflow-y-auto p-3">
         <div className="grid grid-cols-2 gap-1.5">{pic(a, tr("hình cuối"))}{pic(b, tr("hình đầu"))}</div>
         {seam.checks.map((c) => { const [m, cls] = MARK[c.st]; return (
           <div key={c.key} className="flex items-center gap-2.5 rounded-lg border border-line px-2.5 py-2">
-            <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full text-[11px] font-semibold text-canvas ${cls}`}>{m}</span>
-            <span className="grid min-w-0 flex-1"><span className="text-[13px]">{c.name}</span><span className="text-[11px] text-faint">{c.detail}</span></span>
-            <span className="mono text-[11px] text-mute">{c.value}</span></div>); })}
-        {seam.fixes.length > 0 && <div className="grid gap-1.5"><span className="text-[12px] text-faint">{tr("Cách sửa Director đề xuất")}</span>
-          {seam.fixes.map((f) => <button key={f.text} type="button" onClick={() => fix(f.ops, f.text)} className="rounded-lg border border-accent/40 bg-accent/10 px-3 py-2 text-left text-[13px] hover:bg-accent/15">{f.text}</button>)}</div>}
+            <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full text-mini font-semibold text-canvas ${cls}`}>{m}</span>
+            <span className="grid min-w-0 flex-1"><span className="text-ui">{c.name}</span><span className="text-mini text-faint">{c.detail}</span></span>
+            <span className="mono text-mini text-mute">{c.value}</span></div>); })}
+        {seam.fixes.length > 0 && <div className="grid gap-1.5"><span className="text-mini text-faint">{tr("Cách sửa Director đề xuất")}</span>
+          {seam.fixes.map((f) => <button key={f.text} type="button" onClick={() => fix(f.ops, f.text)} className="rounded-lg border border-accent/40 bg-accent/10 px-3 py-2 text-left text-ui hover:bg-accent/15">{f.text}</button>)}</div>}
       </div>
     </section>
   );
@@ -1035,16 +1035,16 @@ function Proposal({ m, url, onDone }: { m: Msg; url: string; onDone: () => void 
   if (p.kind === "copilot") {
     // Its decisions are reviewed one by one in the Copilot mode; here it can only be set aside.
     return (
-      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-ai/40 bg-ai/[0.05] p-2.5 text-[12.5px]">
+      <div className="flex flex-wrap items-center gap-2 rounded-xl border border-ai/40 bg-ai/[0.05] p-2.5 text-meta">
         <Icon name="sparkles" size={14} className="text-ai" /><span className="min-w-0 flex-1 text-mute">{tr("Đề xuất của Copilot: mở chế độ Copilot để xem từng quyết định và áp dụng.")}</span>
         <Button size="sm" kind="quiet" busy={busy} onClick={() => settle("drop")}>{tr("Bỏ")}</Button>
       </div>);
   }
   return (
     <div className="grid gap-1.5 rounded-xl border border-accent/40 bg-raised/40 p-2.5">
-      <span className="text-[12px] text-faint">{tv`Đề xuất · ${p.scope} · ${p.diff.length} thay đổi`}{p.summary ? ` · ${p.summary}` : ""}</span>
-      {p.diff.map((d, i) => <div key={i} className="mono grid gap-px text-[12px]"><span className="text-ink">{d.title}</span>{d.old && <span className="text-tally">− {d.old}</span>}<span className="text-proof">+ {d.new}</span></div>)}
-      {p.problems && p.problems.length > 0 && <span className="text-[11.5px] text-faint">{tv`Bỏ qua: ${p.problems.join("; ")}`}</span>}
+      <span className="text-mini text-faint">{tv`Đề xuất · ${p.scope} · ${p.diff.length} thay đổi`}{p.summary ? ` · ${p.summary}` : ""}</span>
+      {p.diff.map((d, i) => <div key={i} className="mono grid gap-px text-mini"><span className="text-ink">{d.title}</span>{d.old && <span className="text-tally">− {d.old}</span>}<span className="text-proof">+ {d.new}</span></div>)}
+      {p.problems && p.problems.length > 0 && <span className="text-mini text-faint">{tv`Bỏ qua: ${p.problems.join("; ")}`}</span>}
       <div className="mt-1 flex gap-2"><Button size="sm" kind="primary" busy={busy} onClick={() => settle("apply")}>{tr("Áp dụng")}</Button><Button size="sm" kind="quiet" onClick={() => settle("drop")}>{tr("Bỏ")}</Button></div>
     </div>
   );
@@ -1069,9 +1069,9 @@ function Chat({ board, url, cur, onDone }: { board: Board; url: string; cur?: Sb
   const live = [...msgs.slice(0, cut).filter((m) => m.proposal && m.status === "open"), ...msgs.slice(cut)];
   const bubble = (m: Msg) => (
     <div key={m.message_id} className="grid gap-1.5">
-      <div className={m.role === "you" ? "max-w-[85%] justify-self-end rounded-[10px_10px_2px_10px] bg-accent/10 px-2.5 py-1.5 text-[13px] leading-relaxed" : "max-w-[92%] text-[13px] leading-relaxed text-mute"}>{m.text}</div>
+      <div className={m.role === "you" ? "max-w-[85%] justify-self-end rounded-[10px_10px_2px_10px] bg-accent/10 px-2.5 py-1.5 text-ui leading-relaxed" : "max-w-[92%] text-ui leading-relaxed text-mute"}>{m.text}</div>
       {m.proposal && m.status === "open" && <Proposal m={m} url={url} onDone={onDone} />}
-      {m.proposal && m.status !== "open" && <span className={`text-[11px] ${m.status === "applied" ? "text-proof" : "text-faint"}`}>{m.status === "applied" ? tr("đã áp dụng") : tr("đã bỏ")}</span>}
+      {m.proposal && m.status !== "open" && <span className={`text-mini ${m.status === "applied" ? "text-proof" : "text-faint"}`}>{m.status === "applied" ? tr("đã áp dụng") : tr("đã bỏ")}</span>}
     </div>);
   const send = async () => {
     if (!text.trim()) return;
@@ -1084,17 +1084,17 @@ function Chat({ board, url, cur, onDone }: { board: Board; url: string; cur?: Sb
       <div className="flex items-center gap-2 border-b border-line px-3 py-1.5">
         <button type="button" onClick={() => setOpen(!shown)} aria-expanded={shown} className="flex items-center gap-1.5 font-semibold" title={shown ? tr("Thu gọn hội thoại") : tr("Mở hội thoại")}>
           <Icon name={shown ? "down" : "next"} size={13} />Director</button>
-        {waiting && <span className="rounded-full bg-ai/15 px-2 text-[11px] text-ai">{tr("có đề xuất chờ")}</span>}
+        {waiting && <span className="rounded-full bg-ai/15 px-2 text-mini text-ai">{tr("có đề xuất chờ")}</span>}
         <span className="flex-1" />
         <div className="seg" role="radiogroup" aria-label={tr("Phạm vi")}>
           {([["shot", tr("Shot này")], ["scene", tr("Cảnh")], ["all", tr("Toàn bộ")]] as const).map(([k, l]) => <button key={k} type="button" role="radio" aria-checked={scope === k} onClick={() => setScope(k)}>{l}</button>)}
         </div>
       </div>
       {shown && <div className="grid min-h-0 flex-1 content-start gap-2.5 overflow-y-auto px-3 py-2.5">
-        {board.messages.length === 0 && <p className="text-[12.5px] text-faint">{tr("Nói với Director điều cần đổi, ví dụ: \"cảnh 2 hơi dài, rút còn 20 giây và thêm một shot cận tay bổ dừa\". Director trả lời bằng một đề xuất; chưa có gì thay đổi cho tới khi bạn áp dụng.")}</p>}
+        {board.messages.length === 0 && <p className="text-meta text-faint">{tr("Nói với Director điều cần đổi, ví dụ: \"cảnh 2 hơi dài, rút còn 20 giây và thêm một shot cận tay bổ dừa\". Director trả lời bằng một đề xuất; chưa có gì thay đổi cho tới khi bạn áp dụng.")}</p>}
         {settled.length > 0 && (
           <button type="button" onClick={() => setPast(!past)} aria-expanded={past}
-                  className="flex items-center gap-1.5 justify-self-start rounded-md px-1.5 py-0.5 text-[11.5px] text-faint hover:bg-raised hover:text-ink">
+                  className="flex items-center gap-1.5 justify-self-start rounded-md px-1.5 py-0.5 text-mini text-faint hover:bg-raised hover:text-ink">
             <Icon name={past ? "down" : "next"} size={12} />
             {tv`Lịch sử · ${settled.length} tin đã xử lý`}
             {(() => { const a = settled.filter((m) => m.status === "applied").length, d = settled.filter((m) => m.status && m.status !== "applied" && m.status !== "open").length;
@@ -1106,7 +1106,7 @@ function Chat({ board, url, cur, onDone }: { board: Board; url: string; cur?: Sb
       </div>}
       <form className="flex gap-1.5 border-t border-line p-2" onSubmit={(e) => { e.preventDefault(); send(); }}>
         <input value={text} onChange={(e) => setText(e.target.value)} placeholder={cur ? tv`Với ${cur.code}: ví dụ đổi góc máy thấp, ánh hoàng hôn ấm hơn` : tr("Nói với Director")} aria-label={tr("Nói với Director")}
-               className="h-9 min-w-0 flex-1 rounded-md border border-line bg-canvas px-2.5 text-[13px] outline-none focus:border-accent" />
+               className="h-9 min-w-0 flex-1 rounded-md border border-line bg-canvas px-2.5 text-ui outline-none focus:border-accent" />
         <Button size="sm" type="submit" busy={busy}>{tr("Gửi")}</Button>
       </form>
     </section>

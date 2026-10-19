@@ -77,7 +77,7 @@ function Bento({ label, code, end, children, className = "" }: { label: string; 
   return (
     <section className={`bento flex min-w-0 flex-col p-4 md:p-5 ${className}`}>
       <header className="mb-3 flex items-center justify-between gap-3">
-        <h2 className="flex min-w-0 items-center gap-2 text-[13px] font-medium text-mute"><span className="hud-dot" aria-hidden="true" /><span className="truncate">{label}</span>
+        <h2 className="flex min-w-0 items-center gap-2 text-ui font-medium text-mute"><span className="hud-dot" aria-hidden="true" /><span className="truncate">{label}</span>
           {code && <span className="hud-label hidden sm:inline">{code}</span>}</h2>
         {end && <div className="flex shrink-0 items-center gap-2">{end}</div>}
       </header>
@@ -90,9 +90,9 @@ function Kpi({ label, value, sub, tone = "accent", code, onClick }: { label: str
   const c = { mute: "text-ink", cue: "text-cue", proof: "text-proof", tally: "text-tally", ai: "text-ai", accent: "text-accent" }[tone];
   return (
     <button type="button" onClick={onClick} className="bento bento-hover flex min-w-0 flex-col p-4 text-left">
-      <span className="flex items-center justify-between gap-2"><span className="truncate text-[12.5px] text-mute">{label}</span><span className="hud-label">{code}</span></span>
-      <span className={`mono mt-2 text-[30px] font-semibold leading-none tracking-tight ${c}`}>{value}</span>
-      {sub && <span className="mt-2 truncate text-[12px] text-faint">{sub}</span>}
+      <span className="flex items-center justify-between gap-2"><span className="truncate text-meta text-mute">{label}</span><span className="hud-label">{code}</span></span>
+      <span className={`mono mt-2 text-kpi-xl font-semibold leading-none tracking-tight ${c}`}>{value}</span>
+      {sub && <span className="mt-2 truncate text-mini text-faint">{sub}</span>}
     </button>
   );
 }
@@ -109,7 +109,7 @@ export default function MissionControl() {
   return (
     <Page full title={tab === "overview" ? tr("Mission Control") : `${tr("Mission Control")} · ${name}`}
           side={<OpsSide counts={{ approvals: ov?.kpis.awaiting, missions: ov?.kpis.active }} />}
-          note={tab === "overview" ? <FocusPicker /> : <span className="text-[15px] font-semibold text-ink">{name}</span>}
+          note={tab === "overview" ? <FocusPicker /> : <span className="text-title font-semibold text-ink">{name}</span>}
           tabs={tab === "overview" ? <FocusLine /> : undefined}
           actions={ov && <Kill on={ov.kill_switch} done={reload} />}>
       <div className="mx-auto max-w-[1680px]">
@@ -161,9 +161,9 @@ function FocusPicker() {
                 className="h-9 gap-2.5 rounded-lg border border-line bg-surface/70 px-3"
                 items={order.map((x) => { const s = projectState(x); return { value: x.project_id, label: x.title, dot: TONE_DOT[s.tone], note: busy.includes(x) ? tr("đang làm") : s.label }; })}>
         <Icon name="clapper" size={14} className="shrink-0 text-faint group-hover:text-accent" />
-        <span className="mono shrink-0 text-[10px] uppercase tracking-[0.12em] text-faint">{tr("Video")}</span>
+        <span className="mono shrink-0 text-mini uppercase tracking-[0.12em] text-faint">{tr("Video")}</span>
         <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${TONE_DOT[projectState(p).tone]}`} />
-        <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-ink" title={p.title}>{p.title}</span>
+        <span className="min-w-0 flex-1 truncate text-ui font-semibold text-ink" title={p.title}>{p.title}</span>
       </DropList>
     </div>);
 }
@@ -179,14 +179,14 @@ function Lines() {
   const { busy, task } = useLines();
   if (!busy.length) return null;
   return (
-    <Bento label={tr("Dây chuyền đang chạy")} code="PIPE.01" className="mb-4" end={<span className="mono text-[11px] text-faint">{busy.length}</span>}>
+    <Bento label={tr("Dây chuyền đang chạy")} code="PIPE.01" className="mb-4" end={<span className="mono text-mini text-faint">{busy.length}</span>}>
       <ul className="grid gap-1.5">
         {busy.map((p) => { const t = task(p.project_id); return (
           <li key={p.project_id} className="flex min-w-0 items-center gap-3">
-            <button type="button" onClick={() => goTo(`/du-an/${p.project_id}`)} className="w-48 shrink-0 truncate text-left text-[12.5px] font-medium hover:text-accent" title={p.title}>{p.title}</button>
+            <button type="button" onClick={() => goTo(`/du-an/${p.project_id}`)} className="w-48 shrink-0 truncate text-left text-meta font-medium hover:text-accent" title={p.title}>{p.title}</button>
             <div className="min-w-0 shrink-0"><Pipeline project={p} compact from="board" /></div>
-            {t && <span className="hidden min-w-0 flex-1 truncate text-[12px] text-mute xl:block" title={t.log[t.log.length - 1]?.text}>
-              <span className="mono mr-1.5 text-[10.5px] text-faint">{t.log[t.log.length - 1]?.role}</span>{t.log[t.log.length - 1]?.text}</span>}
+            {t && <span className="hidden min-w-0 flex-1 truncate text-mini text-mute xl:block" title={t.log[t.log.length - 1]?.text}>
+              <span className="mono mr-1.5 text-mini text-faint">{t.log[t.log.length - 1]?.role}</span>{t.log[t.log.length - 1]?.text}</span>}
           </li>); })}
       </ul>
     </Bento>);
@@ -207,7 +207,7 @@ function OverviewTab({ ov, go, show }: { ov: Overview | null; go: (k: TabKey) =>
   const budget = r.budget_day ? r.spent_today / r.budget_day : null;
   return (
     <div className="grid gap-4">
-      {ov.kill_switch && <p className="bento border-tally/40 px-4 py-3 text-[13.5px] text-tally"><Icon name="power" size={15} className="mr-2 inline" />{tr("Dừng khẩn cấp đang bật: không bước nào được bắt đầu.")}</p>}
+      {ov.kill_switch && <p className="bento border-tally/40 px-4 py-3 text-ui text-tally"><Icon name="power" size={15} className="mr-2 inline" />{tr("Dừng khẩn cấp đang bật: không bước nào được bắt đầu.")}</p>}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
         <Kpi code="MSN.ACT" label={tr("Nhiệm vụ đang chạy")} value={ov.kpis.active} sub={tv`${ov.kpis.missions} nhiệm vụ tất cả`} tone="ai" onClick={() => go("missions")} />
         <Kpi code="APR.Q" label={tr("Chờ bạn duyệt")} value={ov.kpis.awaiting} sub={tr("Im lặng không phải đồng ý")} tone={ov.kpis.awaiting ? "cue" : "mute"} onClick={() => go("approvals")} />
@@ -217,29 +217,29 @@ function OverviewTab({ ov, go, show }: { ov: Overview | null; go: (k: TabKey) =>
       </div>
       <div className="grid gap-4 xl:grid-cols-12">
         <Bento label={tr("Giao nhiệm vụ")} code="CMP.01" className="xl:col-span-7"><Composer onPlanned={(m) => show(m.mission_id)} autonomy={ov.autonomy} /></Bento>
-        <Bento label={tr("Chờ bạn duyệt")} code="APR.02" className="xl:col-span-5" end={<button type="button" className="link text-[12.5px]" onClick={() => go("approvals")}>{tr("Xem hết")}</button>}>
+        <Bento label={tr("Chờ bạn duyệt")} code="APR.02" className="xl:col-span-5" end={<button type="button" className="link text-meta" onClick={() => go("approvals")}>{tr("Xem hết")}</button>}>
           {ov.approvals.length ? <ul className="grid gap-2">{ov.approvals.slice(0, 4).map((a) => (
             <li key={a.key}><button type="button" onClick={() => (a.kind === "mission" ? show(a.id) : a.link ? goTo(a.link) : go("approvals"))} className="tile flex w-full items-start gap-3 px-3 py-2.5 text-left">
-              <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-cue" /><span className="min-w-0 flex-1"><span className="block truncate text-[13.5px]">{a.title}</span>
-              <span className="block truncate text-[12px] text-faint">{a.asked_by} · {a.why}</span></span></button></li>))}</ul>
-            : <p className="text-[13px] text-mute">{tr("Không có gì đang chờ bạn.")}</p>}
+              <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-cue" /><span className="min-w-0 flex-1"><span className="block truncate text-ui">{a.title}</span>
+              <span className="block truncate text-mini text-faint">{a.asked_by} · {a.why}</span></span></button></li>))}</ul>
+            : <p className="text-ui text-mute">{tr("Không có gì đang chờ bạn.")}</p>}
         </Bento>
-        <Bento label={tr("Tài nguyên máy")} code="RES.03" className="xl:col-span-5" end={<button type="button" className="link text-[12.5px]" onClick={() => go("resources")}>{tr("Chi tiết")}</button>}>
+        <Bento label={tr("Tài nguyên máy")} code="RES.03" className="xl:col-span-5" end={<button type="button" className="link text-meta" onClick={() => go("resources")}>{tr("Chi tiết")}</button>}>
           <MachineMeters r={r} />
         </Bento>
-        <Bento label={tr("Nhiệm vụ đang chạy")} code="MSN.04" className="xl:col-span-7" end={<button type="button" className="link text-[12.5px]" onClick={() => go("missions")}>{tr("Hàng đợi")}</button>}>
+        <Bento label={tr("Nhiệm vụ đang chạy")} code="MSN.04" className="xl:col-span-7" end={<button type="button" className="link text-meta" onClick={() => go("missions")}>{tr("Hàng đợi")}</button>}>
           {ov.active.length ? <ul className="grid gap-2">{ov.active.map((m) => <MissionRow key={m.mission_id} m={m} onOpen={() => show(m.mission_id)} />)}</ul>
-            : <p className="text-[13px] text-mute">{tr("Chưa có nhiệm vụ nào đang chạy. Giao một nhiệm vụ ở trên.")}</p>}
+            : <p className="text-ui text-mute">{tr("Chưa có nhiệm vụ nào đang chạy. Giao một nhiệm vụ ở trên.")}</p>}
         </Bento>
-        <Bento label={tr("Agent Fleet")} code="FLT.05" className="xl:col-span-5" end={<button type="button" className="link text-[12.5px]" onClick={() => go("agents")}>{tr("Tất cả")}</button>}>
+        <Bento label={tr("Agent Fleet")} code="FLT.05" className="xl:col-span-5" end={<button type="button" className="link text-meta" onClick={() => go("agents")}>{tr("Tất cả")}</button>}>
           <ul className="grid grid-cols-2 gap-2">{[...ov.fleet.agents, ...ov.fleet.workers].map((u) => (
-            <li key={u.key} className="tile flex items-center gap-2.5 px-3 py-2" title={u.detail}><Lamp state={u.state} /><span className="min-w-0 flex-1 truncate text-[13px]">{u.name}</span>
-              <span className="text-[11.5px] text-faint">{UNIT[u.state]?.[0]}</span></li>))}</ul>
+            <li key={u.key} className="tile flex items-center gap-2.5 px-3 py-2" title={u.detail}><Lamp state={u.state} /><span className="min-w-0 flex-1 truncate text-ui">{u.name}</span>
+              <span className="text-mini text-faint">{UNIT[u.state]?.[0]}</span></li>))}</ul>
         </Bento>
         {ov.alerts.length > 0 && <Bento label={tr("Cảnh báo")} code="ALR.06" className="xl:col-span-12">
           <ul className="grid gap-2 md:grid-cols-2">{ov.alerts.map((a, i) => (
-            <li key={i} className="tile flex items-center gap-2.5 px-3 py-2 text-[13px]"><Icon name="alert" size={15} className="text-tally" /><span className="min-w-0 flex-1 truncate">{a.text}</span>
-              {a.link && <button type="button" className="link text-[12.5px]" onClick={() => goTo(a.link!)}>{tr("Mở")}</button>}</li>))}</ul>
+            <li key={i} className="tile flex items-center gap-2.5 px-3 py-2 text-ui"><Icon name="alert" size={15} className="text-tally" /><span className="min-w-0 flex-1 truncate">{a.text}</span>
+              {a.link && <button type="button" className="link text-meta" onClick={() => goTo(a.link!)}>{tr("Mở")}</button>}</li>))}</ul>
         </Bento>}
       </div>
       <p className="hud-label text-center" aria-hidden="true">NEXORA · MISSION CONTROL · AUTONOMY L{ov.autonomy} · {new Date().toLocaleTimeString(locale)}</p>
@@ -265,9 +265,9 @@ function MachineMeters({ r }: { r: Resources }) {
   return (
     <div className="grid gap-3">
       {rows.map(([label, share, text, tone]) => (
-        <div key={label}><div className="mb-1 flex items-baseline justify-between gap-2 text-[12.5px]"><span className="text-mute">{label}</span><span className="mono text-faint">{text}</span></div>
+        <div key={label}><div className="mb-1 flex items-baseline justify-between gap-2 text-meta"><span className="text-mute">{label}</span><span className="mono text-faint">{text}</span></div>
           <Meter share={share ?? 0} tone={tone} /></div>))}
-      <p className="mono text-[12px] text-faint">{tv`${r.running} bước đang chạy`}{r.hold_heavy ? ` · ${tr("bộ nhớ gần đầy: việc nặng chạy lần lượt")}` : ""}</p>
+      <p className="mono text-mini text-faint">{tv`${r.running} bước đang chạy`}{r.hold_heavy ? ` · ${tr("bộ nhớ gần đầy: việc nặng chạy lần lượt")}` : ""}</p>
     </div>
   );
 }
@@ -291,27 +291,27 @@ function Composer({ onPlanned, autonomy }: { onPlanned: (m: Mission) => void; au
   };
   return (
     <div className="flex h-full flex-col gap-3">
-      <p className="text-[13px] text-mute">{tr("Nói việc cần làm bằng lời. Mô hình chỉ lập kế hoạch từ những gì NEXORA làm được; máy kiểm tra năng lực, ngân sách và quyền. Không có gì chạy trước khi bạn xác nhận.")}</p>
+      <p className="text-ui text-mute">{tr("Nói việc cần làm bằng lời. Mô hình chỉ lập kế hoạch từ những gì NEXORA làm được; máy kiểm tra năng lực, ngân sách và quyền. Không có gì chạy trước khi bạn xác nhận.")}</p>
       <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label={tr("Loại việc")}>
         {WORK.map(([key, label, icon]) => (
           <button key={key} type="button" role="radio" aria-checked={kind === key} onClick={() => setKind(key)}
-                  className={`tile flex items-center gap-1.5 px-2.5 py-1.5 text-[12px] ${kind === key ? "border-accent/60 bg-accent/10 text-ink" : "text-faint"}`}>
+                  className={`tile flex items-center gap-1.5 px-2.5 py-1.5 text-mini ${kind === key ? "border-accent/60 bg-accent/10 text-ink" : "text-faint"}`}>
             <Icon name={icon} size={13} className={kind === key ? "text-accent" : ""} />{label}</button>))}
       </div>
       {kind === "topic" && (
-        <div className="flex flex-wrap items-center gap-2 text-[12.5px]">
+        <div className="flex flex-wrap items-center gap-2 text-meta">
           <label className="flex items-center gap-1.5 text-mute">{tr("Thể loại")}<select value={form} onChange={(e) => setForm(e.target.value)} className="h-8 pl-2.5">
             {(forms.length ? forms : [{ key: "reportage", name: tr("Phóng sự") }]).map((f) => <option key={f.key} value={f.key}>{f.name}</option>)}</select></label>
           <label className="flex items-center gap-1.5 text-mute">{tr("Dài khoảng")}<select value={minutes} onChange={(e) => setMinutes(Number(e.target.value))} className="mono h-8 pl-2">
             {MINUTES.map((m) => <option key={m} value={m}>{m}</option>)}</select>{tr("phút")}</label>
         </div>)}
-      <textarea value={text} onChange={(e) => setText(e.target.value)} rows={4} aria-label={tr("Nhiệm vụ")} className="min-h-[112px] w-full resize-y p-3 text-[14px]"
+      <textarea value={text} onChange={(e) => setText(e.target.value)} rows={4} aria-label={tr("Nhiệm vụ")} className="min-h-[112px] w-full resize-y p-3 text-body"
                 onKeyDown={(e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) plan(); }}
                 placeholder={kind === "topic" ? tr("Ví dụ: video về cuộc khủng hoảng rừng bạch đàn của Israel, khung ngang, không dùng dịch vụ trả tiền")
                   : tr("Ví dụ: làm 2 video dọc về buổi sáng ở chợ quê từ footage chưa dùng, không dùng dịch vụ trả tiền, dừng ở bước duyệt clip")} />
       <div className="flex flex-wrap items-center gap-3">
         <Button kind="primary" busy={busy} disabled={!text.trim()} onClick={plan}>{busy ? <Spinner /> : <Icon name="sparkles" size={15} />}{busy ? tr("Đang lập kế hoạch…") : tr("Lập kế hoạch")}</Button>
-        <span className="mono text-[12px] text-faint">⌘↵ · {tv`mức tự chủ ${autonomy}`}</span>
+        <span className="mono text-mini text-faint">⌘↵ · {tv`mức tự chủ ${autonomy}`}</span>
       </div>
     </div>
   );
@@ -329,7 +329,7 @@ function PlanEditor({ m, kinds, forms, channels, templates, done }: { m: Mission
   const video = makesVideos(plan.kind);
   return (
     <div className="grid gap-4">
-      {m.problems.length > 0 && <ul className="grid gap-1.5 rounded-xl border border-tally/30 bg-tally/[0.06] px-4 py-3 text-[13px] text-tally">{m.problems.map((p) => <li key={p} className="flex gap-2"><Icon name="alert" size={14} className="mt-0.5 shrink-0" />{p}</li>)}</ul>}
+      {m.problems.length > 0 && <ul className="grid gap-1.5 rounded-xl border border-tally/30 bg-tally/[0.06] px-4 py-3 text-ui text-tally">{m.problems.map((p) => <li key={p} className="flex gap-2"><Icon name="alert" size={14} className="mt-0.5 shrink-0" />{p}</li>)}</ul>}
       <div className="grid gap-4 md:grid-cols-2">
         <label className="md:col-span-2"><span className="field-label">{tr("Mục tiêu")}</span><input value={plan.goal} onChange={(e) => set("goal", e.target.value)} className="w-full px-3" /></label>
         {video && <label className="md:col-span-2"><span className="field-label">{tr("Tên video")}</span><input value={plan.title ?? ""} onChange={(e) => set("title", e.target.value)} maxLength={60} className="w-full px-3" /></label>}
@@ -343,20 +343,20 @@ function PlanEditor({ m, kinds, forms, channels, templates, done }: { m: Mission
         {video && <label><span className="field-label">{tr("Kênh")}</span><select value={plan.channel ?? ""} onChange={(e) => set("channel", e.target.value || null)} className="w-full pl-3"><option value="">{tr("Không chọn")}</option>{channels.map((c) => <option key={c}>{c}</option>)}</select></label>}
         {video && <label><span className="field-label">{tr("Mẫu video")}</span><select value={plan.template ?? ""} onChange={(e) => set("template", e.target.value || null)} className="w-full pl-3"><option value="">{tr("Không chọn")}</option>{templates.map((c) => <option key={c}>{c}</option>)}</select></label>}
         <label><span className="field-label">{tr("Ngân sách tối đa (USD)")}</span><input type="number" min={0} step={0.1} value={plan.budget ?? ""} onChange={(e) => set("budget", e.target.value === "" ? null : Number(e.target.value))} placeholder={tr("không giới hạn riêng")} className="mono w-full px-3" /></label>
-        <div className="grid content-start gap-2 text-[13px]"><span className="field-label">{tr("Quyền")}</span>
+        <div className="grid content-start gap-2 text-ui"><span className="field-label">{tr("Quyền")}</span>
           <label className="flex items-center gap-2"><input type="checkbox" checked={plan.paid} onChange={(e) => set("paid", e.target.checked)} />{tr("Được dùng dịch vụ trả tiền")}</label>
           {video && <label className="flex items-center gap-2"><input type="checkbox" checked={plan.stock} onChange={(e) => set("stock", e.target.checked)} />{tr("Lấy video stock miễn phí cho câu thiếu hình")}</label>}
           {video && <label className="flex items-center gap-2"><input type="checkbox" checked={plan.critique} onChange={(e) => set("critique", e.target.checked)} />{tr("Tự phản biện kịch bản")}</label>}
           <span className="flex items-center gap-2 text-faint"><Icon name="shield" size={14} />{tr("Xuất bản không bao giờ nằm trong nhiệm vụ: chỉ bạn bấm.")}</span>
         </div>
-        <label><span className="field-label">{tr("Ràng buộc (mỗi dòng một ý)")}</span><textarea rows={3} value={lines(plan.constraints)} onChange={(e) => set("constraints", split(e.target.value))} className="w-full p-2.5 text-[13px]" /></label>
-        <label><span className="field-label">{tr("Điều kiện nghiệm thu (mỗi dòng một ý)")}</span><textarea rows={3} value={lines(plan.acceptance)} onChange={(e) => set("acceptance", split(e.target.value))} className="w-full p-2.5 text-[13px]" /></label>
+        <label><span className="field-label">{tr("Ràng buộc (mỗi dòng một ý)")}</span><textarea rows={3} value={lines(plan.constraints)} onChange={(e) => set("constraints", split(e.target.value))} className="w-full p-2.5 text-ui" /></label>
+        <label><span className="field-label">{tr("Điều kiện nghiệm thu (mỗi dòng một ý)")}</span><textarea rows={3} value={lines(plan.acceptance)} onChange={(e) => set("acceptance", split(e.target.value))} className="w-full p-2.5 text-ui" /></label>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <Button kind="primary" busy={busy === "confirm"} disabled={!!busy || (!dirty && m.status !== "planned")} onClick={confirm}><Icon name="check" size={15} />{tr("Xác nhận và chạy")}</Button>
         <Button busy={busy === "save"} disabled={!dirty || !!busy} onClick={save}>{tr("Lưu và kiểm tra lại")}</Button>
         <Button kind="quiet" disabled={!!busy} onClick={() => run("cancel", () => post(`/api/v1/missions/${m.mission_id}/cancel`))}>{tr("Bỏ nhiệm vụ")}</Button>
-        <span className="mono ml-auto text-[12px] text-faint">{tv`mức tự chủ ${plan.autonomy}: cổng duyệt theo mức này`}</span>
+        <span className="mono ml-auto text-mini text-faint">{tv`mức tự chủ ${plan.autonomy}: cổng duyệt theo mức này`}</span>
       </div>
     </div>
   );
@@ -367,9 +367,9 @@ function MissionRow({ m, onOpen }: { m: Mission; onOpen: () => void }) {
   const done = m.children.filter((c) => c.state === "done").length;
   return (
     <li><button type="button" onClick={onOpen} className="tile flex w-full flex-wrap items-center gap-x-3 gap-y-1.5 px-3 py-2.5 text-left">
-      <span className="min-w-0 flex-1"><span className="block truncate text-[13.5px]">{m.text}</span>
-        <span className="block truncate text-[12px] text-faint">{m.production && <span className="text-mute">{m.production.title} · </span>}{m.kind_name ?? tr("Chưa rõ loại việc")} · {clock(m.created_at)}{m.children.length ? ` · ${tv`${done}/${m.children.length} xong`}` : ""}</span></span>
-      {m.spent > 0 && <span className="mono text-[12px] text-faint">{usd(m.spent)}</span>}
+      <span className="min-w-0 flex-1"><span className="block truncate text-ui">{m.text}</span>
+        <span className="block truncate text-mini text-faint">{m.production && <span className="text-mute">{m.production.title} · </span>}{m.kind_name ?? tr("Chưa rõ loại việc")} · {clock(m.created_at)}{m.children.length ? ` · ${tv`${done}/${m.children.length} xong`}` : ""}</span></span>
+      {m.spent > 0 && <span className="mono text-mini text-faint">{usd(m.spent)}</span>}
       <State map={STATUS} value={m.status} />
     </button></li>
   );
@@ -387,19 +387,19 @@ function MissionsTab({ show }: { show: (id: string) => void }) {
       <Bento label={tr("Giao nhiệm vụ")} code="CMP.01" className="xl:col-span-4"><Composer onPlanned={(m) => show(m.mission_id)} autonomy={all[0]?.plan.autonomy ?? 0} /></Bento>
       <Bento label={tr("Hàng đợi nhiệm vụ")} code="MSN.Q" className="xl:col-span-8"
              end={<div className="flex flex-wrap items-center gap-2">
-               {!!data?.productions.length && <select value={production} onChange={(e) => setProduction(e.target.value)} aria-label={tr("Theo dự án")} className="h-8 max-w-[200px] pl-2.5 text-[12.5px]">
+               {!!data?.productions.length && <select value={production} onChange={(e) => setProduction(e.target.value)} aria-label={tr("Theo dự án")} className="h-8 max-w-[200px] pl-2.5 text-meta">
                  <option value="">{tr("Mọi dự án")}</option>{data.productions.map((d) => <option key={d.production_id} value={d.production_id}>{d.title}</option>)}</select>}
                <Seg items={[["", tr("Tất cả")], ["active", tr("Đang chạy")], ["plan", tr("Kế hoạch")], ["done", tr("Đã xong")]] as const} value={filter} onChange={setFilter} label={tr("Lọc")} /></div>}>
         {!data ? <Spinner /> : shown.length ? <ul className="grid gap-2">{shown.map((m) => <MissionRow key={m.mission_id} m={m} onOpen={() => show(m.mission_id)} />)}</ul>
-          : <p className="text-[13px] text-mute">{tr("Chưa có nhiệm vụ nào ở đây.")}</p>}
+          : <p className="text-ui text-mute">{tr("Chưa có nhiệm vụ nào ở đây.")}</p>}
       </Bento>
       <Bento label={tr("Việc của hệ thống")} code="SYS.Q" className="xl:col-span-12">
-        <p className="mb-3 text-[12.5px] text-faint">{tr("Việc hệ thống tự chạy hoặc bạn bắt đầu ở màn hình khác (nhập footage, mô tả, làm nét…), không thuộc nhiệm vụ nào.")}</p>
+        <p className="mb-3 text-meta text-faint">{tr("Việc hệ thống tự chạy hoặc bạn bắt đầu ở màn hình khác (nhập footage, mô tả, làm nét…), không thuộc nhiệm vụ nào.")}</p>
         {data && data.system.length ? <ul className="grid gap-2 md:grid-cols-2 2xl:grid-cols-3">{data.system.map((r) => (
           <li key={r.run_id}><button type="button" onClick={() => goTo(r.project_id ? `/du-an/${r.project_id}` : "/tien-trinh")} className="tile flex w-full items-center gap-3 px-3 py-2 text-left">
-            <span className="min-w-0 flex-1"><span className="block truncate text-[13px]">{r.name}{r.title ? ` · ${r.title}` : ""}</span><span className="mono block text-[11.5px] text-faint">{clock(r.created_at)}</span></span>
+            <span className="min-w-0 flex-1"><span className="block truncate text-ui">{r.name}{r.title ? ` · ${r.title}` : ""}</span><span className="mono block text-mini text-faint">{clock(r.created_at)}</span></span>
             <Tag tone={r.status === "failed" ? "tally" : r.status === "running" ? "ai" : r.status === "queued" ? "accent" : "cue"}>{CHILD_STATE[{ waiting_review: "waiting" }[r.status] ?? r.status] ?? r.status}</Tag></button></li>))}</ul>
-          : <p className="text-[13px] text-mute">{tr("Không có việc nào của hệ thống đang chạy hay chờ.")}</p>}
+          : <p className="text-ui text-mute">{tr("Không có việc nào của hệ thống đang chạy hay chờ.")}</p>}
       </Bento>
     </div>
   );
@@ -420,7 +420,7 @@ function Monitor({ id, back }: { id: string; back: () => void }) {
     <div className="grid gap-4">
       <div className="flex flex-wrap items-center gap-3">
         <Button kind="quiet" size="sm" onClick={back}><Icon name="back" size={14} />{tr("Hàng đợi")}</Button>
-        <h2 className="display min-w-0 flex-1 truncate text-[18px]">{m.text}</h2>
+        <h2 className="display min-w-0 flex-1 truncate text-num">{m.text}</h2>
         <State map={STATUS} value={m.status} />
         {running && <Button size="sm" busy={busy === "pause"} onClick={() => act("pause", tr("Đã tạm dừng."))}><Icon name="pause" size={14} />{tr("Tạm dừng")}</Button>}
         {m.status === "paused" && <Button size="sm" kind="primary" busy={busy === "resume"} onClick={() => act("resume", tr("Tiếp tục chạy."))}><Icon name="play" size={14} />{tr("Tiếp tục")}</Button>}
@@ -431,7 +431,7 @@ function Monitor({ id, back }: { id: string; back: () => void }) {
         <div className="grid gap-4 xl:grid-cols-12">
           <Bento label={tr("Kế hoạch đã xác nhận")} code="PLN.LOCK" className="xl:col-span-4"><PlanFacts m={m} forms={list?.forms} /></Bento>
           <Bento label={tr("Theo dõi trực tiếp")} code="LIVE.MON" className="xl:col-span-8">
-            {m.tasks.length === 0 && m.runs.length === 0 && <p className="text-[13px] text-mute">{tr("Nhiệm vụ này không tạo việc nào.")}</p>}
+            {m.tasks.length === 0 && m.runs.length === 0 && <p className="text-ui text-mute">{tr("Nhiệm vụ này không tạo việc nào.")}</p>}
             <div className="grid gap-3">
               {m.tasks.map((t) => <TaskCard key={t.task_id} t={t} child={m.children.find((c) => c.id === t.task_id)} title={m.projects.find((p) => p.project_id === t.project_id)?.title ?? ""} />)}
               {m.runs.map((r) => <RunCard key={r.run_id} r={r} />)}
@@ -440,8 +440,8 @@ function Monitor({ id, back }: { id: string; back: () => void }) {
         </div>)}
       <Bento label={tr("Dòng sự kiện")} code="EVT.LOG">
         <ol className="grid gap-1.5 border-l border-line pl-4">{[...m.events].reverse().map((e, i) => (
-          <li key={i} className="relative text-[13px]"><span className="absolute -left-[21px] top-1.5 h-2 w-2 rounded-full bg-accent" />
-            <span className="mono mr-2 text-[12px] text-faint">{clock(e.at)}</span><span className="text-mute">{EVENT[e.kind] ?? e.kind}</span>{e.text && <span className="text-faint"> · {e.text}</span>}</li>))}</ol>
+          <li key={i} className="relative text-ui"><span className="absolute -left-[21px] top-1.5 h-2 w-2 rounded-full bg-accent" />
+            <span className="mono mr-2 text-mini text-faint">{clock(e.at)}</span><span className="text-mute">{EVENT[e.kind] ?? e.kind}</span>{e.text && <span className="text-faint"> · {e.text}</span>}</li>))}</ol>
       </Bento>
     </div>
   );
@@ -458,7 +458,7 @@ function PlanFacts({ m, forms: list }: { m: Mission; forms?: { key: string; name
     : tv`${p.count} video · ${FORMATS.find((f) => f[0] === p.format)?.[1] ?? p.format} · ${p.lines} câu`], [tr("Kênh / mẫu"), [p.channel, p.template].filter(Boolean).join(" · ") || "–"]);
   rows.push([tr("Ngân sách"), p.budget != null ? usd(p.budget) : tr("theo hạn mức chung")], [tr("Dịch vụ trả tiền"), p.paid ? tr("được dùng") : tr("không")], [tr("Đã tiêu"), usd(m.spent)]);
   return (
-    <div className="grid gap-3 text-[13px]">
+    <div className="grid gap-3 text-ui">
       <dl className="grid gap-1.5">{rows.map(([k, v]) => <div key={k} className="flex gap-3"><dt className="w-28 shrink-0 text-faint">{k}</dt><dd className="min-w-0">{v}</dd></div>)}</dl>
       {p.constraints.length > 0 && <div><p className="field-label">{tr("Ràng buộc")}</p><ul className="list-inside list-disc text-mute">{p.constraints.map((c) => <li key={c}>{c}</li>)}</ul></div>}
       {p.acceptance.length > 0 && <div><p className="field-label">{tr("Nghiệm thu")}</p><ul className="grid gap-1 text-mute">{p.acceptance.map((c) => <li key={c} className="flex gap-2"><Icon name="check" size={14} className="mt-0.5 text-proof" />{c}</li>)}</ul></div>}
@@ -470,9 +470,9 @@ function TaskCard({ t, child, title }: { t: Task; child?: Child; title: string }
   return (
     <div className="tile p-3.5">
       <div className="mb-2 flex flex-wrap items-center gap-2"><Icon name="sparkles" size={15} className="text-ai" /><span className="min-w-0 flex-1 truncate font-medium">{title || t.goal}</span>
-        <span className="mono text-[11.5px] text-faint">{tv`bước ${t.step}`}</span><Tag tone={child?.state === "waiting" ? "cue" : child?.state === "failed" ? "tally" : child?.state === "done" ? "proof" : "ai"}>{CHILD_STATE[child?.state ?? ""] ?? t.status}</Tag>
-        <button type="button" className="link text-[12.5px]" onClick={() => goTo(`/du-an/${t.project_id}`)}>{tr("Mở dự án")}</button></div>
-      <ol className="grid max-h-44 gap-1 overflow-y-auto text-[12.5px]">{t.log.slice(-8).map((l, i) => <li key={i}><span className="mono mr-2 text-faint">{clock(l.at)}</span><span className="text-accent">{l.role}</span> <span className="text-mute">{l.text}</span></li>)}</ol>
+        <span className="mono text-mini text-faint">{tv`bước ${t.step}`}</span><Tag tone={child?.state === "waiting" ? "cue" : child?.state === "failed" ? "tally" : child?.state === "done" ? "proof" : "ai"}>{CHILD_STATE[child?.state ?? ""] ?? t.status}</Tag>
+        <button type="button" className="link text-meta" onClick={() => goTo(`/du-an/${t.project_id}`)}>{tr("Mở dự án")}</button></div>
+      <ol className="grid max-h-44 gap-1 overflow-y-auto text-meta">{t.log.slice(-8).map((l, i) => <li key={i}><span className="mono mr-2 text-faint">{clock(l.at)}</span><span className="text-accent">{l.role}</span> <span className="text-mute">{l.text}</span></li>)}</ol>
     </div>
   );
 }
@@ -484,11 +484,11 @@ function RunCard({ r }: { r: RunDetail }) {
     <div className="tile p-3.5">
       <button type="button" onClick={() => setOpen(!open)} className="flex w-full flex-wrap items-center gap-2 text-left" aria-expanded={open}>
         <Icon name={open ? "down" : "next"} size={14} className="text-faint" /><span className="min-w-0 flex-1 truncate font-medium">{r.name}</span>
-        <span className="mono text-[11.5px] text-faint">{tv`${done}/${r.stages.length} bước`} · {usd(r.cost)}</span>
+        <span className="mono text-mini text-faint">{tv`${done}/${r.stages.length} bước`} · {usd(r.cost)}</span>
         {r.stalled && <Tag tone="tally">{tr("không thấy nhịp")}</Tag>}<Tag tone={r.status === "failed" ? "tally" : r.status === "running" ? "ai" : r.status === "succeeded" ? "proof" : r.status === "queued" ? "accent" : "cue"}>{CHILD_STATE[{ waiting_review: "waiting", succeeded: "done" }[r.status] ?? r.status] ?? r.status}</Tag>
       </button>
       <div className="mt-2.5 flex gap-[3px]">{r.stages.map((s) => <span key={s.stage_id} title={`${stageName(s.stage_key, r.pipeline)}: ${s.status}`} className={`h-1.5 flex-1 rounded-full ${s.status === "succeeded" || s.status === "skipped" ? "bg-proof" : s.status === "running" ? "working" : s.status === "failed" ? "bg-tally" : s.status === "waiting_review" || s.status === "blocked" ? "bg-cue" : "bg-overlay"}`} />)}</div>
-      {open && <table className="mt-3 w-full text-[12.5px]"><thead><tr className="text-left text-faint"><th className="py-1">{tr("Bước")}</th><th>{tr("Trạng thái")}</th><th>{tr("Lần")}</th><th>{tr("Thời gian")}</th><th>{tr("Lỗi")}</th></tr></thead>
+      {open && <table className="mt-3 w-full text-meta"><thead><tr className="text-left text-faint"><th className="py-1">{tr("Bước")}</th><th>{tr("Trạng thái")}</th><th>{tr("Lần")}</th><th>{tr("Thời gian")}</th><th>{tr("Lỗi")}</th></tr></thead>
         <tbody>{r.stages.map((s) => { const last = s.attempts[s.attempts.length - 1]; return (
           <tr key={s.stage_id} className="border-t border-line align-top"><td className="py-1.5 pr-2">{stageName(s.stage_key, r.pipeline)}</td><td className="pr-2 text-mute">{s.status}{s.blocked_reason ? ` · ${s.blocked_reason}` : ""}</td>
             <td className="mono pr-2">{s.attempts.length}</td><td className="mono pr-2">{secs(last?.seconds ?? null)}</td><td className="max-w-[260px] truncate text-tally" title={last?.error_message ?? ""}>{last?.error_code ?? ""}</td></tr>); })}</tbody></table>}
@@ -514,21 +514,21 @@ function ApprovalsTab({ show }: { show: (id: string) => void }) {
   return (
     <div className="grid gap-4">
       <div className="flex flex-wrap items-center gap-3">
-        <p className="min-w-0 flex-1 text-[13px] text-mute">{tr("Mọi thứ đang chờ bạn ở một chỗ. Không có gì tự đi tiếp: im lặng không phải đồng ý. Việc cần xem kỹ (clip, công thức làm nét) thì mở ra để duyệt ở đúng màn hình của nó.")}</p>
+        <p className="min-w-0 flex-1 text-ui text-mute">{tr("Mọi thứ đang chờ bạn ở một chỗ. Không có gì tự đi tiếp: im lặng không phải đồng ý. Việc cần xem kỹ (clip, công thức làm nét) thì mở ra để duyệt ở đúng màn hình của nó.")}</p>
         {kinds.length > 1 && <Seg items={[["", tr("Tất cả")], ...kinds.map((k) => [k, KIND[k]?.[0] ?? k] as const)] as const} value={kind} onChange={setKind} label={tr("Lọc")} />}
       </div>
       {!data ? <Spinner /> : shown.length === 0 ? <Empty icon="check" title={tr("Không có gì đang chờ bạn.")} /> : (
         <ul className="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">{shown.map((a) => (
           <li key={a.key} className="bento flex flex-col gap-3 p-4">
             <div className="flex items-start gap-3"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-cue/12 text-cue"><Icon name={KIND[a.kind]?.[1] ?? "info"} size={16} /></span>
-              <div className="min-w-0 flex-1"><p className="font-medium">{a.title}</p><p className="text-[12px] text-faint">{KIND[a.kind]?.[0]} · {a.asked_by} · {clock(a.at)}</p></div></div>
-            <dl className="grid gap-1 text-[12.5px]">
+              <div className="min-w-0 flex-1"><p className="font-medium">{a.title}</p><p className="text-mini text-faint">{KIND[a.kind]?.[0]} · {a.asked_by} · {clock(a.at)}</p></div></div>
+            <dl className="grid gap-1 text-meta">
               <div className="flex gap-2"><dt className="w-20 shrink-0 text-faint">{tr("Lý do")}</dt><dd className="text-mute">{a.why}</dd></div>
               <div className="flex gap-2"><dt className="w-20 shrink-0 text-faint">{tr("Ảnh hưởng")}</dt><dd className="text-mute">{a.touches}</dd></div>
               {a.cost != null && <div className="flex gap-2"><dt className="w-20 shrink-0 text-faint">{tr("Chi phí")}</dt><dd className="mono">{usd(a.cost)}</dd></div>}
               <div className="flex gap-2"><dt className="w-20 shrink-0 text-faint">{tr("Tiếp theo")}</dt><dd className="text-mute">{a.next}</dd></div>
             </dl>
-            {a.actions.includes("changes") && <input value={note[a.key] ?? ""} onChange={(e) => setNote({ ...note, [a.key]: e.target.value })} placeholder={tr("Cần sửa gì (bắt buộc khi trả lại)")} aria-label={tr("Ghi chú")} className="h-8 px-2.5 text-[12.5px]" />}
+            {a.actions.includes("changes") && <input value={note[a.key] ?? ""} onChange={(e) => setNote({ ...note, [a.key]: e.target.value })} placeholder={tr("Cần sửa gì (bắt buộc khi trả lại)")} aria-label={tr("Ghi chú")} className="h-8 px-2.5 text-meta" />}
             <div className="mt-auto flex flex-wrap gap-2">
               {a.actions.map((d) => <Button key={d} size="sm" kind={d === "approve" || d === "confirm" ? "primary" : d === "reject" || d === "cancel" ? "quiet" : "plain"} busy={busy === a.key + d}
                                             disabled={d === "changes" && !(note[a.key] ?? "").trim()} onClick={() => decide(a, d)}>{NAME[d] ?? d}</Button>)}
@@ -549,15 +549,15 @@ function FleetTab() {
       <ul className="grid gap-2 md:grid-cols-2 2xl:grid-cols-3">{units.map((u) => (
         <li key={u.key} className="tile flex flex-col gap-1.5 p-3.5">
           <span className="flex items-center gap-2.5"><Lamp state={u.state} /><span className="min-w-0 flex-1 truncate font-medium">{u.name}</span><State map={UNIT} value={u.state} /></span>
-          {u.role && <span className="text-[12px] text-faint">{u.role}</span>}
-          <span className="text-[12.5px] text-mute">{u.detail}</span>
-          {u.fix && <span className="text-[12px] text-cue">{u.fix}</span>}
+          {u.role && <span className="text-mini text-faint">{u.role}</span>}
+          <span className="text-meta text-mute">{u.detail}</span>
+          {u.fix && <span className="text-mini text-cue">{u.fix}</span>}
         </li>))}</ul>
     </Bento>
   );
   return (
     <div className="grid gap-4">
-      <p className="text-[13px] text-mute">{tr("Trạng thái đọc từ kiểm tra thật: kết nối, mô hình đã tải, việc đang chạy, nhịp của máy làm. Ổn định, Đang làm, Suy giảm (chạy được nhưng thiếu một thứ cần), Mất kết nối (thiếu thứ bắt buộc), Tắt (dừng khẩn cấp, hoặc máy không cài thứ không bắt buộc).")}</p>
+      <p className="text-ui text-mute">{tr("Trạng thái đọc từ kiểm tra thật: kết nối, mô hình đã tải, việc đang chạy, nhịp của máy làm. Ổn định, Đang làm, Suy giảm (chạy được nhưng thiếu một thứ cần), Mất kết nối (thiếu thứ bắt buộc), Tắt (dừng khẩn cấp, hoặc máy không cài thứ không bắt buộc).")}</p>
       {group(tr("Các agent"), "FLT.AGT", data.agents)}
       {group(tr("Làn chạy"), "FLT.WRK", data.workers)}
       {group(tr("Máy móc phía sau"), "FLT.ENG", data.engines)}
@@ -576,19 +576,19 @@ function QualityTab() {
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {Object.entries(VERDICT).map(([k, [label, tone]]) => <Kpi key={k} code={`QC.${k.slice(0, 4).toUpperCase()}`} label={label} value={data.counts[k] ?? 0} tone={tone} onClick={() => setOnly(only === k ? "" : k)} />)}
       </div>
-      <Bento label={tr("Kết quả kiểm tra từng bản dựng")} code="QC.LIST" end={only && <button type="button" className="link text-[12.5px]" onClick={() => setOnly("")}>{tr("Bỏ lọc")}</button>}>
-        <p className="mb-3 text-[12.5px] text-faint">{tr("Quy từ kiểm tra đo được: FAIL khi một phép đo không đạt, PASS WITH WARNINGS khi đạt nhưng có điểm nên xem, MANUAL REVIEW khi không có gì đo được (bản dựng nhập từ ngoài). Bên cạnh là quyết định của bạn.")}</p>
-        {rows.length === 0 ? <p className="text-[13px] text-mute">{tr("Chưa có bản dựng nào.")}</p> : (
-          <div className="scroll-x"><table className="w-full min-w-[720px] text-[13px]">
-            <thead><tr className="text-left text-[12px] text-faint"><th className="py-2">{tr("Dự án")}</th><th>{tr("Kết quả")}</th><th>{tr("Thông số")}</th><th>{tr("Phát hiện")}</th><th>{tr("Bạn")}</th><th /></tr></thead>
+      <Bento label={tr("Kết quả kiểm tra từng bản dựng")} code="QC.LIST" end={only && <button type="button" className="link text-meta" onClick={() => setOnly("")}>{tr("Bỏ lọc")}</button>}>
+        <p className="mb-3 text-meta text-faint">{tr("Quy từ kiểm tra đo được: FAIL khi một phép đo không đạt, PASS WITH WARNINGS khi đạt nhưng có điểm nên xem, MANUAL REVIEW khi không có gì đo được (bản dựng nhập từ ngoài). Bên cạnh là quyết định của bạn.")}</p>
+        {rows.length === 0 ? <p className="text-ui text-mute">{tr("Chưa có bản dựng nào.")}</p> : (
+          <div className="scroll-x"><table className="w-full min-w-[720px] text-ui">
+            <thead><tr className="text-left text-mini text-faint"><th className="py-2">{tr("Dự án")}</th><th>{tr("Kết quả")}</th><th>{tr("Thông số")}</th><th>{tr("Phát hiện")}</th><th>{tr("Bạn")}</th><th /></tr></thead>
             <tbody>{rows.map((r) => (
               <tr key={r.render_id} className="border-t border-line align-top">
-                <td className="py-2 pr-3"><span className="block">{r.title}</span><span className="mono text-[11.5px] text-faint">{clock(r.created_at)}</span></td>
+                <td className="py-2 pr-3"><span className="block">{r.title}</span><span className="mono text-mini text-faint">{clock(r.created_at)}</span></td>
                 <td className="py-2 pr-3"><State map={VERDICT} value={r.verdict} /></td>
-                <td className="mono py-2 pr-3 text-[12px] text-mute">{r.width && r.height ? `${r.width}×${r.height}` : "–"} · {secs(r.duration)}</td>
-                <td className="max-w-[320px] py-2 pr-3 text-[12.5px] text-mute">{[...r.failed.map((f) => `✕ ${f}`), ...r.findings].slice(0, 4).join(" · ") || "–"}</td>
-                <td className="py-2 pr-3 text-[12.5px]">{REVIEW[r.review]}{r.comment ? <span className="block text-faint">{r.comment}</span> : null}</td>
-                <td className="py-2"><button type="button" className="link text-[12.5px]" onClick={() => goTo(`/du-an/${r.project_id}`)}>{tr("Mở")}</button></td>
+                <td className="mono py-2 pr-3 text-mini text-mute">{r.width && r.height ? `${r.width}×${r.height}` : "–"} · {secs(r.duration)}</td>
+                <td className="max-w-[320px] py-2 pr-3 text-meta text-mute">{[...r.failed.map((f) => `✕ ${f}`), ...r.findings].slice(0, 4).join(" · ") || "–"}</td>
+                <td className="py-2 pr-3 text-meta">{REVIEW[r.review]}{r.comment ? <span className="block text-faint">{r.comment}</span> : null}</td>
+                <td className="py-2"><button type="button" className="link text-meta" onClick={() => goTo(`/du-an/${r.project_id}`)}>{tr("Mở")}</button></td>
               </tr>))}</tbody></table></div>)}
       </Bento>
     </div>
@@ -606,13 +606,13 @@ function ArtifactsTab({ show }: { show: (id: string) => void }) {
   return (
     <div className="grid gap-4 xl:grid-cols-12">
       <Bento label={tr("Sản phẩm theo dự án")} code="ART.TREE" className={trace ? "xl:col-span-7" : "xl:col-span-12"}>
-        <p className="mb-3 text-[12.5px] text-faint">{tr("Footage gốc → kịch bản → bản dựng → gói xuất bản. Chỉ là đường dẫn tới file có sẵn; không chép media. Dự án của nhiệm vụ đứng trước.")}</p>
-        {data.projects.length === 0 ? <p className="text-[13px] text-mute">{tr("Chưa có dự án nào.")}</p> : (
+        <p className="mb-3 text-meta text-faint">{tr("Footage gốc → kịch bản → bản dựng → gói xuất bản. Chỉ là đường dẫn tới file có sẵn; không chép media. Dự án của nhiệm vụ đứng trước.")}</p>
+        {data.projects.length === 0 ? <p className="text-ui text-mute">{tr("Chưa có dự án nào.")}</p> : (
           <ul className="grid gap-2">{data.projects.map((p) => (
             <li key={p.project_id} className="tile flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2.5">
-              <span className="min-w-0 flex-1"><button type="button" className="block truncate text-left text-[13.5px] hover:text-accent" onClick={() => goTo(`/du-an/${p.project_id}`)}>{p.title}</button>
-                {p.mission_id && <button type="button" className="link text-[11.5px]" onClick={() => show(p.mission_id!)}>{tr("thuộc một nhiệm vụ")}</button>}</span>
-              <span className="flex flex-wrap items-center gap-1.5 text-[11.5px]">
+              <span className="min-w-0 flex-1"><button type="button" className="block truncate text-left text-ui hover:text-accent" onClick={() => goTo(`/du-an/${p.project_id}`)}>{p.title}</button>
+                {p.mission_id && <button type="button" className="link text-mini" onClick={() => show(p.mission_id!)}>{tr("thuộc một nhiệm vụ")}</button>}</span>
+              <span className="flex flex-wrap items-center gap-1.5 text-mini">
                 <span className="chip">{tv`${p.sources} footage`}</span><Icon name="next" size={12} className="text-faint" />
                 <span className="chip">{p.script_version ? tv`kịch bản v${p.script_version}` : tr("chưa có kịch bản")}</span><Icon name="next" size={12} className="text-faint" />
                 {p.renders.length ? p.renders.slice(0, 3).map((r) => (
@@ -622,8 +622,8 @@ function ArtifactsTab({ show }: { show: (id: string) => void }) {
               </span>
             </li>))}</ul>)}
       </Bento>
-      {trace && <Bento label={tr("Nguồn gốc bản dựng")} code="ART.LIN" className="xl:col-span-5" end={<button type="button" className="link text-[12.5px]" onClick={() => setTrace(null)}>{tr("Đóng")}</button>}>
-        {!lineage ? <Spinner /> : <ol className="grid gap-2 text-[12.5px]">
+      {trace && <Bento label={tr("Nguồn gốc bản dựng")} code="ART.LIN" className="xl:col-span-5" end={<button type="button" className="link text-meta" onClick={() => setTrace(null)}>{tr("Đóng")}</button>}>
+        {!lineage ? <Spinner /> : <ol className="grid gap-2 text-meta">
           <li className="text-faint">{tv`Kịch bản phiên bản ${lineage.script.version}`}</li>
           {lineage.shots.map((s) => (
             <li key={s.line} className="tile px-3 py-2"><span className="mono mr-2 text-accent">{s.line}</span>{s.text}
@@ -642,10 +642,10 @@ function ResourcesTab() {
   const lanes: [string, string][] = [["interactive", tr("Làn tương tác")], ["agent", tr("Làn của trợ lý")], ["claude_code", tr("Làn Claude Code")], ["background", tr("Làn chạy nền")]];
   return (
     <div className="grid gap-4 xl:grid-cols-12">
-      <Bento label={tr("Ngân sách")} code="BDG.01" className="xl:col-span-5" end={<button type="button" className="link text-[12.5px]" onClick={() => goTo("/chi-phi")}>{tr("Đặt hạn mức")}</button>}>
+      <Bento label={tr("Ngân sách")} code="BDG.01" className="xl:col-span-5" end={<button type="button" className="link text-meta" onClick={() => goTo("/chi-phi")}>{tr("Đặt hạn mức")}</button>}>
         <div className="grid gap-4">
           {([[tr("Hôm nay"), r.spent_today, r.budget_day], [tr("Tháng này"), r.spent_month, r.budget_month]] as const).map(([label, spent, cap]) => (
-            <div key={label}><div className="mb-1 flex items-baseline justify-between text-[13px]"><span className="text-mute">{label}</span><span className="mono">{usd(spent)} <span className="text-faint">/ {cap != null ? usd(cap) : "∞"}</span></span></div>
+            <div key={label}><div className="mb-1 flex items-baseline justify-between text-ui"><span className="text-mute">{label}</span><span className="mono">{usd(spent)} <span className="text-faint">/ {cap != null ? usd(cap) : "∞"}</span></span></div>
               <Meter share={cap ? spent / cap : 0} tone={cap && spent >= cap ? "cue" : "accent"} /></div>))}
           <div className="flex h-20 items-end gap-1" role="img" aria-label={tr("Chi phí 14 ngày")}>{r.by_day.map((d) => <span key={d.day} title={`${d.day}: ${usd(d.cost)}`} className="flex-1 rounded-t bg-gradient-to-t from-accent/40 to-ai/80" style={{ height: `${Math.max(3, (d.cost / max) * 100)}%` }} />)}</div>
         </div>
@@ -653,13 +653,13 @@ function ResourcesTab() {
       <Bento label={tr("Máy này")} code="RES.MAC" className="xl:col-span-7"><MachineMeters r={r} /></Bento>
       <Bento label={tr("Hàng đợi theo làn")} code="RES.LANE" className="xl:col-span-5">
         <ul className="grid gap-2">{lanes.map(([k, name]) => { const q = r.lanes[k] ?? {}; return (
-          <li key={k} className="tile grid grid-cols-4 gap-2 px-3 py-2.5 text-[12.5px]"><span className="col-span-4 font-medium">{name}</span>
-            {[[tr("chờ"), q.ready], [tr("đang chạy"), q.running], [tr("chờ thử lại"), q.retry_wait], [tr("tốn tiền"), q.costly_running]].map(([l, n]) => <span key={l as string}><span className="mono block text-[18px]">{n ?? 0}</span><span className="text-faint">{l}</span></span>)}</li>); })}</ul>
-        <p className="mt-3 text-[12px] text-faint">{tr("Máy có 24 GB: việc nặng (render 4K, làm nét) chạy lần lượt trên làn chạy nền.")}</p>
+          <li key={k} className="tile grid grid-cols-4 gap-2 px-3 py-2.5 text-meta"><span className="col-span-4 font-medium">{name}</span>
+            {[[tr("chờ"), q.ready], [tr("đang chạy"), q.running], [tr("chờ thử lại"), q.retry_wait], [tr("tốn tiền"), q.costly_running]].map(([l, n]) => <span key={l as string}><span className="mono block text-num">{n ?? 0}</span><span className="text-faint">{l}</span></span>)}</li>); })}</ul>
+        <p className="mt-3 text-mini text-faint">{tr("Máy có 24 GB: việc nặng (render 4K, làm nét) chạy lần lượt trên làn chạy nền.")}</p>
       </Bento>
       <Bento label={tr("Theo nhà cung cấp và mô hình (tháng này)")} code="BDG.PRV" className="xl:col-span-7">
-        {r.providers.length === 0 ? <p className="text-[13px] text-mute">{tr("Chưa có lần gọi nào tháng này.")}</p> : (
-          <div className="scroll-x"><table className="w-full min-w-[520px] text-[12.5px]"><thead><tr className="text-left text-faint"><th className="py-1.5">{tr("Công cụ")}</th><th>{tr("Việc")}</th><th>{tr("Chạy ở")}</th><th className="text-right">{tr("Lần gọi")}</th><th className="text-right">{tr("Lỗi")}</th><th className="text-right">{tr("Chi phí")}</th></tr></thead>
+        {r.providers.length === 0 ? <p className="text-ui text-mute">{tr("Chưa có lần gọi nào tháng này.")}</p> : (
+          <div className="scroll-x"><table className="w-full min-w-[520px] text-meta"><thead><tr className="text-left text-faint"><th className="py-1.5">{tr("Công cụ")}</th><th>{tr("Việc")}</th><th>{tr("Chạy ở")}</th><th className="text-right">{tr("Lần gọi")}</th><th className="text-right">{tr("Lỗi")}</th><th className="text-right">{tr("Chi phí")}</th></tr></thead>
             <tbody>{[...r.providers].sort((a, b) => b.cost - a.cost || b.calls - a.calls).slice(0, 14).map((p) => (
               <tr key={`${p.adapter}-${p.operation}`} className="border-t border-line"><td className="py-1.5">{p.adapter}</td><td className="text-mute">{p.operation}</td><td className="text-mute">{p.runs}</td>
                 <td className="mono text-right">{p.calls}</td><td className={`mono text-right ${p.failures ? "text-tally" : ""}`}>{p.failures}</td><td className="mono text-right">{usd(p.cost)}</td></tr>))}</tbody></table></div>)}
@@ -675,8 +675,8 @@ function LogsTab({ show }: { show: (id: string) => void }) {
   const KINDS = [["", tr("Tất cả")], ["mission", tr("Nhiệm vụ")], ["run", tr("Lượt chạy")], ["audit", tr("Thao tác")], ["notice", tr("Thông báo")]] as const;
   return (
     <Bento label={tr("Nhật ký và truy vết")} code="LOG.AUD" end={<Seg items={KINDS} value={kind} onChange={setKind} label={tr("Lọc")} />}>
-      <p className="mb-3 text-[12.5px] text-faint">{tr("Sự kiện của nhiệm vụ và lượt chạy, mọi thay đổi bạn làm qua giao diện, và thông báo. Khoá API không bao giờ được ghi.")}</p>
-      {!data ? <Spinner /> : <ol className="mono grid gap-0.5 text-[12px]">{data.entries.map((e, i) => (
+      <p className="mb-3 text-meta text-faint">{tr("Sự kiện của nhiệm vụ và lượt chạy, mọi thay đổi bạn làm qua giao diện, và thông báo. Khoá API không bao giờ được ghi.")}</p>
+      {!data ? <Spinner /> : <ol className="mono grid gap-0.5 text-mini">{data.entries.map((e, i) => (
         <li key={i} className="flex gap-3 rounded px-2 py-1 hover:bg-white/[0.03]">
           <span className="w-28 shrink-0 text-faint">{clock(e.at)}</span>
           <span className={`w-14 shrink-0 uppercase ${e.level === "error" ? "text-tally" : e.level === "warn" ? "text-cue" : "text-accent"}`}>{e.level}</span>

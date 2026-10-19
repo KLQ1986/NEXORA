@@ -152,10 +152,10 @@ export default function Pipeline({ project: p, place, onScreen, compact = false,
             <section className={`pipe-group ${gs} relative flex flex-1 flex-col rounded-lg border ${place === g.screen ? "border-accent/70" : "border-white/[0.18]"} bg-black/30 backdrop-blur-sm ${compact ? "px-1.5 py-1" : "px-2 pb-2 pt-2"}`}>
               {!compact && (
                 <header className="mb-1.5 flex items-center gap-2">
-                  <span className="mono text-[11px] text-faint">{`G${gi + 1}`}</span>
-                  <button type="button" onClick={() => open(g.screen)} className={`text-[13.5px] font-semibold uppercase tracking-[0.1em] ${TEXT[gs]} hover:underline`}>{g.label}</button>
-                  <span className={`text-[12px] ${TEXT[gs]}`}>{SAID[gs]}</span>
-                  <span className="ml-auto mono text-[11px] text-faint">{done}/{g.children.length}</span>
+                  <span className="mono text-mini text-faint">{`G${gi + 1}`}</span>
+                  <button type="button" onClick={() => open(g.screen)} className={`text-ui font-semibold uppercase tracking-[0.1em] ${TEXT[gs]} hover:underline`}>{g.label}</button>
+                  <span className={`text-mini ${TEXT[gs]}`}>{SAID[gs]}</span>
+                  <span className="ml-auto mono text-mini text-faint">{done}/{g.children.length}</span>
                   {gs === "done" && place !== g.screen && <button type="button" onClick={() => fold(g.key)} title={folded ? tr("Mở ra xem từng bước") : tr("Thu gọn")} aria-label={folded ? tr("Mở ra xem từng bước") : tr("Thu gọn")}
                                                                className="grid h-5 w-5 place-items-center rounded text-faint hover:bg-white/10 hover:text-ink"><Icon name={folded ? "next" : "back"} size={11} /></button>}
                 </header>)}
@@ -163,8 +163,8 @@ export default function Pipeline({ project: p, place, onScreen, compact = false,
               {folded ? (
                 <button type="button" onClick={() => fold(g.key)} title={g.children.map((c) => c.label).join(" · ")}
                         className="pipe-step ui mt-auto flex flex-col items-center gap-1.5 rounded-lg px-2 py-2 text-center">
-                  <span className="whitespace-nowrap text-[13px] font-semibold text-ink">{tv`${g.children.length} bước xong`}</span>
-                  <span className="pipe-node done relative grid h-16 w-16 shrink-0 place-items-center rounded-full border-2 border-proof/60 bg-proof/10 text-proof"><span className="grid justify-items-center gap-[3px]"><Icon name="check" size={17} /><span className="text-[10.5px] font-semibold leading-none">{SAID.done}</span></span></span>
+                  <span className="whitespace-nowrap text-ui font-semibold text-ink">{tv`${g.children.length} bước xong`}</span>
+                  <span className="pipe-node done relative grid h-16 w-16 shrink-0 place-items-center rounded-full border-2 border-proof/60 bg-proof/10 text-proof"><span className="grid justify-items-center gap-[3px]"><Icon name="check" size={17} /><span className="text-mini font-semibold leading-none">{SAID.done}</span></span></span>
                 </button>
               ) : (
               <div className={`flex ${compact ? "items-center" : "mt-auto items-end"}`}>
@@ -186,14 +186,14 @@ export default function Pipeline({ project: p, place, onScreen, compact = false,
                             // The state is said in the node itself, under the step's mark.
                             <span className="grid justify-items-center gap-[3px]">
                               <Icon name={s === "done" ? "check" : s === "fail" ? "alert" : c.icon} size={17} />
-                              <span className="whitespace-nowrap text-[10.5px] font-semibold leading-none tracking-tight">{SAID[s]}</span>
+                              <span className="whitespace-nowrap text-mini font-semibold leading-none tracking-tight">{SAID[s]}</span>
                             </span>)}
                           {(s === "now" || s === "wait") && <span className={`absolute rounded-full ${compact ? "-right-0.5 -top-0.5 h-2 w-2" : "-right-0.5 -top-0.5 h-3.5 w-3.5"} ${s === "now" ? "bg-accent" : "bg-cue"}`}><span className={`ping absolute inset-0 rounded-full ${s === "now" ? "bg-accent" : "bg-cue"}`} /></span>}
                         </span>
                         {!compact && (
                           <span className="grid justify-items-center gap-0.5 leading-tight">
-                            <span className="whitespace-nowrap text-[13px] font-semibold text-ink"><span className="mono mr-1 text-[10px] font-normal text-faint">{`N${String(i + 1).padStart(2, "0")}`}</span>{c.label}</span>
-                            {!quiet && <span className="whitespace-nowrap text-[12.5px] text-faint">{figure(c.key, p, task, !!data)}</span>}
+                            <span className="whitespace-nowrap text-ui font-semibold text-ink"><span className="mono mr-1 text-mini font-normal text-faint">{`N${String(i + 1).padStart(2, "0")}`}</span>{c.label}</span>
+                            {!quiet && <span className="whitespace-nowrap text-meta text-faint">{figure(c.key, p, task, !!data)}</span>}
                           </span>)}
                       </button>
                     </span>);
@@ -217,19 +217,19 @@ function Card({ i, x, y, p, task, state, keep, leave }: { i: number; x: number; 
   const left = Math.min(Math.max(12, x - 160), window.innerWidth - 332);
   return (
     <div role="tooltip" onMouseEnter={keep} onMouseLeave={leave} style={{ left, top: y }}
-         className="pop fixed z-50 w-80 rounded-xl border border-accent/30 bg-surface/95 p-3 text-[12.5px] shadow-[0_0_0_1px_rgba(70,200,224,.08),0_12px_40px_-8px_rgba(0,0,0,.7),0_0_32px_-12px_rgba(70,200,224,.5)] backdrop-blur">
+         className="pop fixed z-50 w-80 rounded-xl border border-accent/30 bg-surface/95 p-3 text-meta shadow-[0_0_0_1px_rgba(70,200,224,.08),0_12px_40px_-8px_rgba(0,0,0,.7),0_0_32px_-12px_rgba(70,200,224,.5)] backdrop-blur">
       <div className="mb-1.5 flex items-center gap-2">
         <span className={`grid h-6 w-6 place-items-center rounded-full border ${RING[state]}`}><Icon name={n.icon} size={12} /></span>
-        <span className="font-semibold">{n.label}</span><span className="mono text-[10px] text-faint">{`${n.group.label.toUpperCase()} · N${String(i + 1).padStart(2, "0")}`}</span>
-        <span className={`ml-auto text-[11.5px] font-medium ${TEXT[state]}`}>{SAID[state]}</span>
+        <span className="font-semibold">{n.label}</span><span className="mono text-mini text-faint">{`${n.group.label.toUpperCase()} · N${String(i + 1).padStart(2, "0")}`}</span>
+        <span className={`ml-auto text-mini font-medium ${TEXT[state]}`}>{SAID[state]}</span>
       </div>
       <p className="mb-2 text-mute">{n.about}</p>
       <p className="mb-2"><span className="text-faint">{tr("Số liệu: ")}</span>{figure(n.key, p, task)}</p>
       {last && <div className="mb-2 rounded-md border border-line bg-black/30 px-2 py-1.5">
-        <p className="mb-0.5 flex items-center gap-1.5 text-[11px] text-faint"><Icon name="sparkles" size={10} className="text-ai" />{last.role} · {ago(last.at)}{said.length > 1 ? tv` · ${said.length} lần` : ""}</p>
-        <p className="line-clamp-4 text-[12px] text-ink/90">{last.text}</p>
+        <p className="mb-0.5 flex items-center gap-1.5 text-mini text-faint"><Icon name="sparkles" size={10} className="text-ai" />{last.role} · {ago(last.at)}{said.length > 1 ? tv` · ${said.length} lần` : ""}</p>
+        <p className="line-clamp-4 text-mini text-ink/90">{last.text}</p>
       </div>}
-      {n.ui ? <p className="text-[11px] text-accent">{tv`Bấm để mở màn hình ${({ script: tr("Kịch bản"), storyboard: tr("Storyboard"), cut: tr("Dựng & duyệt"), publish: tr("Xuất bản") } as Record<Screen, string>)[n.group.screen]}`}</p>
-        : <p className="text-[11px] text-faint">{tr("Bước tự động: chạy trong nền, không có màn hình riêng.")}</p>}
+      {n.ui ? <p className="text-mini text-accent">{tv`Bấm để mở màn hình ${({ script: tr("Kịch bản"), storyboard: tr("Storyboard"), cut: tr("Dựng & duyệt"), publish: tr("Xuất bản") } as Record<Screen, string>)[n.group.screen]}`}</p>
+        : <p className="text-mini text-faint">{tr("Bước tự động: chạy trong nền, không có màn hình riêng.")}</p>}
     </div>);
 }

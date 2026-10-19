@@ -37,7 +37,7 @@ export function AssetDossier({ assetId, seek }: { assetId: string; seek?: (t: nu
   const v = data.verdict;
   return (
     <>
-    <details className="rounded-lg border border-line bg-raised/30 p-2.5 text-[12.5px]">
+    <details className="rounded-lg border border-line bg-raised/30 p-2.5 text-meta">
       <summary className="cursor-pointer list-none"><span className="eyebrow">{tr("Hồ sơ nguyên liệu")}</span>
         <span className="ml-2 text-faint">{tv`dùng được ${v.usable_seconds}s, dùng tạm ${v.careful_seconds}s, lỗi ${v.unusable_seconds}s`}</span></summary>
       <div className="mt-2 flex flex-wrap items-center gap-3">

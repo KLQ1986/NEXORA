@@ -20,7 +20,7 @@ export function MatchReport({ projectId }: { projectId: string }) {
   return (
     <Section title={tr("Báo cáo ghép nguyên liệu")} icon="check" note={tv`${t["tốt"]} tốt · ${t["tạm"]} tạm · ${t["thiếu"]} thiếu · có hình ${Math.round(t.coverage * 100)}%`}
       actions={<a className="text-accent underline" href={`/api/v1/projects/${projectId}/match/report?format=md`} download="bao-cao-ghep.md">{tr("Tải báo cáo (.md)")}</a>}>
-      <div className="panel grid gap-3 p-3 text-[12.5px]">
+      <div className="panel grid gap-3 p-3 text-meta">
         <ol className="grid gap-1.5">
           {data.lines.map((l) => (
             <li key={l.line} className="flex flex-wrap items-baseline gap-2">

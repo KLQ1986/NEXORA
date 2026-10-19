@@ -195,22 +195,22 @@ export default function EditStep({ projectId, approved, onChanged }: { projectId
     <div className="grid gap-2">
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-semibold">{tr("Dựng video")}</span>
-        <span className="mono rounded border border-line px-1.5 text-[11px] text-faint">FilmCraft {data.editor.version}</span>
-        {current && <span className="text-[12.5px] text-mute">{tv`Phiên bản ${current.version}`}{dirty ? <span className="text-cue">{tr(" · có thay đổi chưa lưu")}</span> : ""}</span>}
+        <span className="mono rounded border border-line px-1.5 text-mini text-faint">FilmCraft {data.editor.version}</span>
+        {current && <span className="text-meta text-mute">{tv`Phiên bản ${current.version}`}{dirty ? <span className="text-cue">{tr(" · có thay đổi chưa lưu")}</span> : ""}</span>}
         <span className="flex-1" />
         <Button size="sm" busy={busy === "build"} disabled={!data.storyboard} title={tr("Lắp storyboard thành một sequence mới; bản dựng tay đang có vẫn giữ nguyên trong các phiên bản")}
                 onClick={() => act("build", build, tr("Đã lắp lại từ storyboard thành phiên bản mới."))}><Icon name="layers" size={14} />{tr("Lắp từ Storyboard")}</Button>
         <Button size="sm" busy={busy === "save"} onClick={() => act("save", () => save(tr("lưu tay")), tr("Đã lưu phiên bản mới."))}><Icon name="check" size={14} />{tr("Lưu phiên bản")}</Button>
         {data.versions.length > 0 && (
           <select aria-label={tr("Phiên bản")} value={current?.version ?? ""} onChange={(e) => { const v = data.versions.find((x) => x.version === Number(e.target.value)); if (v) act("open", () => openVersion(v)); }}
-                  className="h-8 rounded-md border border-line bg-canvas px-2 text-[12.5px] text-ink">
+                  className="h-8 rounded-md border border-line bg-canvas px-2 text-meta text-ink">
             {data.versions.map((v) => <option key={v.cut_id} value={v.version}>{`v${v.version} · ${v.note ?? v.source ?? ""} · ${new Date(v.created_at * 1000).toLocaleString()}`}</option>)}
           </select>)}
         <Button size="sm" kind="primary" busy={busy === "export"} disabled={!data.editor.native || !current}
                 title={data.editor.native ? tr("Lưu rồi xuất trên máy này từ file gốc (FilmCraft, encoder phần cứng); bản xuất chờ bạn duyệt như mọi bản dựng") : tr("Chưa cài FilmCraft CLI: sh scripts/setup-filmcraft.sh")}
                 onClick={() => act("export", async () => { const v = dirty || !current ? await save(tr("lưu trước khi xuất")) : current; await post(`${url}/${v.cut_id}/export`); }, tr("Đang xuất bản dựng trên máy này."))}>
           <Icon name="scissors" size={14} />{tr("Xuất bản dựng")}</Button>
-        {exp && <span className={`text-[12px] ${exp.status === "waiting_review" ? "text-cue" : exp.status === "failed" ? "text-tally" : "text-faint"}`}>
+        {exp && <span className={`text-mini ${exp.status === "waiting_review" ? "text-cue" : exp.status === "failed" ? "text-tally" : "text-faint"}`}>
           {({ waiting_review: tr("bản xuất chờ duyệt"), succeeded: tr("đã duyệt"), failed: tr("xuất lỗi"), running: tr("đang xuất…"), queued: tr("đang chờ xuất") } as Record<string, string>)[exp.status] ?? exp.status}</span>}
       </div>
       <iframe ref={frame} src={data.editor.url} title={tr("Trình dựng")} onLoad={() => setReady(true)} allow="cross-origin-isolated; autoplay; fullscreen"
