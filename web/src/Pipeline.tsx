@@ -100,6 +100,9 @@ export default function Pipeline({ project: p, place, onScreen, compact = false,
   const task = data?.tasks[0];
   const st = states(p, task);
   const [hover, setHover] = useState<Hover>(null);
+  // A parent task that is done folds to one mark so the line fits the screen; the operator may unfold it again.
+  const [unfolded, setUnfolded] = useState<Set<string>>(new Set());
+  const fold = (key: string) => setUnfolded((u) => { const n = new Set(u); if (n.has(key)) n.delete(key); else n.add(key); return n; });
   const timer = useRef<number | undefined>(undefined);
   const open = (s: Screen) => {
     if (onScreen && s !== "storyboard" && place !== "storyboard") return onScreen(s);
@@ -117,42 +120,53 @@ export default function Pipeline({ project: p, place, onScreen, compact = false,
       {GROUPS.map((g, gi) => {
         const gs = groupState(g);
         const done = g.children.filter((c) => st[NODES.findIndex((n) => n.key === c.key)] === "done").length;
+        const folded = !compact && gs === "done" && !unfolded.has(g.key) && place !== g.screen;
+        const quiet = !compact && gs === "later";                  // not reached yet: names only, the card has the rest
         return (
           <div key={g.key} className="flex shrink-0 items-center">
-            {gi > 0 && <span className={`pipe-link ${compact ? "w-3" : "w-10"} ${gs === "later" ? "" : gs === "now" && st[NODES.findIndex((n) => n.key === g.children[0].key) - 1] === "done" ? "live" : "done"}`} aria-hidden="true" />}
-            <section className={`pipe-group ${gs} relative rounded-lg border ${place === g.screen ? "border-accent/70" : "border-white/10"} bg-black/30 backdrop-blur-sm ${compact ? "px-1.5 py-1" : "px-3 pb-2 pt-2"}`}>
+            {gi > 0 && <span className={`pipe-link ${compact ? "w-3" : "w-4"} ${gs === "later" ? "" : gs === "now" && st[NODES.findIndex((n) => n.key === g.children[0].key) - 1] === "done" ? "live" : "done"}`} aria-hidden="true" />}
+            <section className={`pipe-group ${gs} relative rounded-lg border ${place === g.screen ? "border-accent/70" : "border-white/10"} bg-black/30 backdrop-blur-sm ${compact ? "px-1.5 py-1" : "px-2 pb-2 pt-2"}`}>
               {!compact && (
                 <header className="mb-1.5 flex items-center gap-2">
                   <span className="mono text-[11px] text-faint">{`G${gi + 1}`}</span>
                   <button type="button" onClick={() => open(g.screen)} className={`text-[13.5px] font-semibold uppercase tracking-[0.1em] ${TEXT[gs]} hover:underline`}>{g.label}</button>
                   <span className={`text-[12px] ${TEXT[gs]}`}>{SAID[gs]}</span>
                   <span className="ml-auto mono text-[11px] text-faint">{done}/{g.children.length}</span>
+                  {gs === "done" && place !== g.screen && <button type="button" onClick={() => fold(g.key)} title={folded ? tr("Mở ra xem từng bước") : tr("Thu gọn")} aria-label={folded ? tr("Mở ra xem từng bước") : tr("Thu gọn")}
+                                                               className="grid h-5 w-5 place-items-center rounded text-faint hover:bg-white/10 hover:text-ink"><Icon name={folded ? "next" : "back"} size={11} /></button>}
                 </header>)}
               {!compact && <span className="absolute inset-x-3 top-[33px] h-px bg-white/[0.06]"><span className={`block h-px ${BAR[gs]} transition-all`} style={{ width: `${(100 * done) / g.children.length}%` }} /></span>}
-              <div className="flex items-center">
+              {folded ? (
+                <button type="button" onClick={() => fold(g.key)} title={g.children.map((c) => c.label).join(" · ")}
+                        className="pipe-step ui flex flex-col items-center gap-1.5 rounded-lg px-2 py-2 text-center">
+                  <span className="whitespace-nowrap text-[15px] font-semibold text-ink">{tv`${g.children.length} bước xong`}</span>
+                  <span className="pipe-node done relative grid h-14 w-14 shrink-0 place-items-center rounded-full border-2 border-proof/60 bg-proof/10 text-proof"><Icon name="check" size={24} /></span>
+                </button>
+              ) : (
+              <div className={`flex ${compact ? "items-center" : "items-end"}`}>
                 {g.children.map((c, ci) => {
                   k = NODES.findIndex((n) => n.key === c.key);
                   const s = st[k], i = k;
                   return (
-                    <span key={c.key} className="flex items-center">
-                      {ci > 0 && <span className={`pipe-link ${compact ? "w-2" : "w-8"} ${st[i - 1] === "done" ? (s === "now" ? "live" : s === "later" ? "" : "done") : ""}`} aria-hidden="true" />}
+                    <span key={c.key} className={`flex ${compact ? "items-center" : "items-end"}`}>
+                      {ci > 0 && <span className={`pipe-link ${compact ? "w-2" : `${quiet ? "w-3" : "w-5"} mb-9`} ${st[i - 1] === "done" ? (s === "now" ? "live" : s === "later" ? "" : "done") : ""}`} aria-hidden="true" />}
                       <button type="button" onClick={c.ui ? () => open(g.screen) : undefined} aria-disabled={!c.ui || undefined}
                               onMouseEnter={(e) => show(i, e.currentTarget)} onMouseLeave={hide} onFocus={(e) => show(i, e.currentTarget)} onBlur={hide}
                               aria-label={`${c.label}: ${SAID[s]}${c.ui ? "" : ` (${tr("bước tự động, không có màn hình riêng")})`}`}
-                              className={`pipe-step ${c.ui ? "ui" : "auto"} group flex items-center rounded-lg text-left ${compact ? "gap-1.5 px-0.5 py-0.5" : "gap-3 px-2 py-2"}`}>
+                              className={`pipe-step ${c.ui ? "ui" : "auto"} group flex items-center rounded-lg text-left ${compact ? "gap-1.5 px-0.5 py-0.5" : "flex-col-reverse gap-1.5 px-1.5 py-2 text-center"}`}>
                         <span className={`pipe-node ${s} relative grid shrink-0 place-items-center rounded-full border ${RING[s]} ${compact ? "h-5 w-5" : "h-14 w-14 border-2"}`}>
                           <Icon name={s === "done" ? "check" : s === "fail" ? "alert" : c.icon} size={compact ? 10 : 24} />
                           {(s === "now" || s === "wait") && <span className={`absolute rounded-full ${compact ? "-right-0.5 -top-0.5 h-2 w-2" : "-right-0.5 -top-0.5 h-3.5 w-3.5"} ${s === "now" ? "bg-accent" : "bg-cue"}`}><span className={`ping absolute inset-0 rounded-full ${s === "now" ? "bg-accent" : "bg-cue"}`} /></span>}
                         </span>
                         {!compact && (
-                          <span className="grid gap-0.5 leading-tight">
+                          <span className="grid justify-items-center gap-0.5 leading-tight">
                             <span className="whitespace-nowrap text-[15px] font-semibold text-ink"><span className="mono mr-1.5 text-[11px] font-normal text-faint">{`N${String(i + 1).padStart(2, "0")}`}</span>{c.label}</span>
-                            <span className={`whitespace-nowrap text-[12.5px] ${TEXT[s]}`}>{SAID[s]}<span className="text-faint"> · {figure(c.key, p, task)}</span></span>
+                            {!quiet && <span className={`whitespace-nowrap text-[12.5px] ${TEXT[s]}`}>{SAID[s]}<span className="text-faint"> · {figure(c.key, p, task)}</span></span>}
                           </span>)}
                       </button>
                     </span>);
                 })}
-              </div>
+              </div>)}
             </section>
           </div>);
       })}
