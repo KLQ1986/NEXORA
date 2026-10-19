@@ -18,7 +18,7 @@
   /* The type scale (operator's choice 2026-10-20), one place for every screen: */
   --text-mini: 10px;     /* labels, chips, codes, secondary lines */
   --text-meta: 12px;     /* larger secondary lines, field labels */
-  --text-ui: 13px;       /* controls, tabs, lists, step names */
+  --text-ui: 14px;       /* controls, tabs, lists, step names */
   --text-body: 11px;     /* running text (the body's own size) */
   --text-read: 11px;     /* text to read: script lines, narration */
   --text-title: 13px;    /* card titles */
