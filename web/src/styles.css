@@ -228,3 +228,10 @@ html[lang="vi"] .display { letter-spacing: -0.012em; }
 .pipe-node.now { box-shadow: 0 0 0 1px var(--color-accent), 0 0 18px -2px color-mix(in srgb, var(--color-accent) 60%, transparent); }
 .pipe-node.wait { animation: pipe-breathe 1.8s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) { .pipe-link.live, .pipe-node.wait { animation: none; } }
+/* Parent tasks of the pipeline: glass panels lit by their state. */
+.pipe-group { background-image: linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,0)); }
+.pipe-group.now { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 35%, transparent), 0 0 26px -10px var(--color-accent); }
+.pipe-group.wait { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-cue) 35%, transparent), 0 0 26px -10px var(--color-cue); }
+.pipe-group.fail { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-tally) 40%, transparent), 0 0 26px -10px var(--color-tally); }
+.pipe-group.done { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-proof) 22%, transparent); }
+.pipe-node.done { box-shadow: 0 0 10px -3px var(--color-proof); }
