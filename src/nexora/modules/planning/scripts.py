@@ -45,7 +45,9 @@ CRITIQUE_PROMPT = (
     "Giọng văn mong muốn: {voice}\n"
     "Tìm những chỗ làm video kém đi: mở đầu yếu, câu dài hoặc khó đọc thành tiếng, câu rời rạc không nối ý với câu trước, từ ngữ không tự nhiên hoặc lệch giọng văn mong muốn, "
     "ý lặp, ý mơ hồ, câu khó có hình minh hoạ, kết không rõ. Câu đánh dấu (trích lời) là lời người trong footage tự nói: không nhận xét cách nói của nó. "
-    "Tối đa {n} nhận xét, chỉ nêu điều đáng sửa; nếu kịch bản đã ổn thì trả về danh sách rỗng. "
+    "Luật nhận xét (CHAI): chính xác: mỗi nhận xét chỉ đúng câu và trích nguyên cụm từ có vấn đề, không nêu điều không chỉ ra được trong lời dẫn; "
+    "đầy đủ: thấy một lỗi thì rà cả bài, nêu mọi câu mắc cùng lỗi đó; xây dựng: de_xuat là cách sửa cụ thể (viết lại cụm từ hoặc câu), không khuyên chung chung. "
+    "Tối đa {n} nhận xét, nặng trước nhẹ sau, chỉ nêu điều đáng sửa; nếu kịch bản đã ổn thì trả về danh sách rỗng. "
     "Chỉ trả về JSON với khoá nhan_xet: danh sách các mục có cau (số thứ tự câu, 0 nếu nói về cả bài), van_de (một câu), de_xuat (cách sửa, một câu)."
 )
 REVISE_PROMPT = (
