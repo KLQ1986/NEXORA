@@ -409,20 +409,20 @@ function Screen({ feeds, start, marks, cuts, onTime, jump, small = false, tall =
             {f.label && <span className="pointer-events-none absolute left-2 top-2 rounded bg-black/70 px-2 py-0.5 text-[11.5px] font-medium text-white/90">{f.label}</span>}
           </div>))}
       </div>
-      <div className="shrink-0 bg-gradient-to-t from-black to-black/60 px-3 pb-2 pt-1 text-white/90" onClick={(e) => e.stopPropagation()}>
+      <div className="shrink-0 bg-gradient-to-t from-black to-black/60 px-3 pb-1 pt-0.5 text-white/90" onClick={(e) => e.stopPropagation()}>
         <Scrub t={t} dur={dur} marks={marks} cuts={cuts} seek={seek} />
-        <div className="flex items-center gap-2">
-          <button type="button" onClick={toggle} aria-label={playing ? tr("Tạm dừng") : tr("Phát")} className="grid h-10 w-10 place-items-center rounded-md hover:bg-white/10"><Icon name={playing ? "pause" : "play"} size={22} /></button>
-          {!small && <><button type="button" onClick={() => seek(Math.max(0, t - 5))} aria-label={tr("Lùi 5 giây")} className="grid h-10 w-10 place-items-center rounded-md hover:bg-white/10"><Icon name="skipback" size={20} /></button>
-          <button type="button" onClick={() => seek(Math.min(dur, t + 5))} aria-label={tr("Tới 5 giây")} className="grid h-10 w-10 place-items-center rounded-md hover:bg-white/10"><Icon name="skipfwd" size={20} /></button></>}
-          <button type="button" onClick={() => setMuted(!muted)} aria-label={muted ? tr("Bật tiếng") : tr("Tắt tiếng")} className="grid h-10 w-10 place-items-center rounded-md hover:bg-white/10"><Icon name={muted ? "mute" : "volume"} size={20} /></button>
-          <span className="mono ml-1 whitespace-nowrap text-[14px]">{timecode(t)} <span className="text-white/50">/ {timecode(dur)}</span></span>
+        <div className="flex items-center gap-1">
+          <button type="button" onClick={toggle} aria-label={playing ? tr("Tạm dừng") : tr("Phát")} className="grid h-7 w-7 place-items-center rounded-md hover:bg-white/10"><Icon name={playing ? "pause" : "play"} size={16} /></button>
+          {!small && <><button type="button" onClick={() => seek(Math.max(0, t - 5))} aria-label={tr("Lùi 5 giây")} className="grid h-7 w-7 place-items-center rounded-md hover:bg-white/10"><Icon name="skipback" size={15} /></button>
+          <button type="button" onClick={() => seek(Math.min(dur, t + 5))} aria-label={tr("Tới 5 giây")} className="grid h-7 w-7 place-items-center rounded-md hover:bg-white/10"><Icon name="skipfwd" size={15} /></button></>}
+          <button type="button" onClick={() => setMuted(!muted)} aria-label={muted ? tr("Bật tiếng") : tr("Tắt tiếng")} className="grid h-7 w-7 place-items-center rounded-md hover:bg-white/10"><Icon name={muted ? "mute" : "volume"} size={15} /></button>
+          <span className="mono ml-1 whitespace-nowrap text-[12px]">{timecode(t)} <span className="text-white/50">/ {timecode(dur)}</span></span>
           <span className="ml-auto" />
-          {!small && <select value={rate} onChange={(e) => setRate(Number(e.target.value))} aria-label={tr("Tốc độ phát")} className="mono h-9 rounded-md border-0 bg-white/10 px-2 text-[13.5px] text-white">{[0.5, 1, 1.5, 2].map((r) => <option key={r} value={r}>{r}×</option>)}</select>}
-          {hasCc && <button type="button" onClick={() => setCc(!cc)} aria-pressed={cc} title={tr("Phụ đề")} className={`grid h-10 w-10 place-items-center rounded-md hover:bg-white/10 ${cc ? "text-accent" : ""}`}><Icon name="captions" size={20} /></button>}
+          {!small && <select value={rate} onChange={(e) => setRate(Number(e.target.value))} aria-label={tr("Tốc độ phát")} className="mono h-7 rounded-md border-0 bg-white/10 px-1.5 text-[12px] text-white">{[0.5, 1, 1.5, 2].map((r) => <option key={r} value={r}>{r}×</option>)}</select>}
+          {hasCc && <button type="button" onClick={() => setCc(!cc)} aria-pressed={cc} title={tr("Phụ đề")} className={`grid h-7 w-7 place-items-center rounded-md hover:bg-white/10 ${cc ? "text-accent" : ""}`}><Icon name="captions" size={15} /></button>}
           {onTheater && !whole && <button type="button" onClick={onTheater} aria-pressed={tall} title={tall ? tr("Thu về khung nhỏ (t)") : tr("Chế độ rạp (t)")} aria-label={tall ? tr("Thu về khung nhỏ (t)") : tr("Chế độ rạp (t)")}
-            className={`grid h-10 w-10 place-items-center rounded-md hover:bg-white/10 ${tall ? "text-accent" : ""}`}><Icon name={tall ? "collapse" : "screen"} size={20} /></button>}
-          <button type="button" onClick={full} title={whole ? tr("Thoát toàn màn hình (f)") : tr("Toàn màn hình (f)")} aria-label={tr("Toàn màn hình")} className="grid h-10 w-10 place-items-center rounded-md hover:bg-white/10"><Icon name="expand" size={20} /></button>
+            className={`grid h-7 w-7 place-items-center rounded-md hover:bg-white/10 ${tall ? "text-accent" : ""}`}><Icon name={tall ? "collapse" : "screen"} size={15} /></button>}
+          <button type="button" onClick={full} title={whole ? tr("Thoát toàn màn hình (f)") : tr("Toàn màn hình (f)")} aria-label={tr("Toàn màn hình")} className="grid h-7 w-7 place-items-center rounded-md hover:bg-white/10"><Icon name="expand" size={15} /></button>
         </div>
       </div>
     </div>
