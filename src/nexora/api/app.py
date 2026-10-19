@@ -949,7 +949,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             if system.stock_scout is None:
                 return []
             found = system.stock_scout.options(project_id, sh.shot_id) or (system.stock_scout.options(project_id, sh.script_shot) if sh.script_shot else [])
-            keep = ("cid", "source", "source_url", "preview_url", "width", "height", "duration", "creator", "license", "look", "why", "siglip", "query")
+            keep = ("cid", "source", "source_url", "preview_url", "width", "height", "duration", "creator", "license", "licence_class", "look", "why", "siglip", "query")
             return [{**{k: c.get(k) for k in keep}, "thumb_url": f"/api/v1/stock/{c['cid']}/thumb" if c.get("thumb") else None} for c in found]
 
         gap = lambda a, b: (b.assignment or {}).get("gap_prev")

@@ -19,7 +19,9 @@ type Spec = {
 type Check = { check: string; text: string; by: string; required: boolean; st: "pass" | "fail" | "wait" | "unmeasured"; value: string };
 type Cand = { asset_id: string; moment_id?: string | null; t_in: number; t_out: number; score: number | null; text: string; passed: number; of: number; failed: string[]; name: string; frame_url: string; chosen_before?: boolean };
 type StockOpt = { cid: string; source: string; source_url: string; preview_url: string; width: number; height: number; duration: number; creator: string; license: string;
-  look: number | null; why: string; siglip: number; query: string; thumb_url: string | null };
+  look: number | null; why: string; siglip: number; query: string; thumb_url: string | null; licence_class?: string };
+const LICENCE: Record<string, [string, string]> = { free: [tr("Tự do"), "text-proof"], attribution: [tr("Cần ghi công"), "text-proof"],
+  share_alike: [tr("Share-alike"), "text-cue"], unknown: [tr("Chưa rõ giấy phép"), "text-cue"], restricted: [tr("Cấm dùng thương mại"), "text-tally"] };
 type Treat = { speed?: number; stabilise?: boolean; live_sound?: boolean; sfx?: string | null; lipsync?: boolean; upscale_ml?: boolean };
 type SbShot = { shot_id: string; code: string; scene_id: string; version: number; state: "planned" | "running" | "accepted" | "needs" | "stale"; spec: Spec;
   assignment: { kind: string; asset_id: string; t_in: number; t_out: number; score: number | null; text: string; gap_prev?: number; candidates?: Cand[]; others?: Cand[];
@@ -715,7 +717,8 @@ function StockTile({ c, use, busy }: { c: StockOpt; use: () => void; busy: boole
         {!live && c.preview_url && <span className="absolute inset-0 grid place-items-center opacity-0 transition-opacity hover:opacity-100"><Icon name="play" size={18} /></span>}
       </span>
       {c.why && <span className="line-clamp-2 text-[11px] text-mute" title={c.why}>{c.why}</span>}
-      <span className="truncate text-[10.5px] text-faint" title={`${c.license}${c.creator ? ` · ${c.creator}` : ""}`}>{c.license}{c.creator ? ` · ${c.creator}` : ""}</span>
+      <span className="truncate text-[10.5px] text-faint" title={`${c.license}${c.creator ? ` · ${c.creator}` : ""}`}>
+        {c.licence_class && LICENCE[c.licence_class] && <span className={`mr-1 font-semibold ${LICENCE[c.licence_class][1]}`}>{LICENCE[c.licence_class][0]}</span>}{c.license}{c.creator ? ` · ${c.creator}` : ""}</span>
       <span className="grid grid-cols-2 gap-1">
         <button type="button" onClick={use} disabled={busy} className="h-7 rounded-md border border-line text-[11.5px] text-ink hover:border-accent hover:bg-accent/10">{tr("Dùng cho shot")}</button>
         <a href={c.source_url} target="_blank" rel="noopener noreferrer" className="flex h-7 items-center justify-center gap-1 rounded-md border border-line text-[11.5px] text-ink hover:border-accent hover:bg-accent/10"><Icon name="external" size={11} />{tr("Trang gốc")}</a>

@@ -83,6 +83,9 @@ class System:
     stock_scout: "StockScout" = None             # stock judged on its previews before anything is downloaded
 
 
+from nexora.modules.quality.licences import classify as classify_licence
+
+
 def _stock_reason(c: dict) -> str:
     seen = f" Mô hình chấm ảnh xem trước {c['look']}/10: {c.get('why') or ''}".rstrip() if c.get("look") is not None else ""
     return f"Clip stock từ {c.get('source')}. Giấy phép: {c.get('license')}. Nguồn: {c.get('source_url')}.{seen}"
@@ -98,7 +101,9 @@ def use_stock_candidate(system: "System", cid: str, *, shot_id: str) -> dict:
         raise ValueError("Đang dừng khẩn cấp: không tải clip stock")
     path = system.stock_scout.fetch(cid, system.data_dir / "media" / "stock")
     rights = {"source": c.get("source"), "source_url": c.get("source_url"), "license": c.get("license"), "creator": c.get("creator"), "query": c.get("query"),
-              "project_id": c.get("project_id"), "stock_id": f"{c['source']}:{c['source_id']}", "score": c.get("look"), "why": c.get("why")}
+              "project_id": c.get("project_id"), "stock_id": f"{c['source']}:{c['source_id']}", "score": c.get("look"), "why": c.get("why"),
+              # Kept as evidence for a dispute: what the library said, when, and what it was taken to allow.
+              "licence_class": classify_licence(c.get("license")), "fetched_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "download_url": c.get("download_url")}
     asset_id, run_id = system.library.ingest(path, origin="licensed", rights=rights)
     if system.storyboard is not None and system.storyboard.shot(shot_id) is not None:
         system.director.use_asset(shot_id, asset_id, reason=_stock_reason(c))

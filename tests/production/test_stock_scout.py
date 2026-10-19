@@ -8,7 +8,7 @@ from nexora.modules.sourcing.stock import LOOK_PASS, StockScout
 def cand(source, sid, *, thumb=True, duration=10.0, tags=""):
     return {"source": source, "source_id": sid, "source_url": f"https://{source}/{sid}", "download_url": f"https://{source}/{sid}.mp4",
             "preview_url": f"https://{source}/{sid}-sd.mp4", "thumbnail_url": f"https://{source}/{sid}.jpg" if thumb else "", "width": 1920, "height": 1080,
-            "duration": duration, "creator": "", "license": "free", "tags": tags, "query": ""}
+            "duration": duration, "creator": "", "license": "Public domain", "tags": tags, "query": ""}
 
 
 class Stock(Adapter):

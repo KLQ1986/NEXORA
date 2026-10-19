@@ -18,6 +18,7 @@ from pathlib import Path
 
 from nexora.core import db
 from nexora.core.adapter import AdapterError, ErrorCode, PrivacyClass, Request
+from nexora.modules.quality.licences import SAFE, classify
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS stock_candidates (cid TEXT PRIMARY KEY, project_id TEXT NOT NULL, key TEXT NOT NULL, data TEXT NOT NULL,
@@ -190,10 +191,13 @@ class StockScout:
                     continue
                 if c.get("duration") and seconds and c["duration"] < SHORTEST * seconds:
                     continue
+                licence_class = classify(c.get("license"))
+                if licence_class == "restricted":
+                    continue                           # non-commercial or no-derivatives: never offered for a channel
                 seen.add(ident)
                 cid = cid_of(project_id, key, c)
                 thumb = self._preview(project_id, cid, c)
-                fresh.append({**c, "cid": cid, "project_id": project_id, "key": key, "line": line, "thumb": str(thumb) if thumb else None,
+                fresh.append({**c, "licence_class": licence_class, "cid": cid, "project_id": project_id, "key": key, "line": line, "thumb": str(thumb) if thumb else None,
                               "siglip": 0.0, "look": None, "why": "", "words": words})
             self._siglip(fresh, " ".join(w for w in (words["en"], words["names"]) if w) or line)
             fresh.sort(key=lambda x: x["siglip"], reverse=True)
@@ -222,8 +226,10 @@ class StockScout:
         return json.loads(row["data"]) if row else None
 
     def best(self, project_id: str, key: str, *, avoid: set[str] = frozenset()) -> dict | None:
-        """The best candidate that passes the vision model's look and is not one already chosen next to it (`avoid`: source:id)."""
+        """The best candidate that passes the vision model's look, may be published as it is (free, or with a credit) and is not
+        one already chosen next to it (`avoid`: source:id). Share-alike and unclear licences are only ever offered."""
         return next((x for x in self.options(project_id, key) if x.get("look") is not None and x["look"] >= LOOK_PASS
+                     and classify(x.get("license")) in SAFE
                      and f"{x['source']}:{x['source_id']}" not in avoid), None)
 
     def fetch(self, cid: str, out_dir: str | Path) -> Path:
