@@ -290,7 +290,7 @@ function Card({ item, on, chosen, choosing, pick, choose, acts, vq, remove, agai
         {remove && !choosing && <CardDelete remove={remove} again={again} />}
         <div className="flex items-start gap-1 px-3 pb-2.5 pt-2">
           <button type="button" onClick={choosing ? choose : pick} className="min-w-0 flex-1 text-left">
-            <span className="block truncate text-[11px] font-medium leading-snug">{item.title}</span>
+            <span className="block truncate text-[12px] font-medium leading-snug">{item.title}</span>
           </button>
           <span className="-mr-1 mt-0.5 opacity-60 group-hover:opacity-100"><More acts={acts} /></span>
         </div>
