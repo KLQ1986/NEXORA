@@ -6,6 +6,8 @@ from pathlib import Path
 MAX_CHARS_PER_SECOND = 20.0      # faster than this and a caption cannot be read before it goes
 MAX_CAPTION_CHARS = 84           # two lines of 42
 LONG_BLACK, LONG_SILENCE = 0.5, 3.0
+OPENING = 3.0                    # the first seconds decide whether a viewer stays: something is seen and heard by then (OpenMontage clip-factory)
+OPENING_BLACK = 1.0              # a fade in from black is fine; a second of black at the start is not
 TITLE_MAX = 100
 
 
@@ -28,7 +30,12 @@ def picture_and_sound(black: list[list[float]], silent: list[list[float]], durat
     in_gap = lambda a, b: any(a >= ga - 0.2 and b <= gb + 0.2 for ga, gb in gap_ranges)
     stray = [[a, b] for a, b in black if b - a >= LONG_BLACK and not in_gap(a, b)]
     quiet = [[a, b] for a, b in silent if b - a >= LONG_SILENCE and b - a < duration - 0.5]
-    return {"checks": {"Không có khung đen ngoài ý muốn": not stray, "Không có khoảng im lặng dài": not quiet}, "black": stray, "silence": quiet}
+    # The opening (research 2026-10-19, OpenMontage clip-factory): no long black at the start, and sound within the first
+    # seconds; a file silent from end to end is a matter for the silence check, not this one.
+    dark_open = any(a <= 0.1 and b - a >= OPENING_BLACK and not in_gap(a, b) for a, b in black)
+    mute_open = duration > OPENING + 1 and any(a <= 0.1 and b >= min(OPENING, duration) and b - a < duration - 0.5 for a, b in silent)
+    return {"checks": {"Không có khung đen ngoài ý muốn": not stray, "Không có khoảng im lặng dài": not quiet,
+                       "Mở đầu có hình": not dark_open, "Có tiếng trong 3 giây đầu": not mute_open}, "black": stray, "silence": quiet}
 
 
 def package_checks(package: dict) -> dict:

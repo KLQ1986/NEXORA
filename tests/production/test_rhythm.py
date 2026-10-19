@@ -50,3 +50,13 @@ def test_one_grave_fault_is_not_averaged_away():
     board = [shot(i, asset=f"a{i}", seconds=15.0) for i in range(8)]   # varied pictures, every hold far too long
     r = SB.rhythm(board, {s.shot_id: f"SC{i + 1}" for i, s in enumerate(board)})
     assert dims(r)["holds"]["score"] == 5 and r["score"] < 2 and r["verdict"] == "revise"
+
+
+def test_framing_measured_on_the_clips_counts_even_when_the_storyboard_never_planned_it():
+    board = [shot(i, asset=f"a{i}") for i in range(8)]                 # specs at the defaults
+    measured = lambda s: {"size": "trung", "move": "đứng yên"}          # but every clip really is a static medium shot
+    r = SB.rhythm(board, {s.shot_id: f"SC{i + 1}" for i, s in enumerate(board)}, picture=measured)
+    d = dims(r)
+    assert r["framed"] and d["repetition"]["score"] == 5 and d["motion"]["score"] == 5 and d["variety"]["score"] == 5
+    varied = lambda s: {"size": ["toàn cảnh", "cận", "trung", "đặc tả"][int(s.shot_id[1:]) % 4], "move": "đứng yên" if int(s.shot_id[1:]) % 2 else "chuyển động"}
+    assert SB.rhythm(board, {s.shot_id: s.shot_id for s in board}, picture=varied)["verdict"] == "strong"

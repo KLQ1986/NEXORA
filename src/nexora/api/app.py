@@ -963,6 +963,21 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             if not a.get("asset_id") or not system.assets.asset(a["asset_id"]):
                 return a.get("kind") == "generated" and not a.get("video")
             return bool(system.assets.original(a["asset_id"]).metadata.get("probe", {}).get("still"))
+        def picture(sh) -> dict | None:
+            """The framing measured on the shot's own clip: its size as described, its camera movement as measured."""
+            a = sh.assignment or {}
+            if not a.get("asset_id"):
+                return None
+            m = system.index.moment(a["moment_id"]) if a.get("moment_id") else None
+            if m is None:
+                t = float(a.get("t_in") or 0.0)
+                m = next((x for x in system.index.moments(a["asset_id"], level="segment") if x.t_start <= t < x.t_end), None)
+            if m is None:
+                return None
+            size = (m.data.get("detail") or {}).get("co_canh") if isinstance(m.data.get("detail"), dict) else None
+            camera = ((m.data.get("labels") or {}).get("camera") or {}).get("value")
+            return {"size": size if size in SB.SIZES else None,
+                    "move": None if camera in (None, "unknown") else "đứng yên" if camera == "static" else "chuyển động"}
         cost_cap = project.get("budget_cap")
         return {"project": {"project_id": project_id, "title": project["title"], "format": project["format"], "budget_cap": cost_cap,
                             "spent": round(system.generation.spent(project_id), 2)},
@@ -971,7 +986,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
                             "script": " ".join(sh.spec["line"] for sh in shots if sh.scene_id == sc.scene_id and sh.spec["line"]),
                             "seconds": round(sum(sh.spec["duration"]["target"] for sh in shots if sh.scene_id == sc.scene_id), 1)} for sc in scenes],
                 "shots": [shot_view(sh) for sh in shots], "seams": seams, "plans": SB.camera_plan(shots, scenes),
-                "rhythm": SB.rhythm(shots, codes, still=still),
+                "rhythm": SB.rhythm(shots, codes, still=still, picture=picture),
                 "messages": store.messages(project_id), "seconds": round(sum(sh.spec["duration"]["target"] for sh in shots), 1),
                 "vocabulary": {"sizes": SB.SIZES, "angles": SB.ANGLES, "moves": SB.MOVES, "lenses": SB.LENSES, "sources": SB.SOURCES, "times": SB.TIMES,
                                "checks": {k: {"text": v[0], "by": v[1], "op": v[2], "value": v[3]} for k, v in SB.CHECKS.items()}},

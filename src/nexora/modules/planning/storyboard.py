@@ -658,12 +658,13 @@ RHYTHM_VERDICTS = ((2.0, "strong", "Tốt"), (3.0, "acceptable", "Chấp nhận 
 HOLD = (1.5, 8.0)            # a shot shorter or longer than this, without its own sound, drags or flickers (OpenMontage documentary holds)
 
 
-def rhythm(shots: list[Shot], codes: dict[str, str], *, still=lambda shot: False) -> dict:
+def rhythm(shots: list[Shot], codes: dict[str, str], *, still=lambda shot: False, picture=lambda shot: None) -> dict:
     """The whole storyboard read for the faults that make a video feel like a slideshow (OpenMontage's slideshow risk, research
     2026-10-19), each scored 0 to 5 (lower is better) from what is measured on the shots, with the shots that cause it:
     repetition (the same picture, or the same size, angle and movement, twice in a row), one clip used again and again,
     stills where video was promised (`still(shot)`), holds out of range, one framing size through a whole scene, and long
-    runs of static shots. The mean gives the verdict: under 2 strong, under 3 acceptable, under 4 revise, else fail."""
+    runs of static shots. The mean gives the verdict: under 2 strong, under 3 acceptable, under 4 revise, else fail.
+    `picture(shot)`: the framing measured on the shot's own clip ({"size", "move"}, either may be None), preferred to the spec's."""
     n = len(shots)
     if n < 2:
         return {"score": 0.0, "verdict": "strong", "label": RHYTHM_VERDICTS[0][2], "dimensions": []}
@@ -673,8 +674,17 @@ def rhythm(shots: list[Shot], codes: dict[str, str], *, still=lambda shot: False
     pairs = list(zip(shots, shots[1:]))
     # A storyboard laid out without framing (every shot left at the defaults) says nothing about its pictures' sizes and
     # movement: those faults are left unmeasured rather than charged (seen on a topic video: 78 shots, all "trung, đứng yên").
-    framed = any((f(s)["size"], f(s)["angle"], f(s)["move"]) != ("trung", "ngang mắt", "đứng yên") for s in shots)
-    same_frame = lambda a, b: framed and (f(a)["size"], f(a)["angle"], f(a)["move"]) == (f(b)["size"], f(b)["angle"], f(b)["move"])
+    planned = any((f(s)["size"], f(s)["angle"], f(s)["move"]) != ("trung", "ngang mắt", "đứng yên") for s in shots)
+    seen = {s.shot_id: picture(s) or {} for s in shots}
+
+    def frame(s) -> tuple | None:
+        """(size, moving) of the shot: measured on its clip where known, else the spec's when the storyboard planned it."""
+        m = seen[s.shot_id]
+        size = m.get("size") or (f(s)["size"] if planned else None)
+        move = m.get("move") or (f(s)["move"] if planned else None)
+        return (size, move) if size and move else None
+    framed = sum(1 for s in shots if frame(s)) >= max(2, n // 2)
+    same_frame = lambda a, b: frame(a) is not None and frame(a) == frame(b)
     repeated = [b for a, b in pairs if (asset(a) and asset(a) == asset(b)) or same_frame(a, b)]
     uses: dict[str, list] = {}
     for s in shots:
@@ -688,10 +698,10 @@ def rhythm(shots: list[Shot], codes: dict[str, str], *, still=lambda shot: False
     by_scene: dict[str, list] = {}
     for s in shots:
         by_scene.setdefault(s.scene_id, []).append(s)
-    flat = [scene for scene in by_scene.values() if len(scene) >= 4 and len({f(s)["size"] for s in scene}) < 2]
+    flat = [scene for scene in by_scene.values() if sum(1 for s in scene if frame(s)) >= 4 and len({frame(s)[0] for s in scene if frame(s)}) < 2]
     static, run = [], []
     for s in shots + [None]:
-        if s is not None and f(s)["move"] == "đứng yên":
+        if s is not None and frame(s) and frame(s)[1] == "đứng yên":
             run.append(s)
             continue
         if len(run) >= 5:
@@ -707,7 +717,7 @@ def rhythm(shots: list[Shot], codes: dict[str, str], *, still=lambda shot: False
          "cả cảnh chỉ một cỡ cảnh"),
         ("motion", "Chuỗi shot đứng yên", min(5.0, 10 * len(static) / n), static, "năm shot đứng yên liền nhau trở lên"),
     ]
-    unframed = "chưa đo: các shot chưa được đặt khung hình (đang để mặc định)"
+    unframed = "chưa đo: chưa đủ shot có khung hình (đo trên clip hoặc đặt trong storyboard)"
     out = [{"key": k, "name": name, "score": None if not framed and k in ("variety", "motion") else round(score, 1),
             "shots": [] if not framed and k in ("variety", "motion") else [code(s) for s in hit][:12],
             "count": 0 if not framed and k in ("variety", "motion") else len(hit), "detail": unframed if not framed and k in ("variety", "motion") else detail}

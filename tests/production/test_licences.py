@@ -54,3 +54,12 @@ def test_the_scout_never_offers_what_may_not_be_used_and_never_takes_an_unclear_
     assert {c["source"] for c in found} == {"wikimedia", "nasa"}                     # the non-commercial one is never offered
     assert {c["source"]: c["licence_class"] for c in found} == {"wikimedia": "share_alike", "nasa": "free"}
     assert s.best("prj_1", "shot_1")["source"] == "nasa"                            # 10/10 but share-alike is only offered
+
+
+def test_a_cut_must_show_something_and_be_heard_within_its_first_seconds():
+    from nexora.modules.quality.qc import picture_and_sound
+    ok = picture_and_sound([[0.0, 0.6]], [[10.0, 11.0]], 30.0)["checks"]                 # a short fade in from black
+    assert ok["Mở đầu có hình"] and ok["Có tiếng trong 3 giây đầu"]
+    bad = picture_and_sound([[0.0, 1.8]], [[0.0, 4.2]], 30.0)["checks"]
+    assert not bad["Mở đầu có hình"] and not bad["Có tiếng trong 3 giây đầu"]
+    assert picture_and_sound([], [[0.0, 30.0]], 30.0)["checks"]["Có tiếng trong 3 giây đầu"]   # silent throughout: the silence check's business
