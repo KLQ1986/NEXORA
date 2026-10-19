@@ -282,6 +282,32 @@ class Director:
         self._store.set_state(shot_id, "needs", assignment=None,
                               checks=[{"check": "source", "text": "Không clip nào hợp: tìm stock, đổi câu tìm, hoặc chuyển sang tạo bằng AI", "by": "human", "required": True, "st": "wait", "value": "—"}])
 
+    def remove(self, shot_id: str) -> None:
+        """The operator takes a picture that does not show the line off the shot: turned down for these words, its other candidates
+        kept to choose from, and the shot waits for another picture."""
+        s = self._store.shot(shot_id)
+        a = s.assignment or {}
+        if not a.get("asset_id"):
+            raise LookupError(shot_id)
+        if self._remember:
+            self._remember(self._line(s), a.get("moment_id"), "rejected", asset_id=a["asset_id"], t_in=a["t_in"], t_out=a["t_out"])
+        rest = self._pool(s)[1:]
+        self._store.set_state(shot_id, "needs", assignment={"candidates": rest} if rest else None,
+                              checks=[{"check": "source", "text": "Bạn đã bỏ clip: chọn phương án khác, tìm trong Thư viện hoặc tìm stock", "by": "human", "required": True, "st": "wait", "value": "—"}])
+
+    def use_moment(self, shot_id: str, moment_id: str) -> None:
+        """The operator picks a stretch found in the Library for this shot: its picture, as long as the shot where the stretch
+        allows, the old picture kept among the other candidates."""
+        s = self._store.shot(shot_id)
+        m = self._index.moment(moment_id)
+        if m is None or m.level == "video":
+            raise LookupError(moment_id)
+        t_out = min(m.t_end, m.t_start + float(s.spec["duration"]["target"])) if m.t_end > m.t_start else m.t_start + float(s.spec["duration"]["target"])
+        chosen = {"kind": "footage", "asset_id": m.asset_id, "moment_id": m.moment_id, "t_in": round(m.t_start, 2), "t_out": round(t_out, 2), "score": None, "text": m.text}
+        if self._remember:
+            self._remember(self._line(s), m.moment_id, "accepted", asset_id=m.asset_id, t_in=chosen["t_in"], t_out=chosen["t_out"])
+        self._place(s, chosen, self._pool(s))
+
     def trim(self, shot_id: str, t_in: float, t_out: float) -> None:
         s = self._store.shot(shot_id)
         if not s.assignment or not s.assignment.get("asset_id"):

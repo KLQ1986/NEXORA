@@ -59,6 +59,13 @@ const en: Record<string, string> = {
   "Hôm nay": "Today",
   "Tìm cảnh “{0}” trong footage": "Find “{0}” in the footage",
   "{0} việc đang chạy": "{0} jobs running",
+  "Bỏ clip này": "Remove this clip",
+  "Đã bỏ clip khỏi {0}.": "Removed the clip from {0}.",
+  "Clip này không đúng kịch bản: bỏ khỏi shot, các phương án khác vẫn giữ để chọn": "This clip does not fit the script: take it off the shot; the other options stay to choose from",
+  "Tìm clip khác trong Thư viện, ví dụ: chợ nổi buổi sáng": "Find another clip in the Library, e.g. floating market in the morning",
+  "Tìm clip trong Thư viện": "Find a clip in the Library",
+  "Tìm trong Thư viện": "Search the Library",
+  "Thư viện không có đoạn nào hợp với từ này.": "Nothing in the Library matches these words.",
   "{0} đang chạy · {1} đang chờ": "{0} running · {1} waiting",
   // parts.tsx
   "Thanh thời gian của video": "Video timeline",

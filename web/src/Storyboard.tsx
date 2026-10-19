@@ -686,6 +686,9 @@ function PlanView({ board, cur, pick, flip }: { board: Board; cur?: SbShot; pick
 const SPEEDS = [0.5, 0.75, 1, 1.5, 2];
 const secs = (t: number) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, "0")}`;
 
+type LibHit = { moment_id: string; asset_id: string; level: string; t_start: number; t_end: number; text: string; frame_url: string | null;
+  asset: { name: string; thumbnail_url: string | null } };
+
 /** The shot's picture, where the clip step's work now happens: the clip given (its stretch, how it is treated in the cut), its
     other options (each can be used for the shot or become a shot of its own after it), and what to do when none fits. */
 function PictureTab({ shot: s, board, url, set, act, busy }: { shot: SbShot; board: Board; url: string; set: (s: SbShot, field: string, value: unknown) => void;
@@ -694,7 +697,16 @@ function PictureTab({ shot: s, board, url, set, act, busy }: { shot: SbShot; boa
   const others = a?.others ?? [];
   const [inOut, setInOut] = useState<[string, string]>(["", ""]);
   const [query, setQuery] = useState("");
-  useEffect(() => { setInOut(a ? [a.t_in.toFixed(1), a.t_out.toFixed(1)] : ["", ""]); }, [s.shot_id, a?.t_in, a?.t_out]);
+  const [libQuery, setLibQuery] = useState(""), [libHits, setLibHits] = useState<LibHit[] | null>(null), [libBusy, setLibBusy] = useState(false);
+  useEffect(() => { setInOut(has ? [a!.t_in.toFixed(1), a!.t_out.toFixed(1)] : ["", ""]); }, [s.shot_id, a?.t_in, a?.t_out]);
+  useEffect(() => { setLibHits(null); setLibQuery(""); }, [s.shot_id]);
+  const findInLibrary = async () => {
+    if (!libQuery.trim()) return;
+    setLibBusy(true);
+    try { setLibHits((await call<{ hits: LibHit[] }>(`/api/v1/library/search?q=${encodeURIComponent(libQuery.trim())}&limit=12`)).hits.filter((h) => h.level !== "video")); }
+    catch (e) { toast((e as Error).message, { tone: "tally" }); }
+    setLibBusy(false);
+  };
   const shotUrl = `${url}/shots/${s.shot_id}`;
   const treat = (body: Treat) => act("treat", () => call(`${shotUrl}/treatment`, { method: "PATCH", body: JSON.stringify(body) }));
   const remote = board.remote ?? [], effects = board.effects ?? [];
@@ -711,7 +723,9 @@ function PictureTab({ shot: s, board, url, set, act, busy }: { shot: SbShot; boa
             <div className="flex items-start gap-2.5">
               <span className="relative block aspect-video w-[132px] shrink-0 overflow-hidden rounded bg-black">{s.frame_url && <Frame src={s.frame_url} />}</span>
               <span className="grid min-w-0 flex-1 gap-0.5 text-[12.5px]">
-                <span className="flex items-center gap-1.5"><span className="text-[11px] font-semibold text-proof">{tr("Hình của shot")}</span>{a?.decided_by === "operator" && <span className="text-[11px] text-accent">{tr("bạn chọn")}</span>}</span>
+                <span className="flex items-center gap-1.5"><span className="text-[11px] font-semibold text-proof">{tr("Hình của shot")}</span>{a?.decided_by === "operator" && <span className="text-[11px] text-accent">{tr("bạn chọn")}</span>}
+                  <button type="button" disabled={!!busy} onClick={() => act("remove", () => post(`${shotUrl}/remove`), tv`Đã bỏ clip khỏi ${s.code}.`)} title={tr("Clip này không đúng kịch bản: bỏ khỏi shot, các phương án khác vẫn giữ để chọn")}
+                          className="ml-auto flex h-6 items-center gap-1 rounded-md border border-line px-2 text-[11.5px] text-tally hover:border-tally hover:bg-tally/10"><Icon name="trash" size={12} />{tr("Bỏ clip này")}</button></span>
                 <span className="truncate" title={a?.name}>{a?.name}</span>
                 <span className="mono text-[11px] text-faint">{`${secs(a!.t_in)}–${secs(a!.t_out)} · ${(a!.t_out - a!.t_in).toFixed(1)}s`}{a?.score != null ? ` · ${tr("khớp")} ${a.score.toFixed(2)}` : ""}</span>
                 {a?.text && <span className="line-clamp-2 text-[11.5px] text-mute" title={a.text}>{a.text}</span>}
@@ -762,6 +776,25 @@ function PictureTab({ shot: s, board, url, set, act, busy }: { shot: SbShot; boa
                     onClick={() => act("look", () => post(`${shotUrl}/look`), tr("Đã chấm: xem điểm trong phần nghiệm thu."))}>{busy === "look" ? tr("Đang chấm…") : tr("Cho mô hình chấm hình")}</button>
             <button type="button" className="link text-[12.5px]" onClick={() => act("none", () => post(`${shotUrl}/none-fits`), tr("Đã ghi nhận: các clip này không hợp với shot."))}>{tr("Không clip nào hợp")}</button>
           </span>}
+          <form className="flex gap-1.5" onSubmit={(e) => { e.preventDefault(); findInLibrary(); }}>
+            <input value={libQuery} onChange={(e) => setLibQuery(e.target.value)} placeholder={tr("Tìm clip khác trong Thư viện, ví dụ: chợ nổi buổi sáng")} aria-label={tr("Tìm clip trong Thư viện")}
+                   className="h-8 min-w-0 flex-1 rounded-md border border-line bg-canvas px-2.5 text-[12.5px] outline-none focus:border-accent" />
+            <Button size="sm" type="submit" busy={libBusy} disabled={!libQuery.trim()}><Icon name="search" size={13} />{tr("Tìm trong Thư viện")}</Button>
+          </form>
+          {libHits && (libHits.length === 0 ? <p className="text-[12px] text-faint">{tr("Thư viện không có đoạn nào hợp với từ này.")}</p> :
+            <ul className="grid grid-cols-2 gap-2">
+              {libHits.map((h) => (
+                <li key={h.moment_id} className="grid gap-1 rounded-lg border border-line p-1.5">
+                  <span className="relative block aspect-video overflow-hidden rounded bg-black" title={h.text}>
+                    {(h.frame_url || h.asset.thumbnail_url) && <Frame src={(h.frame_url || h.asset.thumbnail_url)!} />}
+                    <span className="mono absolute bottom-1 left-1 rounded bg-black/70 px-1 text-[10px]">{secs(h.t_start)} · {(h.t_end - h.t_start).toFixed(1)}s</span>
+                  </span>
+                  <span className="truncate text-[11.5px] text-mute" title={h.text || h.asset.name}>{h.asset.name}</span>
+                  {h.text && <span className="line-clamp-2 text-[11px] text-faint">{h.text}</span>}
+                  <button type="button" disabled={!!busy} onClick={() => act(`lib${h.moment_id}`, () => post(`${shotUrl}/use-moment`, { moment_id: h.moment_id }), tv`${s.code} dùng clip này.`)}
+                          className="h-7 rounded-md border border-line text-[11.5px] text-ink hover:border-accent hover:bg-accent/10">{tr("Dùng cho shot")}</button>
+                </li>))}
+            </ul>)}
           <form className="flex gap-1.5" onSubmit={(e) => { e.preventDefault(); if (query.trim()) act("stock", async () => { const r = await post<{ stock: { found: boolean } }>(`${shotUrl}/stock`, { query }); if (!r.stock?.found) toast(tr("Không tìm được clip stock cho từ khoá này."), { tone: "tally" }); }); }}>
             <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={tr("Từ khoá tiếng Anh, ví dụ: fishing boat at sea")} aria-label={tr("Từ khoá tìm clip stock")}
                    className="h-8 min-w-0 flex-1 rounded-md border border-line bg-canvas px-2.5 text-[12.5px] outline-none focus:border-accent" />

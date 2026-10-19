@@ -1072,6 +1072,16 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         view = picture_call(project_id, shot_id, lambda: seen.update(system.director.look(shot_id)))
         return {**view, "looked": seen}
 
+    @app.post("/api/v1/projects/{project_id}/storyboard/shots/{shot_id}/remove")
+    def storyboard_remove(project_id: str, shot_id: str):
+        """The shot's picture is taken off (it does not show the line); its other candidates stay to choose from."""
+        return picture_call(project_id, shot_id, lambda: system.director.remove(shot_id))
+
+    @app.post("/api/v1/projects/{project_id}/storyboard/shots/{shot_id}/use-moment")
+    def storyboard_use_moment(project_id: str, shot_id: str, body: dict):
+        """A stretch the operator found in the Library becomes the shot's picture."""
+        return picture_call(project_id, shot_id, lambda: system.director.use_moment(shot_id, str(body.get("moment_id", ""))))
+
     @app.post("/api/v1/projects/{project_id}/storyboard/shots/{shot_id}/none-fits")
     def storyboard_none_fits(project_id: str, shot_id: str):
         return picture_call(project_id, shot_id, lambda: system.director.none_fits(shot_id))

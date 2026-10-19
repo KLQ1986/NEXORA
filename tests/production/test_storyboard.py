@@ -229,3 +229,30 @@ def test_a_cards_words_edited_in_place_change_its_line_and_the_intent_that_repea
     assert after.spec["line"] == after.spec["intent"] == said and after.version == before.version + 1
     assert after.spec["framing"] == before.spec["framing"] and after.spec["duration"] == before.spec["duration"]
     assert view["storyboard"]["shots"][0]["spec"]["line"] == said
+
+
+def test_a_picture_that_does_not_show_the_line_is_taken_off_and_another_found_in_the_library_put_in_its_place(tmp_path):
+    system, _, client = _system(tmp_path)
+    for name, src in (("market.mp4", "testsrc2"), ("bars.mp4", "smptebars")):
+        taken_in(system, film(tmp_path / name, [(src, 4)]))
+    project = _project(system, ["Chợ rau củ buổi sáng.", "Chiều xuống."])
+    url = f"/api/v1/projects/{project}/storyboard"
+    client.post(f"{url}/from-script")
+    v = client.post(f"{url}/run", json={}).json()["storyboard"]
+    s1 = v["shots"][0]["shot_id"]
+    was, others = v["shots"][0]["assignment"], v["shots"][0]["assignment"]["others"]
+    # Taken off: no picture, turned down for these words, its other options kept to choose from.
+    v = client.post(f"{url}/shots/{s1}/remove").json()
+    gone = v["shots"][0]
+    assert gone["state"] == "needs" and not gone["assignment"].get("asset_id")
+    assert [(o["asset_id"], o["t_in"]) for o in gone["assignment"]["others"]] == [(o["asset_id"], o["t_in"]) for o in others]
+    assert system.projects.feedback("Chợ rau củ buổi sáng.").get(was["moment_id"]) == "rejected"
+    assert client.post(f"{url}/shots/{s1}/remove").status_code == 409          # nothing left to take off
+    # Any stretch found in the Library put in its place, as long as the shot, and remembered as chosen.
+    hit = next(h for h in client.get("/api/v1/library/search", params={"q": "chợ"}).json()["hits"] if h["level"] != "video")
+    v = client.post(f"{url}/shots/{s1}/use-moment", json={"moment_id": hit["moment_id"]}).json()
+    now = v["shots"][0]["assignment"]
+    assert (now["asset_id"], now["moment_id"], now["t_in"]) == (hit["asset_id"], hit["moment_id"], round(hit["t_start"], 2))
+    assert now["t_out"] - now["t_in"] <= v["shots"][0]["spec"]["duration"]["target"] + 0.01
+    assert system.projects.feedback("Chợ rau củ buổi sáng.").get(hit["moment_id"]) == "accepted"
+    assert client.post(f"{url}/shots/{s1}/use-moment", json={"moment_id": "nope"}).status_code == 409
