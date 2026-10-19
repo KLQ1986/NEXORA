@@ -141,7 +141,7 @@ def main() -> None:
                     system.autonomy.tick()
                     system.publishing.collect()
                 except Exception as err:           # the agent must never take the server down
-                    print(f"producer: {err!r}")
+                    print(f"producer: {err!r}", flush=True)
                 time.sleep(3)
         threading.Thread(target=produce, name="nexora-producer", daemon=True).start()
 

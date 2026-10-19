@@ -301,10 +301,11 @@ class Producer:
                 # Candidates judged on their previews; one is downloaded only when the operator lets the best be taken.
                 try:
                     out = self._fill_gap(sel.shot_id, texts[sel.shot_id])
-                except (AdapterError, LookupError, ValueError):
-                    out = {"found": False, "options": 0}
+                except Exception as err:                    # one line's trouble never stops the step: it would start over forever
+                    out = {"found": False, "options": 0, "error": str(err)[:160]}
                 said = (f"lấy clip stock tốt nhất trong {out['options']} ứng viên (từ khoá “{out.get('query') or ''}”)." if out.get("found")
                         else f"{out['options']} ứng viên stock đã chấm, chờ bạn chọn trong Storyboard." if out.get("options")
+                        else f"tìm clip stock lỗi ({out['error']}), bỏ qua câu này." if out.get("error")
                         else "không tìm được clip stock phù hợp.")
                 self._say(task_id, STOCK, f"Câu “{texts[sel.shot_id]}”: {said}")
             if task["options"].get("paid") and self._generate is not None:

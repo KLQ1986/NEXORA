@@ -130,17 +130,19 @@ def storyboard_stock(system: "System", shot_id: str, query: str | None = None) -
     return {"found": bool(found), "options": len(found), "passed": sum(1 for c in found if c.get("look") is not None and c["look"] >= 5)}
 
 
-def fill_gap_from_stock(system: "System", shot_id: str, line: str, *, take: bool | None = None) -> dict:
+def fill_gap_from_stock(system: "System", shot_id: str, line: str, *, take: bool | None = None, fresh: bool = True) -> dict:
     """A script line the footage does not show: stock candidates judged on their previews and kept for the operator to choose
     from. Only when the operator lets the best one be taken (Tự duyệt → stock) is the best that passes downloaded, and never
     the clip already chosen for the line before or after it. `take`: the operator asked for this very line, so the best is
-    taken whatever the switch says."""
+    taken whatever the switch says. `fresh=False` (the producer): a line that already has candidates keeps them, so a step
+    taken up again does not search every line once more."""
     if system.orch.kill_switch():
         return {"found": False, "options": 0, "stopped": True}
     shot = system.projects.shot(shot_id)
     script = system.projects.script(shot.script_id)
     from nexora.modules.sourcing.match import needed_seconds
-    found = system.stock_scout.find(script["project_id"], shot_id, line, seconds=needed_seconds(line), sources=_stock_sources(system))
+    found = (None if fresh else system.stock_scout.options(script["project_id"], shot_id)) or \
+        system.stock_scout.find(script["project_id"], shot_id, line, seconds=needed_seconds(line), sources=_stock_sources(system))
     if not (take if take is not None else system.autonomy.switches().get("stock")):
         return {"found": False, "options": len(found)}
     lines = [x.shot_id for x in script["shots"]]
@@ -1075,7 +1077,7 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     system.topics = TopicWriter(db_path, adapters, context=lambda project_id: topic_context(system, project_id), submit=orch.submit_run)
     system.topics.register(registry)
     system.producer = Producer(db_path, orch=orch, projects=projects, planning=planning, sourcing=sourcing, edit=edit, adapters=adapters,
-                               fill_gap=lambda shot_id, line: fill_gap_from_stock(system, shot_id, line),
+                               fill_gap=lambda shot_id, line: fill_gap_from_stock(system, shot_id, line, fresh=False),
                                to_storyboard=lambda project_id: lay_out_storyboard(system, project_id),
                                style=lambda project_id: illustration_style(system, projects.project(project_id)),
                                write_topic=lambda project_id, topic, seconds, form: system.topics.start(project_id, topic, seconds=seconds, form=form),

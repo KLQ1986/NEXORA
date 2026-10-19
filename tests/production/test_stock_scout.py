@@ -149,3 +149,15 @@ def test_without_the_vision_model_nothing_is_chosen_and_forgetting_a_project_rem
     s.find("prj_2", "shot_9", "Chợ nổi.", seconds=4)
     assert s.forget("prj_1") == 2 and s.options("prj_1", "shot_1") == [] and not (tmp_path / "tmp" / "prj_1").exists()
     assert s.options("prj_2", "shot_9")                                  # another project's candidates stay
+
+
+def test_a_preview_that_cannot_be_had_never_stops_the_search_and_an_address_with_spaces_is_escaped(tmp_path):
+    from nexora.adapters.stock_api import safe_url
+    assert safe_url("https://images-assets.nasa.gov/video/A_ Logo.MP4/A_ Logo.MP4~thumb.jpg") == "https://images-assets.nasa.gov/video/A_%20Logo.MP4/A_%20Logo.MP4~thumb.jpg"
+    stock = Stock({"floating market boats": [cand("nasa", "1"), cand("wikimedia", "2")]})
+    reg_scout, _ = scout(tmp_path, stock=stock)
+    def broken(url, path):
+        raise RuntimeError("URL can't contain control characters")    # what http.client raised on a NASA preview, not an OSError
+    reg_scout._fetch = broken
+    found = reg_scout.find("prj_1", "shot_1", "Chợ nổi.", seconds=4)
+    assert len(found) == 2 and all(c["thumb"] is None for c in found)

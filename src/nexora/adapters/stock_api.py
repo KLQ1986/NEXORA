@@ -8,6 +8,7 @@ until a candidate is chosen.
 """
 from __future__ import annotations
 
+import http.client
 import json
 import urllib.parse
 import urllib.request
@@ -23,14 +24,23 @@ LOCALES = {"vi": "vi-VN", "en": "en-US"}
 _OPEN = urllib.request.build_opener(_CheckedRedirects).open        # every redirect is checked to stay on the public web
 
 
+def safe_url(url: str) -> str:
+    """An address as a library gave it, with spaces and other characters a request line cannot carry escaped (a NASA preview
+    named "Artemis_II_ Logo_Painting...jpg" stopped a whole producer step)."""
+    parts = urllib.parse.urlsplit(url.strip())
+    return urllib.parse.urlunsplit((parts.scheme, parts.netloc, urllib.parse.quote(parts.path, safe="/%:@!$&'()*+,;=~-._"),
+                                    urllib.parse.quote(parts.query, safe="=&%+:/,;@!$'()*~-._"), parts.fragment))
+
+
 def resolve_public(url: str, *, timeout: float = 15.0) -> str:
     """Where an address really leads, every hop checked to be on the public web: for a tool (ffmpeg) that follows redirects
     on its own and would not check them."""
+    url = safe_url(url)
     public_address(url)
     try:
         with _OPEN(urllib.request.Request(url, method="HEAD", headers={"User-Agent": AGENT}), timeout=timeout) as answer:
             final = answer.geturl()
-    except (OSError, ValueError) as err:
+    except (OSError, ValueError, http.client.HTTPException) as err:
         raise AdapterError(ErrorCode.UNAVAILABLE, f"could not reach {urllib.parse.urlparse(url).hostname}: {err}") from None
     public_address(final)
     return final
@@ -39,6 +49,7 @@ def resolve_public(url: str, *, timeout: float = 15.0) -> str:
 def fetch_public(url: str, path: str | Path, *, max_bytes: int = 2_000_000_000, timeout: float = 60.0, headers: dict | None = None) -> Path:
     """Save one file from the public web, refusing an address on this machine or the local network and anything larger
     than `max_bytes`."""
+    url = safe_url(url)
     public_address(url)
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -55,7 +66,7 @@ def fetch_public(url: str, path: str | Path, *, max_bytes: int = 2_000_000_000, 
     except AdapterError:
         partial.unlink(missing_ok=True)
         raise
-    except (OSError, ValueError) as err:
+    except (OSError, ValueError, http.client.HTTPException) as err:
         partial.unlink(missing_ok=True)
         raise AdapterError(ErrorCode.UNAVAILABLE, f"could not fetch {urllib.parse.urlparse(url).hostname}: {err}") from None
     partial.replace(path)
@@ -67,7 +78,7 @@ def _get_json(url: str, headers: dict | None = None) -> dict:
     try:
         with _OPEN(req, timeout=30) as answer:
             return json.loads(answer.read().decode("utf-8"))
-    except (OSError, ValueError) as err:
+    except (OSError, ValueError, http.client.HTTPException) as err:
         raise AdapterError(ErrorCode.UNAVAILABLE, f"{urllib.parse.urlparse(url).hostname}: {err}") from None
 
 

@@ -85,3 +85,24 @@ def test_approving_the_storyboard_cleans_up_candidates_and_puts_unused_stock_of_
     assert trashed == {unused} and used not in trashed and starred not in trashed and other not in trashed
     assert system.stock_scout.options(project, shot) == [] and not (system.data_dir / "tmp" / "stock" / project).exists()
     assert after_storyboard_approved(system, project) == {"previews": 0, "trashed": 0}      # once is enough
+
+
+def test_one_line_whose_stock_search_breaks_does_not_stop_the_producer_step_nor_make_it_start_over(tmp_path):
+    from tests.fakes import FakeVoice
+    from tests.conftest import make_video
+    system, stock, _ = _system(tmp_path)
+    system.library.ingest(make_video(tmp_path / "footage.mp4", picture=20)); drain(system)
+    asked = []
+    def flaky(shot_id, line):
+        asked.append(line)
+        if len(asked) == 1:
+            raise TypeError("a library answered something unexpected")
+        return {"found": False, "options": 2}
+    system.producer._fill_gap = flaky
+    system.adapters._adapters["model"].script = ["cá tươi trên sạp", "tàu vũ trụ bay lên", "tên lửa rời bệ"]
+    task_id = system.producer.start("một buổi sáng ở chợ", critique=False)
+    for _ in range(12):
+        system.producer.advance(task_id); drain(system)
+    task = system.producer.task(task_id)
+    stock_lines = [e["text"] for e in task["log"] if e["role"] == "Tìm stock"]
+    assert task["step"] != "gaps" and len(asked) == len(stock_lines) and "bỏ qua câu này" in stock_lines[0]

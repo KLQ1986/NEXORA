@@ -146,13 +146,18 @@ class StockScout:
         out = self._tmp / project_id / f"{cid}.jpg"
         if out.is_file():
             return out
+        # A preview that cannot be had (a broken address, a library that refuses) leaves this candidate without a picture;
+        # it never stops the search for the line, nor the producer's step around it.
         if c.get("thumbnail_url"):
             try:
                 return self._fetch(c["thumbnail_url"], out)
-            except AdapterError:
+            except Exception:
                 pass
         url = c.get("preview_url") or c.get("download_url")
-        return self._frame(url, out) if url else None
+        try:
+            return self._frame(url, out) if url else None
+        except Exception:
+            return None
 
     def _siglip(self, items: list[dict], text: str) -> None:
         pictured = [x for x in items if x["thumb"]]
