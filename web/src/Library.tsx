@@ -332,8 +332,9 @@ function Row({ item, on, chosen, choosing, pick, choose }: { item: Item; on: boo
         {choosing && <span className={`grid h-4 w-4 shrink-0 place-items-center rounded border ${chosen ? "border-accent bg-accent text-canvas" : "border-edge"}`}>{chosen && <Icon name="check" size={11} />}</span>}
         <Frame item={item} className="aspect-video w-20 shrink-0 rounded" />
         <span className="min-w-0 flex-1"><span className="block truncate text-[13px]">{item.title}{item.version ? <span className="mono ml-1.5 text-[11px] text-faint">v{item.version}</span> : null}</span>
-          <span className="mono block truncate text-[11px] text-faint">{[item.duration ? timecode(item.duration) : null, res(item.width, item.height) ?? (item.format ? FORMAT[item.format] : null), item.size ? megabytes(item.size) : null].filter(Boolean).join(" · ")}</span></span>
+          <span className="mono block truncate text-[11px] text-faint">{[item.duration ? timecode(item.duration) : null, res(item.width, item.height) ?? (item.format ? FORMAT[item.format] : null)].filter(Boolean).join(" · ")}</span></span>
         {item.status && <Badge s={item.status} />}
+        {item.size ? <span className="mono w-16 shrink-0 text-right text-[12px] text-mute">{megabytes(item.size)}</span> : null}
       </button>
     </li>
   );
