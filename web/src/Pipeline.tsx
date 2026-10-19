@@ -100,9 +100,9 @@ export default function Pipeline({ project: p, place, onScreen, compact = false,
   const task = data?.tasks[0];
   const st = states(p, task);
   const [hover, setHover] = useState<Hover>(null);
-  // A parent task that is done folds to one mark so the line fits the screen; the operator may unfold it again.
-  const [unfolded, setUnfolded] = useState<Set<string>>(new Set());
-  const fold = (key: string) => setUnfolded((u) => { const n = new Set(u); if (n.has(key)) n.delete(key); else n.add(key); return n; });
+  // Every parent task shows its steps (all eleven fit a desktop screen); one that is done may be folded to one mark by hand.
+  const [folds, setFolds] = useState<Set<string>>(new Set());
+  const fold = (key: string) => setFolds((u) => { const n = new Set(u); if (n.has(key)) n.delete(key); else n.add(key); return n; });
   // The whole line is scaled down, in proportion, to fit the width it is given (never below 60 %; past that it scrolls).
   const frame = useRef<HTMLDivElement>(null), line = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(1);
@@ -113,7 +113,7 @@ export default function Pipeline({ project: p, place, onScreen, compact = false,
     const watch = new ResizeObserver(fit);
     watch.observe(frame.current);
     return () => watch.disconnect();
-  }, [compact, unfolded, place, p.project_id, task?.step, task?.status]);
+  }, [compact, folds, place, p.project_id, task?.step, task?.status]);
   const timer = useRef<number | undefined>(undefined);
   const open = (s: Screen) => {
     if (onScreen && s !== "storyboard" && place !== "storyboard") return onScreen(s);
@@ -132,12 +132,12 @@ export default function Pipeline({ project: p, place, onScreen, compact = false,
       {GROUPS.map((g, gi) => {
         const gs = groupState(g);
         const done = g.children.filter((c) => st[NODES.findIndex((n) => n.key === c.key)] === "done").length;
-        const folded = !compact && gs === "done" && !unfolded.has(g.key) && place !== g.screen;
+        const folded = !compact && gs === "done" && folds.has(g.key) && place !== g.screen;
         const quiet = !compact && gs === "later";                  // not reached yet: names only, the card has the rest
         return (
-          <div key={g.key} className="flex shrink-0 items-center">
-            {gi > 0 && <span className={`pipe-link ${compact ? "w-3" : "w-4"} ${gs === "later" ? "" : gs === "now" && st[NODES.findIndex((n) => n.key === g.children[0].key) - 1] === "done" ? "live" : "done"}`} aria-hidden="true" />}
-            <section className={`pipe-group ${gs} relative rounded-lg border ${place === g.screen ? "border-accent/70" : "border-white/10"} bg-black/30 backdrop-blur-sm ${compact ? "px-1.5 py-1" : "px-2 pb-2 pt-2"}`}>
+          <div key={g.key} className="flex shrink-0 items-stretch">
+            {gi > 0 && <span className={`pipe-link self-center ${compact ? "w-3" : "w-4"} ${gs === "later" ? "" : gs === "now" && st[NODES.findIndex((n) => n.key === g.children[0].key) - 1] === "done" ? "live" : "done"}`} aria-hidden="true" />}
+            <section className={`pipe-group ${gs} relative flex flex-col rounded-lg border ${place === g.screen ? "border-accent/70" : "border-white/[0.18]"} bg-black/30 backdrop-blur-sm ${compact ? "px-1.5 py-1" : "px-2 pb-2 pt-2"}`}>
               {!compact && (
                 <header className="mb-1.5 flex items-center gap-2">
                   <span className="mono text-[11px] text-faint">{`G${gi + 1}`}</span>
@@ -150,12 +150,12 @@ export default function Pipeline({ project: p, place, onScreen, compact = false,
               {!compact && <span className="absolute inset-x-3 top-[33px] h-px bg-white/[0.06]"><span className={`block h-px ${BAR[gs]} transition-all`} style={{ width: `${(100 * done) / g.children.length}%` }} /></span>}
               {folded ? (
                 <button type="button" onClick={() => fold(g.key)} title={g.children.map((c) => c.label).join(" · ")}
-                        className="pipe-step ui flex flex-col items-center gap-1.5 rounded-lg px-2 py-2 text-center">
+                        className="pipe-step ui mt-auto flex flex-col items-center gap-1.5 rounded-lg px-2 py-2 text-center">
                   <span className="whitespace-nowrap text-[15px] font-semibold text-ink">{tv`${g.children.length} bước xong`}</span>
                   <span className="pipe-node done relative grid h-14 w-14 shrink-0 place-items-center rounded-full border-2 border-proof/60 bg-proof/10 text-proof"><Icon name="check" size={24} /></span>
                 </button>
               ) : (
-              <div className={`flex ${compact ? "items-center" : "items-end"}`}>
+              <div className={`flex ${compact ? "items-center" : "mt-auto items-end"}`}>
                 {g.children.map((c, ci) => {
                   k = NODES.findIndex((n) => n.key === c.key);
                   const s = st[k], i = k;

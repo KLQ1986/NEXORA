@@ -1,5 +1,5 @@
 import { t as tr, tv, lang, setLang, type Lang } from "./i18n";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { STAGE_NAMES, STATUS_NAMES, timecode, type Asset, type Shot, type Stage } from "./api";
 
@@ -544,3 +544,58 @@ export function Dialogs() {
     </div>
   );
 }
+
+export type DropItem = { value: string; label: string; dot?: string; note?: string };
+/** A choice that always opens downward, under its own card (a native list on macOS opens over the chosen line instead).
+ *  `className` frames the card, `children` is what the card shows; ↑ ↓ Enter Esc work, a click outside closes it. */
+export function DropList({ value, items, onChange, label, className = "", children }: { value: string; items: DropItem[]; onChange: (v: string) => void;
+  label: string; className?: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const [at, setAt] = useState(0);
+  const [place, setPlace] = useState({ left: 0, top: 0, width: 0 });
+  const box = useRef<HTMLDivElement>(null), list = useRef<HTMLUListElement>(null);
+  // The list is laid over the page from <body>, so no clipping parent (a header row, a scrolled pane) cuts it; it follows its card.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const follow = () => { const r = box.current?.getBoundingClientRect(); if (r) setPlace({ left: r.left, top: r.bottom + 6, width: r.width }); };
+    const away = (e: PointerEvent) => { const t = e.target as Node; if (!box.current?.contains(t) && !list.current?.contains(t)) setOpen(false); };
+    follow();
+    document.addEventListener("pointerdown", away);
+    window.addEventListener("resize", follow);
+    window.addEventListener("scroll", follow, true);
+    return () => { document.removeEventListener("pointerdown", away); window.removeEventListener("resize", follow); window.removeEventListener("scroll", follow, true); };
+  }, [open]);
+  useEffect(() => { if (open) list.current?.children[at]?.scrollIntoView({ block: "nearest" }); }, [open, at]);
+  const show = () => { setAt(Math.max(0, items.findIndex((i) => i.value === value))); setOpen(true); };
+  const pick = (v: string) => { setOpen(false); if (v !== value) onChange(v); };
+  const key = (e: React.KeyboardEvent) => {
+    if (!open) { if (["ArrowDown", "ArrowUp", "Enter", " "].includes(e.key)) { e.preventDefault(); show(); } return; }
+    if (e.key === "Escape" || e.key === "Tab") setOpen(false);
+    else if (e.key === "ArrowDown") { e.preventDefault(); setAt((a) => Math.min(items.length - 1, a + 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setAt((a) => Math.max(0, a - 1)); }
+    else if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (items[at]) pick(items[at].value); }
+  };
+  return (
+    <div ref={box} className="relative">
+      <button type="button" aria-haspopup="listbox" aria-expanded={open} aria-label={label} onClick={() => (open ? setOpen(false) : show())} onKeyDown={key}
+              className={`group flex w-full cursor-pointer items-center text-left transition-colors hover:border-accent/50 focus-visible:border-accent ${open ? "border-accent/70" : ""} ${className}`}>
+        {children}
+        <Icon name="down" size={14} className={`shrink-0 text-faint transition-transform group-hover:text-ink ${open ? "rotate-180 text-ink" : ""}`} />
+      </button>
+      {open && createPortal(
+        <ul ref={list} role="listbox" aria-label={label} style={{ left: place.left, top: place.top, width: Math.max(280, place.width) }}
+            className="pop fixed z-50 max-h-80 overflow-auto rounded-xl border border-line bg-surface p-1 shadow-[0_12px_40px_-8px_rgba(0,0,0,.8)]">
+          {items.map((it, i) => (
+            <li key={it.value} role="option" aria-selected={it.value === value} onPointerEnter={() => setAt(i)} onClick={() => pick(it.value)}
+                className={`flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] ${i === at ? "bg-white/[0.07]" : ""} ${it.value === value ? "font-semibold text-accent" : "text-ink"}`}>
+              <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${it.dot ?? "bg-faint"}`} />
+              <span className="min-w-0 flex-1 truncate" title={it.label}>{it.label}</span>
+              {it.note && <span className="shrink-0 text-[11.5px] font-normal text-faint">{it.note}</span>}
+              {it.value === value && <Icon name="check" size={13} className="shrink-0" />}
+            </li>))}
+        </ul>, document.body)}
+    </div>);
+}
+
+/** A video's state as the dot beside its name. */
+export const TONE_DOT: Record<string, string> = { mute: "bg-faint", cue: "bg-cue", proof: "bg-proof", tally: "bg-tally", ai: "bg-ai", accent: "bg-accent" };

@@ -3,7 +3,7 @@ import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { call, post, projectNext, projectState, scriptText, stageName, timecode, usePoll, type Idea, type Source, type AgentTask, type Asset, type Settings, type Candidate, type Project, type RenderItem, type Shot, type BibleEntry, type GapPlan, type Op, type Rights, type Publishing, type Channel, type Variant, type Illustration, type Quote, type Production, type ProductionMission, type Template } from "./api";
 import Board from "./Board";
-import { ask, Button, Empty, Filmstrip, goTo, Icon, Meter, OpsSide, Page, registerProjectsMenu, Section, Seg, SideFrame, SideGroup, SideLink, SkeletonCards, Spinner, StageRail, Steps, Tabs, Tag, TimeChip, toast, Readout } from "./parts";
+import { ask, Button, DropList, Empty, Filmstrip, goTo, Icon, Meter, OpsSide, Page, registerProjectsMenu, Section, Seg, SideFrame, SideGroup, SideLink, SkeletonCards, Spinner, StageRail, Steps, Tabs, Tag, TimeChip, toast, TONE_DOT, Readout } from "./parts";
 import Pipeline, { type Screen } from "./Pipeline";
 import Timeline from "./Timeline";
 import EditStep from "./EditStep";
@@ -701,21 +701,18 @@ function VideoPicker({ id }: { id: string }) {
   };
   const here = list.find((p) => p.project_id === id);
   const st = here ? projectState(here) : null;
-  const dot = st ? ({ mute: "bg-faint", cue: "bg-cue", proof: "bg-proof", tally: "bg-tally" } as Record<string, string>)[st.tone] ?? "bg-faint" : "bg-faint";
-  // The card is the control: the list covers it whole, borderless, so there is one frame, not a box inside a box.
   return (
-    <label className="group relative flex h-[54px] w-full sm:w-[340px] sm:max-w-[44vw] 2xl:w-[420px] shrink-0 cursor-pointer items-center gap-3 self-start rounded-xl border border-line bg-surface/70 px-3.5 transition-colors hover:border-accent/50 focus-within:border-accent">
-      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/[0.05] text-mute group-hover:text-accent"><Icon name="clapper" size={15} /></span>
-      <span className="grid min-w-0 flex-1 leading-tight">
-        <span className="mono text-[10px] uppercase tracking-[0.12em] text-faint">{tr("Video")} · {list.findIndex((p) => p.project_id === id) + 1}/{list.length}</span>
-        <span className="flex min-w-0 items-center gap-1.5"><span className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot}`} title={st?.label} />
-          <span className="truncate text-[14px] font-semibold text-ink" title={here?.title}>{here?.title}</span></span>
-      </span>
-      <Icon name="down" size={14} className="shrink-0 text-faint group-hover:text-ink" />
-      <select value={id} onChange={(e) => go(e.target.value)} aria-label={tr("Video đang mở")} className="absolute inset-0 cursor-pointer opacity-0">
-        {list.map((p) => <option key={p.project_id} value={p.project_id}>{p.title}{p.project_id === id ? "" : ` — ${projectState(p).label}`}</option>)}
-      </select>
-    </label>);
+    <div className="w-full shrink-0 self-start sm:w-[340px] sm:max-w-[44vw] 2xl:w-[420px]">
+      <DropList value={id} onChange={go} label={tr("Video đang mở")} className="h-[54px] gap-3 rounded-xl border border-line bg-surface/70 px-3.5"
+                items={list.map((p) => { const s = projectState(p); return { value: p.project_id, label: p.title, dot: TONE_DOT[s.tone], note: s.label }; })}>
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/[0.05] text-mute group-hover:text-accent"><Icon name="clapper" size={15} /></span>
+        <span className="grid min-w-0 flex-1 leading-tight">
+          <span className="mono text-[10px] uppercase tracking-[0.12em] text-faint">{tr("Video")} · {list.findIndex((p) => p.project_id === id) + 1}/{list.length}</span>
+          <span className="flex min-w-0 items-center gap-1.5"><span className={`h-1.5 w-1.5 shrink-0 rounded-full ${st ? TONE_DOT[st.tone] : "bg-faint"}`} title={st?.label} />
+            <span className="truncate text-[14px] font-semibold text-ink" title={here?.title}>{here?.title}</span></span>
+        </span>
+      </DropList>
+    </div>);
 }
 
 function AgentLog({ projectId, compact = false }: { projectId: string; compact?: boolean }) {
