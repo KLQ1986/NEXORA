@@ -119,9 +119,9 @@ class Orchestrator:
                 for r in rows]
 
     def run_status(self, run_id: str) -> RunStatus:
-        """Derived from the stages; never stored."""
-        stages = self.stages(run_id)
-        statuses = {s.status for s in stages}
+        """Derived from the stages; never stored. Only the stages' statuses are read: every screen asks this of hundreds of runs,
+        and decoding each stage's outputs to know its status made Mission Control's overview take 4 s under load."""
+        statuses = {StageStatus(r[0]) for r in self._conn.execute("SELECT status FROM stages WHERE run_id = ?", (run_id,))}
         cancel = self._conn.execute("SELECT cancel_requested FROM runs WHERE run_id = ?", (run_id,)).fetchone()[0]
         if statuses <= TERMINAL:
             if cancel and StageStatus.CANCELLED in statuses:

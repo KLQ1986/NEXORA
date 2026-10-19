@@ -1,5 +1,5 @@
 import { t as tr, tv, locale } from "./i18n";
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { usePoll, type AgentTask, type Project } from "./api";
 import { goTo, Icon } from "./parts";
@@ -67,11 +67,11 @@ function states(p: Project, task?: AgentTask | null): NodeState[] {
 }
 
 /** What a step has to show, measured on the project: the short line under its name. */
-function figure(key: string, p: Project, task?: AgentTask | null): string {
+function figure(key: string, p: Project, task?: AgentTask | null, loaded = true): string {
   const n = p.shots.length, facts = p.shots.filter((s) => s.is_fact), pictured = p.shots.filter((s) => s.selection && s.selection.status !== "gap").length;
   const latest = p.renders[0];
   switch (key) {
-    case "brief": return task ? tr("có trợ lý") : tr("tự làm");
+    case "brief": return !loaded ? "…" : task ? tr("có trợ lý") : tr("tự làm");
     case "research": return task?.log.some((e) => e.role === "Nghiên cứu") ? tr("có nguồn") : "—";
     case "write": return n ? tv`${n} câu` : "—";
     case "facts": return facts.length ? tv`${facts.filter((s) => s.fact_check?.verdict === "supported").length}/${facts.length} có nguồn` : "—";
@@ -103,6 +103,17 @@ export default function Pipeline({ project: p, place, onScreen, compact = false,
   // A parent task that is done folds to one mark so the line fits the screen; the operator may unfold it again.
   const [unfolded, setUnfolded] = useState<Set<string>>(new Set());
   const fold = (key: string) => setUnfolded((u) => { const n = new Set(u); if (n.has(key)) n.delete(key); else n.add(key); return n; });
+  // The whole line is scaled down, in proportion, to fit the width it is given (never below 60 %; past that it scrolls).
+  const frame = useRef<HTMLDivElement>(null), line = useRef<HTMLDivElement>(null);
+  const [zoom, setZoom] = useState(1);
+  useLayoutEffect(() => {
+    if (compact || !frame.current || !line.current) return;
+    const fit = () => { const room = frame.current!.clientWidth, need = line.current!.scrollWidth; setZoom(need > 0 ? Math.max(0.6, Math.min(1, room / need)) : 1); };
+    fit();
+    const watch = new ResizeObserver(fit);
+    watch.observe(frame.current);
+    return () => watch.disconnect();
+  }, [compact, unfolded, place, p.project_id, task?.step, task?.status]);
   const timer = useRef<number | undefined>(undefined);
   const open = (s: Screen) => {
     if (onScreen && s !== "storyboard" && place !== "storyboard") return onScreen(s);
@@ -116,7 +127,8 @@ export default function Pipeline({ project: p, place, onScreen, compact = false,
   };
   let k = -1;
   return (
-    <div className={`pipe-grid scroll-x flex items-stretch ${compact ? "gap-0 py-1" : "gap-0 py-3"}`} role="navigation" aria-label={tr("Dây chuyền sản xuất video")}>
+    <div ref={frame} className={`pipe-grid ${zoom < 0.6 + 1e-6 ? "scroll-x" : "overflow-hidden"} ${compact ? "py-1" : "py-3"}`} role="navigation" aria-label={tr("Dây chuyền sản xuất video")}>
+    <div ref={line} className={`flex w-max items-stretch ${compact ? "" : "mx-auto"}`} style={compact ? undefined : { zoom }}>
       {GROUPS.map((g, gi) => {
         const gs = groupState(g);
         const done = g.children.filter((c) => st[NODES.findIndex((n) => n.key === c.key)] === "done").length;
@@ -149,11 +161,14 @@ export default function Pipeline({ project: p, place, onScreen, compact = false,
                   const s = st[k], i = k;
                   return (
                     <span key={c.key} className={`flex ${compact ? "items-center" : "items-end"}`}>
-                      {ci > 0 && <span className={`pipe-link ${compact ? "w-2" : `${quiet ? "w-3" : "w-5"} mb-9`} ${st[i - 1] === "done" ? (s === "now" ? "live" : s === "later" ? "" : "done") : ""}`} aria-hidden="true" />}
+                      {ci > 0 && compact && <span className={`pipe-link w-2 ${st[i - 1] === "done" ? (s === "now" ? "live" : s === "later" ? "" : "done") : ""}`} aria-hidden="true" />}
                       <button type="button" onClick={c.ui ? () => open(g.screen) : undefined} aria-disabled={!c.ui || undefined}
                               onMouseEnter={(e) => show(i, e.currentTarget)} onMouseLeave={hide} onFocus={(e) => show(i, e.currentTarget)} onBlur={hide}
                               aria-label={`${c.label}: ${SAID[s]}${c.ui ? "" : ` (${tr("bước tự động, không có màn hình riêng")})`}`}
-                              className={`pipe-step ${c.ui ? "ui" : "auto"} group flex items-center rounded-lg text-left ${compact ? "gap-1.5 px-0.5 py-0.5" : "flex-col-reverse gap-1.5 px-1.5 py-2 text-center"}`}>
+                              className={`pipe-step ${c.ui ? "ui" : "auto"} group relative flex items-center rounded-lg text-left ${compact ? "gap-1.5 px-0.5 py-0.5" : `flex-col-reverse gap-1.5 py-2 text-center ${quiet ? "px-3" : "px-4"}`}`}>
+                        {/* The line between steps, drawn by each step as two halves meeting its neighbours', so it is one line whatever the labels' widths. */}
+                        {!compact && ci > 0 && <span aria-hidden="true" className={`pipe-link pointer-events-none absolute bottom-[35px] left-0 right-1/2 mr-7 ${st[i - 1] === "done" ? (s === "now" ? "live" : s === "later" ? "" : "done") : ""}`} />}
+                        {!compact && ci < g.children.length - 1 && <span aria-hidden="true" className={`pipe-link pointer-events-none absolute bottom-[35px] left-1/2 right-0 ml-7 ${s === "done" ? (st[i + 1] === "now" ? "live" : st[i + 1] === "later" ? "" : "done") : ""}`} />}
                         <span className={`pipe-node ${s} relative grid shrink-0 place-items-center rounded-full border ${RING[s]} ${compact ? "h-5 w-5" : "h-14 w-14 border-2"}`}>
                           <Icon name={s === "done" ? "check" : s === "fail" ? "alert" : c.icon} size={compact ? 10 : 24} />
                           {(s === "now" || s === "wait") && <span className={`absolute rounded-full ${compact ? "-right-0.5 -top-0.5 h-2 w-2" : "-right-0.5 -top-0.5 h-3.5 w-3.5"} ${s === "now" ? "bg-accent" : "bg-cue"}`}><span className={`ping absolute inset-0 rounded-full ${s === "now" ? "bg-accent" : "bg-cue"}`} /></span>}
@@ -161,7 +176,7 @@ export default function Pipeline({ project: p, place, onScreen, compact = false,
                         {!compact && (
                           <span className="grid justify-items-center gap-0.5 leading-tight">
                             <span className="whitespace-nowrap text-[15px] font-semibold text-ink"><span className="mono mr-1.5 text-[11px] font-normal text-faint">{`N${String(i + 1).padStart(2, "0")}`}</span>{c.label}</span>
-                            {!quiet && <span className={`whitespace-nowrap text-[12.5px] ${TEXT[s]}`}>{SAID[s]}<span className="text-faint"> · {figure(c.key, p, task)}</span></span>}
+                            {!quiet && <span className={`whitespace-nowrap text-[12.5px] ${TEXT[s]}`}>{SAID[s]}<span className="text-faint"> · {figure(c.key, p, task, !!data)}</span></span>}
                           </span>)}
                       </button>
                     </span>);
@@ -170,7 +185,8 @@ export default function Pipeline({ project: p, place, onScreen, compact = false,
             </section>
           </div>);
       })}
-      {extra && <><span className="mx-3 h-6 w-px shrink-0 self-center bg-line" aria-hidden="true" />{extra}</>}
+      {extra && <><span className="mx-3 h-6 w-px shrink-0 self-center bg-line" aria-hidden="true" /><span className="flex shrink-0 items-center gap-1 self-center">{extra}</span></>}
+    </div>
       {hover && createPortal(<Card i={hover.i} x={hover.x} y={hover.y} p={p} task={task} state={st[hover.i]} keep={() => window.clearTimeout(timer.current)} leave={hide} />, document.body)}
     </div>
   );

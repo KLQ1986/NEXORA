@@ -692,7 +692,17 @@ const TASK_STATES: Record<string, string> = { working: tr("Đang làm"), waiting
 function AgentLog({ projectId, compact = false }: { projectId: string; compact?: boolean }) {
   const { data } = usePoll<{ tasks: AgentTask[] }>(`/api/v1/agent/tasks?project_id=${projectId}`, 3000);
   const task = data?.tasks[0];
+  const [all, setAll] = useState(false);
   if (!task) return null;
+  // The same words said again (a step taken up again says them once more) are one line with how often and when last;
+  // the newest eight show, the rest on asking.
+  const lines: { role: string; text: string; at: number; times: number }[] = [];
+  const seen = new Map<string, number>();
+  for (const e of task.log) {
+    const key = `${e.role}\u0000${e.text}`;
+    if (seen.has(key)) { const l = lines[seen.get(key)!]; l.times += 1; l.at = e.at; } else { seen.set(key, lines.length); lines.push({ ...e, times: 1 }); }
+  }
+  const shown = all ? lines : lines.slice(-8);
   return (
     <details className={`ai-card px-4 py-3 ${compact ? "" : "mb-6"}`} open={!compact && task.status !== "done"}>
       <summary className="flex cursor-pointer list-none items-center gap-2.5 font-medium">
@@ -701,7 +711,10 @@ function AgentLog({ projectId, compact = false }: { projectId: string; compact?:
         <span className="ml-auto truncate text-[12.5px] font-normal text-mute">{task.goal}</span><Icon name="down" size={14} className="text-faint" />
       </summary>
       <ol className="mt-3 grid gap-1.5 border-t border-ai/15 pt-3">
-        {task.log.map((e, i) => <li key={i} className="grid grid-cols-[4.5rem_7rem_minmax(0,1fr)] gap-2 text-[13px]"><span className="mono text-faint">{new Date(e.at * 1000).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" })}</span><span className="truncate text-ai">{e.role}</span><span>{e.text}</span></li>)}
+        {lines.length > shown.length && <li><button type="button" onClick={() => setAll(true)} className="link text-[12.5px]">{tv`Xem tất cả ${lines.length} dòng (${task.log.length} lượt)`}</button></li>}
+        {shown.map((e, i) => <li key={i} className="grid grid-cols-[4.5rem_7rem_minmax(0,1fr)] gap-2 text-[13px]"><span className="mono text-faint">{new Date(e.at * 1000).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" })}</span><span className="truncate text-ai">{e.role}</span>
+          <span>{e.text}{e.times > 1 && <span className="mono ml-1.5 rounded bg-white/[0.06] px-1 text-[11px] text-faint" title={tr("Số lần trợ lý nói đúng câu này")}>×{e.times}</span>}</span></li>)}
+        {all && lines.length > 8 && <li><button type="button" onClick={() => setAll(false)} className="link text-[12.5px]">{tr("Chỉ xem 8 dòng mới nhất")}</button></li>}
       </ol>
     </details>
   );

@@ -178,8 +178,9 @@ function Lines() {
         {busy.map((p) => { const t = task(p.project_id); return (
           <li key={p.project_id} className="flex min-w-0 items-center gap-3">
             <button type="button" onClick={() => goTo(`/du-an/${p.project_id}`)} className="w-48 shrink-0 truncate text-left text-[12.5px] font-medium hover:text-accent" title={p.title}>{p.title}</button>
-            <div className="min-w-0 flex-1"><Pipeline project={p} compact /></div>
-            {t && <span className="hidden w-56 shrink-0 truncate text-[11.5px] text-faint xl:block" title={t.log[t.log.length - 1]?.text}>{t.log[t.log.length - 1]?.text}</span>}
+            <div className="min-w-0 shrink-0"><Pipeline project={p} compact /></div>
+            {t && <span className="hidden min-w-0 flex-1 truncate text-[12px] text-mute xl:block" title={t.log[t.log.length - 1]?.text}>
+              <span className="mono mr-1.5 text-[10.5px] text-faint">{t.log[t.log.length - 1]?.role}</span>{t.log[t.log.length - 1]?.text}</span>}
           </li>); })}
       </ul>
     </Bento>);

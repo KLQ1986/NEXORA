@@ -270,7 +270,7 @@ function App() {
             </a>); })}
         </nav>
         <span className="flex-1" />
-        {(working > 0 || waitingTurn > 0) && <button type="button" onClick={() => go("/tien-trinh")} title={tr("Xem tiến trình")} className="hidden h-9 shrink-0 items-center gap-2 rounded-lg border border-ai/30 bg-ai/10 px-3 text-[12.5px] font-medium text-ai transition-colors hover:bg-ai/15 xl:flex"><Spinner size={13} />{busyText}</button>}
+        {(working > 0 || waitingTurn > 0) && <button type="button" onClick={() => go("/tien-trinh")} title={tr("Xem tiến trình")} className="hidden h-9 shrink-0 items-center gap-2 rounded-lg border border-ai/30 bg-ai/10 px-3 text-[12.5px] font-medium text-ai transition-colors hover:bg-ai/15 2xl:flex"><Spinner size={13} />{busyText}</button>}
         <button type="button" onClick={() => setPalette(true)} title={tr("Tìm dự án, màn hình, cảnh…")} aria-label={tr("Tìm dự án, màn hình, cảnh…")}
                 className="flex h-9 w-9 shrink-0 items-center justify-center gap-2.5 rounded-lg border border-line bg-surface text-[13px] text-faint transition-colors hover:border-edge hover:text-mute 2xl:w-52 2xl:justify-start 2xl:px-3">
           <Icon name="search" size={15} /><span className="hidden flex-1 truncate text-left 2xl:inline">{tr("Tìm…")}</span><kbd className="mono hidden rounded border border-line px-1.5 text-[11px] 2xl:inline">⌘K</kbd>
