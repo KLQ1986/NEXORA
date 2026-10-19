@@ -235,3 +235,11 @@ html[lang="vi"] .display { letter-spacing: -0.012em; }
 .pipe-group.fail { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-tally) 40%, transparent), 0 0 26px -10px var(--color-tally); }
 .pipe-group.done { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-proof) 22%, transparent); }
 .pipe-node.done { box-shadow: 0 0 10px -3px var(--color-proof); }
+/* A step with a screen of its own lights and lifts under the pointer; an automatic step stays put. */
+.pipe-step { transition: transform .18s ease, background-color .18s ease, box-shadow .18s ease; }
+.pipe-step.ui { cursor: pointer; }
+.pipe-step.ui:hover, .pipe-step.ui:focus-visible { transform: translateY(-3px) scale(1.03); background-color: color-mix(in srgb, var(--color-accent) 9%, transparent);
+  box-shadow: 0 10px 28px -10px color-mix(in srgb, var(--color-accent) 70%, transparent), inset 0 0 0 1px color-mix(in srgb, var(--color-accent) 40%, transparent); }
+.pipe-step.ui:hover .pipe-node { filter: brightness(1.35); box-shadow: 0 0 22px -2px currentColor; }
+.pipe-step.auto { cursor: default; }
+@media (prefers-reduced-motion: reduce) { .pipe-step.ui:hover { transform: none; } }

@@ -10,25 +10,25 @@ import { goTo, Icon } from "./parts";
     when an assistant works on the video, else from where the project stands. */
 export type Screen = "script" | "storyboard" | "cut" | "publish";
 type NodeState = "done" | "now" | "wait" | "fail" | "later";
-type Child = { key: string; label: string; icon: string; about: string; roles: string[] };
+type Child = { key: string; label: string; icon: string; about: string; roles: string[]; ui: boolean };   // ui: the step has a screen of its own
 type Group = { key: string; label: string; screen: Screen; children: Child[] };
 
 const GROUPS: Group[] = [
   { key: "script", label: tr("Kịch bản"), screen: "script", children: [
-    { key: "brief", label: tr("Nhiệm vụ"), icon: "bolt", about: tr("Mục tiêu của video: chủ đề, thời lượng, thể loại, khung hình."), roles: ["Điều phối"] },
-    { key: "research", label: tr("Nghiên cứu"), icon: "globe", about: tr("Claude Code tìm nguồn trên web cho chủ đề (video theo chủ đề) hoặc đọc các trang bạn đưa."), roles: ["Nghiên cứu"] },
-    { key: "write", label: tr("Viết"), icon: "edit", about: tr("Viết lời dẫn từng câu, rồi người phản biện nhận xét và viết lại."), roles: ["Biên kịch", "Phản biện"] },
-    { key: "facts", label: tr("Kiểm chứng"), icon: "shield", about: tr("Đối chiếu từng câu nêu dữ kiện với nguồn: xác nhận, trái nguồn, hay chưa có nguồn."), roles: ["Kiểm chứng"] } ] },
+    { key: "brief", label: tr("Nhiệm vụ"), icon: "bolt", about: tr("Mục tiêu của video: chủ đề, thời lượng, thể loại, khung hình."), roles: ["Điều phối"], ui: false },
+    { key: "research", label: tr("Nghiên cứu"), icon: "globe", about: tr("Claude Code tìm nguồn trên web cho chủ đề (video theo chủ đề) hoặc đọc các trang bạn đưa."), roles: ["Nghiên cứu"], ui: false },
+    { key: "write", label: tr("Viết"), icon: "edit", about: tr("Viết lời dẫn từng câu, rồi người phản biện nhận xét và viết lại."), roles: ["Biên kịch", "Phản biện"], ui: true },
+    { key: "facts", label: tr("Kiểm chứng"), icon: "shield", about: tr("Đối chiếu từng câu nêu dữ kiện với nguồn: xác nhận, trái nguồn, hay chưa có nguồn."), roles: ["Kiểm chứng"], ui: true } ] },
   { key: "pictures", label: tr("Hình ảnh"), screen: "storyboard", children: [
-    { key: "match", label: tr("Tìm clip"), icon: "search", about: tr("Tìm trong Thư viện một đoạn footage cho từng câu, có giám khảo mô hình nhìn."), roles: ["Tìm hình"] },
-    { key: "stock", label: tr("Stock"), icon: "film", about: tr("Câu thiếu hình: chấm ứng viên stock qua ảnh xem trước; chỉ tải khi bạn chọn (hoặc bật tự tải)."), roles: ["Tìm stock"] },
-    { key: "storyboard", label: tr("Storyboard"), icon: "layers", about: tr("Bạn xem từng shot, chọn hoặc đổi clip, rồi duyệt storyboard để dựng."), roles: [] } ] },
+    { key: "match", label: tr("Tìm clip"), icon: "search", about: tr("Tìm trong Thư viện một đoạn footage cho từng câu, có giám khảo mô hình nhìn."), roles: ["Tìm hình"], ui: true },
+    { key: "stock", label: tr("Stock"), icon: "film", about: tr("Câu thiếu hình: chấm ứng viên stock qua ảnh xem trước; chỉ tải khi bạn chọn (hoặc bật tự tải)."), roles: ["Tìm stock"], ui: true },
+    { key: "storyboard", label: tr("Storyboard"), icon: "layers", about: tr("Bạn xem từng shot, chọn hoặc đổi clip, rồi duyệt storyboard để dựng."), roles: [], ui: true } ] },
   { key: "cut", label: tr("Dựng"), screen: "cut", children: [
-    { key: "render", label: tr("Dựng"), icon: "scissors", about: tr("Ghép clip, lời dẫn, phụ đề, nhạc thành bản dựng."), roles: ["Dựng phim"] },
-    { key: "qc", label: tr("QC"), icon: "check", about: tr("Kiểm tra tự động: khung đen, lặng, mở đầu, phụ đề, bản quyền."), roles: [] },
-    { key: "review", label: tr("Duyệt"), icon: "eye", about: tr("Bạn xem bản dựng trong Phòng chiếu hoặc tại đây, duyệt hoặc trả lại kèm lý do."), roles: [] } ] },
+    { key: "render", label: tr("Dựng"), icon: "scissors", about: tr("Ghép clip, lời dẫn, phụ đề, nhạc thành bản dựng."), roles: ["Dựng phim"], ui: true },
+    { key: "qc", label: tr("QC"), icon: "check", about: tr("Kiểm tra tự động: khung đen, lặng, mở đầu, phụ đề, bản quyền."), roles: [], ui: false },
+    { key: "review", label: tr("Duyệt"), icon: "eye", about: tr("Bạn xem bản dựng trong Phòng chiếu hoặc tại đây, duyệt hoặc trả lại kèm lý do."), roles: [], ui: true } ] },
   { key: "publish", label: tr("Xuất bản"), screen: "publish", children: [
-    { key: "publish", label: tr("Đóng gói & đăng"), icon: "external", about: tr("Gói video, phụ đề rời, ảnh đại diện, tiêu đề, mô tả có ghi công; đăng lên kênh."), roles: [] } ] },
+    { key: "publish", label: tr("Đóng gói & đăng"), icon: "external", about: tr("Gói video, phụ đề rời, ảnh đại diện, tiêu đề, mô tả có ghi công; đăng lên kênh."), roles: [], ui: true } ] },
 ];
 const NODES = GROUPS.flatMap((g) => g.children.map((c) => ({ ...c, group: g })));
 const AT_STEP: Record<string, string> = { topic: "research", topic_wait: "research", research: "research", source: "research", write: "write", critique: "write",
@@ -113,40 +113,41 @@ export default function Pipeline({ project: p, place, onScreen, compact = false,
   };
   let k = -1;
   return (
-    <div className={`pipe-grid scroll-x flex items-stretch ${compact ? "gap-0 py-1" : "gap-0 py-2"}`} role="navigation" aria-label={tr("Dây chuyền sản xuất video")}>
+    <div className={`pipe-grid scroll-x flex items-stretch ${compact ? "gap-0 py-1" : "gap-0 py-3"}`} role="navigation" aria-label={tr("Dây chuyền sản xuất video")}>
       {GROUPS.map((g, gi) => {
         const gs = groupState(g);
         const done = g.children.filter((c) => st[NODES.findIndex((n) => n.key === c.key)] === "done").length;
         return (
           <div key={g.key} className="flex shrink-0 items-center">
-            {gi > 0 && <span className={`pipe-link ${compact ? "w-3" : "w-6"} ${gs === "later" ? "" : gs === "now" && st[NODES.findIndex((n) => n.key === g.children[0].key) - 1] === "done" ? "live" : "done"}`} aria-hidden="true" />}
-            <section className={`pipe-group ${gs} relative rounded-lg border ${place === g.screen ? "border-accent/70" : "border-white/10"} bg-black/30 backdrop-blur-sm ${compact ? "px-1.5 py-1" : "px-2 pb-1.5 pt-1"}`}>
+            {gi > 0 && <span className={`pipe-link ${compact ? "w-3" : "w-10"} ${gs === "later" ? "" : gs === "now" && st[NODES.findIndex((n) => n.key === g.children[0].key) - 1] === "done" ? "live" : "done"}`} aria-hidden="true" />}
+            <section className={`pipe-group ${gs} relative rounded-lg border ${place === g.screen ? "border-accent/70" : "border-white/10"} bg-black/30 backdrop-blur-sm ${compact ? "px-1.5 py-1" : "px-3 pb-2 pt-2"}`}>
               {!compact && (
-                <header className="mb-1 flex items-center gap-1.5">
-                  <span className="mono text-[9.5px] text-faint">{`G${gi + 1}`}</span>
-                  <button type="button" onClick={() => open(g.screen)} className={`text-[11.5px] font-semibold uppercase tracking-[0.08em] ${TEXT[gs]} hover:underline`}>{g.label}</button>
-                  <span className={`text-[10.5px] ${TEXT[gs]}`}>{SAID[gs]}</span>
-                  <span className="ml-auto mono text-[9.5px] text-faint">{done}/{g.children.length}</span>
+                <header className="mb-1.5 flex items-center gap-2">
+                  <span className="mono text-[11px] text-faint">{`G${gi + 1}`}</span>
+                  <button type="button" onClick={() => open(g.screen)} className={`text-[13.5px] font-semibold uppercase tracking-[0.1em] ${TEXT[gs]} hover:underline`}>{g.label}</button>
+                  <span className={`text-[12px] ${TEXT[gs]}`}>{SAID[gs]}</span>
+                  <span className="ml-auto mono text-[11px] text-faint">{done}/{g.children.length}</span>
                 </header>)}
-              {!compact && <span className="absolute inset-x-2 top-[22px] h-px bg-white/[0.06]"><span className={`block h-px ${BAR[gs]} transition-all`} style={{ width: `${(100 * done) / g.children.length}%` }} /></span>}
+              {!compact && <span className="absolute inset-x-3 top-[33px] h-px bg-white/[0.06]"><span className={`block h-px ${BAR[gs]} transition-all`} style={{ width: `${(100 * done) / g.children.length}%` }} /></span>}
               <div className="flex items-center">
                 {g.children.map((c, ci) => {
                   k = NODES.findIndex((n) => n.key === c.key);
                   const s = st[k], i = k;
                   return (
                     <span key={c.key} className="flex items-center">
-                      {ci > 0 && <span className={`pipe-link ${compact ? "w-2" : "w-4"} ${st[i - 1] === "done" ? (s === "now" ? "live" : s === "later" ? "" : "done") : ""}`} aria-hidden="true" />}
-                      <button type="button" onClick={() => open(g.screen)} onMouseEnter={(e) => show(i, e.currentTarget)} onMouseLeave={hide} onFocus={(e) => show(i, e.currentTarget)} onBlur={hide}
-                              aria-label={`${c.label}: ${SAID[s]}`}
-                              className={`group flex items-center gap-1.5 rounded-md ${compact ? "px-0.5 py-0.5" : "px-1 py-1"} text-left hover:bg-white/[0.04]`}>
-                        <span className={`pipe-node ${s} relative grid shrink-0 place-items-center rounded-full border ${RING[s]} ${compact ? "h-5 w-5" : "h-7 w-7"}`}>
-                          <Icon name={s === "done" ? "check" : s === "fail" ? "alert" : c.icon} size={compact ? 10 : 13} />
-                          {(s === "now" || s === "wait") && <span className={`absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full ${s === "now" ? "bg-accent" : "bg-cue"}`}><span className={`ping absolute inset-0 rounded-full ${s === "now" ? "bg-accent" : "bg-cue"}`} /></span>}
+                      {ci > 0 && <span className={`pipe-link ${compact ? "w-2" : "w-8"} ${st[i - 1] === "done" ? (s === "now" ? "live" : s === "later" ? "" : "done") : ""}`} aria-hidden="true" />}
+                      <button type="button" onClick={c.ui ? () => open(g.screen) : undefined} aria-disabled={!c.ui || undefined}
+                              onMouseEnter={(e) => show(i, e.currentTarget)} onMouseLeave={hide} onFocus={(e) => show(i, e.currentTarget)} onBlur={hide}
+                              aria-label={`${c.label}: ${SAID[s]}${c.ui ? "" : ` (${tr("bước tự động, không có màn hình riêng")})`}`}
+                              className={`pipe-step ${c.ui ? "ui" : "auto"} group flex items-center rounded-lg text-left ${compact ? "gap-1.5 px-0.5 py-0.5" : "gap-3 px-2 py-2"}`}>
+                        <span className={`pipe-node ${s} relative grid shrink-0 place-items-center rounded-full border ${RING[s]} ${compact ? "h-5 w-5" : "h-14 w-14 border-2"}`}>
+                          <Icon name={s === "done" ? "check" : s === "fail" ? "alert" : c.icon} size={compact ? 10 : 24} />
+                          {(s === "now" || s === "wait") && <span className={`absolute rounded-full ${compact ? "-right-0.5 -top-0.5 h-2 w-2" : "-right-0.5 -top-0.5 h-3.5 w-3.5"} ${s === "now" ? "bg-accent" : "bg-cue"}`}><span className={`ping absolute inset-0 rounded-full ${s === "now" ? "bg-accent" : "bg-cue"}`} /></span>}
                         </span>
                         {!compact && (
-                          <span className="grid leading-tight">
-                            <span className="whitespace-nowrap text-[11.5px] font-medium text-ink"><span className="mono mr-1 text-[9px] text-faint">{`N${String(i + 1).padStart(2, "0")}`}</span>{c.label}</span>
-                            <span className={`whitespace-nowrap text-[10.5px] ${TEXT[s]}`}>{SAID[s]}<span className="text-faint"> · {figure(c.key, p, task)}</span></span>
+                          <span className="grid gap-0.5 leading-tight">
+                            <span className="whitespace-nowrap text-[15px] font-semibold text-ink"><span className="mono mr-1.5 text-[11px] font-normal text-faint">{`N${String(i + 1).padStart(2, "0")}`}</span>{c.label}</span>
+                            <span className={`whitespace-nowrap text-[12.5px] ${TEXT[s]}`}>{SAID[s]}<span className="text-faint"> · {figure(c.key, p, task)}</span></span>
                           </span>)}
                       </button>
                     </span>);
@@ -181,6 +182,7 @@ function Card({ i, x, y, p, task, state, keep, leave }: { i: number; x: number; 
         <p className="mb-0.5 flex items-center gap-1.5 text-[11px] text-faint"><Icon name="sparkles" size={10} className="text-ai" />{last.role} · {ago(last.at)}{said.length > 1 ? tv` · ${said.length} lần` : ""}</p>
         <p className="line-clamp-4 text-[12px] text-ink/90">{last.text}</p>
       </div>}
-      <p className="text-[11px] text-accent">{tv`Bấm để mở màn hình ${({ script: tr("Kịch bản"), storyboard: tr("Storyboard"), cut: tr("Dựng & duyệt"), publish: tr("Xuất bản") } as Record<Screen, string>)[n.group.screen]}`}</p>
+      {n.ui ? <p className="text-[11px] text-accent">{tv`Bấm để mở màn hình ${({ script: tr("Kịch bản"), storyboard: tr("Storyboard"), cut: tr("Dựng & duyệt"), publish: tr("Xuất bản") } as Record<Screen, string>)[n.group.screen]}`}</p>
+        : <p className="text-[11px] text-faint">{tr("Bước tự động: chạy trong nền, không có màn hình riêng.")}</p>}
     </div>);
 }

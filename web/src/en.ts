@@ -60,6 +60,8 @@ const en: Record<string, string> = {
   "Tìm cảnh “{0}” trong footage": "Find “{0}” in the footage",
   "{0} việc đang chạy": "{0} jobs running",
   "Bỏ clip này": "Remove this clip",
+  "bước tự động, không có màn hình riêng": "an automatic step, no screen of its own",
+  "Bước tự động: chạy trong nền, không có màn hình riêng.": "An automatic step: it runs in the background and has no screen of its own.",
   "Hình ảnh": "Pictures",
   "Đóng gói & đăng": "Package & publish",
   "có trợ lý": "with the assistant",

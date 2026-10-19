@@ -109,6 +109,7 @@ export default function MissionControl() {
   return (
     <Page full title={tab === "overview" ? tr("Mission Control") : `${tr("Mission Control")} · ${name}`}
           side={<OpsSide counts={{ approvals: ov?.kpis.awaiting, missions: ov?.kpis.active }} />}
+          note={<FocusPicker />}
           tabs={<FocusLine />}
           actions={ov && <Kill on={ov.kill_switch} done={reload} />}>
       <div className="mx-auto max-w-[1680px]">
@@ -140,21 +141,31 @@ function useLines() {
   return { all, busy, task: (id: string) => latest.get(id) };
 }
 
-/** One video's whole pipeline across the top of Mission Control: the video followed (chosen, or the one at work), each node a
-    way to that step's screen below it. */
-function FocusLine() {
+/** The video Mission Control follows: the one chosen, else the first at work, else the newest. */
+function useFocus() {
   const { all, busy } = useLines();
   const wanted = new URLSearchParams(window.location.search).get("video");
-  const p = all.find((x) => x.project_id === wanted) ?? busy[0] ?? all[0];
+  return { all, busy, p: all.find((x) => x.project_id === wanted) ?? busy[0] ?? all[0] };
+}
+
+/** The choice of the video followed, in the header row, on the left (the emergency stop is on the right). */
+function FocusPicker() {
+  const { all, busy, p } = useFocus();
   if (!p) return null;
+  const tab = new URLSearchParams(window.location.search).get("tab");
   return (
-    <div className="flex min-w-0 items-center gap-3">
-      <select value={p.project_id} onChange={(e) => goTo(`/phong-may?video=${e.target.value}${new URLSearchParams(window.location.search).get("tab") ? `&tab=${new URLSearchParams(window.location.search).get("tab")}` : ""}`)}
-              aria-label={tr("Video đang theo dõi")} className="h-8 max-w-[220px] shrink-0 truncate pl-2 text-[12.5px]">
+    <label className="flex min-w-0 items-center gap-2 text-[12.5px] text-faint"><Icon name="clapper" size={14} />
+      <select value={p.project_id} onChange={(e) => goTo(`/phong-may?video=${e.target.value}${tab ? `&tab=${tab}` : ""}`)}
+              aria-label={tr("Video đang theo dõi")} className="h-8 max-w-[320px] truncate pl-2 text-[13px] text-ink">
         {[...busy, ...all.filter((x) => !busy.includes(x))].map((x) => <option key={x.project_id} value={x.project_id}>{busy.includes(x) ? "● " : ""}{x.title}</option>)}
       </select>
-      <div className="min-w-0 flex-1"><Pipeline project={p} /></div>
-    </div>);
+    </label>);
+}
+
+/** One video's whole pipeline across the top of Mission Control, each step a way to its screen below. */
+function FocusLine() {
+  const { p } = useFocus();
+  return p ? <Pipeline project={p} /> : null;
 }
 
 /** Every video at work, each as its own line of nodes: where it stands at a glance, any node a click from its screen. */
