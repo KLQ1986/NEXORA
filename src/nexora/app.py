@@ -80,42 +80,97 @@ class System:
     storyboard_planner: "StoryboardPlanner" = None
     director: "Director" = None                  # carries the storyboard's shots to acceptance, and holds the conversation
     missions: "Missions" = None                  # Mission Control: the operator's missions, planned, checked and carried out
+    stock_scout: "StockScout" = None             # stock judged on its previews before anything is downloaded
 
 
-def storyboard_stock(system: "System", shot_id: str, query: str) -> dict:
-    """A storyboard shot without a picture filled from licensed stock: searched, brought into the Library like any footage, and
-    given to the shot whole (the operator trims it there). Only the query text leaves the machine."""
-    out_dir = system.data_dir / "media" / "stock"
-    sources = json.loads(system.orch.setting("stock_sources", "[]"))
-    result = system.adapters.submit("stock", Request("search", inputs={"queries": [query]}, params={"out_dir": str(out_dir), "clips_per_query": 1, **({"sources": sources} if sources else {})},
-                                                    privacy_class=PrivacyClass.CLOUD_ALLOWED))
-    if not result.files:
-        return {"found": False}
-    clip = result.outputs["clips"][0]
-    rights = {"source": clip.get("source"), "source_url": clip.get("source_url"), "license": clip.get("license"), "creator": clip.get("creator"), "query": query}
-    asset_id, run_id = system.library.ingest(result.files[0], origin="licensed", rights=rights)
-    system.director.use_asset(shot_id, asset_id, reason=f"Clip stock từ {clip.get('source')}. Giấy phép: {clip.get('license')}. Nguồn: {clip.get('source_url')}")
-    return {"found": True, "asset_id": asset_id, "run_id": run_id, "rights": rights}
+def _stock_reason(c: dict) -> str:
+    seen = f" Mô hình chấm ảnh xem trước {c['look']}/10: {c.get('why') or ''}".rstrip() if c.get("look") is not None else ""
+    return f"Clip stock từ {c.get('source')}. Giấy phép: {c.get('license')}. Nguồn: {c.get('source_url')}.{seen}"
 
 
-def fill_gap_from_stock(system: "System", shot_id: str, query: str) -> dict:
-    """Resolve a gap with licensed stock: search, bring the clip into the Library like any footage, and propose it for the shot.
-    Only the query text leaves the machine. Lives here because it joins two modules that may not import each other."""
-    out_dir = system.data_dir / "media" / "stock"
-    sources = json.loads(system.orch.setting("stock_sources", "[]"))          # the operator's choice of stock libraries; empty means the adapter's own
-    result = system.adapters.submit("stock", Request("search", inputs={"queries": [query]}, params={"out_dir": str(out_dir), "clips_per_query": 1, **({"sources": sources} if sources else {})},
-                                                    privacy_class=PrivacyClass.CLOUD_ALLOWED))
-    if not result.files:
-        return {"found": False}
-    clip = result.outputs["clips"][0]
-    rights = {"source": clip.get("source"), "source_url": clip.get("source_url"), "license": clip.get("license"), "creator": clip.get("creator"), "query": query}
-    asset_id, run_id = system.library.ingest(result.files[0], origin="licensed", rights=rights)
-    # Proposed at once so the operator sees something; placed properly, or withdrawn, once the clip has been watched (see build()).
-    system.sourcing.use_asset(shot_id, asset_id, pending=system.intelligence.understands,
-                              reason=f"Clip stock từ {clip.get('source')}. Giấy phép: {clip.get('license')}. Nguồn: {clip.get('source_url')}")
-    if system.orch.run_status(run_id) is RunStatus.SUCCEEDED and system.index.moments(asset_id, level="segment"):
-        system.sourcing.refine_from_asset(shot_id, asset_id)     # the same clip was fetched before and has already been watched
-    return {"found": True, "asset_id": asset_id, "run_id": run_id, "rights": rights}
+def use_stock_candidate(system: "System", cid: str, *, shot_id: str) -> dict:
+    """A stock candidate chosen for a shot (a storyboard shot or a script line): only now is it downloaded, taken into the
+    Library as licensed footage with where it came from, and given to the shot."""
+    c = system.stock_scout.candidate(cid)
+    if c is None:
+        raise LookupError(cid)
+    if system.orch.kill_switch():
+        raise ValueError("Đang dừng khẩn cấp: không tải clip stock")
+    path = system.stock_scout.fetch(cid, system.data_dir / "media" / "stock")
+    rights = {"source": c.get("source"), "source_url": c.get("source_url"), "license": c.get("license"), "creator": c.get("creator"), "query": c.get("query"),
+              "project_id": c.get("project_id"), "stock_id": f"{c['source']}:{c['source_id']}", "score": c.get("look"), "why": c.get("why")}
+    asset_id, run_id = system.library.ingest(path, origin="licensed", rights=rights)
+    if system.storyboard is not None and system.storyboard.shot(shot_id) is not None:
+        system.director.use_asset(shot_id, asset_id, reason=_stock_reason(c))
+    else:
+        # Proposed at once; placed on the part that shows the line once the clip has been described (see build()).
+        system.sourcing.use_asset(shot_id, asset_id, pending=system.intelligence.understands, reason=_stock_reason(c))
+        if system.orch.run_status(run_id) is RunStatus.SUCCEEDED and system.index.moments(asset_id, level="segment"):
+            system.sourcing.refine_from_asset(shot_id, asset_id)     # the same clip was fetched before and has already been described
+    return {"asset_id": asset_id, "run_id": run_id, "rights": rights}
+
+
+def _stock_sources(system: "System") -> list[str] | None:
+    return json.loads(system.orch.setting("stock_sources", "[]")) or None      # the operator's choice of libraries; empty means all
+
+
+def storyboard_stock(system: "System", shot_id: str, query: str | None = None) -> dict:
+    """Stock candidates for a storyboard shot, judged on their previews and shown to the operator; nothing is downloaded until
+    one is chosen. `query`: the operator's own words for what to look for, else the shot's line."""
+    if system.orch.kill_switch():
+        raise ValueError("Đang dừng khẩn cấp: không tìm clip stock")
+    s = system.storyboard.shot(shot_id)
+    line = (query or "").strip() or s.spec.get("line") or s.spec.get("intent") or ""
+    found = system.stock_scout.find(s.project_id, shot_id, line, seconds=float(s.spec["duration"]["target"]), sources=_stock_sources(system))
+    return {"found": bool(found), "options": len(found), "passed": sum(1 for c in found if c.get("look") is not None and c["look"] >= 5)}
+
+
+def fill_gap_from_stock(system: "System", shot_id: str, line: str, *, take: bool | None = None) -> dict:
+    """A script line the footage does not show: stock candidates judged on their previews and kept for the operator to choose
+    from. Only when the operator lets the best one be taken (Tự duyệt → stock) is the best that passes downloaded, and never
+    the clip already chosen for the line before or after it. `take`: the operator asked for this very line, so the best is
+    taken whatever the switch says."""
+    if system.orch.kill_switch():
+        return {"found": False, "options": 0, "stopped": True}
+    shot = system.projects.shot(shot_id)
+    script = system.projects.script(shot.script_id)
+    from nexora.modules.sourcing.match import needed_seconds
+    found = system.stock_scout.find(script["project_id"], shot_id, line, seconds=needed_seconds(line), sources=_stock_sources(system))
+    if not (take if take is not None else system.autonomy.switches().get("stock")):
+        return {"found": False, "options": len(found)}
+    lines = [x.shot_id for x in script["shots"]]
+    at = lines.index(shot_id)
+    avoid = set()
+    for near in lines[max(0, at - 1):at] + lines[at + 1:at + 2]:
+        sel = system.projects.selection(near)
+        if sel is not None and sel.asset_id and system.assets.asset(sel.asset_id):
+            stock_id = (system.assets.original(sel.asset_id).metadata.get("rights") or {}).get("stock_id")
+            if stock_id:
+                avoid.add(stock_id)
+    best = system.stock_scout.best(script["project_id"], shot_id, avoid=avoid)
+    if best is None:
+        return {"found": False, "options": len(found)}
+    return {"found": True, "options": len(found), "query": best.get("query"), **use_stock_candidate(system, best["cid"], shot_id=shot_id)}
+
+
+def after_storyboard_approved(system: "System", project_id: str) -> dict:
+    """Once a storyboard is approved: the stock candidates of the project and their previews are gone (none was downloaded),
+    and stock downloaded for it that the approved storyboard does not use goes to the Trash (30 days to take it back). A clip
+    another project uses, or one the operator rated 4 stars or more, stays."""
+    previews = system.stock_scout.forget(project_id) if system.stock_scout is not None else 0
+    used = {r[0] for r in system.projects._conn.execute("SELECT DISTINCT asset_id FROM selections WHERE asset_id IS NOT NULL")}
+    for row in system.storyboard._conn.execute("SELECT assignment FROM sb_shots WHERE assignment IS NOT NULL"):
+        a = json.loads(row[0] or "null") or {}
+        used.add(a.get("asset_id"))
+    unused = []
+    for asset in system.assets.assets():
+        if asset.get("origin") != "licensed" or asset.get("trashed_at") or asset["asset_id"] in used or (asset.get("rating") or 0) >= 4:
+            continue
+        if (system.assets.original(asset["asset_id"]).metadata.get("rights") or {}).get("project_id") == project_id:
+            unused.append(asset["asset_id"])
+    if unused:
+        trash_items(system, assets=unused)
+    return {"previews": previews, "trashed": len(unused)}
 
 
 _FACES: dict = {}
@@ -806,7 +861,7 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
           segment_seconds: float = 12.0, voice: Adapter | None = None, match_threshold: float = 0.5, judge: bool = True,
           generators: list[Adapter] | None = None, stock: Adapter | None = None, desktop: Adapter | None = None, voice_name: str = "Linh",
           ffmpeg_binary: str = "", web: Adapter | None = None, speech: Adapter | None = None, publishers: list[Adapter] | None = None, shot_models: list[Adapter] | None = None, cloud_models: list[Adapter] | None = None,
-          recognisers: list[Adapter] | None = None, pictures: Adapter | None = None) -> System:
+          recognisers: list[Adapter] | None = None, pictures: Adapter | None = None, stock_api: Adapter | None = None, stock_preview=None) -> System:
     """`model` is the adapter for vision, reasoning and embeddings; without one, footage is ingested but not understood."""
     data_dir = Path(data_dir).resolve()          # tools resolve relative paths differently; keep every path absolute
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -920,6 +975,8 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     edit.register(registry)
     if stock is not None:
         adapters.register(stock)
+    if stock_api is not None and stock_api.describe() and getattr(stock_api, "sources", lambda: ["any"])():
+        adapters.register(stock_api)
     if desktop is not None:
         adapters.register(desktop)
     if web is not None:
@@ -1002,6 +1059,8 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
         package = distribution.build_package(render_id)
         return distribution.annotate_package(render_id, rights={**render_rights(system, render_id), "override_reason": None}, checks=package_checks(package))
     has_folder = any(c.name == "publish.folder" for c in adapters.describe())
+    from nexora.modules.sourcing.stock import StockScout
+    system.stock_scout = StockScout(db_path, adapters, data_dir / "tmp" / "stock", **({"fetch": stock_preview, "frame": stock_preview} if stock_preview else {}))
     system.autonomy = Autonomy(orch, projects, package=package_for_policy, rights=lambda render_id: render_rights(system, render_id),
                                publish=(lambda render_id: system.publishing.publish(render_id, "publish.folder")) if has_folder else None,
                                approve_clips=lambda project_id, run_id: approve_clips_by_policy(system, project_id, run_id),
@@ -1011,7 +1070,7 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     system.topics = TopicWriter(db_path, adapters, context=lambda project_id: topic_context(system, project_id), submit=orch.submit_run)
     system.topics.register(registry)
     system.producer = Producer(db_path, orch=orch, projects=projects, planning=planning, sourcing=sourcing, edit=edit, adapters=adapters,
-                               fill_gap=lambda shot_id, query: fill_gap_from_stock(system, shot_id, query),
+                               fill_gap=lambda shot_id, line: fill_gap_from_stock(system, shot_id, line),
                                to_storyboard=lambda project_id: lay_out_storyboard(system, project_id),
                                style=lambda project_id: illustration_style(system, projects.project(project_id)),
                                write_topic=lambda project_id, topic, seconds, form: system.topics.start(project_id, topic, seconds=seconds, form=form),
@@ -1038,6 +1097,7 @@ def build_from_config(config, **overrides) -> System:
     from nexora.adapters.desktop import DesktopNotifier
     from nexora.adapters.ollama import OllamaAdapter
     from nexora.adapters.openmontage import OpenMontageStock
+    from nexora.adapters.stock_api import StockApi
     import os as _os
     from nexora.adapters.claude import ClaudeText
     from nexora.adapters.claude_code import ClaudeCode, find_claude
@@ -1068,6 +1128,7 @@ def build_from_config(config, **overrides) -> System:
                                      judge_model=config.judge_model, writer_model=config.writer_model),
                  voice=SayVoice(), voice_name=config.voice, match_threshold=config.match_threshold,
                  stock=OpenMontageStock(config.openmontage_repo, keys={"pexels": _os.environ.get("PEXELS_API_KEY") or config.pexels_api_key, "pixabay_video": _os.environ.get("PIXABAY_API_KEY") or config.pixabay_api_key}), desktop=DesktopNotifier(), web=WebReader(),
+                 stock_api=StockApi(pexels_key=_os.environ.get("PEXELS_API_KEY") or config.pexels_api_key, pixabay_key=_os.environ.get("PIXABAY_API_KEY") or config.pixabay_api_key),
                  pictures=_pictures(config),
                  recognisers=[AppleVision(AppleTool(Path(config.data_dir) / "tools")), AppleSound(AppleTool(Path(config.data_dir) / "tools"))] if AppleTool(Path(config.data_dir) / "tools").available() else [],
                  speech=WhisperCpp(config.speech_model, language=config.speech_language, vad_model=config.speech_vad_model or None) if config.speech_model else None,

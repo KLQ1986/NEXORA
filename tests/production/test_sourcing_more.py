@@ -255,14 +255,14 @@ def test_the_keyless_image_service_reports_a_spent_allowance_as_something_only_t
 
 
 def test_the_operator_chooses_which_stock_libraries_are_searched(tmp_path):
-    from tests.fakes import FakeStock
+    from tests.fakes import FakeStock, fake_preview
     class Asked(FakeStock):
-        def __init__(self): self.params = []
+        def __init__(self): super().__init__(); self.params = []
         def submit(self, request):
             self.params.append(request.params)
             return super().submit(request)
     stock = Asked()
-    system = build(tmp_path / "data", model=FakeModel(), voice=FakeVoice(), segment_seconds=2.0, judge=False, stock=stock)
+    system = build(tmp_path / "data", model=FakeModel(), voice=FakeVoice(), segment_seconds=2.0, judge=False, stock=stock, stock_preview=fake_preview)
     client = TestClient(create_app(system))
     assert [s["on"] for s in client.get("/api/v1/generators").json()["stock"]["sources"]] == [True, True, True]
     assert client.post("/api/v1/control/stock-sources", json={"sources": ["bogus"]}).status_code == 422

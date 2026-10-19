@@ -261,8 +261,8 @@ def test_settings_templates_watch_folders_privacy_retry_notes_and_similar_moment
     from nexora.app import scan_watch_folders
     from nexora.core.states import StageStatus
     from tests.conftest import make_video
-    from tests.fakes import FakeModel, FakeStock, FakeVoice
-    system = build(tmp_path / "data", model=FakeModel(), voice=FakeVoice(), segment_seconds=2.0, stock=FakeStock())
+    from tests.fakes import FakeModel, FakeStock, FakeVoice, fake_preview
+    system = build(tmp_path / "data", model=FakeModel(), voice=FakeVoice(), segment_seconds=2.0, stock=FakeStock(), stock_preview=fake_preview)
     client = TestClient(create_app(system))
     drain = lambda: [None for _ in iter(system.worker.run_once, False)]
 
@@ -292,7 +292,7 @@ def test_settings_templates_watch_folders_privacy_retry_notes_and_similar_moment
     client.post("/api/v1/settings", json={"privacy_local_only": True})
     assert client.post(f"/api/v1/shots/{gap}/stock", json={"query": "keyboard"}).status_code == 503        # nothing leaves the machine in privacy mode
     client.post("/api/v1/settings", json={"privacy_local_only": False})
-    assert client.post(f"/api/v1/shots/{gap}/stock", json={"query": "keyboard"}).json()["found"]
+    assert client.post(f"/api/v1/shots/{gap}/stock", json={"query": "bàn phím máy tính"}).json()["found"]
 
     from nexora.core.adapter import AdapterError, ErrorCode
     from nexora.core.pipeline import PipelineDefinition, StageDef

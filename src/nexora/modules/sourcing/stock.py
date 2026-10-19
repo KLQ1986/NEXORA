@@ -17,7 +17,7 @@ import time
 from pathlib import Path
 
 from nexora.core import db
-from nexora.core.adapter import AdapterError, PrivacyClass, Request
+from nexora.core.adapter import AdapterError, ErrorCode, PrivacyClass, Request
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS stock_candidates (cid TEXT PRIMARY KEY, project_id TEXT NOT NULL, key TEXT NOT NULL, data TEXT NOT NULL,
@@ -118,14 +118,15 @@ class StockScout:
         """One round of searching: each library in the words it takes. A library that fails leaves the others."""
         found = []
         if self._has("stock"):
-            queries = [q for q in (words["en"], words["names"]) if q]
+            queries = [q for q in (words["en"] or words["vi"], words["names"]) if q]      # without English words, the Vietnamese
             keyless = [s for s in (sources or []) if s not in API_SOURCES] or None
             if queries:
                 try:
                     found += self._adapters.submit("stock", Request("candidates", inputs={"queries": queries}, params={"per_query": PER_QUERY, **({"sources": keyless} if keyless else {})},
                                                                     privacy_class=PrivacyClass.CLOUD_ALLOWED)).outputs["candidates"]
-                except AdapterError:
-                    pass
+                except AdapterError as err:
+                    if err.code is ErrorCode.AUTH:
+                        raise                                  # privacy mode: nothing may leave the machine, and the operator is told
         if self._has("stock_api"):
             wanted = [s for s in (sources or API_SOURCES) if s in API_SOURCES] or list(API_SOURCES)
             for lang, query in (("vi", words["vi"]), ("en", words["en"])):
@@ -134,8 +135,9 @@ class StockScout:
                 try:
                     found += self._adapters.submit("stock_api", Request("candidates", inputs={"queries": [query]}, params={"lang": lang, "per_query": PER_QUERY, "sources": wanted},
                                                                         privacy_class=PrivacyClass.CLOUD_ALLOWED)).outputs["candidates"]
-                except AdapterError:
-                    pass
+                except AdapterError as err:
+                    if err.code is ErrorCode.AUTH:
+                        raise                                  # privacy mode: nothing may leave the machine, and the operator is told
         return found
 
     # ----------------------------------------------------------------------------------------------------------- judging

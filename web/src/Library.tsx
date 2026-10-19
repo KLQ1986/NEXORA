@@ -282,6 +282,7 @@ function Card({ item, on, chosen, choosing, pick, choose, acts, vq, remove, agai
             <Frame item={item} className="aspect-video" scrub />
             {item.duration ? <TimeChip className="absolute bottom-2 right-2">{timecode(item.duration)}</TimeChip> : null}
             {item.status && item.status !== "draft" && <span className="absolute right-2 top-2"><Badge s={item.status} /></span>}
+            {item.asset?.origin === "licensed" && <span className="absolute left-2 top-2 rounded bg-black/70 px-1.5 text-[10.5px] font-semibold text-white/90">{tr("Stock")}</span>}
             {item.rating >= 4 && <span className="absolute bottom-2 left-2 text-cue drop-shadow"><svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor"><path d="M10 2.5l2.3 4.7 5.2.8-3.8 3.7.9 5.2L10 14.4l-4.6 2.5.9-5.2L2.5 8l5.2-.8z" /></svg></span>}
             {item.asset?.rejected && <span className="absolute inset-0 grid place-items-center bg-canvas/70 text-[12.5px] font-medium text-mute">{tr("Đã gạt ra")}</span>}
             {item.asset && !item.asset.online && <span className="absolute inset-x-0 top-0 bg-cue/95 px-2 py-0.5 text-[11.5px] font-medium text-canvas">{tr("Không tìm thấy file gốc")}</span>}
@@ -873,9 +874,10 @@ function Viewer({ item, items, start, assets, close, reload, similar, pick, comp
 /* ───────────────────────── the page ───────────────────────── */
 
 type Sort = "new" | "name" | "long" | "rating";
-type Shelf = "" | "footage" | "video" | "image" | "audio" | "made" | "draft" | "render" | "finished" | "approved" | "published";
+type Shelf = "" | "footage" | "video" | "image" | "audio" | "stock" | "made" | "draft" | "render" | "finished" | "approved" | "published";
 const ON_SHELF: Record<Shelf, (i: Item) => boolean> = {
   "": () => true, footage: (i) => i.kind === "video" || i.kind === "image" || i.kind === "audio", video: (i) => i.kind === "video", image: (i) => i.kind === "image", audio: (i) => i.kind === "audio",
+  stock: (i) => i.asset?.origin === "licensed",
   // Products still in the making; what is finished (approved or out) has its own place.
   made: (i) => i.kind === "draft" || (i.kind === "render" && i.status !== "approved" && i.status !== "published"), draft: (i) => i.kind === "draft",
   render: (i) => i.kind === "render" && i.status !== "approved" && i.status !== "published",
@@ -1038,7 +1040,7 @@ export default function Library() {
   const reset = () => { setShelf(""); setProject(""); setStatus(""); setGroup(""); setPlatform(""); setDays(0); setSession(""); setUse(""); };
   const place = (s: Shelf, st: Status | "" = "") => { setShelf(s); setStatus(st); setProject(""); setGroup(""); setVqState(""); };
   const here = shelf === "" && !status && !project && !group;
-  const where = project ? (projects ?? []).find((p) => p.project_id === project)?.title : group === "__fav" ? tr("Yêu thích") : group || (status ? STATUS[status][0] : { "": tr("Tất cả"), footage: tr("Footage"), video: tr("Video"), image: tr("Ảnh"), audio: tr("Âm thanh"), made: tr("Sản phẩm"), draft: tr("Bản nháp"), render: tr("Bản dựng"), finished: tr("Thành phẩm"), approved: tr("Đã duyệt, chưa đăng"), published: tr("Đã đăng") }[shelf]);
+  const where = project ? (projects ?? []).find((p) => p.project_id === project)?.title : group === "__fav" ? tr("Yêu thích") : group || (status ? STATUS[status][0] : { "": tr("Tất cả"), footage: tr("Footage"), video: tr("Video"), image: tr("Ảnh"), audio: tr("Âm thanh"), stock: tr("Stock"), made: tr("Sản phẩm"), draft: tr("Bản nháp"), render: tr("Bản dựng"), finished: tr("Thành phẩm"), approved: tr("Đã duyệt, chưa đăng"), published: tr("Đã đăng") }[shelf]);
 
   const side = (
     <nav className="flex h-full min-h-0 flex-col" aria-label={tr("Kho")}>
@@ -1050,6 +1052,7 @@ export default function Library() {
           <Node depth={1} on={shelf === "video"} icon="film" label={tr("Video")} n={count(ON_SHELF.video)} click={() => place("video")} />
           <Node depth={1} on={shelf === "image"} icon="image" label={tr("Ảnh")} n={count(ON_SHELF.image)} click={() => place("image")} />
           <Node depth={1} on={shelf === "audio"} icon="music" label={tr("Âm thanh")} n={count(ON_SHELF.audio)} click={() => place("audio")} />
+          <Node depth={1} on={shelf === "stock"} icon="globe" label={tr("Stock")} n={count(ON_SHELF.stock)} click={() => place("stock")} />
         </>}
         <Node on={shelf === "made" && !status} icon="folder" label={tr("Sản phẩm")} n={count(ON_SHELF.made)} click={() => place("made")} open={open.made} fold={() => fold("made")} />
         {open.made && <>

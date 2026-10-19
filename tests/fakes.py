@@ -98,13 +98,33 @@ class FakeVideoGen(Adapter):
         return Result(outputs={"provider": "fake", "model": "fake-video-1"}, files=(request.params["out"],), usage=Usage(units=d, cost=0.1 * d))
 
 
+def fake_preview(url, path):
+    """A stock candidate's preview picture without the network."""
+    from pathlib import Path
+    from PIL import Image
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    Image.new("RGB", (64, 36), (90, 140, 200)).save(path)
+    return Path(path)
+
+
 class FakeStock(Adapter):
+    """One public-domain candidate for any words, tagged with them (so the fake judge passes it); downloading it makes a clip."""
+    def __init__(self):
+        self.downloads = 0
+
     def describe(self) -> Capability:
-        return Capability(name="stock", operations=("search",), runs="cloud")
+        return Capability(name="stock", operations=("search", "candidates", "download"), runs="cloud")
 
     def submit(self, request: Request) -> Result:
         import subprocess
         from pathlib import Path
+        if request.operation == "candidates":
+            q = " ".join(request.inputs["queries"])
+            return Result(outputs={"candidates": [{"source": "archive_org", "source_id": "clip", "source_url": "https://example.org/clip", "download_url": "https://example.org/clip.mp4",
+                                                   "preview_url": "https://example.org/clip.mp4", "thumbnail_url": "https://example.org/clip.jpg", "width": 320, "height": 180,
+                                                   "duration": 6.0, "creator": "", "license": "Public Domain", "tags": q, "query": q}], "errors": {}})
+        if request.operation == "download":
+            self.downloads += 1
         out = Path(request.params["out_dir"]); out.mkdir(parents=True, exist_ok=True)
         clip = out / "stock_clip.mp4"
         subprocess.run(["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc2=size=320x180:rate=25:duration=6",

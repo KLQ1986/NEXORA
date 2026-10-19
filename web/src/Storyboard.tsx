@@ -18,11 +18,13 @@ type Spec = {
 };
 type Check = { check: string; text: string; by: string; required: boolean; st: "pass" | "fail" | "wait" | "unmeasured"; value: string };
 type Cand = { asset_id: string; moment_id?: string | null; t_in: number; t_out: number; score: number | null; text: string; passed: number; of: number; failed: string[]; name: string; frame_url: string; chosen_before?: boolean };
+type StockOpt = { cid: string; source: string; source_url: string; preview_url: string; width: number; height: number; duration: number; creator: string; license: string;
+  look: number | null; why: string; siglip: number; query: string; thumb_url: string | null };
 type Treat = { speed?: number; stabilise?: boolean; live_sound?: boolean; sfx?: string | null; lipsync?: boolean; upscale_ml?: boolean };
 type SbShot = { shot_id: string; code: string; scene_id: string; version: number; state: "planned" | "running" | "accepted" | "needs" | "stale"; spec: Spec;
   assignment: { kind: string; asset_id: string; t_in: number; t_out: number; score: number | null; text: string; gap_prev?: number; candidates?: Cand[]; others?: Cand[];
     name?: string; treat?: Treat; decided_by?: string } | null;
-  checks: Check[]; frame_url: string | null; clip_url?: string | null; script_shot: string | null };
+  checks: Check[]; frame_url: string | null; clip_url?: string | null; script_shot: string | null; stock_options?: StockOpt[] };
 type SeamCheck = { key: string; st: "pass" | "warn" | "fail"; name: string; detail: string; value: string };
 type Seam = { a: string; b: string; a_code: string; b_code: string; same_scene: boolean; checks: SeamCheck[]; worst: "pass" | "warn" | "fail"; fixes: { text: string; ops: object[] }[] };
 type Plan = { scene_id: string; subject: { x: number; y: number; label: string; path?: number[] }; cams: { shot_id: string; x: number; y: number; end?: { x: number; y: number }; fov: number; crossed: boolean; aim: number }[]; crossed: string[] };
@@ -698,6 +700,29 @@ function PlanView({ board, cur, pick, flip }: { board: Board; cur?: SbShot; pick
 const SPEEDS = [0.5, 0.75, 1, 1.5, 2];
 const secs = (t: number) => `${Math.floor(t / 60)}:${(t % 60).toFixed(1).padStart(4, "0")}`;
 
+/** A stock candidate: its preview picture, and its video played straight from its library when pointed at (nothing is kept
+    here); downloaded only when chosen. */
+function StockTile({ c, use, busy }: { c: StockOpt; use: () => void; busy: boolean }) {
+  const [live, setLive] = useState(false), [broken, setBroken] = useState(false);
+  const tone = c.look == null ? "text-faint" : c.look >= 5 ? "text-proof" : "text-tally";
+  return (
+    <li className="grid gap-1 rounded-lg border border-line p-1.5">
+      <span className="relative block aspect-video overflow-hidden rounded bg-black" onMouseEnter={() => setLive(true)} onMouseLeave={() => setLive(false)} onClick={() => setLive(!live)}>
+        {c.thumb_url && <img src={c.thumb_url} alt="" className="absolute inset-0 h-full w-full object-cover" />}
+        {live && !broken && c.preview_url && <video src={c.preview_url} autoPlay muted loop playsInline preload="none" onError={() => setBroken(true)} className="absolute inset-0 h-full w-full object-cover" />}
+        <span className="mono absolute bottom-1 left-1 rounded bg-black/70 px-1 text-[10px]">{c.source} · {c.duration ? `${c.duration.toFixed(0)}s` : "?"}</span>
+        <span className={`mono absolute right-1 top-1 rounded bg-black/75 px-1 text-[10px] font-semibold ${tone}`} title={c.why || undefined}>{c.look == null ? tr("chưa chấm") : `${c.look}/10`}</span>
+        {!live && c.preview_url && <span className="absolute inset-0 grid place-items-center opacity-0 transition-opacity hover:opacity-100"><Icon name="play" size={18} /></span>}
+      </span>
+      {c.why && <span className="line-clamp-2 text-[11px] text-mute" title={c.why}>{c.why}</span>}
+      <span className="truncate text-[10.5px] text-faint" title={`${c.license}${c.creator ? ` · ${c.creator}` : ""}`}>{c.license}{c.creator ? ` · ${c.creator}` : ""}</span>
+      <span className="grid grid-cols-2 gap-1">
+        <button type="button" onClick={use} disabled={busy} className="h-7 rounded-md border border-line text-[11.5px] text-ink hover:border-accent hover:bg-accent/10">{tr("Dùng cho shot")}</button>
+        <a href={c.source_url} target="_blank" rel="noopener noreferrer" className="flex h-7 items-center justify-center gap-1 rounded-md border border-line text-[11.5px] text-ink hover:border-accent hover:bg-accent/10"><Icon name="external" size={11} />{tr("Trang gốc")}</a>
+      </span>
+    </li>);
+}
+
 type LibHit = { moment_id: string; asset_id: string; level: string; t_start: number; t_end: number; text: string; frame_url: string | null;
   asset: { name: string; thumbnail_url: string | null } };
 
@@ -807,10 +832,17 @@ function PictureTab({ shot: s, board, url, set, act, busy }: { shot: SbShot; boa
                           className="h-7 rounded-md border border-line text-[11.5px] text-ink hover:border-accent hover:bg-accent/10">{tr("Dùng cho shot")}</button>
                 </li>))}
             </ul>)}
-          <form className="flex gap-1.5" onSubmit={(e) => { e.preventDefault(); if (query.trim()) act("stock", async () => { const r = await post<{ stock: { found: boolean } }>(`${shotUrl}/stock`, { query }); if (!r.stock?.found) toast(tr("Không tìm được clip stock cho từ khoá này."), { tone: "tally" }); }); }}>
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={tr("Từ khoá tiếng Anh, ví dụ: fishing boat at sea")} aria-label={tr("Từ khoá tìm clip stock")}
+          {(s.stock_options ?? []).length > 0 && <div className="grid gap-1.5">
+            <span className="eyebrow" title={tr("Chấm qua ảnh xem trước; rê chuột để xem video ngay từ nguồn. Chỉ tải về khi bạn bấm Dùng cho shot.")}>{tv`Clip stock · ${s.stock_options!.length} ứng viên`}</span>
+            <ul className="grid grid-cols-2 gap-2">
+              {s.stock_options!.map((c) => <StockTile key={c.cid} c={c} busy={!!busy} use={() => act(`stk${c.cid}`, () => post(`${shotUrl}/use-stock`, { candidate: c.cid }), tv`Đã tải clip stock cho ${s.code}.`)} />)}
+            </ul>
+          </div>}
+          <form className="flex gap-1.5" onSubmit={(e) => { e.preventDefault(); act("stock", async () => { const r = await post<{ stock: { found: boolean; options: number; passed: number } }>(`${shotUrl}/stock`, { query });
+            if (!r.stock?.found) toast(tr("Không tìm được clip stock nào."), { tone: "tally" }); else toast(tv`${r.stock.options} ứng viên, ${r.stock.passed} đạt. Rê chuột để xem, bấm Dùng cho shot để tải.`); }); }}>
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={tr("Từ khoá (tuỳ chọn), tiếng Việt hoặc Anh; trống thì dùng lời của shot")} aria-label={tr("Từ khoá tìm clip stock")}
                    className="h-8 min-w-0 flex-1 rounded-md border border-line bg-canvas px-2.5 text-[12.5px] outline-none focus:border-accent" />
-            <Button size="sm" type="submit" busy={busy === "stock"} disabled={!query.trim()}><Icon name="globe" size={13} />{tr("Tìm clip stock")}</Button>
+            <Button size="sm" type="submit" busy={busy === "stock"}><Icon name="globe" size={13} />{tr("Tìm ứng viên stock")}</Button>
           </form>
         </div>
       </>}

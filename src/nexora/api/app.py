@@ -942,7 +942,15 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             return {"shot_id": sh.shot_id, "code": codes[sh.shot_id], "scene_id": sh.scene_id, "version": sh.version, "state": sh.state, "spec": sh.spec,
                     "assignment": {**a, "candidates": [dress(c) for c in a.get("candidates", [])], "others": [dress(c) for c in others],
                                    "name": names.get(a.get("asset_id"), a.get("asset_id"))} if a else None,
-                    "checks": sh.checks, "frame_url": frame(sh), "clip_url": clip(sh), "script_shot": sh.script_shot}
+                    "checks": sh.checks, "frame_url": frame(sh), "clip_url": clip(sh), "script_shot": sh.script_shot, "stock_options": stock_options(sh)}
+
+        def stock_options(sh) -> list[dict]:
+            """Stock candidates for the shot (found for it here, or for its script line by the producer): watched from their source."""
+            if system.stock_scout is None:
+                return []
+            found = system.stock_scout.options(project_id, sh.shot_id) or (system.stock_scout.options(project_id, sh.script_shot) if sh.script_shot else [])
+            keep = ("cid", "source", "source_url", "preview_url", "width", "height", "duration", "creator", "license", "look", "why", "siglip", "query")
+            return [{**{k: c.get(k) for k in keep}, "thumb_url": f"/api/v1/stock/{c['cid']}/thumb" if c.get("thumb") else None} for c in found]
 
         gap = lambda a, b: (b.assignment or {}).get("gap_prev")
         seams = SB.seams(shots, scene_of, colour_gap=gap)
@@ -1098,10 +1106,10 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
 
     @app.post("/api/v1/projects/{project_id}/storyboard/shots/{shot_id}/stock")
     def storyboard_stock_call(project_id: str, shot_id: str, body: dict):
+        """Stock candidates for the shot, judged on their previews: shown to choose from, nothing downloaded. The operator's
+        words (`query`) when given, else the shot's own line."""
         from nexora.app import storyboard_stock
         query = str(body.get("query", "")).strip()
-        if not query:
-            raise HTTPException(422, "Cần từ khoá để tìm clip stock")
         found: dict = {}
         def go():
             try:
@@ -1111,12 +1119,33 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         view = picture_call(project_id, shot_id, go)
         return {**view, "stock": found}
 
+    @app.post("/api/v1/projects/{project_id}/storyboard/shots/{shot_id}/use-stock")
+    def storyboard_use_stock(project_id: str, shot_id: str, body: dict):
+        """A stock candidate chosen for the shot: downloaded now, taken into the Library, given to the shot."""
+        from nexora.app import use_stock_candidate
+        def go():
+            try:
+                use_stock_candidate(system, str(body.get("candidate", "")), shot_id=shot_id)
+            except AdapterError as err:
+                raise ValueError(f"Không tải được clip stock: {err.message}")
+        return picture_call(project_id, shot_id, go)
+
+    @app.get("/api/v1/stock/{cid}/thumb")
+    def stock_thumb(cid: str):
+        """A stock candidate's preview picture, kept until its project's storyboard is approved."""
+        c = system.stock_scout.candidate(cid) if system.stock_scout is not None else None
+        if c is None or not c.get("thumb") or not Path(c["thumb"]).is_file():
+            raise HTTPException(404, "no preview")
+        return FileResponse(c["thumb"], media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
+
     @app.post("/api/v1/projects/{project_id}/storyboard/approve")
     def storyboard_approve(project_id: str):
         """The storyboard approved: written to the script with every picture, its options and treatment; the clips approved, so
         the cut can be rendered."""
+        from nexora.app import after_storyboard_approved
         need_project(project_id)
         done = board_call(lambda: system.director.approve(project_id))
+        done["cleaned"] = after_storyboard_approved(system, project_id)
         # A clip match still waiting at its gate is decided by the same word, for this script or the version the storyboard was
         # laid out from (approving writes the storyboard back as a new version): the storyboard is where its clips were looked at.
         for script_id in system.projects.script_ids(project_id):
@@ -1409,7 +1438,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         if not query:
             raise HTTPException(422, "Cần từ khoá để tìm clip stock")
         try:
-            return fill_gap_from_stock(system, shot_id, query)
+            return fill_gap_from_stock(system, shot_id, query, take=True)       # the operator asked for this line
         except AdapterError as err:
             raise HTTPException(503, f"Không tìm được clip stock: {err.message}")
 

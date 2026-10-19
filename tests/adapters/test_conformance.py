@@ -33,6 +33,7 @@ def test_every_adapter_of_the_installation_describes_itself_within_the_contract(
     from nexora.adapters.motion import StillMotion
     from nexora.adapters.ollama import OllamaAdapter
     from nexora.adapters.openmontage import OpenMontageStock
+    from nexora.adapters.stock_api import StockApi
     from nexora.adapters.outbox import FolderPublisher
     from nexora.adapters.pollinations import PollinationsImage
     from nexora.adapters.speech import WhisperCpp
@@ -42,7 +43,7 @@ def test_every_adapter_of_the_installation_describes_itself_within_the_contract(
     from nexora.adapters.youtube import YouTubePublisher
     rented = [cls("k", "ep") for cls in (RunPodImage, RunPodVideo, RunPodLipSync, RunPodUpscale, RunPodTrainer)] + [YouTubePublisher("c", "s", "r")]
     adapters = [*rented, ClaudeText("k"), DesktopNotifier(), CaptionAdapter(), StillMotion(), OllamaAdapter(), OpenMontageStock(tmp_path / "none"), FolderPublisher(tmp_path / "out"),
-                PollinationsImage(), WhisperCpp(tmp_path / "none.bin"), SayVoice(), WebReader()]
+                PollinationsImage(), WhisperCpp(tmp_path / "none.bin"), SayVoice(), WebReader(), StockApi(pexels_key="k")]
     registry, cloud = AdapterRegistry(), set()
     for adapter in adapters:
         cap = adapter.describe()
@@ -54,7 +55,7 @@ def test_every_adapter_of_the_installation_describes_itself_within_the_contract(
         assert unsupported.value.code is ErrorCode.INVALID_REQUEST
     assert len({a.describe().name for a in adapters}) == len(adapters)
     # Everything that reaches outside this machine says so, and so falls under privacy mode.
-    assert cloud == {"model.claude", "stock", "image_gen.pollinations", "web", "image_gen.runpod", "video_gen.runpod", "lipsync.runpod", "upscale.runpod", "train.runpod", "publish.youtube"}
+    assert cloud == {"model.claude", "stock", "stock_api", "image_gen.pollinations", "web", "image_gen.runpod", "video_gen.runpod", "lipsync.runpod", "upscale.runpod", "train.runpod", "publish.youtube"}
     registry.local_only = lambda: True
     for name in cloud:
         with pytest.raises(AdapterError) as kept_in:

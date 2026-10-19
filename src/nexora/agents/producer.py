@@ -17,10 +17,6 @@ from nexora.core.adapter import AdapterError, Request
 from nexora.core.ids import new_id
 from nexora.core.states import RunStatus
 
-QUERY_PROMPT = (
-    "Câu lời dẫn của một video: \"{line}\".\nViết một cụm từ khoá tiếng Anh từ 2 đến 5 từ để tìm video stock minh hoạ câu này. "
-    "Chỉ trả về JSON với khoá tu_khoa."
-)
 WRITER, SCOUT, STOCK, EDITOR, LEAD = "Biên kịch", "Tìm hình", "Tìm stock", "Dựng phim", "Điều phối"
 RESEARCHER, CRITIC, CHECKER = "Nghiên cứu", "Phản biện", "Kiểm chứng"
 MAX_STOCK_FILLS = 3          # a video from the library: its few missing pictures; a video on a topic fills every one, stock being free
@@ -49,7 +45,7 @@ class Producer:
                  write_topic=None, topic_state=None, apply_topic=None, generate=None):
         self._db = db.LocalConnections(db_path)
         self._orch, self._projects, self._planning, self._sourcing, self._edit, self._adapters = orch, projects, planning, sourcing, edit, adapters
-        self._fill_gap = fill_gap                    # (shot_id, query) -> {"found": bool, ...}; given by the composition root
+        self._fill_gap = fill_gap                    # (shot_id, line) -> {"found": bool, "options": int, ...}; given by the composition root
         self._style = style or (lambda project_id: "mixed")     # (project_id) -> how its pictures illustrate the words
         self._to_storyboard = to_storyboard          # (project_id) -> None: the chosen clips laid out on the storyboard, where they are approved
         # A video on a topic (design 2026-10-18, Claude Code as NEXORA's writer): (project_id, topic, seconds, form) -> run_id writes it,
@@ -302,14 +298,15 @@ class Producer:
             has_stock = any(c.name == "stock" for c in self._adapters.describe())
             fill = gaps if task["options"].get("topic") else gaps[:MAX_STOCK_FILLS]
             for sel in fill if task["options"]["use_stock"] and has_stock else []:
-                query = ""
+                # Candidates judged on their previews; one is downloaded only when the operator lets the best be taken.
                 try:
-                    out = self._adapters.submit("model", Request("chat", params={"prompt": QUERY_PROMPT.format(line=texts[sel.shot_id]), "json": True, "max_tokens": 40}))
-                    query = str(out.outputs["json"].get("tu_khoa", "")).strip()
-                    found = bool(query) and self._fill_gap(sel.shot_id, query).get("found")
-                except AdapterError:
-                    found = False
-                self._say(task_id, STOCK, f"Câu “{texts[sel.shot_id]}”: " + (f"lấy clip stock theo từ khoá “{query}”." if found else "không tìm được clip stock phù hợp."))
+                    out = self._fill_gap(sel.shot_id, texts[sel.shot_id])
+                except (AdapterError, LookupError, ValueError):
+                    out = {"found": False, "options": 0}
+                said = (f"lấy clip stock tốt nhất trong {out['options']} ứng viên (từ khoá “{out.get('query') or ''}”)." if out.get("found")
+                        else f"{out['options']} ứng viên stock đã chấm, chờ bạn chọn trong Storyboard." if out.get("options")
+                        else "không tìm được clip stock phù hợp.")
+                self._say(task_id, STOCK, f"Câu “{texts[sel.shot_id]}”: {said}")
             if task["options"].get("paid") and self._generate is not None:
                 left = [x.shot_id for x in self._projects.selections(script["script_id"]) if x.status == "gap" and x.shot_id not in quotes]
                 if left:

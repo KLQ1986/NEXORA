@@ -6,7 +6,7 @@ from nexora.core.schedule import in_window, parse_window
 from nexora.core.states import RunStatus, StageStatus
 
 from tests.conftest import make_video
-from tests.fakes import FakeImageGen, FakeModel, FakeStock, FakeVideoGen, FakeVoice
+from tests.fakes import FakeImageGen, FakeModel, FakeStock, FakeVideoGen, FakeVoice, fake_preview
 
 
 def settle(system):
@@ -22,7 +22,8 @@ def settle(system):
 
 def test_the_producer_carries_a_goal_to_a_cut_and_stops_at_each_human_gate(tmp_path):
     model = FakeModel(); model.script = ["cá tươi trên sạp", "bàn phím máy tính"]
-    system = build(tmp_path / "data", model=model, voice=FakeVoice(), segment_seconds=2.0, stock=FakeStock())
+    stock = FakeStock()
+    system = build(tmp_path / "data", model=model, voice=FakeVoice(), segment_seconds=2.0, stock=stock, stock_preview=fake_preview)
     system.library.ingest(make_video(tmp_path / "footage.mp4", picture=20))
     while system.worker.run_once():
         pass
@@ -31,8 +32,10 @@ def test_the_producer_carries_a_goal_to_a_cut_and_stops_at_each_human_gate(tmp_p
     task = system.producer.task(task_id)
     assert (task["status"], task["step"]) == ("waiting_operator", "review")          # it does not approve its own choices
     sels = system.projects.selections(system.projects.current_script(task["project_id"])["script_id"])
-    # Stock was fetched for the gap, watched, and withdrawn again: the clip that came back does not show a keyboard.
-    assert [s.status for s in sels] == ["proposed", "gap"] and "không có đoạn nào" in sels[1].reason and "Clip stock" in sels[1].reason
+    # Stock candidates were found and judged on their previews for the gap, and kept for the operator: nothing was downloaded,
+    # since the operator has not let the assistant take the best one (Tự duyệt → stock is off).
+    assert [s.status for s in sels] == ["proposed", "gap"] and stock.downloads == 0
+    assert system.stock_scout.options(task["project_id"], sels[1].shot_id)
     assert [e["role"] for e in task["log"]] == ["Điều phối", "Biên kịch", "Phản biện", "Kiểm chứng", "Tìm hình", "Tìm hình", "Tìm stock", "Điều phối"]
 
     script = system.projects.current_script(task["project_id"])["script_id"]

@@ -26,7 +26,7 @@ LEVELS = [
 ]
 NEED = {2: ("sourcing.match", 5), 3: ("edit.render", 5), 4: ("edit.render", 8)}       # the gate whose record counts, and how many reviews it takes
 RECENT = 5                                                                           # of which this many most recent must all be approvals
-SWITCHES = {"clips": "Tự duyệt clip", "renders": "Tự duyệt bản dựng", "pictures": "Tự duyệt hình AI (tốn tiền)"}
+SWITCHES = {"clips": "Tự duyệt clip", "renders": "Tự duyệt bản dựng", "pictures": "Tự duyệt hình AI (tốn tiền)", "stock": "Tự tải clip stock tốt nhất"}
 
 
 class Autonomy:

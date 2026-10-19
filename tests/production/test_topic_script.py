@@ -337,10 +337,9 @@ def test_a_stopped_writer_is_listed_for_approval_under_its_video(tmp_path):
 
 
 def test_a_video_on_a_topic_fills_every_missing_picture_from_free_stock_in_the_assistants_lane(tmp_path):
-    from tests.fakes import FakeStock
+    from tests.fakes import FakeStock, fake_preview
     lines = [{"part": "Thân bài", "text": f"Câu thứ {n} về rừng bạch đàn.", "fact": False, "sources": [], "brief": "rừng"} for n in range(1, 6)]
-    system = build(tmp_path / "data", model=FakeModel(), voice=FakeVoice(), cloud_models=[FakeClaudeCode({**PACKAGE, "lines": lines})], stock=FakeStock())
-    system.adapters._adapters["model"].answers["chat"] = {"tu_khoa": "eucalyptus forest"}
+    system = build(tmp_path / "data", model=FakeModel(), voice=FakeVoice(), cloud_models=[FakeClaudeCode({**PACKAGE, "lines": lines})], stock=FakeStock(), stock_preview=fake_preview)
     task_id = system.producer.start("rừng bạch đàn", topic=True, critique=False)
     for _ in range(10):
         system.producer.advance(task_id)
