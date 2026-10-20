@@ -24,7 +24,7 @@ def test_captions_that_cannot_be_read_and_black_or_silence_that_is_not_meant_are
     assert [(f["shot"], "đọc không kịp" in f["text"], "quá hai dòng" in f["text"]) for f in found] == [(2, True, False), (3, False, True)]
     measured = picture_and_sound([[0.0, 0.2], [4.0, 6.0], [9.0, 10.0]], [[1.0, 2.0], [3.0, 7.5]], 12.0, gap_ranges=[[4.0, 6.0]])
     assert measured["black"] == [[9.0, 10.0]] and measured["silence"] == [[3.0, 7.5]]            # a flash and a known gap are not faults; a second of black is
-    assert measured["checks"] == {"Không có khung đen ngoài ý muốn": False, "Không có khoảng im lặng dài": False}
+    assert measured["checks"] == {"Không có khung đen ngoài ý muốn": False, "Không có khoảng im lặng dài": False, "Mở đầu có hình": True, "Có tiếng trong 3 giây đầu": True}
     assert all(picture_and_sound([], [[0.0, 12.0]], 12.0)["checks"].values())                    # a cut with no sound at all is caught by "Có âm thanh", not here
 
 

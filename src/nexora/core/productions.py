@@ -8,6 +8,7 @@ value keeps it.
 """
 from __future__ import annotations
 
+import sqlite3
 import time
 from pathlib import Path
 
@@ -61,11 +62,15 @@ class ProductionStore:
         return before
 
     def remove(self, production_id: str) -> None:
-        """A production with no video left in it (in the Trash or not) is removed."""
+        """A production with no video left in it (in the Trash or not) is removed; the missions given from it keep their record."""
         with db.write(self._conn) as c:
             if c.execute("SELECT 1 FROM projects WHERE production_id = ?", (production_id,)).fetchone():
                 raise ValueError("the production still has videos")
             c.execute("DELETE FROM productions WHERE production_id = ?", (production_id,))
+            try:                                         # a mission planned for it, not yet carried out, makes a production of its own
+                c.execute("UPDATE missions SET production_id = NULL WHERE production_id = ?", (production_id,))
+            except sqlite3.OperationalError:
+                pass                                     # no missions table in this database
 
     def adopt_loose(self) -> int:
         """Every video that belongs to no production gets one of its own, of its title, its shared values taken from it (the

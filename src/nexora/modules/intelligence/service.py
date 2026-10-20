@@ -46,8 +46,10 @@ class Intelligence:
         meta = self._assets.original(asset_id).metadata
         if "duplicate_of" in meta:
             return
-        kind = (self._assets.asset(asset_id) or {}).get("kind")
-        if kind == "image":
+        asset = self._assets.asset(asset_id) or {}
+        kind = asset.get("kind")
+        if kind == "image" or (kind == "video" and asset.get("origin") == "licensed"):
+            # Stock was chosen on its preview: described so it can be found, never listened to, divided or profiled.
             self.understand(asset_id)
             return
         if kind != "video":
@@ -229,7 +231,7 @@ class Intelligence:
         """Start analysing every video taken in before footage was divided into shots and beats. Runs with the background work."""
         runs = []
         for asset in self._assets.assets():
-            if asset["kind"] != "video":
+            if asset["kind"] != "video" or asset.get("origin") == "licensed":
                 continue
             original = self._assets.original(asset["asset_id"])
             meta = original.metadata

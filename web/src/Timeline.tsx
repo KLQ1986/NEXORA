@@ -12,7 +12,7 @@ function Wave({ seed }: { seed: number }) {
   const bars = Array.from({ length: 64 }, (_, k) => 0.25 + 0.75 * Math.abs(Math.sin(k * 0.9 + seed * 2.3) * Math.cos(k * 0.37 + seed)));
   return <svg className="h-5 w-full min-w-0 opacity-70" preserveAspectRatio="none" viewBox="0 0 128 20" aria-hidden="true">{bars.map((h, k) => <rect key={k} x={k * 2} y={10 - h * 9} width="1.2" height={h * 18} rx="0.6" fill="currentColor" />)}</svg>;
 }
-const chipBtn = "inline-flex h-8 items-center gap-1.5 rounded-lg border border-line bg-raised px-2.5 text-[12.5px] transition-colors hover:border-edge hover:bg-overlay disabled:opacity-40";
+const chipBtn = "inline-flex h-8 items-center gap-1.5 rounded-lg border border-line bg-raised px-2.5 text-meta transition-colors hover:border-edge hover:bg-overlay disabled:opacity-40";
 
 /** The cut as an editor reads it: one track per kind of material, time running left to right, the playhead tied to the rendered video. */
 export default function Timeline({ project: p, reload, rerender, busy }: { project: Project; reload: () => void; rerender: () => void; busy: boolean }) {
@@ -84,8 +84,8 @@ export default function Timeline({ project: p, reload, rerender, busy }: { proje
               : <div className="grid min-h-[240px] w-full flex-1 place-items-center p-6 text-center text-mute"><span className="flex max-w-md flex-col items-center gap-2"><Icon name="play" size={26} className="text-faint" />{latest ? (latest.qc.shots ? tr("Kịch bản đã đổi sau bản dựng gần nhất. Dựng lại để xem.") : tr("Bản dựng gần nhất được làm trước khi có màn hình này nên thiếu thông tin từng cảnh. Dựng lại để xem.")) : tr("Chưa có bản dựng. Bên dưới là bố cục dự kiến theo các clip đang chọn.")}</span></div>}
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-3 border-t border-line px-4 py-2.5">
-            <span className="mono text-[17px] font-medium">{timecode(now)} <span className="text-faint">/ {timecode(total)}</span></span>
-            {rendered && <span className="text-[13px] text-mute">{tv`Câu ${playing.i + 1}`}</span>}
+            <span className="mono text-num font-medium">{timecode(now)} <span className="text-faint">/ {timecode(total)}</span></span>
+            {rendered && <span className="text-ui text-mute">{tv`Câu ${playing.i + 1}`}</span>}
             {stale > 0 && <Tag tone="cue">{tv`${stale} cảnh đổi, chưa dựng lại`}</Tag>}
             <span className="ml-auto" />
             {(stale > 0 || !rendered) && p.script?.match_approved && <Button kind="primary" size="sm" disabled={busy} onClick={rerender}><Icon name="scissors" size={14} />{rendered ? tr("Dựng lại với thay đổi") : tr("Dựng video")}</Button>}
@@ -96,16 +96,16 @@ export default function Timeline({ project: p, reload, rerender, busy }: { proje
         <aside aria-label={tr("Cảnh đang chọn")} className="panel min-h-0 min-w-0 overflow-y-auto">
           <div className="sticky top-0 z-10 border-b border-line bg-surface/95 px-4 py-3 backdrop-blur">
             <div className="flex items-center justify-between gap-2"><span className="eyebrow">{tv`Inspector · Câu ${current.i + 1}/${items.length}`}</span>
-              <span className="mono text-[11.5px] text-faint">{timecode(current.at)} · {current.d.toFixed(1)}s</span></div>
-            <p className="mt-1.5 text-[14.5px] leading-snug">{current.shot.text}</p>
+              <span className="mono text-mini text-faint">{timecode(current.at)} · {current.d.toFixed(1)}s</span></div>
+            <p className="mt-1.5 text-read leading-snug">{current.shot.text}</p>
           </div>
           <div className="grid gap-5 p-4">
             {current.gap
-              ? <p className="rounded-lg border border-cue/30 bg-cue/5 px-3 py-2 text-[13px] text-cue">{tr("Câu này chưa có hình. Thêm hình ở thẻ Làm video.")}</p>
+              ? <p className="rounded-lg border border-cue/30 bg-cue/5 px-3 py-2 text-ui text-cue">{tr("Câu này chưa có hình. Thêm hình ở thẻ Làm video.")}</p>
               : (
                 <div>
-                  <p className="flex items-center gap-2 break-words text-[13px]"><Icon name="film" size={14} className="text-faint" />{sel?.asset?.name}</p>
-                  <p className="mono mt-0.5 text-[12px] text-mute">{sel?.asset?.still ? tr("Ảnh tĩnh, đẩy máy chậm") : `${timecode(sel?.t_in)} → ${timecode(sel?.t_out)} trong clip ${timecode(sel?.asset?.duration)}`}</p>
+                  <p className="flex items-center gap-2 break-words text-ui"><Icon name="film" size={14} className="text-faint" />{sel?.asset?.name}</p>
+                  <p className="mono mt-0.5 text-mini text-mute">{sel?.asset?.still ? tr("Ảnh tĩnh, đẩy máy chậm") : `${timecode(sel?.t_in)} → ${timecode(sel?.t_out)} trong clip ${timecode(sel?.asset?.duration)}`}</p>
                   {!sel?.asset?.still && (
                     <div className="mt-3">
                       <p className={head} id="slip">{tr("Trượt đoạn lấy")}</p>
@@ -116,7 +116,7 @@ export default function Timeline({ project: p, reload, rerender, busy }: { proje
                       </div>
                     </div>
                   )}
-                  {sel?.reason && <details className="ai-card group mt-3 px-3 py-2 text-[12.5px]"><summary className="flex cursor-pointer list-none gap-2"><Icon name="sparkles" size={13} className="mt-0.5 text-ai" /><span className="line-clamp-3 text-mute group-open:line-clamp-none"><span className="font-medium text-ai">{tr("Vì sao chọn")} </span>{sel.reason}</span></summary></details>}
+                  {sel?.reason && <details className="ai-card group mt-3 px-3 py-2 text-meta"><summary className="flex cursor-pointer list-none gap-2"><Icon name="sparkles" size={13} className="mt-0.5 text-ai" /><span className="line-clamp-3 text-mute group-open:line-clamp-none"><span className="font-medium text-ai">{tr("Vì sao chọn")} </span>{sel.reason}</span></summary></details>}
                 </div>
               )}
             {!current.gap && sel && sel.angles.length > 0 && (
@@ -133,24 +133,24 @@ export default function Timeline({ project: p, reload, rerender, busy }: { proje
                     <button key={name} type="button" role="radio" aria-checked={(sel?.focus_x ?? null) === x} onClick={() => act("focus", { x })}>{name}</button>
                   ))}
                 </div>
-                {sel?.focus_x == null && seen != null && <p className="mono mt-1.5 text-[12px] text-mute">{tv`Bản dựng gần nhất lấy quanh điểm ${Math.round(seen * 100)}% từ mép trái.`}</p>}
+                {sel?.focus_x == null && seen != null && <p className="mono mt-1.5 text-mini text-mute">{tv`Bản dựng gần nhất lấy quanh điểm ${Math.round(seen * 100)}% từ mép trái.`}</p>}
               </div>
             )}
             {!current.gap && (
               <div>
                 <p className={head}>{tr("Chèn hình khác khi nói tới một từ")}</p>
                 {(sel?.inserts ?? []).map((ins) => (
-                  <p key={ins.keyword} className="mb-1.5 flex items-baseline justify-between gap-2 text-[13px]"><span className="min-w-0 truncate" title={ins.reason}>{tv`Tới “${ins.keyword}” thì chuyển hình`}</span>
+                  <p key={ins.keyword} className="mb-1.5 flex items-baseline justify-between gap-2 text-ui"><span className="min-w-0 truncate" title={ins.reason}>{tv`Tới “${ins.keyword}” thì chuyển hình`}</span>
                     <button type="button" className="link shrink-0" onClick={() => act("inserts/remove", { keyword: ins.keyword })}>{tr("Bỏ")}</button></p>
                 ))}
                 <form className="flex gap-2" onSubmit={async (e) => { e.preventDefault(); if (word.trim()) { await act("inserts", { keyword: word.trim() }); setWord(""); } }}>
                   <label htmlFor="word" className="sr-only">{tr("Từ trong câu")}</label>
-                  <input id="word" value={word} onChange={(e) => setWord(e.target.value)} placeholder={tr("Một từ có trong câu")} className="h-8 min-w-0 flex-1 px-2.5 text-[13px]" />
+                  <input id="word" value={word} onChange={(e) => setWord(e.target.value)} placeholder={tr("Một từ có trong câu")} className="h-8 min-w-0 flex-1 px-2.5 text-ui" />
                   <button type="submit" disabled={!word.trim()} className={chipBtn}>{tr("Tìm và chèn")}</button>
                 </form>
               </div>
             )}
-            {note && <p className="text-[13px] text-tally">{note}</p>}
+            {note && <p className="text-ui text-tally">{note}</p>}
             {sel && sel.alternates.length > 0 && (
               <div>
                 <p className={head}>{tr("Đổi sang cảnh khác")}</p>
@@ -158,13 +158,13 @@ export default function Timeline({ project: p, reload, rerender, busy }: { proje
                   {sel.alternates.slice(0, 6).map((a: Candidate, k: number) => (
                     <li key={a.moment_id}><button type="button" title={a.reason} onClick={() => act("swap", { alternate: k })} className="group block w-full text-left">
                       <span className="relative block overflow-hidden rounded-md ring-1 ring-line group-hover:ring-accent"><img src={a.frame_url} alt="" className="aspect-video w-full bg-black object-cover opacity-75 group-hover:opacity-100" />
-                        <span className="chip mono absolute bottom-1 left-1 !h-4 !px-1 !text-[9.5px]">{timecode(a.t_in)}</span></span></button></li>
+                        <span className="chip mono absolute bottom-1 left-1 !h-4 !px-1 !text-mini">{timecode(a.t_in)}</span></span></button></li>
                   ))}
                 </ul>
               </div>
             )}
             {findings.filter((f) => f.shot === current.i + 1).map((f, k) => (
-              <div key={k} className="rounded-lg border-l-2 border-cue bg-cue/5 py-2 pl-3 pr-2 text-[13px]"><p>{f.check}: {f.text}</p><p className="text-mute">{f.fix}</p></div>
+              <div key={k} className="rounded-lg border-l-2 border-cue bg-cue/5 py-2 pl-3 pr-2 text-ui"><p>{f.check}: {f.text}</p><p className="text-mute">{f.fix}</p></div>
             ))}
             {items.length > 1 && (
               <div>
@@ -175,7 +175,7 @@ export default function Timeline({ project: p, reload, rerender, busy }: { proje
                 </div>
               </div>
             )}
-            {current.stale && <p className="text-[13px] text-cue">{tr("Cảnh này đã đổi sau bản dựng gần nhất. Video phía trên vẫn là bản cũ.")}</p>}
+            {current.stale && <p className="text-ui text-cue">{tr("Cảnh này đã đổi sau bản dựng gần nhất. Video phía trên vẫn là bản cũ.")}</p>}
           </div>
         </aside>
       </div>
@@ -183,12 +183,12 @@ export default function Timeline({ project: p, reload, rerender, busy }: { proje
       <div className="panel grid grid-cols-[112px_minmax(0,1fr)] overflow-hidden">
         <div className="border-r border-line bg-raised/40">
           <div className="h-7 border-b border-line" />
-          {TRACKS.map(([name, icon, h]) => <p key={name} className={`flex items-center gap-2 border-b border-line px-3 text-[12.5px] text-mute last:border-b-0 ${h}`}><Icon name={icon} size={14} className="text-faint" />{name}</p>)}
+          {TRACKS.map(([name, icon, h]) => <p key={name} className={`flex items-center gap-2 border-b border-line px-3 text-meta text-mute last:border-b-0 ${h}`}><Icon name={icon} size={14} className="text-faint" />{name}</p>)}
         </div>
         <div className="overflow-x-auto">
           <div className="relative" style={{ width: `${zoom * 100}%` }}
                onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); const t = ((e.clientX - r.left) / r.width) * total; setPicked(at(t).i); seek(t); }}>
-            <div className="mono relative h-7 border-b border-line bg-raised/30 text-[10px] text-faint">
+            <div className="mono relative h-7 border-b border-line bg-raised/30 text-mini text-faint">
               {ticks.map((t) => <span key={t} className="absolute top-0 h-full border-l border-edge pl-1 pt-1.5" style={{ left: pct(t) }}>{timecode(t)}</span>)}
             </div>
             <div className="relative h-[72px] border-b border-line" role="list" aria-label={tr("Hình theo thời gian")}>
@@ -200,7 +200,7 @@ export default function Timeline({ project: p, reload, rerender, busy }: { proje
                           onClick={(e) => { e.stopPropagation(); choose(it.i); }} style={{ left: pct(it.at), width: pct(it.d) }}
                           className={`absolute inset-y-1.5 overflow-hidden rounded-md border-x border-canvas ${it.gap ? "hatch-cue bg-raised" : "bg-black"} ${it.i === current.i ? "z-10 ring-2 ring-accent" : ""}`}>
                     {src && <img src={src} alt="" className="h-full w-full object-cover opacity-90" />}
-                    <span className="mono absolute left-1 top-1 rounded bg-black/70 px-1 text-[10px]">{it.i + 1}</span>
+                    <span className="mono absolute left-1 top-1 rounded bg-black/70 px-1 text-mini">{it.i + 1}</span>
                     {(it.shot.selection?.inserts ?? []).map((ins) => <span key={ins.keyword} className="absolute inset-y-0 w-0.5 bg-ai" style={{ left: `${ins.at * 100}%` }} title={tv`Chuyển hình ở “${ins.keyword}”`} />)}
                     {(flagged || it.stale) && <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-cue ring-2 ring-black/50" title={it.stale ? tr("Đã đổi, chưa dựng lại") : tr("Nên xem lại")} />}
                   </button>
@@ -209,23 +209,23 @@ export default function Timeline({ project: p, reload, rerender, busy }: { proje
             </div>
             <div className="relative h-10 border-b border-line">
               {items.map((it) => <div key={it.shot.shot_id} style={{ left: pct(it.at), width: pct(it.d) }} title={it.own ? tr("Giọng bạn thu") : tr("Giọng máy")}
-                                      className={`absolute inset-y-1.5 flex items-center gap-1 overflow-hidden rounded border-x border-canvas px-1.5 text-[11px] ${it.own ? "bg-proof/25 text-proof" : "bg-ai/15 text-ai"}`}>
+                                      className={`absolute inset-y-1.5 flex items-center gap-1 overflow-hidden rounded border-x border-canvas px-1.5 text-mini ${it.own ? "bg-proof/25 text-proof" : "bg-ai/15 text-ai"}`}>
                 <Wave seed={it.i} />
               </div>)}
             </div>
             <div className="relative h-10 border-b border-line">
-              {items.map((it) => <div key={it.shot.shot_id} style={{ left: pct(it.at), width: pct(it.d) }} className="absolute inset-y-1.5 truncate rounded border-x border-canvas bg-accent/20 px-1.5 text-[11px] leading-7 text-ink/90">{it.shot.text}</div>)}
+              {items.map((it) => <div key={it.shot.shot_id} style={{ left: pct(it.at), width: pct(it.d) }} className="absolute inset-y-1.5 truncate rounded border-x border-canvas bg-accent/20 px-1.5 text-mini leading-7 text-ink/90">{it.shot.text}</div>)}
             </div>
             <div className="relative h-10">
               {p.music_path
-                ? <div className="absolute inset-x-0 inset-y-1.5 truncate rounded bg-ai/15 px-2 text-[11px] leading-7 text-ai">{tv`♪ ${p.music_path.split("/").pop()} · tự nhỏ lại khi có lời dẫn`}</div>
-                : <div className="absolute inset-x-0 inset-y-1.5 truncate rounded border border-dashed border-line px-2 text-[11px] leading-6 text-faint">{tr("Không có nhạc nền")}</div>}
+                ? <div className="absolute inset-x-0 inset-y-1.5 truncate rounded bg-ai/15 px-2 text-mini leading-7 text-ai">{tv`♪ ${p.music_path.split("/").pop()} · tự nhỏ lại khi có lời dẫn`}</div>
+                : <div className="absolute inset-x-0 inset-y-1.5 truncate rounded border border-dashed border-line px-2 text-mini leading-6 text-faint">{tr("Không có nhạc nền")}</div>}
             </div>
             {rendered && <div className="pointer-events-none absolute bottom-0 top-0 z-20 w-px bg-cue shadow-[0_0_8px_var(--color-cue)]" style={{ left: pct(now) }}><span className="absolute -left-[5px] top-0 h-0 w-0 border-x-[5px] border-t-[7px] border-x-transparent border-t-cue" /></div>}
           </div>
         </div>
       </div>
-      <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-faint"><span>{tr("Bấm vào một cảnh để chọn")}</span><span><kbd className="mono rounded border border-line px-1">←</kbd> <kbd className="mono rounded border border-line px-1">→</kbd> {tr("sang cảnh kề bên")}</span><span><kbd className="mono rounded border border-line px-1">Space</kbd> {tr("phát / dừng")}</span></p>
+      <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-mini text-faint"><span>{tr("Bấm vào một cảnh để chọn")}</span><span><kbd className="mono rounded border border-line px-1">←</kbd> <kbd className="mono rounded border border-line px-1">→</kbd> {tr("sang cảnh kề bên")}</span><span><kbd className="mono rounded border border-line px-1">Space</kbd> {tr("phát / dừng")}</span></p>
     </div>
   );
 }

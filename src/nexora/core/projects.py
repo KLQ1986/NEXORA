@@ -123,6 +123,14 @@ class ProjectStore:
                     notes[0] = str(given["brief"]).strip()
                 if given.get("illustration"):
                     notes[8] = json.dumps(given["illustration"], ensure_ascii=False)
+                if given.get("screen_text"):
+                    notes[1] = str(given["screen_text"]).strip()
+                if given.get("is_fact"):
+                    notes[4] = 1
+                if given.get("source"):
+                    notes[5] = str(given["source"]).strip()
+                if isinstance(given.get("fact_check"), dict):
+                    notes[6] = json.dumps(given["fact_check"], ensure_ascii=False)
                 ref = given.get("quote") if isinstance(given.get("quote"), dict) else (json.loads(notes[9]) if notes[9] else {})
                 ref = {k: ref[k] for k in ("asset_id", "moment_id", "t_in", "t_out") if ref.get(k) is not None} if ref else {}
                 notes[9] = json.dumps(ref, ensure_ascii=False) if quoted else None       # a line no longer marked "> " is narration again
@@ -137,9 +145,9 @@ class ProjectStore:
         return script_id
 
     def keep_draft(self, project_id: str, lines: list) -> None:
-        """What the writer said about each line of a draft it wrote (what to see, how to illustrate), kept until the draft is
+        """What the writer said about each line of a draft it wrote (what to see, how to illustrate, what it states and on what source), kept until the draft is
         saved, so lines the operator keeps word for word bring their notes with them."""
-        notes = {str(l["text"]).strip().lstrip("> ").strip(): {k: l[k] for k in ("brief", "illustration", "quote") if l.get(k)} for l in lines if isinstance(l, dict) and l.get("text")}
+        notes = {str(l["text"]).strip().lstrip("> ").strip(): {k: l[k] for k in ("brief", "illustration", "quote", "screen_text", "is_fact", "source", "fact_check") if l.get(k)} for l in lines if isinstance(l, dict) and l.get("text")}
         with db.write(self._conn) as c:
             c.execute("INSERT OR REPLACE INTO script_drafts (project_id, notes, at) VALUES (?,?,?)", (project_id, json.dumps(notes, ensure_ascii=False), time.time()))
 

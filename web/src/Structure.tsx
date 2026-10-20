@@ -25,7 +25,7 @@ function BeatFacts({ beat }: { beat: BeatView }) {
   const l = beat.labels;
   const fault = l.exposure?.fault === "burnt" ? tr("cháy sáng") : l.exposure?.fault === "dark" ? tr("quá tối") : null;
   return (
-    <div className="flex flex-wrap gap-1.5 text-[12px]">
+    <div className="flex flex-wrap gap-1.5 text-mini">
       <Measure name={tr("Máy")} label={l.camera} text={CAMERA[String(l.camera?.value)] ?? String(l.camera?.value ?? "")} />
       <Measure name={tr("Độ rung")} label={l.shake} text={GRADE[String(l.shake?.value)]} />
       <Measure name={tr("Độ nét")} label={l.sharpness} text={l.sharpness ? GRADE[String(l.sharpness.value)] : undefined} />
@@ -51,7 +51,7 @@ export function StructureStrip({ asset, t, seek }: { asset: Asset; t: number; se
   if (!data.measured) {
     const working = data.run && ["queued", "running"].includes(data.run.status);
     return (
-      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-line px-3 py-2.5 text-[12.5px] text-mute">
+      <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-line px-3 py-2.5 text-meta text-mute">
         <span className="min-w-0 flex-1">{working ? tr("Hệ thống đang đo video này để chia thành cú máy và nhịp.") : tr("Video này chưa được chia thành cú máy và nhịp.")}</span>
         {!working && <Button size="sm" busy={busy} onClick={() => act(`${base}/analyse`)}>{tr("Đo và chia")}</Button>}
         {failed && <p className="w-full text-tally">{failed}</p>}
@@ -70,7 +70,7 @@ export function StructureStrip({ asset, t, seek }: { asset: Asset; t: number; se
   const seekAt = (e: React.MouseEvent<HTMLDivElement>) => { const r = e.currentTarget.getBoundingClientRect(); seek(((e.clientX - r.left) / r.width) * d); };
   return (
     <section className="grid gap-2.5" aria-label={tr("Cú máy và nhịp")}>
-      <div className="flex items-baseline gap-3 text-[12px] text-mute">
+      <div className="flex items-baseline gap-3 text-mini text-mute">
         <span className="eyebrow">{tr("Cú máy và nhịp")}</span>
         <span>{tv`${data.shots.length} cú máy · ${data.beats.length} nhịp`}</span>
         {data.bars && data.bars.value !== "none" && <span title={tr("Đo từ hình: video có viền đen cố định")}>{data.bars.value === "top_bottom" ? tr("viền đen trên dưới") : tr("viền đen hai bên")}</span>}
@@ -87,7 +87,7 @@ export function StructureStrip({ asset, t, seek }: { asset: Asset; t: number; se
       </div>
       {beat && (
         <div className="grid gap-2 rounded-lg border border-line bg-raised/40 p-2.5">
-          <p className="flex flex-wrap items-baseline gap-x-2 text-[12.5px]"><span className="mono text-ink">{timecode(beat.t_start)} – {timecode(beat.t_end)}</span><span className="text-faint">{tv`cú máy ${beat.shot + 1}`}</span>
+          <p className="flex flex-wrap items-baseline gap-x-2 text-meta"><span className="mono text-ink">{timecode(beat.t_start)} – {timecode(beat.t_end)}</span><span className="text-faint">{tv`cú máy ${beat.shot + 1}`}</span>
             {!beat.moment && <span className="text-faint">{tr("chưa mô tả")}</span>}</p>
           <BeatFacts beat={beat} />
           <ProfileFacts beat={beat} />
@@ -95,7 +95,7 @@ export function StructureStrip({ asset, t, seek }: { asset: Asset; t: number; se
           <GoldenLabels assetId={asset.asset_id} beat={beat} reload={reload} />
         </div>
       )}
-      <div className="flex flex-wrap items-center gap-2 text-[12px]">
+      <div className="flex flex-wrap items-center gap-2 text-mini">
         <Button size="sm" disabled={busy || !inside} title={tr("Đặt một ranh giới nhịp ở chỗ đang xem. Mọi lần chia lại sau này đều giữ nó.")} onClick={() => mark("beat", "add", t)}>{tv`Đặt ranh giới nhịp ở ${timecode(t)}`}</Button>
         <Button size="sm" disabled={busy || !inside} title={tr("Đặt một ranh giới cú máy ở chỗ đang xem, khi hệ thống bỏ sót một điểm cắt.")} onClick={() => mark("shot", "add", t)}>{tr("Đặt ranh giới cú máy")}</Button>
         {nearest != null && <>
@@ -104,12 +104,12 @@ export function StructureStrip({ asset, t, seek }: { asset: Asset; t: number; se
           {marked(nearest) && <button type="button" className="link" disabled={busy} title={tr("Quên dấu của bạn ở đây và để hệ thống tự quyết")} onClick={() => mark("beat", "clear", nearest)}>{tr("Trả về cho hệ thống")}</button>}
         </>}
       </div>
-      <label className="flex items-start gap-2 text-[12px] text-mute">
+      <label className="flex items-start gap-2 text-mini text-mute">
         <input type="checkbox" className="mt-0.5" checked={data.reference} disabled={busy} onChange={(e) => act(`${base}/reference`, { on: e.target.checked })} />
         <span>{tr("Dùng video này làm mẫu đo: các ranh giới như đang thấy là đáp án đúng. Chỉ đánh dấu khi bạn đã rà hết video.")}</span>
       </label>
-      {data.faults.length > 0 && <p className="flex items-start gap-1.5 text-[12px] text-tally"><Icon name="alert" size={13} className="mt-0.5 shrink-0" />{tv`Các nhịp chưa phủ kín video: ${data.faults.length} chỗ.`}</p>}
-      {failed && <p className="text-[12px] text-tally">{failed}</p>}
+      {data.faults.length > 0 && <p className="flex items-start gap-1.5 text-mini text-tally"><Icon name="alert" size={13} className="mt-0.5 shrink-0" />{tv`Các nhịp chưa phủ kín video: ${data.faults.length} chỗ.`}</p>}
+      {failed && <p className="text-mini text-tally">{failed}</p>}
     </section>
   );
 }

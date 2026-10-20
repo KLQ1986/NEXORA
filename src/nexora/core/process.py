@@ -12,9 +12,9 @@ class Completed:
     stderr: str
 
 
-def run_process(cmd: list[str], *, timeout: float, cwd: str | None = None, stdin: str | None = None) -> Completed:
+def run_process(cmd: list[str], *, timeout: float, cwd: str | None = None, stdin: str | None = None, env: dict | None = None) -> Completed:
     try:
-        done = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, cwd=cwd, input=stdin)
+        done = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, cwd=cwd, input=stdin, env=env)
     except subprocess.TimeoutExpired:           # subprocess.run has already killed the child
         raise AdapterError(ErrorCode.TIMEOUT, f"{cmd[0]} exceeded {timeout:g}s") from None
     except FileNotFoundError:

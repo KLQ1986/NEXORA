@@ -63,7 +63,7 @@ export function AssetVQ({ assetId, seek }: { assetId: string; seek?: (t: number)
   if (!data) return null;
   const p = data.profile, r = data.recipe, shown = data.previews[0];
   return (
-    <details className="rounded-lg border border-line bg-raised/30 p-2.5 text-[12.5px]">
+    <details className="rounded-lg border border-line bg-raised/30 p-2.5 text-meta">
       <summary className="cursor-pointer list-none"><span className="eyebrow">{tr("VQ")}</span>
         <span className="ml-2 text-faint">{p ? `${p.encoding_name ?? tr("profile màu chưa rõ")} · ${CONTENT[p.content] ?? p.content}` : tr("chưa phân tích")}
           {r ? ` · ${tv`công thức v${r.version}`} ${r.status === "approved" ? tr("đã duyệt") : r.status === "rejected" ? tr("đã bỏ") : tr("chờ duyệt")}` : ""}</span></summary>

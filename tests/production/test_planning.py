@@ -256,3 +256,30 @@ def test_channels_have_a_cadence_and_the_calendar_says_which_weeks_fall_short(tm
     assert len(calendar["cadence"]) == 1 and kitchen["channel"] == "Bếp nhà"                    # a channel without a cadence promises nothing
     assert [(w["planned"], w["short"]) for w in kitchen["weeks"]] == [(2, 0), (1, 1), (0, 2), (0, 2)] and kitchen["short"] == 5
     assert {p["title"]: p["channel"] for p in calendar["projects"]} == {"Phở": "Bếp nhà", "Bún chả": "Bếp nhà", "Cao lầu": "Bếp nhà"}
+
+
+def test_pieces_of_one_recording_heard_with_their_own_sound_are_not_one_picture_twice():
+    talk = [{"text": "Đây là khu vui chơi,", "duration": 1.9, "gap": False, "asset_id": "a", "t_in": 0.9, "live_sound": True},
+            {"text": "có tàu lượn Wonder Hill.", "duration": 2.9, "gap": False, "asset_id": "a", "t_in": 2.7, "live_sound": True}]
+    assert not any(f["check"] == "Lặp hình" for f in review_cut(talk))
+    pictures = [{**s, "live_sound": False} for s in talk]
+    assert any(f["check"] == "Lặp hình" for f in review_cut(pictures))          # narrated over, the same stretch twice is still flagged
+
+
+def test_a_line_the_checker_could_not_read_is_left_unchecked_and_the_others_are_checked(tmp_path):
+    from nexora.app import build
+    from nexora.core.adapter import AdapterError, ErrorCode
+    from tests.fakes import FakeModel, FakeVoice
+    system = build(tmp_path / "data", model=FakeModel(), voice=FakeVoice())
+    pid = system.planning.create_project("Miền Tây")
+    system.projects.update_project(pid, research=__import__("json").dumps([{"title": "Bài A", "url": "https://a", "passage": "Chợ nổi Cái Răng họp từ ba giờ sáng."}]))
+    system.projects.keep_draft(pid, [{"text": "Chợ nổi họp từ ba giờ sáng.", "is_fact": True}, {"text": "Vùng này nuôi 65% thuỷ sản.", "is_fact": True}])
+    system.planning.save_script(pid, ["Chợ nổi họp từ ba giờ sáng.", "Vùng này nuôi 65% thuỷ sản."])
+    send = system.adapters.submit
+    def broken(name, request):
+        if request.params.get("task") == "check" and "65%" in request.params["prompt"]:
+            raise AdapterError(ErrorCode.OUTPUT_INVALID, 'the model did not return JSON: {"ket_luan": "sai", "trich": "chừng 65%')
+        return send(name, request)
+    system.adapters.submit = broken
+    results = system.planning.check_facts(pid)
+    assert len(results) == 2 and results[1]["verdict"] == "not_found" and "Chưa kiểm được" in results[1]["note"]

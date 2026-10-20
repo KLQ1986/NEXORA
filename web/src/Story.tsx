@@ -20,7 +20,7 @@ export function AssetStory({ assetId, seek }: { assetId: string; seek?: (t: numb
   if (!data || data.story.beats.length === 0) return null;
   const { story, recut } = data;
   return (
-    <details className="rounded-lg border border-line bg-raised/30 p-2.5 text-[12.5px]">
+    <details className="rounded-lg border border-line bg-raised/30 p-2.5 text-meta">
       <summary className="cursor-pointer list-none"><span className="eyebrow">{tr("Kể chuyện và dựng lại")}</span>
         <span className="ml-2 text-faint">{tv`cao trào ở nhịp ${story.peak}; bản dựng ${recut.seconds}s`}</span></summary>
       <div className="mt-2 flex h-14 items-end gap-0.5" aria-label={tr("Năng lượng từng nhịp")}>

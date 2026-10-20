@@ -6,7 +6,7 @@ from nexora.core.schedule import in_window, parse_window
 from nexora.core.states import RunStatus, StageStatus
 
 from tests.conftest import make_video
-from tests.fakes import FakeImageGen, FakeModel, FakeStock, FakeVideoGen, FakeVoice
+from tests.fakes import FakeImageGen, FakeModel, FakeStock, FakeVideoGen, FakeVoice, fake_preview
 
 
 def settle(system):
@@ -22,7 +22,8 @@ def settle(system):
 
 def test_the_producer_carries_a_goal_to_a_cut_and_stops_at_each_human_gate(tmp_path):
     model = FakeModel(); model.script = ["cá tươi trên sạp", "bàn phím máy tính"]
-    system = build(tmp_path / "data", model=model, voice=FakeVoice(), segment_seconds=2.0, stock=FakeStock())
+    stock = FakeStock()
+    system = build(tmp_path / "data", model=model, voice=FakeVoice(), segment_seconds=2.0, stock=stock, stock_preview=fake_preview)
     system.library.ingest(make_video(tmp_path / "footage.mp4", picture=20))
     while system.worker.run_once():
         pass
@@ -31,8 +32,10 @@ def test_the_producer_carries_a_goal_to_a_cut_and_stops_at_each_human_gate(tmp_p
     task = system.producer.task(task_id)
     assert (task["status"], task["step"]) == ("waiting_operator", "review")          # it does not approve its own choices
     sels = system.projects.selections(system.projects.current_script(task["project_id"])["script_id"])
-    # Stock was fetched for the gap, watched, and withdrawn again: the clip that came back does not show a keyboard.
-    assert [s.status for s in sels] == ["proposed", "gap"] and "không có đoạn nào" in sels[1].reason and "Clip stock" in sels[1].reason
+    # Stock candidates were found and judged on their previews for the gap, and kept for the operator: nothing was downloaded,
+    # since the operator has not let the assistant take the best one (Tự duyệt → stock is off).
+    assert [s.status for s in sels] == ["proposed", "gap"] and stock.downloads == 0
+    assert system.stock_scout.options(task["project_id"], sels[1].shot_id)
     assert [e["role"] for e in task["log"]] == ["Điều phối", "Biên kịch", "Phản biện", "Kiểm chứng", "Tìm hình", "Tìm hình", "Tìm stock", "Điều phối"]
 
     script = system.projects.current_script(task["project_id"])["script_id"]
@@ -67,7 +70,7 @@ def test_footage_analysis_is_held_outside_the_window_while_other_work_goes_on(tm
     hour = __import__("time").localtime().tm_hour
     system.orch.set_setting("background_window", f"{(hour + 2) % 24}-{(hour + 3) % 24}")        # a window that is not now
     asset_id, ingest = system.library.ingest(make_video(tmp_path / "f.mp4", picture=6))
-    interactive, background = system.workers
+    interactive, background = system.workers[:2]                                  # the third, for Claude Code, has nothing to do here
     while interactive.run_once() or background.run_once():
         pass
     structure = next(r for r in system.orch.runs_for_subject(asset_id) if system.orch.pipeline_of(r) == "library.structure")
@@ -126,3 +129,65 @@ def test_the_clips_the_producer_chose_wait_on_the_storyboard_and_its_approval_le
     assert system.projects.current_script(project)["match_approved"]
     settle(system)
     assert system.producer.task(task_id)["step"] == "cutting"
+
+
+def test_clips_approved_by_the_operators_switch_are_approved_as_the_storyboard_approves_them(tmp_path):
+    from fastapi.testclient import TestClient
+    from nexora.api.app import create_app
+    model = FakeModel(); model.script = ["chợ rau củ", "cá tươi trên sạp"]
+    system = build(tmp_path / "data", model=model, voice=FakeVoice(), segment_seconds=2.0)
+    client = TestClient(create_app(system))
+    system.library.ingest(make_video(tmp_path / "footage.mp4", picture=20))
+    while system.worker.run_once():
+        pass
+    system.orch.set_setting("autonomy_level", "0")
+    task_id = system.producer.start("một buổi sáng ở chợ", use_stock=False)
+    settle(system)
+    project = system.producer.task(task_id)["project_id"]
+    assert system.producer.task(task_id)["step"] == "review" and system.storyboard.shots(project)
+    client.post("/api/v1/autonomy/switches", json={"clips": True})
+    assert system.autonomy.tick() == [f"clips:{project}"]
+    assert system.projects.current_script(project)["match_approved"]
+    assert all(s.state != "needs" for s in system.storyboard.shots(project))               # the storyboard written back, as its approval does
+    settle(system)
+    assert system.producer.task(task_id)["step"] == "cutting"
+
+
+def test_a_whole_clip_brought_in_for_a_shot_is_placed_with_its_match_unmeasured(tmp_path):
+    # Stock, or a clip the operator picks, has no match score: the shot takes it, and says its match was not measured.
+    model = FakeModel(); model.script = ["cá tươi trên sạp", "bàn phím máy tính"]
+    system = build(tmp_path / "data", model=model, voice=FakeVoice(), segment_seconds=2.0)
+    asset_id, _ = system.library.ingest(make_video(tmp_path / "footage.mp4", picture=20))
+    while system.worker.run_once():
+        pass
+    task_id = system.producer.start("một buổi sáng ở chợ", use_stock=False)
+    settle(system)
+    project = system.producer.task(task_id)["project_id"]
+    shot = next(s for s in system.storyboard.shots(project) if s.assignment is None)
+    assert any(c["check"] == "match" for c in shot.spec["criteria"])
+    system.director.use_asset(shot.shot_id, asset_id, reason="Clip stock")
+    placed = system.storyboard.shot(shot.shot_id)
+    assert placed.assignment["asset_id"] == asset_id
+    assert next(c for c in placed.checks if c["check"] == "match")["st"] == "unmeasured"
+
+
+def test_the_operator_has_a_shot_looked_at_on_the_storyboard_and_nothing_is_changed(tmp_path):
+    from fastapi.testclient import TestClient
+    from nexora.api.app import create_app
+    model = FakeModel(); model.script = ["chợ rau củ", "cá tươi trên sạp"]
+    system = build(tmp_path / "data", model=model, voice=FakeVoice(), segment_seconds=2.0)
+    client = TestClient(create_app(system))
+    system.library.ingest(make_video(tmp_path / "footage.mp4", picture=20))
+    while system.worker.run_once():
+        pass
+    task_id = system.producer.start("một buổi sáng ở chợ", use_stock=False)
+    settle(system)
+    project = system.producer.task(task_id)["project_id"]
+    shot = next(s for s in system.storyboard.shots(project) if s.assignment)
+    before = model.calls["describe"]
+    view = client.post(f"/api/v1/projects/{project}/storyboard/shots/{shot.shot_id}/look").json()
+    assert view["looked"]["looked"] >= 1 and model.calls["describe"] > before
+    after = system.storyboard.shot(shot.shot_id)
+    checked = next(c for c in after.checks if c["check"] == "look")
+    assert checked["value"].endswith("/10") and checked["st"] in ("pass", "fail")
+    assert after.assignment["asset_id"] == shot.assignment["asset_id"] and after.state == shot.state       # a look chooses nothing

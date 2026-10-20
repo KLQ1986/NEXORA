@@ -53,17 +53,17 @@ export default function Board({ project: p }: { project: Project }) {
                 {i > 0 && <span className={`absolute top-[17px] h-0.5 rounded-full ${d || a || w ? "bg-proof/45" : "bg-line"}`} style={{ left: "calc(-50% + 24px)", right: "calc(50% + 24px)" }} />}
                 <span className={`relative z-10 grid h-9 w-9 place-items-center rounded-full border ${w ? "border-cue/60 bg-cue/15 text-cue" : a ? "border-ai/60 bg-ai/15 text-ai" : d ? "border-proof/40 bg-proof/15 text-proof" : "border-line bg-raised text-faint"}`}>
                   <Icon name={d && !w && !a ? "check" : s.icon} size={16} />{a && <span className="ping absolute inset-0 rounded-full bg-ai/30" />}</span>
-                <p className={`mt-2 px-1 text-[12px] leading-tight ${w ? "font-medium text-cue" : a ? "font-medium text-ai" : d ? "text-mute" : "text-faint"}`}>{s.label}</p>
+                <p className={`mt-2 px-1 text-mini leading-tight ${w ? "font-medium text-cue" : a ? "font-medium text-ai" : d ? "text-mute" : "text-faint"}`}>{s.label}</p>
               </li>
             );
           })}
         </ol>
         {all.length > 1 && (
           <div className="flex flex-wrap items-center gap-3 border-t border-line bg-raised/30 px-5 py-3">
-            <label htmlFor="replay" className="flex items-center gap-2 text-[12.5px] font-medium"><Icon name="refresh" size={14} className="text-mute" />{tr("Xem lại quá trình")}</label>
+            <label htmlFor="replay" className="flex items-center gap-2 text-meta font-medium"><Icon name="refresh" size={14} className="text-mute" />{tr("Xem lại quá trình")}</label>
             <input id="replay" type="range" min={0} max={all.length} value={at ?? all.length} onChange={(e) => { const v = Number(e.target.value); setAt(v >= all.length ? null : v); }} className="min-w-40 flex-1" />
-            <span className="mono w-24 text-right text-[12px] text-mute">{at === null ? tr("● Trực tiếp") : shown.length ? clock(shown[shown.length - 1].at) : tr("Lúc bắt đầu")}</span>
-            {at !== null && <button type="button" onClick={() => setAt(null)} className="link text-[12.5px]">{tr("Về hiện tại")}</button>}
+            <span className="mono w-24 text-right text-mini text-mute">{at === null ? tr("● Trực tiếp") : shown.length ? clock(shown[shown.length - 1].at) : tr("Lúc bắt đầu")}</span>
+            {at !== null && <button type="button" onClick={() => setAt(null)} className="link text-meta">{tr("Về hiện tại")}</button>}
           </div>
         )}
       </div>
@@ -81,14 +81,14 @@ export default function Board({ project: p }: { project: Project }) {
                     <div className={`relative aspect-video overflow-hidden ${sel?.status === "gap" ? "hatch-cue bg-surface" : "bg-black"}`}>
                       {src && <img src={src} alt="" loading="lazy" className="h-full w-full object-cover" />}
                       {sel?.status === "gap" && <span className="absolute inset-0 grid place-items-center"><Tag tone="cue">{tr("Thiếu hình")}</Tag></span>}
-                      {!sel && <span className="absolute inset-0 grid place-items-center bg-raised text-[12.5px] text-faint">{tr("Chưa chọn")}</span>}
+                      {!sel && <span className="absolute inset-0 grid place-items-center bg-raised text-meta text-faint">{tr("Chưa chọn")}</span>}
                       <TimeChip className="absolute left-1.5 top-1.5">{String(i + 1).padStart(2, "0")}</TimeChip>
                       {sel?.status === "accepted" && <span className="absolute right-1.5 top-1.5 grid h-5 w-5 place-items-center rounded-full bg-proof text-canvas" title={tr("Đã duyệt")}><Icon name="check" size={12} /></span>}
                       {sel && sel.t_in != null && sel.asset && !sel.asset.still && <TimeChip className="absolute bottom-1.5 right-1.5">{timecode(sel.t_in)}</TimeChip>}
                     </div>
                     <div className="px-3 py-2.5">
-                      <p className="line-clamp-2 text-[12.5px] leading-snug">{s.text}</p>
-                      {sel && sel.asset && <p className="mt-1 truncate text-[11px] text-faint">{sel.asset.name}</p>}
+                      <p className="line-clamp-2 text-meta leading-snug">{s.text}</p>
+                      {sel && sel.asset && <p className="mt-1 truncate text-mini text-faint">{sel.asset.name}</p>}
                     </div>
                   </li>
                 );
@@ -101,10 +101,10 @@ export default function Board({ project: p }: { project: Project }) {
               <ul className="panel rows overflow-hidden">
                 {p.renders.map((r, i) => (
                   <li key={r.render_id} className="grid items-center gap-x-4 gap-y-1 px-4 py-2.5 sm:grid-cols-[minmax(0,1fr)_auto_auto_auto]">
-                    <span className="mono min-w-0 truncate text-[13px]">{new Date(r.created_at * 1000).toLocaleString(locale)}{i === 0 ? <span className="ml-2 font-sans text-accent">{tr("mới nhất")}</span> : null}</span>
-                    <span className="mono text-[12px] text-mute">{timecode(r.qc.duration)}</span>
+                    <span className="mono min-w-0 truncate text-ui">{new Date(r.created_at * 1000).toLocaleString(locale)}{i === 0 ? <span className="ml-2 font-sans text-accent">{tr("mới nhất")}</span> : null}</span>
+                    <span className="mono text-mini text-mute">{timecode(r.qc.duration)}</span>
                     <Tag tone={r.review ? (r.review.approved ? "proof" : "tally") : r.qc.passed ? "mute" : "tally"}>{r.review ? (r.review.approved ? tr("Đã duyệt") : tr("Không duyệt")) : r.qc.passed ? tr("Kiểm tra đạt") : tr("Kiểm tra không đạt")}</Tag>
-                    <a className="flex items-center gap-1 text-[12.5px] text-mute hover:text-ink" href={r.url} target="_blank" rel="noreferrer"><Icon name="external" size={13} />{tr("Mở")}</a>
+                    <a className="flex items-center gap-1 text-meta text-mute hover:text-ink" href={r.url} target="_blank" rel="noreferrer"><Icon name="external" size={13} />{tr("Mở")}</a>
                   </li>
                 ))}
               </ul>
@@ -113,7 +113,7 @@ export default function Board({ project: p }: { project: Project }) {
         </div>
         <div className="grid gap-6">
           <Section title={tr("Kịch bản")} icon="edit" note={p.script ? tv`Phiên bản ${p.script.version}` : undefined}>
-            <div className="panel max-h-80 overflow-y-auto bg-[#0d0e12] px-6 py-5 font-mono text-[12.5px] leading-relaxed">
+            <div className="panel max-h-80 overflow-y-auto bg-[#0d0e12] px-6 py-5 font-mono text-meta leading-relaxed">
               <p className="mb-4 text-center uppercase tracking-[0.2em] text-mute">{p.title}</p>
               {p.shots.length === 0 && <p className="text-center text-faint">{tr("Chưa có kịch bản.")}</p>}
               {p.shots.map((s, i) => <p key={s.shot_id} className="mb-2.5">{s.scene && s.scene !== p.shots[i - 1]?.scene && <span className="mb-1.5 mt-4 block font-semibold uppercase tracking-wide text-accent">{s.scene}</span>}<span className="mr-2 text-faint">{String(i + 1).padStart(2, "0")}</span>{s.text}{s.brief && <span className="block pl-7 text-faint">{tv`(hình: ${s.brief})`}</span>}{s.selection?.status === "gap" && <span className="ml-2 text-cue">{tr("[thiếu hình]")}</span>}</p>)}
@@ -122,15 +122,15 @@ export default function Board({ project: p }: { project: Project }) {
           <Section title={tr("Hoạt động")} icon="pulse" note={<span className="mono">{(data?.cost ?? 0).toFixed(2)} USD{(data?.cost ?? 0) === 0 ? <span className="font-sans"> {tr("· mọi thứ chạy trên máy")}</span> : ""}</span>}>
             <ol className="panel max-h-[34rem] overflow-y-auto px-4 py-2">
               {feed.map((e, i) => (
-                <li key={i} className="relative grid grid-cols-[14px_minmax(0,1fr)_auto] items-start gap-x-3 py-2 text-[13px]">
+                <li key={i} className="relative grid grid-cols-[14px_minmax(0,1fr)_auto] items-start gap-x-3 py-2 text-ui">
                   {i < feed.length - 1 && <span className="absolute bottom-0 left-[6.5px] top-5 w-px bg-line" />}
                   <span className={`relative mt-1.5 h-2 w-2 justify-self-center rounded-full ring-4 ring-surface ${tone(e.kind)}`} />
                   <span className="min-w-0"><span className={e.kind === "stage.waiting_review" || e.kind === "stage.blocked" ? "font-medium text-cue" : e.kind === "stage.failed" ? "font-medium text-tally" : "font-medium"}>{WORDS[e.kind]}</span>
                     <span className="text-mute">{e.stage_key ? ` · ${stageName(e.stage_key, e.pipeline).toLowerCase()}` : e.pipeline === "sourcing.match" ? tr(" · chọn clip") : tr(" · dựng video")}</span></span>
-                  <span className="mono text-[11px] text-faint">{clock(e.at)}</span>
+                  <span className="mono text-mini text-faint">{clock(e.at)}</span>
                 </li>
               ))}
-              {shown.length === 0 && <li className="py-3 text-[13px] text-mute">{tr("Chưa có hoạt động nào.")}</li>}
+              {shown.length === 0 && <li className="py-3 text-ui text-mute">{tr("Chưa có hoạt động nào.")}</li>}
             </ol>
           </Section>
         </div>

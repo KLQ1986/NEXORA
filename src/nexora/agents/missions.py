@@ -13,25 +13,33 @@ from nexora.agents.producer import short_title
 from nexora.core.adapter import AdapterError, PrivacyClass, Request
 from nexora.core.missions import MissionStore
 from nexora.core.schedule import in_window
+from nexora.modules.planning.topic import DEFAULT_FORM, FORMS, clamp_seconds
 
 KINDS = {
     "video": {"name": "Làm video từ kho footage", "pipelines": ("sourcing.match", "edit.render")},
     "understand": {"name": "Mô tả footage chưa được hiểu", "pipelines": ("library.understand",)},
     "transcribe": {"name": "Nghe lời nói trong footage chưa được nghe", "pipelines": ("library.transcribe",)},
+    # A subject the library does not hold: Claude Code looks it up on the web and writes the script; the rest is a video's way.
+    "topic": {"name": "Làm video theo chủ đề", "pipelines": ("planning.topic_script", "sourcing.match", "edit.render")},
 }
+MAKES_VIDEOS = ("video", "topic")
 FORMATS = ("landscape", "portrait", "square")
 MAX_VIDEOS = 10
 
 PLAN_PROMPT = (
     "Bạn lập kế hoạch cho hệ thống làm video NEXORA. Người vận hành giao việc: \"{text}\".\n"
-    "Chỉ được chọn một loại việc NEXORA làm được: video (làm một hay nhiều video từ kho footage), understand (mô tả footage chưa được hiểu), "
+    "Chỉ được chọn một loại việc NEXORA làm được: video (làm một hay nhiều video từ kho footage), topic (làm video theo một chủ đề, sự kiện hay câu chuyện "
+    "nằm ngoài kho footage: máy tự tìm nguồn trên web và viết kịch bản, hình lấy từ stock hoặc AI tạo), understand (mô tả footage chưa được hiểu), "
     "transcribe (nghe lời nói trong footage chưa được nghe).\n"
     "Các kênh: {channels}. Các mẫu video: {templates}.\n"
-    "Trả về JSON với các khoá: loai (video | understand | transcribe), muc_tieu (một câu nói video hay việc này nhằm điều gì), "
+    "Trả về JSON với các khoá: loai (video | topic | understand | transcribe), muc_tieu (một câu nói video hay việc này nhằm điều gì), "
     "tieu_de (tên video ngắn, dưới 8 chữ, viết như câu thường, không có chữ \"video\"), so_video (số video, 1 nếu không nói), "
-    "dinh_dang (landscape | portrait | square; video dọc là portrait), so_cau (số câu lời dẫn mỗi video, 5 nếu không nói), kenh (tên một kênh ở trên hoặc chuỗi rỗng), "
+    "dinh_dang (landscape | portrait | square; video dọc là portrait), so_cau (số câu lời dẫn mỗi video, 5 nếu không nói), "
+    "thoi_luong_phut (với topic: số phút lời dẫn mỗi video, 3 nếu không nói), "
+    "the_loai (với topic: reportage là phóng sự, science là diễn giải khoa học, history là tài liệu lịch sử, story là chân dung hay kể chuyện, "
+    "analysis là phân tích bình luận, news là điểm tin, howto là hướng dẫn; reportage nếu không rõ), kenh (tên một kênh ở trên hoặc chuỗi rỗng), "
     "mau (tên một mẫu ở trên hoặc chuỗi rỗng), ngan_sach_usd (số, hoặc null nếu không nói), dung_dich_vu_tra_tien (true chỉ khi người vận hành cho phép), "
-    "tim_stock (true nếu được lấy video stock miễn phí cho câu thiếu hình), tu_phan_bien (true), "
+    "tim_stock (true nếu được lấy video stock miễn phí cho câu thiếu hình), tu_phan_bien (true cho video, false cho topic), "
     "rang_buoc (danh sách ngắn các ràng buộc người vận hành nêu: thời lượng, phong cách...), nghiem_thu (danh sách ngắn: thế nào là xong và đạt)."
 )
 
@@ -53,6 +61,16 @@ def _int(value, default: int, low: int, high: int) -> int:
         return max(low, min(high, int(float(value))))
     except (TypeError, ValueError):
         return default
+
+
+def _seconds(raw: dict) -> int:
+    """How long a video on a topic reads, from the plan's seconds or the minutes the model or the operator said."""
+    if raw.get("seconds") is not None:
+        return clamp_seconds(raw["seconds"])
+    try:
+        return clamp_seconds(float(raw.get("minutes")) * 60)
+    except (TypeError, ValueError):
+        return clamp_seconds(None)
 
 
 def _texts(value) -> list[str]:
@@ -78,7 +96,7 @@ class Missions:
         out = self._adapters.submit("model", Request("chat", privacy_class=PrivacyClass.CLOUD_ALLOWED,
                                                      params={"task": "mission_plan", "prompt": prompt, "json": True, "max_tokens": 600})).outputs["json"]
         return self.normalise({"kind": out.get("loai"), "goal": out.get("muc_tieu") or text, "title": out.get("tieu_de"), "count": out.get("so_video"), "format": out.get("dinh_dang"),
-                               "lines": out.get("so_cau"), "channel": out.get("kenh"), "template": out.get("mau"), "budget": out.get("ngan_sach_usd"),
+                               "lines": out.get("so_cau"), "minutes": out.get("thoi_luong_phut"), "form": out.get("the_loai"), "channel": out.get("kenh"), "template": out.get("mau"), "budget": out.get("ngan_sach_usd"),
                                "paid": out.get("dung_dich_vu_tra_tien"), "stock": out.get("tim_stock"), "critique": out.get("tu_phan_bien"),
                                "constraints": out.get("rang_buoc"), "acceptance": out.get("nghiem_thu")})
 
@@ -93,8 +111,12 @@ class Missions:
         goal = str(raw.get("goal") or "").strip()
         return {"kind": kind, "goal": goal, "title": short_title(raw.get("title") or goal), "count": _int(raw.get("count"), 1, 1, MAX_VIDEOS),
                 "format": fmt if fmt in FORMATS else "landscape", "lines": _int(raw.get("lines"), 5, 2, 12),
+                # A video on a topic is asked for by how long it reads and the kind of video it is, not by its lines.
+                "seconds": _seconds(raw),
+                "form": str(raw.get("form") or "").strip().lower() if str(raw.get("form") or "").strip().lower() in FORMS else DEFAULT_FORM,
                 "channel": str(raw.get("channel") or "").strip() or None, "template": str(raw.get("template") or "").strip() or None,
-                "budget": budget, "paid": _flag(raw.get("paid"), False), "stock": _flag(raw.get("stock"), True), "critique": _flag(raw.get("critique"), True),
+                "budget": budget, "paid": _flag(raw.get("paid"), False), "stock": _flag(raw.get("stock"), True),
+                "critique": _flag(raw.get("critique"), kind != "topic"),         # a writer that sourced its own lines has already gone over them
                 "constraints": _texts(raw.get("constraints")), "acceptance": _texts(raw.get("acceptance")), "autonomy": self._autonomy(),
                 "production_id": str(raw.get("production_id") or "").strip() or None}
 
@@ -107,7 +129,7 @@ class Missions:
         missing = sorted({m for p in kind["pipelines"] for m in (self._available(p) or [])})
         if missing:
             problems.append(f"Máy này chưa chạy được “{kind['name']}”: thiếu {', '.join(missing)}.")
-        if plan["kind"] == "video":
+        if plan["kind"] in MAKES_VIDEOS:
             if not plan["goal"]:
                 problems.append("Cần nói video nói về điều gì.")
             if plan["channel"] and plan["channel"] not in self._channels():
@@ -121,14 +143,19 @@ class Missions:
             problems.append(f"Ngân sách {plan['budget']:.2f} USD vượt phần còn lại của hạn mức hôm nay và tháng này ({left:.2f} USD).")
         return problems
 
-    def plan(self, text: str, *, production_id: str | None = None) -> dict:
+    def plan(self, text: str, *, production_id: str | None = None, chosen: dict | None = None) -> dict:
         """A mission from the operator's words: planned when nothing stops it, else a draft that says what does. Given from a
-        production, its videos go into it."""
+        production, its videos go into it. What the operator chose as they asked (the kind of work, a topic video's kind and
+        length) is taken over what the model read in their words."""
         text = text.strip()
+        chosen = {k: v for k, v in (chosen or {}).items() if k in ("kind", "form", "seconds") and v not in (None, "")}
         try:
-            plan = {**self._ask(text), "production_id": production_id}
+            asked = self._ask(text)
+            if chosen.get("kind") and chosen["kind"] != asked["kind"]:
+                asked.pop("critique", None)              # set for the kind the model read, not the one chosen: the chosen kind's own default
+            plan = self.normalise({**asked, **chosen, "production_id": production_id})
         except (AdapterError, KeyError, AttributeError, TypeError) as err:
-            plan = self.normalise({"goal": text, "production_id": production_id})
+            plan = self.normalise({"goal": text, **chosen, "production_id": production_id})
             mission_id = self.store.create(text, plan, [f"Mô hình chưa lập được kế hoạch ({getattr(err, 'message', None) or err}). Hãy chọn loại việc và sửa kế hoạch."])
             return self.view(mission_id)
         return self.view(self.store.create(text, plan, self.check(plan)))
@@ -153,16 +180,18 @@ class Missions:
             raise ValueError(" ".join(problems))
         plan = m["plan"]
         self.store.set_state(mission_id, "confirmed")
-        if plan["kind"] == "video":
+        if plan["kind"] in MAKES_VIDEOS:
             cap = round(plan["budget"] / plan["count"], 2) if plan["paid"] and plan["budget"] else 0.0       # no paid service without the permission
             # One production holds the mission's videos: the one it was given from, else a new one of its title.
-            production = plan.get("production_id") or self._new_production(plan["title"] or short_title(plan["goal"]))
+            production = m.get("production_id") or self._new_production(plan["title"] or short_title(plan["goal"]))
+            self.store.set_production(mission_id, production)
             for n in range(plan["count"]):
                 goal = plan["goal"] if plan["count"] == 1 else f"{plan['goal']} (video {n + 1} trên {plan['count']}; khác các video còn lại)"
                 title = plan["title"] or short_title(plan["goal"])
                 title = title if plan["count"] == 1 else f"{short_title(title, 52)} · {n + 1}"
                 task_id = self._producer.start(goal, title=title, format=plan["format"], lines=plan["lines"], use_stock=plan["stock"], critique=plan["critique"],
-                                               production_id=production)
+                                               production_id=production, topic=plan["kind"] == "topic", paid=plan["paid"],
+                                               seconds=plan.get("seconds") or 180, form=plan.get("form") or DEFAULT_FORM)
                 project_id = self._producer.task(task_id)["project_id"]
                 self._prepare(project_id, {**plan, "budget_cap": cap})
                 self.store.link(mission_id, tasks=[task_id], projects=[project_id])
@@ -177,6 +206,7 @@ class Missions:
         """Every run a mission's work made: its own, and the ones its producer tasks started for their projects."""
         out = list(m["links"]["runs"])
         for project_id in m["links"]["projects"]:
+            out += self._orch.runs_for_subject(project_id)           # a script from a topic is asked for the video, before it has a script
             for script_id in self._projects.script_ids(project_id):
                 out += self._orch.runs_for_subject(script_id)
         return list(dict.fromkeys(out))
@@ -284,5 +314,5 @@ class Missions:
         return {**m, "kind_name": KINDS.get(m["plan"]["kind"], {}).get("name"), "status": self.derive(m["state"], children), "children": children,
                 "spent": round(sum(self._orch.run_cost(r) for r in runs), 4), "run_ids": runs}
 
-    def missions(self) -> list[dict]:
-        return [self.view(m["mission_id"]) for m in self.store.missions()]
+    def missions(self, *, production_id: str | None = None) -> list[dict]:
+        return [self.view(m["mission_id"]) for m in self.store.missions(production_id=production_id)]

@@ -4,7 +4,7 @@ import re
 import time
 import unicodedata
 
-from nexora.core.adapter import AdapterRegistry, PrivacyClass, Request
+from nexora.core.adapter import AdapterError, AdapterRegistry, ErrorCode, PrivacyClass, Request
 
 TEXT_ONLY = PrivacyClass.CLOUD_ALLOWED       # a prompt of words alone: it may be served by a cloud model if the operator routes it there
 from nexora.core.assets import AssetStore
@@ -45,7 +45,9 @@ CRITIQUE_PROMPT = (
     "Giọng văn mong muốn: {voice}\n"
     "Tìm những chỗ làm video kém đi: mở đầu yếu, câu dài hoặc khó đọc thành tiếng, câu rời rạc không nối ý với câu trước, từ ngữ không tự nhiên hoặc lệch giọng văn mong muốn, "
     "ý lặp, ý mơ hồ, câu khó có hình minh hoạ, kết không rõ. Câu đánh dấu (trích lời) là lời người trong footage tự nói: không nhận xét cách nói của nó. "
-    "Tối đa {n} nhận xét, chỉ nêu điều đáng sửa; nếu kịch bản đã ổn thì trả về danh sách rỗng. "
+    "Luật nhận xét (CHAI): chính xác: mỗi nhận xét chỉ đúng câu và trích nguyên cụm từ có vấn đề, không nêu điều không chỉ ra được trong lời dẫn; "
+    "đầy đủ: thấy một lỗi thì rà cả bài, nêu mọi câu mắc cùng lỗi đó; xây dựng: de_xuat là cách sửa cụ thể (viết lại cụm từ hoặc câu), không khuyên chung chung. "
+    "Tối đa {n} nhận xét, nặng trước nhẹ sau, chỉ nêu điều đáng sửa; nếu kịch bản đã ổn thì trả về danh sách rỗng. "
     "Chỉ trả về JSON với khoá nhan_xet: danh sách các mục có cau (số thứ tự câu, 0 nếu nói về cả bài), van_de (một câu), de_xuat (cách sửa, một câu)."
 )
 REVISE_PROMPT = (
@@ -459,7 +461,16 @@ class Planning:
                 continue
             result = {"verdict": "not_found", "source": None, "quote": "", "note": "Dự án chưa có nguồn tham khảo nào.", "checked_at": time.time()}
             if sources:
-                out = self._adapters.submit("model", Request("chat", privacy_class=TEXT_ONLY, params={"prompt": CHECK_FACT_PROMPT.format(line=shot.text, sources=listing), "json": True, "max_tokens": 300, "task": "check"})).outputs["json"]
+                # A quote copied word for word from a Vietnamese passage, and a sentence on it, take room: 300 tokens cut them short.
+                try:
+                    out = self._adapters.submit("model", Request("chat", privacy_class=TEXT_ONLY, params={"prompt": CHECK_FACT_PROMPT.format(line=shot.text, sources=listing), "json": True, "max_tokens": 800, "task": "check"})).outputs["json"]
+                except AdapterError as err:
+                    if err.code is not ErrorCode.OUTPUT_INVALID:
+                        raise                                  # the checker itself is down: said, not passed over line by line
+                    result = {**result, "note": "Chưa kiểm được câu này: câu trả lời của mô hình kiểm chứng bị hỏng."}
+                    self._projects.set_fact_check(shot.shot_id, result)
+                    results.append({"shot_id": shot.shot_id, "text": shot.text, **result})
+                    continue
                 verdict = VERDICTS.get(str(out.get("ket_luan", "")).strip().lower(), "not_found")
                 try:
                     source = sources[int(out.get("nguon") or 0) - 1] if int(out.get("nguon") or 0) >= 1 else None

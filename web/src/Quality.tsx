@@ -92,7 +92,7 @@ export function VQTools({ rows, reload }: { rows: Row[]; reload?: () => void }) 
   };
   const missing = tools.filter((t) => !t.available);
   return (
-    <div className="grid gap-2 px-2 pt-1 text-[12px]">
+    <div className="grid gap-2 px-2 pt-1 text-mini">
       {waiting.length > 0 && <Button size="sm" onClick={analyseAll} busy={busy}><Icon name="sparkles" size={13} />{tv`Phân tích ${waiting.length} mục chưa làm`}</Button>}
       <Tidy />
       <details>
@@ -103,7 +103,7 @@ export function VQTools({ rows, reload }: { rows: Row[]; reload?: () => void }) 
           {tools.map((t) => <li key={t.name} className="flex items-start gap-1.5">
             <span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${t.available ? "bg-proof" : "bg-cue"}`} />
             <span className="min-w-0"><span className={t.available ? "text-mute" : "text-ink"}>{t.label}</span>
-              {!t.available && t.fix && <code className="mono block truncate text-[11px] text-faint">{t.fix}</code>}</span></li>)}
+              {!t.available && t.fix && <code className="mono block truncate text-mini text-faint">{t.fix}</code>}</span></li>)}
         </ul>
       </details>
     </div>
@@ -123,7 +123,7 @@ export function AddVQFile({ onAdded }: { onAdded: (subject: string) => void }) {
   return (
     <form className="flex gap-1.5 px-1 py-1" onSubmit={(e) => { e.preventDefault(); add(); }}>
       <input value={path} onChange={(e) => setPath(e.target.value)} placeholder={tr("Đường dẫn file trên máy, ví dụ ~/Movies/clip.mov")} autoFocus aria-label={tr("Đường dẫn file")}
-             className="h-8 min-w-0 flex-1 rounded-md border border-line bg-raised px-2 text-[12.5px] outline-none focus:border-accent" />
+             className="h-8 min-w-0 flex-1 rounded-md border border-line bg-raised px-2 text-meta outline-none focus:border-accent" />
       <Button size="sm" kind="primary" type="submit" busy={busy}>{tr("Thêm")}</Button>
     </form>
   );
@@ -139,7 +139,7 @@ function Tidy() {
     catch (e) { toast((e as Error).message, { tone: "tally" }); } finally { setBusy(false); }
   };
   return (
-    <div className="flex items-center gap-2 text-[12px]">
+    <div className="flex items-center gap-2 text-mini">
       <span className="flex-1 text-faint">{data ? tv`File làm việc: ${megabytes(data.bytes)}` : "…"}</span>
       <Button size="sm" kind="quiet" busy={busy} onClick={go} title={tr("Xoá file trung gian, bản xem trước cũ, file chuẩn bị của công thức không còn duyệt. Công thức, bản xuất và bản enhanced vẫn giữ.")}>{tr("Dọn")}</Button>
     </div>
@@ -192,11 +192,11 @@ export function VQPanel({ vq }: { vq: VQ }) {
       <div className="grid gap-2.5 rounded-xl border border-line bg-raised/30 p-3">
         <div className="flex flex-wrap items-center gap-2">
           <Tag tone={(STATE[data.state] ?? ["", "mute"])[1]}>{(STATE[data.state] ?? [data.state])[0]}</Tag>
-          {r && <span className="mono text-[12px] text-faint">{tv`công thức v${r.version}`}</span>}
-          {data.previews[0] && <span className={`text-[12px] ${data.previews[0].qa.verdict === "pass" ? "text-proof" : data.previews[0].qa.verdict === "warn" ? "text-cue" : "text-tally"}`}>
+          {r && <span className="mono text-mini text-faint">{tv`công thức v${r.version}`}</span>}
+          {data.previews[0] && <span className={`text-mini ${data.previews[0].qa.verdict === "pass" ? "text-proof" : data.previews[0].qa.verdict === "warn" ? "text-cue" : "text-tally"}`}>
             {tv`QA ${VERDICT_NAME[data.previews[0].qa.verdict] ?? data.previews[0].qa.verdict}`}</span>}
         </div>
-        <p className="text-[12px] text-faint">
+        <p className="text-mini text-faint">
           {[info.width && info.height ? `${info.width}×${info.height}` : null, p?.technical.bit_depth ? `${p.technical.bit_depth}-bit` : null,
             info.frame_rate ? `${Number(info.frame_rate).toFixed(2)} fps` : null, info.duration ? timecode(info.duration) : info.still ? tr("ảnh tĩnh") : null,
             p?.encoding_name, p ? CONTENT[p.content] ?? p.content : null].filter(Boolean).join(" · ")}</p>
@@ -229,9 +229,9 @@ export function VQPanel({ vq }: { vq: VQ }) {
         <div className="flex flex-wrap gap-1">
           {([["recipe", tr("Công thức")], ["qa", tr("Kiểm tra")], ["defects", tr("Lỗi")], ["source", tr("Nguồn")], ["versions", tr("Phiên bản")]] as const).map(([k, l]) => (
             <button key={k} type="button" onClick={() => vq.setTab(k)} aria-pressed={vq.tab === k}
-                    className={`h-7 rounded-md px-2.5 text-[12.5px] ${vq.tab === k ? "bg-accent/15 text-ink shadow-[inset_0_0_0_1px_rgba(70,200,224,0.35)]" : "text-mute hover:bg-raised hover:text-ink"}`}>{l}
-              {k === "defects" && shot.defects.length > 0 && <span className="mono ml-1 text-[11px] text-faint">{shot.defects.length}</span>}
-              {k === "versions" && <span className="mono ml-1 text-[11px] text-faint">{data.versions.length}</span>}
+                    className={`h-7 rounded-md px-2.5 text-meta ${vq.tab === k ? "bg-accent/15 text-ink shadow-[inset_0_0_0_1px_rgba(70,200,224,0.35)]" : "text-mute hover:bg-raised hover:text-ink"}`}>{l}
+              {k === "defects" && shot.defects.length > 0 && <span className="mono ml-1 text-mini text-faint">{shot.defects.length}</span>}
+              {k === "versions" && <span className="mono ml-1 text-mini text-faint">{data.versions.length}</span>}
             </button>))}
         </div>
         {vq.tab === "recipe" && <RecipeTab subject={vq.subject} recipe={r} shot={shot} shotIndex={vq.shotIndex} notes={r.notes} onChanged={vq.reload} />}
@@ -252,9 +252,9 @@ export function Workspace({ subject }: { subject: string }) {
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <header className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line px-4 py-3">
-        <h2 className="display min-w-0 truncate text-[16px]">{info.name}</h2>
+        <h2 className="display min-w-0 truncate text-page">{info.name}</h2>
         {!info.in_library && <Tag tone="mute" dot={false}>{tr("ngoài thư viện")}</Tag>}
-        <span className="min-w-0 truncate text-[12.5px] text-faint">
+        <span className="min-w-0 truncate text-meta text-faint">
           {[info.width && info.height ? `${info.width}×${info.height}` : null, p?.technical.bit_depth ? `${p.technical.bit_depth}-bit` : null,
             info.frame_rate ? `${Number(info.frame_rate).toFixed(2)} fps` : null, info.duration ? timecode(info.duration) : info.still ? tr("ảnh tĩnh") : null].filter(Boolean).join(" · ")}</span>
       </header>
@@ -272,7 +272,7 @@ function RunBar({ run, state }: { run: Run | null; state: string }) {
   if (!run || (state !== "running" && state !== "failed")) return null;
   const failedStage = run.stages.find((s) => s.status === "failed");
   return (
-    <div className={`flex flex-wrap items-center gap-3 border-b border-line px-5 py-2 text-[12.5px] ${state === "failed" ? "bg-tally/[0.06]" : "bg-accent/[0.05]"}`}>
+    <div className={`flex flex-wrap items-center gap-3 border-b border-line px-5 py-2 text-meta ${state === "failed" ? "bg-tally/[0.06]" : "bg-accent/[0.05]"}`}>
       {state === "running" ? <Spinner size={13} /> : <Icon name="alert" size={14} className="text-tally" />}
       <span className="text-ink">{PIPELINE[run.pipeline] ?? run.pipeline}</span>
       <div className="min-w-[160px] flex-1"><StageRail stages={run.stages} labels name={(k) => STAGE[k] ?? k} /></div>
@@ -310,11 +310,11 @@ function Viewer({ subject, view, shot, shotIndex, onRemove }: { subject: string;
   return (
     <div className="grid gap-2">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[12px] text-faint">
+        <span className="text-mini text-faint">
           {preview ? tv`xem trước tại ${timecode(preview.t)} · ${preview.seconds}s` : tr("chưa xem trước shot này: đang hiện khung gốc đã chuyển màu")}</span>
         <span className="flex-1" />
         {shot.defects.some((d) => view.defects.some((x) => x.kind === d.kind && x.region)) && (
-          <select value={heat ?? ""} onChange={(e) => setHeat(e.target.value || null)} className="h-7 rounded-md border border-line bg-raised px-2 text-[12px]">
+          <select value={heat ?? ""} onChange={(e) => setHeat(e.target.value || null)} className="h-7 rounded-md border border-line bg-raised px-2 text-mini">
             <option value="">{tr("Bản đồ lỗi: tắt")}</option>
             {shot.defects.map((d) => <option key={d.kind} value={d.kind}>{tv`Bản đồ: ${DEFECT[d.kind] ?? d.kind}`}</option>)}
           </select>)}
@@ -330,7 +330,7 @@ function Viewer({ subject, view, shot, shotIndex, onRemove }: { subject: string;
         {box && box[2] > 0 && <div className="pointer-events-none absolute border-2 border-tally bg-tally/10" style={{ left: `${box[0] / W * 100}%`, top: `${box[1] / H * 100}%`, width: `${box[2] / W * 100}%`, height: `${box[3] / H * 100}%` }} />}
       </Compare>
       {marking && (
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-tally/30 bg-tally/[0.06] px-3 py-2 text-[12.5px]">
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-tally/30 bg-tally/[0.06] px-3 py-2 text-meta">
           <span className="flex-1 text-mute">{box && box[2] > 8 ? tv`Vùng ${Math.round(box[2])}×${Math.round(box[3])} px tại (${Math.round(box[0])}, ${Math.round(box[1])}), giữ cho cả shot. ProPainter lấp từ các khung lân cận.` : tr("Kéo một khung quanh vật cần xoá. Khung được giữ cho cả shot.")}</span>
           <Button size="sm" kind="primary" disabled={!box || box[2] < 8 || box[3] < 8} onClick={removeIt}>{tr("Thêm bước xoá vật")}</Button>
           <Button size="sm" kind="quiet" onClick={() => { setMarking(false); setBox(null); }}>{tr("Thôi")}</Button>
@@ -403,10 +403,10 @@ function Compare({ before, after, beforeVideo, afterVideo, split, onSplit, label
         <div className="flex items-center gap-2">
           <Button size="sm" onClick={toggle}><Icon name={playing ? "pause" : "play"} size={14} />{playing ? tr("Dừng") : both ? tr("Phát cả hai") : tr("Phát")}</Button>
           <input type="range" min={0} max={length || 1} step={0.01} value={now} onChange={(e) => seek(Number(e.target.value))} aria-label={tr("Tua")} className="min-w-0 flex-1 accent-[#46c8e0]" />
-          <span className="mono w-[86px] text-right text-[12px] text-faint">{`${now.toFixed(2)} / ${length.toFixed(2)}s`}</span>
+          <span className="mono w-[86px] text-right text-mini text-faint">{`${now.toFixed(2)} / ${length.toFixed(2)}s`}</span>
         </div>
       )}
-      {!shownAfter && !marking && <p className="text-[12px] text-faint">{tr("Bấm “Xem trước shot” để thấy bản sau")}</p>}
+      {!shownAfter && !marking && <p className="text-mini text-faint">{tr("Bấm “Xem trước shot” để thấy bản sau")}</p>}
     </div>
   );
 }
@@ -414,7 +414,7 @@ function Compare({ before, after, beforeVideo, afterVideo, split, onSplit, label
 function ShotStrip({ shots, index, onPick, duration }: { shots: Shot[]; index: number; onPick: (i: number) => void; duration: number }) {
   return (
     <div className="mt-3 grid gap-1.5">
-      <p className="text-[12px] text-faint">{tv`${shots.length} shot · màu theo lỗi nặng nhất`}</p>
+      <p className="text-mini text-faint">{tv`${shots.length} shot · màu theo lỗi nặng nhất`}</p>
       <div className="flex h-9 w-full gap-px overflow-hidden rounded-md">
         {shots.map((s, i) => {
           const worst = Math.max(0, ...s.defects.map((d) => d.severity));
@@ -427,7 +427,7 @@ function ShotStrip({ shots, index, onPick, duration }: { shots: Shot[]; index: n
             </button>);
         })}
       </div>
-      <div className="flex justify-between text-[11px] text-faint"><span className="mono">0:00</span><span className="mono">{timecode(duration)}</span></div>
+      <div className="flex justify-between text-mini text-faint"><span className="mono">0:00</span><span className="mono">{timecode(duration)}</span></div>
     </div>
   );
 }
@@ -440,22 +440,22 @@ function RecipeTab({ subject, recipe, shot, shotIndex, notes, onChanged }: { sub
   };
   return (
     <div className="grid gap-3">
-      <div className="flex items-center gap-2 text-[12.5px]">
+      <div className="flex items-center gap-2 text-meta">
         <span className="mono text-ink">{`${timecode(shot.t_start)}–${timecode(shot.t_end)}`}</span>
         <span className="text-faint">{tv`shot ${shotIndex + 1} · ${shot.steps.filter((s) => !s.off).length} bước đang bật`}</span>
       </div>
       {shot.defects.length > 0 && <div className="flex flex-wrap gap-1">{shot.defects.map((d) => <Tag key={d.kind} tone={sevTone(d.severity)}>{`${DEFECT[d.kind] ?? d.kind} ${Math.round(d.severity * 100)}%`}</Tag>)}</div>}
-      {shot.steps.length === 0 && <p className="rounded-lg border border-line p-3 text-[12.5px] text-faint">{tr("Shot này không cần xử lý.")}</p>}
+      {shot.steps.length === 0 && <p className="rounded-lg border border-line p-3 text-meta text-faint">{tr("Shot này không cần xử lý.")}</p>}
       <ol className="grid gap-2">{shot.steps.map((st, j) => <StepCard key={`${recipe.recipe_id}-${j}`} step={st} index={j} onEdit={(b) => edit(j, b)} />)}</ol>
       <MatchColour subject={subject} recipeId={recipe.recipe_id} shotIndex={shotIndex} onDone={onChanged} />
       {(shot.dropped ?? []).length > 0 && (
         <div className="grid gap-1.5 rounded-lg border border-line p-3">
           <p className="eyebrow">{tr("Đã cân nhắc rồi bỏ")}</p>
-          {(shot.dropped ?? []).map((d, k) => <p key={k} className="text-[12.5px]"><span className={d.failed ? "text-tally" : "text-ink"}>{OP[d.op] ?? d.op}</span>
+          {(shot.dropped ?? []).map((d, k) => <p key={k} className="text-meta"><span className={d.failed ? "text-tally" : "text-ink"}>{OP[d.op] ?? d.op}</span>
             <span className="text-faint">{`: ${d.why}`}</span></p>)}
         </div>
       )}
-      {notes.length > 0 && <div className="grid gap-1 rounded-lg border border-line p-3"><p className="eyebrow">{tr("Ghi chú")}</p>{notes.map((n) => <p key={n} className="text-[12.5px] text-mute">{n}</p>)}</div>}
+      {notes.length > 0 && <div className="grid gap-1 rounded-lg border border-line p-3"><p className="eyebrow">{tr("Ghi chú")}</p>{notes.map((n) => <p key={n} className="text-meta text-mute">{n}</p>)}</div>}
     </div>
   );
 }
@@ -479,9 +479,9 @@ function MatchColour({ subject, recipeId, shotIndex, onDone }: { subject: string
     } catch (e) { toast((e as Error).message, { tone: "tally" }); }
     setBusy(false);
   };
-  if (!open) return <button type="button" onClick={() => setOpen(true)} className="flex items-center gap-1.5 justify-self-start rounded-md px-2 py-1 text-[12.5px] text-mute hover:bg-raised hover:text-ink"><Icon name="layers" size={13} />{tr("Khớp màu theo nguồn khác…")}</button>;
+  if (!open) return <button type="button" onClick={() => setOpen(true)} className="flex items-center gap-1.5 justify-self-start rounded-md px-2 py-1 text-meta text-mute hover:bg-raised hover:text-ink"><Icon name="layers" size={13} />{tr("Khớp màu theo nguồn khác…")}</button>;
   return (
-    <div className="grid gap-2 rounded-lg border border-line p-3 text-[12.5px]">
+    <div className="grid gap-2 rounded-lg border border-line p-3 text-meta">
       <p className="eyebrow">{tr("Khớp màu theo nguồn khác")}</p>
       <p className="text-faint">{tr("Cho nguồn này cùng tông màu với một nguồn sẽ đứng cạnh nó khi dựng (máy khác, điện thoại, stock). Chỉ chỉnh phơi sáng, tương phản, cân bằng trắng và bão hoà; nguồn tham chiếu được lấy như công thức của nó làm ra.")}</p>
       <select value={reference} onChange={(e) => { setReference(e.target.value); setT(0); }} aria-label={tr("Nguồn tham chiếu")} className="h-8 px-2">
@@ -515,20 +515,20 @@ function StepCard({ step, index, onEdit }: { step: Step; index: number; onEdit: 
         </label>
         <div className="grid min-w-0 flex-1 gap-1">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="mono text-[11px] text-faint">{index + 1}</span>
-            <span className={`text-[13.5px] ${step.off ? "line-through" : "text-ink"}`}>{OP[step.op] ?? step.op}</span>
-            {step.tier && <span className="rounded bg-white/[0.05] px-1.5 text-[11px] text-mute">{TIER[step.tier] ?? step.tier}</span>}
+            <span className="mono text-mini text-faint">{index + 1}</span>
+            <span className={`text-ui-l ${step.off ? "line-through" : "text-ink"}`}>{OP[step.op] ?? step.op}</span>
+            {step.tier && <span className="rounded bg-white/[0.05] px-1.5 text-mini text-mute">{TIER[step.tier] ?? step.tier}</span>}
             {step.generative && <Tag tone="ai" dot={false}>{tr("AI sinh chi tiết")}</Tag>}
             {step.remote && <Tag tone="cue" dot={false}>{tr("gửi lên GPU thuê")}</Tag>}
-            {step.edited && <span className="text-[11px] text-faint">{tr("đã chỉnh tay")}</span>}
+            {step.edited && <span className="text-mini text-faint">{tr("đã chỉnh tay")}</span>}
           </div>
-          {step.why && <p className="text-[12.5px] text-mute">{step.why}</p>}
+          {step.why && <p className="text-meta text-mute">{step.why}</p>}
           {c && <Evidence checked={c} />}
-          {step.method_noise != null && <p className="text-[12px] text-faint">{tv`lượng bỏ đi / nhiễu đo được: ${fmt(step.method_noise)} (tối đa 1,0)`}</p>}
+          {step.method_noise != null && <p className="text-mini text-faint">{tv`lượng bỏ đi / nhiễu đo được: ${fmt(step.method_noise)} (tối đa 1,0)`}</p>}
           {knobs.length > 0 && !step.off && (
             <div className="mt-1 grid gap-1.5">
               {knobs.map((k) => (
-                <label key={k.key} className="grid grid-cols-[96px_1fr_44px] items-center gap-2 text-[12px]">
+                <label key={k.key} className="grid grid-cols-[96px_1fr_44px] items-center gap-2 text-mini">
                   <span className="text-faint">{k.label}</span>
                   <input type="range" min={k.min} max={k.max} step={k.step} value={value(k.key)} onChange={(e) => setDraft({ ...draft, [k.key]: Number(e.target.value) })} className="accent-[#46c8e0]" />
                   <span className="mono text-right text-mute">{fmt(value(k.key))}</span>
@@ -550,11 +550,11 @@ function Evidence({ checked: c }: { checked: Checked }) {
   if (c.dark_with != null) lines.push(<span key="d">{tv`vùng gần đen ${fmt((c.dark_without ?? 0) * 100, 1)}% → ${fmt(c.dark_with * 100, 1)}% · cháy ${fmt((c.clipped_without ?? 0) * 100, 1)}% → ${fmt((c.clipped_with ?? 0) * 100, 1)}%`}</span>);
   if (c.judge) lines.push(<span key="j" className={c.judge.ai_better_both ? "text-proof" : "text-mute"}>{c.judge.ai_better_both ? tr("Qwen3-VL: cả hai lần nhìn đều chọn bản AI") : tr("Qwen3-VL: hai lần nhìn không cùng ý, không chặn")}{c.judge.why ? ` · ${c.judge.why}` : ""}</span>);
   else if (c.judge === null) lines.push(<span key="nj" className="text-faint">{tr("không có giám khảo hình ảnh (Ollama không chạy)")}</span>);
-  return <div className="grid gap-0.5 rounded-md bg-black/20 px-2 py-1.5 text-[12px] text-mute">{lines}</div>;
+  return <div className="grid gap-0.5 rounded-md bg-black/20 px-2 py-1.5 text-mini text-mute">{lines}</div>;
 }
 
 function SourceTab({ profile: p, info }: { profile: Profile | null; info: Info }) {
-  if (!p) return <p className="text-[12.5px] text-faint">{tr("Chưa có hồ sơ nguồn.")}</p>;
+  if (!p) return <p className="text-meta text-faint">{tr("Chưa có hồ sơ nguồn.")}</p>;
   const t = p.technical;
   const rows: [string, unknown][] = [
     [tr("Định dạng"), [t.container, t.codec, t.profile].filter(Boolean).join(" · ")], [tr("Kích thước"), `${t.display_width ?? t.width}×${t.display_height ?? t.height}`],
@@ -568,14 +568,14 @@ function SourceTab({ profile: p, info }: { profile: Profile | null; info: Info }
     <div className="grid gap-3">
       <div className="rounded-lg border border-line p-3">
         <p className="eyebrow">{tr("Profile màu")}</p>
-        <p className="mt-1 text-[14px] text-ink">{p.encoding_name ?? tr("chưa rõ")} <Tag tone={p.encoding_confidence === "high" ? "proof" : p.encoding_confidence === "medium" ? "cue" : "mute"} dot={false}>{tv`độ tin ${({ high: tr("cao"), medium: tr("vừa"), low: tr("thấp") } as Record<string, string>)[p.encoding_confidence] ?? p.encoding_confidence}`}</Tag></p>
-        {(p.encoding_why ?? []).map((w) => <p key={w} className="text-[12px] text-faint">{w}</p>)}
+        <p className="mt-1 text-body text-ink">{p.encoding_name ?? tr("chưa rõ")} <Tag tone={p.encoding_confidence === "high" ? "proof" : p.encoding_confidence === "medium" ? "cue" : "mute"} dot={false}>{tv`độ tin ${({ high: tr("cao"), medium: tr("vừa"), low: tr("thấp") } as Record<string, string>)[p.encoding_confidence] ?? p.encoding_confidence}`}</Tag></p>
+        {(p.encoding_why ?? []).map((w) => <p key={w} className="text-mini text-faint">{w}</p>)}
         <p className="mt-2 eyebrow">{tr("Loại nội dung")}</p>
-        <p className="mt-1 text-[13px] text-ink">{CONTENT[p.content] ?? p.content}</p>
-        {(p.content_why ?? []).map((w) => <p key={w} className="text-[12px] text-faint">{w}</p>)}
+        <p className="mt-1 text-ui text-ink">{CONTENT[p.content] ?? p.content}</p>
+        {(p.content_why ?? []).map((w) => <p key={w} className="text-mini text-faint">{w}</p>)}
       </div>
-      {p.warnings.length > 0 && <div className="grid gap-1 rounded-lg border border-cue/30 bg-cue/[0.05] p-3">{p.warnings.map((w) => <p key={w} className="flex gap-1.5 text-[12.5px] text-cue"><Icon name="alert" size={13} />{w}</p>)}</div>}
-      <dl className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-1.5 text-[12.5px]">
+      {p.warnings.length > 0 && <div className="grid gap-1 rounded-lg border border-cue/30 bg-cue/[0.05] p-3">{p.warnings.map((w) => <p key={w} className="flex gap-1.5 text-meta text-cue"><Icon name="alert" size={13} />{w}</p>)}</div>}
+      <dl className="grid grid-cols-[120px_1fr] gap-x-3 gap-y-1.5 text-meta">
         {rows.filter(([, v]) => v != null && v !== "" && v !== "undefined×undefined").map(([k, v]) => <Fragment key={k}><dt className="text-faint">{k}</dt><dd className="min-w-0 break-words text-ink">{String(v)}</dd></Fragment>)}
       </dl>
     </div>
@@ -587,16 +587,16 @@ function QATab({ previews, shot }: { previews: Preview[]; shot: Shot }) {
   const list = mine.length ? mine : previews;
   const [pick, setPick] = useState(0);
   const p = list[Math.min(pick, list.length - 1)];
-  if (!p) return <p className="text-[12.5px] text-faint">{tr("Chưa có lần xem trước nào. Bấm “Xem trước shot” để kiểm tra công thức theo thời gian.")}</p>;
+  if (!p) return <p className="text-meta text-faint">{tr("Chưa có lần xem trước nào. Bấm “Xem trước shot” để kiểm tra công thức theo thời gian.")}</p>;
   return (
     <div className="grid gap-3">
-      {list.length > 1 && <select value={pick} onChange={(e) => setPick(Number(e.target.value))} className="h-8 rounded-md border border-line bg-raised px-2 text-[12.5px]">
+      {list.length > 1 && <select value={pick} onChange={(e) => setPick(Number(e.target.value))} className="h-8 rounded-md border border-line bg-raised px-2 text-meta">
         {list.map((x, i) => <option key={x.preview_id} value={i}>{`${timecode(x.t)} · ${VERDICT_NAME[x.qa.verdict] ?? x.qa.verdict} · ${new Date(x.at * 1000).toLocaleString()}`}</option>)}</select>}
       <div className="flex items-center gap-2"><Tag tone={VERDICT[p.qa.verdict] ?? "mute"}>{tv`kiểm tra: ${VERDICT_NAME[p.qa.verdict] ?? p.qa.verdict}`}</Tag>
-        {!mine.length && <span className="text-[12px] text-faint">{tr("(của shot khác)")}</span>}</div>
-      {p.qa.reasons.length > 0 ? <ul className="grid gap-1">{p.qa.reasons.map((r) => <li key={r} className="text-[12.5px] text-cue">{r}</li>)}</ul>
-        : <p className="text-[12.5px] text-proof">{tr("Không thấy vấn đề theo thời gian: không nhấp nháy, không trôi màu, hình đi theo chuyển động của nguồn.")}</p>}
-      <table className="w-full text-[12.5px]">
+        {!mine.length && <span className="text-mini text-faint">{tr("(của shot khác)")}</span>}</div>
+      {p.qa.reasons.length > 0 ? <ul className="grid gap-1">{p.qa.reasons.map((r) => <li key={r} className="text-meta text-cue">{r}</li>)}</ul>
+        : <p className="text-meta text-proof">{tr("Không thấy vấn đề theo thời gian: không nhấp nháy, không trôi màu, hình đi theo chuyển động của nguồn.")}</p>}
+      <table className="w-full text-meta">
         <thead><tr className="text-left text-faint"><th className="pb-1 font-normal">{tr("Thước đo")}</th><th className="pb-1 text-right font-normal">{tr("trước")}</th><th className="pb-1 text-right font-normal">{tr("sau")}</th></tr></thead>
         <tbody>
           {Object.entries(p.qa.metrics).filter(([, v]) => v[1] != null).map(([k, [b, a]]) => {
@@ -614,19 +614,19 @@ function DefectsTab({ shot, defects }: { shot: Shot; defects: Defect[] }) {
   const scores = shot.scores ?? {};
   return (
     <div className="grid gap-3">
-      {shot.defects.length === 0 ? <p className="text-[12.5px] text-proof">{tr("Không có lỗi nào vượt ngưỡng ở shot này.")}</p> : (
+      {shot.defects.length === 0 ? <p className="text-meta text-proof">{tr("Không có lỗi nào vượt ngưỡng ở shot này.")}</p> : (
         <ul className="grid gap-2">
           {shot.defects.map((d) => {
             const full = defects.find((x) => x.kind === d.kind && x.t_start <= shot.t_start + 0.01 && shot.t_start <= x.t_end);
             return <li key={d.kind} className="grid gap-1">
-              <div className="flex items-center justify-between text-[12.5px]"><span className="text-ink">{DEFECT[d.kind] ?? d.kind}</span>
+              <div className="flex items-center justify-between text-meta"><span className="text-ink">{DEFECT[d.kind] ?? d.kind}</span>
                 <span className="mono text-faint">{`${Math.round(d.severity * 100)}%${full?.value != null ? ` · ${fmt(full.value, 3)}` : ""}`}</span></div>
               <Meter share={d.severity} tone={d.severity >= 0.6 ? "ai" : d.severity >= 0.25 ? "cue" : "proof"} /></li>;
           })}
         </ul>)}
       <div className="rounded-lg border border-line p-3">
         <p className="eyebrow">{tr("Số đo của shot")}</p>
-        <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[12px]">
+        <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-mini">
           {Object.entries(scores).filter(([, v]) => typeof v === "number").map(([k, v]) => <div key={k} className="flex justify-between gap-2"><dt className="text-faint">{METRIC[k] ?? DEFECT[k] ?? k}</dt><dd className="mono text-mute">{fmt(v as number, 3)}</dd></div>)}
         </dl>
       </div>
@@ -641,7 +641,7 @@ function VersionsTab({ versions, current, exports, info, onChanged }: { versions
       <ol className="grid gap-1.5">
         {versions.map((v) => {
           const [label, tone] = STATE[v.status] ?? [v.status, "mute"];
-          return <li key={v.recipe_id} className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-[12.5px] ${v.recipe_id === current ? "border-accent/40 bg-accent/[0.05]" : "border-line"}`}>
+          return <li key={v.recipe_id} className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-meta ${v.recipe_id === current ? "border-accent/40 bg-accent/[0.05]" : "border-line"}`}>
             <span className="mono text-ink">v{v.version}</span><Tag tone={tone}>{label}</Tag>
             <span className="min-w-0 flex-1 truncate text-faint">{[v.decided_by === "operator" ? tr("bạn") : v.decided_by === "policy" ? tr("tự động") : null, v.edited ? tr("có chỉnh tay") : null,
               new Date(v.at * 1000).toLocaleString()].filter(Boolean).join(" · ")}</span>
@@ -652,20 +652,20 @@ function VersionsTab({ versions, current, exports, info, onChanged }: { versions
       {info.in_library && (
         <div className="grid gap-1.5">
           <p className="eyebrow">{tr("Bản enhanced trong Thư viện")}</p>
-          {!info.enhanced?.url ? <p className="text-[12.5px] text-faint">{tr("Chưa có. Duyệt công thức rồi bấm “Tạo bản enhanced”: bản này nằm cạnh bản gốc trong Thư viện.")}</p> : (
-            <div className="flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-[12.5px]">
+          {!info.enhanced?.url ? <p className="text-meta text-faint">{tr("Chưa có. Duyệt công thức rồi bấm “Tạo bản enhanced”: bản này nằm cạnh bản gốc trong Thư viện.")}</p> : (
+            <div className="flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-meta">
               <Icon name="layers" size={14} />
               <span className="min-w-0 flex-1 text-ink">{info.enhanced.visual_quality_version ? tv`từ công thức v${info.enhanced.visual_quality_version}` : tr("bản phóng to / làm mượt")}</span>
               {info.enhanced.stale ? <Tag tone="cue">{tr("cũ")}</Tag> : <Tag tone="proof">{tr("đang dùng")}</Tag>}
               <a href={`/thu-vien`} className="text-accent hover:underline">{tr("Mở Thư viện")}</a>
               <a href={info.enhanced.url} download className="text-mute hover:text-ink"><Icon name="download" size={14} /></a>
             </div>)}
-          <p className="text-[12px] text-faint">{tr("Bản gốc không bao giờ bị sửa. Khi dựng, hệ thống lấy bản enhanced nếu nó khớp công thức đang duyệt; nếu đã cũ thì lấy bản gốc rồi áp công thức.")}</p>
+          <p className="text-mini text-faint">{tr("Bản gốc không bao giờ bị sửa. Khi dựng, hệ thống lấy bản enhanced nếu nó khớp công thức đang duyệt; nếu đã cũ thì lấy bản gốc rồi áp công thức.")}</p>
         </div>)}
       {(!info.in_library || exports.length > 0) && <div className="grid gap-1.5">
         <p className="eyebrow">{tr("File đã xuất")}</p>
-        {exports.length === 0 ? <p className="text-[12.5px] text-faint">{tr("Chưa xuất file nào. Duyệt công thức rồi bấm “Xuất file”.")}</p>
-          : exports.map((f) => <a key={f.name} href={f.url} download className="flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-[12.5px] hover:bg-raised">
+        {exports.length === 0 ? <p className="text-meta text-faint">{tr("Chưa xuất file nào. Duyệt công thức rồi bấm “Xuất file”.")}</p>
+          : exports.map((f) => <a key={f.name} href={f.url} download className="flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-meta hover:bg-raised">
             <Icon name="download" size={14} /><span className="min-w-0 flex-1 truncate text-ink">{f.name}</span><span className="mono text-faint">{`${(f.size / 1e6).toFixed(1)} MB`}</span></a>)}
       </div>}
     </div>
@@ -687,11 +687,11 @@ function AnalyseOptions({ recipeOptions, onRun, onClose }: { recipeOptions?: Rec
     <div className="rise w-full rounded-lg border border-edge bg-overlay p-3 shadow-xl shadow-black/40">
       <div className="grid gap-3 md:grid-cols-[1fr_auto]">
         <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 sm:grid-cols-3">
-          {names.map(([k, label]) => <label key={k} className="flex items-center gap-2 text-[12.5px]">
+          {names.map(([k, label]) => <label key={k} className="flex items-center gap-2 text-meta">
             <input type="checkbox" checked={flags[k]} onChange={(e) => setFlags({ ...flags, [k]: e.target.checked })} />
             <span className={k === "allow_cloud" ? "text-cue" : "text-mute"}>{label}</span></label>)}
         </div>
-        <div className="grid content-start gap-1.5 text-[12.5px]">
+        <div className="grid content-start gap-1.5 text-meta">
           <label className="flex items-center gap-2"><span className="w-28 text-faint">{tr("Chiều cao đích")}</span>
             <input value={height} onChange={(e) => setHeight(e.target.value.replace(/\D/g, ""))} placeholder={tr("giữ nguyên")} className="h-7 w-24 rounded-md border border-line bg-raised px-2" /></label>
           <label className="flex items-center gap-2"><span className="w-28 text-faint">{tr("Khung/giây đích")}</span>
@@ -701,7 +701,7 @@ function AnalyseOptions({ recipeOptions, onRun, onClose }: { recipeOptions?: Rec
       <div className="mt-3 flex items-center gap-2">
         <Button size="sm" kind="primary" onClick={() => onRun({ ...flags, target_height: height ? Number(height) : null, target_fps: fps ? Number(fps) : null })}>{tr("Phân tích với các tuỳ chọn này")}</Button>
         <Button size="sm" kind="quiet" onClick={onClose}>{tr("Đóng")}</Button>
-        <span className="text-[12px] text-faint">{tr("Mỗi lần phân tích tạo một phiên bản công thức mới; các bản cũ vẫn còn.")}</span>
+        <span className="text-mini text-faint">{tr("Mỗi lần phân tích tạo một phiên bản công thức mới; các bản cũ vẫn còn.")}</span>
       </div>
     </div>
   );
@@ -733,7 +733,7 @@ function ExportButton({ base, still, disabled, onDone }: { base: string; still: 
   };
   return (
     <span className="inline-flex items-center gap-1.5">
-      {!still && <label className="flex items-center gap-1 text-[12px] text-faint" title={tr("ProRes 422 HQ thay vì HEVC 10-bit")}><input type="checkbox" checked={master} onChange={(e) => setMaster(e.target.checked)} />ProRes</label>}
+      {!still && <label className="flex items-center gap-1 text-mini text-faint" title={tr("ProRes 422 HQ thay vì HEVC 10-bit")}><input type="checkbox" checked={master} onChange={(e) => setMaster(e.target.checked)} />ProRes</label>}
       <Button size="sm" onClick={go} busy={busy} disabled={disabled}><Icon name="download" size={14} />{tr("Xuất file")}</Button>
     </span>
   );

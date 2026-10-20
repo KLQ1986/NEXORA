@@ -33,6 +33,7 @@ def test_every_adapter_of_the_installation_describes_itself_within_the_contract(
     from nexora.adapters.motion import StillMotion
     from nexora.adapters.ollama import OllamaAdapter
     from nexora.adapters.openmontage import OpenMontageStock
+    from nexora.adapters.stock_api import StockApi
     from nexora.adapters.outbox import FolderPublisher
     from nexora.adapters.pollinations import PollinationsImage
     from nexora.adapters.speech import WhisperCpp
@@ -42,7 +43,7 @@ def test_every_adapter_of_the_installation_describes_itself_within_the_contract(
     from nexora.adapters.youtube import YouTubePublisher
     rented = [cls("k", "ep") for cls in (RunPodImage, RunPodVideo, RunPodLipSync, RunPodUpscale, RunPodTrainer)] + [YouTubePublisher("c", "s", "r")]
     adapters = [*rented, ClaudeText("k"), DesktopNotifier(), CaptionAdapter(), StillMotion(), OllamaAdapter(), OpenMontageStock(tmp_path / "none"), FolderPublisher(tmp_path / "out"),
-                PollinationsImage(), WhisperCpp(tmp_path / "none.bin"), SayVoice(), WebReader()]
+                PollinationsImage(), WhisperCpp(tmp_path / "none.bin"), SayVoice(), WebReader(), StockApi(pexels_key="k")]
     registry, cloud = AdapterRegistry(), set()
     for adapter in adapters:
         cap = adapter.describe()
@@ -54,7 +55,7 @@ def test_every_adapter_of_the_installation_describes_itself_within_the_contract(
         assert unsupported.value.code is ErrorCode.INVALID_REQUEST
     assert len({a.describe().name for a in adapters}) == len(adapters)
     # Everything that reaches outside this machine says so, and so falls under privacy mode.
-    assert cloud == {"model.claude", "stock", "image_gen.pollinations", "web", "image_gen.runpod", "video_gen.runpod", "lipsync.runpod", "upscale.runpod", "train.runpod", "publish.youtube"}
+    assert cloud == {"model.claude", "stock", "stock_api", "image_gen.pollinations", "web", "image_gen.runpod", "video_gen.runpod", "lipsync.runpod", "upscale.runpod", "train.runpod", "publish.youtube"}
     registry.local_only = lambda: True
     for name in cloud:
         with pytest.raises(AdapterError) as kept_in:
@@ -71,3 +72,24 @@ def test_the_model_adapter_sends_each_kind_of_work_to_the_model_chosen_for_it():
     assert many.model_for(Request("describe", params={"prompt": "x"})) == "see"
     assert many.model_for(Request("describe", params={"prompt": "x", "task": "focus"})) == "judge"
     assert many.model_for(Request("chat", params={"prompt": "x"})) == "write"
+
+
+def test_stock_searches_pexels_and_pixabay_once_their_keys_are_given_and_hands_the_keys_to_the_child(tmp_path, monkeypatch):
+    import json as _json
+    from nexora.adapters import openmontage
+    from nexora.core.adapter import Request
+    from nexora.core.process import Completed
+    (tmp_path / "om").mkdir()
+    seen = {}
+
+    def fake(cmd, *, timeout, cwd=None, stdin=None, env=None):
+        seen.update(payload=_json.loads(stdin), env=env)
+        return Completed(0, "@@NEXORA@@" + _json.dumps({"success": True, "data": {"clips": []}, "artifacts": [], "error": None, "cost_usd": 0}), "")
+    monkeypatch.setattr(openmontage, "run_process", fake)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "never-passed")
+
+    assert openmontage.OpenMontageStock(tmp_path / "om").sources() == ["archive_org", "nasa", "wikimedia"]
+    stock = openmontage.OpenMontageStock(tmp_path / "om", keys={"pexels": "pk", "pixabay_video": ""})
+    stock.submit(Request("search", inputs={"queries": ["chợ nổi"]}, params={"out_dir": str(tmp_path / "out")}))
+    assert seen["payload"]["inputs"]["sources"] == ["pexels", "archive_org", "nasa", "wikimedia"]
+    assert seen["env"]["PEXELS_API_KEY"] == "pk" and "PIXABAY_API_KEY" not in seen["env"] and "ANTHROPIC_API_KEY" not in seen["env"]

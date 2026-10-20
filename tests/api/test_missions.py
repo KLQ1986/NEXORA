@@ -115,7 +115,7 @@ def test_library_missions_run_the_footage_pipelines_and_the_overview_reads_every
     assert set(view["kpis"]["health"]) == {"healthy", "busy", "degraded", "offline", "disabled"}
     fleet = client.get("/api/v1/fleet").json()
     assert {a["key"] for a in fleet["agents"]} >= {"producer", "director", "copilot", "ideas", "autonomy"}
-    assert {w["key"] for w in fleet["workers"]} == {"interactive", "background"}
+    assert {w["key"] for w in fleet["workers"]} == {"interactive", "agent", "claude_code", "background"}
     client.post("/api/v1/control/kill-switch", json={"on": True})
     assert all(a["state"] == "disabled" for a in client.get("/api/v1/fleet").json()["agents"])
     res = client.get("/api/v1/resources").json()

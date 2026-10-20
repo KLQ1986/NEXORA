@@ -38,7 +38,8 @@ def vtt(shots: list[dict]) -> str:
 LANGUAGES = {"en": "tiếng Anh", "zh": "tiếng Trung", "ja": "tiếng Nhật", "ko": "tiếng Hàn", "fr": "tiếng Pháp", "es": "tiếng Tây Ban Nha", "th": "tiếng Thái", "vi": "tiếng Việt"}
 TITLES_PROMPT = (
     "Đây là lời dẫn của một video ngắn:\n{script}\n\nViết {n} tiêu đề khác nhau cho video này bằng tiếng Việt. Mỗi tiêu đề dưới 60 ký tự, nói đúng nội dung, "
-    "không giật gân, không hứa điều video không có. Chỉ trả về JSON với khoá tieu_de: danh sách các mục có ten (tiêu đề) và ly_do (một câu vì sao người xem sẽ bấm)."
+    "không giật gân, không hứa điều video không có. Mỗi tiêu đề kèm lý do riêng của nó: một câu vì sao người xem sẽ bấm.\n"
+    'Chỉ trả về JSON: {{"tieu_de": [{{"ten": "...", "ly_do": "..."}}]}}'
 )
 GOOD_TITLE = (20, 60)        # characters: shorter says too little, longer is cut off in most lists
 TRANSLATE_PROMPT = (

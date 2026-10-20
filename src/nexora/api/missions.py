@@ -4,6 +4,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import time
 
 from fastapi import FastAPI, HTTPException
@@ -15,6 +16,9 @@ GATES = {"sourcing.match": "Duyệt clip đã chọn", "edit.render": "Duyệt b
 HEAVY_RAM = 0.85                   # above this share of memory in use, a heavy 4K job should wait for the one before it
 
 
+_MEMSIZE: list[int] = []            # the Mac's memory never changes while NEXORA runs: asked of sysctl once
+
+
 def machine(data_dir) -> dict:
     """This Mac, measured now: memory in use, load, disk."""
     out = {"cpus": os.cpu_count() or 1, "load": None, "memory_total": None, "memory_used": None, "disk_free": None, "disk_total": None}
@@ -23,7 +27,9 @@ def machine(data_dir) -> dict:
     except OSError:
         pass
     try:
-        total = int(subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True, timeout=3).stdout.strip())
+        if not _MEMSIZE:
+            _MEMSIZE.append(int(subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True, timeout=3).stdout.strip()))
+        total = _MEMSIZE[0]
         vm = subprocess.run(["vm_stat"], capture_output=True, text=True, timeout=3).stdout
         page = int((re.search(r"page size of (\d+)", vm) or [None, 16384])[1])
         pages = {k.strip().lower(): int(v.strip().rstrip(".")) for k, v in re.findall(r"^([^:\n]+):\s+(\d+)\.?$", vm, re.M)}
@@ -48,23 +54,40 @@ def verdict(qc: dict) -> str:
 def add_missions(app: FastAPI, system, *, health) -> None:
     import json
     from nexora.agents.missions import KINDS
+    from nexora.modules.planning.topic import FORMS as TOPIC_FORMS
     from nexora.app import PIPELINE_NAMES, capabilities, templates
     channels = lambda: json.loads(system.orch.setting("channels", "[]"))
     missions = system.missions
-    seen_machine = {"at": 0.0, "value": None}
+    seen_machine = {"at": 0.0, "value": None, "busy": False}
 
     def measured() -> dict:
-        if time.time() - seen_machine["at"] > 5:
+        # Measuring runs vm_stat, which can take most of a second on a busy Mac: the first ask measures, after that a
+        # measurement older than 5 s is renewed in the background and the request answers with the one in hand.
+        if seen_machine["value"] is None:
             seen_machine.update(at=time.time(), value=machine(system.data_dir))
+        elif time.time() - seen_machine["at"] > 5 and not seen_machine["busy"]:
+            seen_machine["busy"] = True
+            def renew():
+                try:
+                    seen_machine.update(at=time.time(), value=machine(system.data_dir))
+                finally:
+                    seen_machine["busy"] = False
+            threading.Thread(target=renew, name="measure-machine", daemon=True).start()
         return seen_machine["value"]
 
     def project_title(pid: str | None) -> str:
         return ((system.projects.project(pid) if pid else None) or {}).get("title", "")
 
+    def with_production(m: dict) -> dict:
+        d = system.productions.get(m.get("production_id"))
+        return {**m, "production": {"production_id": d["production_id"], "title": d["title"]} if d else None}
+
     def subject_project(subject: str) -> dict | None:
         if subject.startswith("cut_") and getattr(system, "cuts", None) is not None:
             cut = system.cuts.get(subject)                    # an exported cut of the Edit step names its project
             return system.projects.project(cut["project_id"]) if cut else None
+        if subject.startswith("prj_"):
+            return system.projects.project(subject)             # work asked for the video itself, as a script from a topic is
         for p in system.projects.projects():
             if subject in system.projects.script_ids(p["project_id"]):
                 return p
@@ -86,7 +109,8 @@ def add_missions(app: FastAPI, system, *, health) -> None:
 
     # ------------------------------------------------------------------------------------------------------ missions
     @app.get("/api/v1/missions")
-    def list_missions():
+    def list_missions(production: str = ""):
+        """Every mission (or a production's), each with the production it works for; the work no mission started."""
         owned = system.missions.store.owner()
         system_work = []
         for run_id in system.orch.runs():
@@ -100,15 +124,19 @@ def add_missions(app: FastAPI, system, *, health) -> None:
                     continue                                  # made by a mission's producer task: listed under that mission
                 system_work.append({"run_id": run_id, "pipeline": info["pipeline_id"], "name": PIPELINE_NAMES.get(info["pipeline_id"], info["pipeline_id"]),
                                     "status": status, "created_at": info["created_at"], "project_id": project and project["project_id"], "title": project and project["title"]})
-        return {"missions": missions.missions(), "system": sorted(system_work, key=lambda r: -r["created_at"])[:60],
-                "kinds": [{"kind": k, "name": v["name"]} for k, v in KINDS.items()], "channels": [c["name"] for c in channels()], "templates": [t["name"] for t in templates(system)]}
+        every = [with_production(m) for m in missions.missions(production_id=production.strip() or None)]
+        named = {m["production"]["production_id"]: m["production"] for m in every if m["production"]}
+        return {"missions": every, "productions": sorted(named.values(), key=lambda d: d["title"].lower()), "system": sorted(system_work, key=lambda r: -r["created_at"])[:60],
+                "kinds": [{"kind": k, "name": v["name"]} for k, v in KINDS.items()],
+                "forms": [{"key": k, "name": name} for k, (name, _) in TOPIC_FORMS.items()], "channels": [c["name"] for c in channels()], "templates": [t["name"] for t in templates(system)]}
 
     @app.post("/api/v1/missions", status_code=201)
     def plan_mission(body: dict):
         text = str(body.get("text") or "").strip()
         if not text:
             raise HTTPException(422, "Hãy nói nhiệm vụ cần làm")
-        return missions.plan(text, production_id=str(body.get("production_id") or "").strip() or None)
+        return missions.plan(text, production_id=str(body.get("production_id") or "").strip() or None,
+                             chosen={k: body.get(k) for k in ("kind", "form", "seconds")})
 
     @app.get("/api/v1/missions/{mission_id}")
     def mission_detail(mission_id: str):
@@ -129,7 +157,7 @@ def add_missions(app: FastAPI, system, *, health) -> None:
                          "status": system.orch.run_status(run_id).value, "created_at": info["created_at"], "cost": system.orch.run_cost(run_id), "stalled": system.orch.stalled(run_id),
                          "stages": stages, "events": [{"at": e.occurred_at, "kind": e.kind, "actor": e.actor} for e in system.orch.events(run_id)][-40:]})
         tasks = [t for t in (system.producer.task(t) for t in m["links"]["tasks"]) if t]
-        return {**m, "runs": runs, "tasks": tasks, "projects": [{"project_id": p, "title": project_title(p)} for p in m["links"]["projects"]]}
+        return {**with_production(m), "runs": runs, "tasks": tasks, "projects": [{"project_id": p, "title": project_title(p)} for p in m["links"]["projects"]]}
 
     @app.patch("/api/v1/missions/{mission_id}")
     def edit_mission(mission_id: str, body: dict):
@@ -148,18 +176,24 @@ def add_missions(app: FastAPI, system, *, health) -> None:
             if m["state"] == "planned":
                 plan = m["plan"]
                 out.append({"key": f"mission:{m['mission_id']}", "kind": "mission", "id": m["mission_id"], "title": m["text"], "asked_by": "Mission Composer",
-                            "why": "Kế hoạch đã lập, chờ bạn xác nhận trước khi chạy.", "touches": f"{plan['count']} video" if plan["kind"] == "video" else plan["kind"],
+                            "why": "Kế hoạch đã lập, chờ bạn xác nhận trước khi chạy.", "touches": f"{plan['count']} video" if plan["kind"] in ("video", "topic") else plan["kind"],
                             "cost": plan.get("budget"), "next": "Xác nhận thì hệ thống bắt đầu làm; không xác nhận thì không có gì chạy.", "at": m["created_at"],
                             "actions": ["confirm", "cancel"], "link": None})
         seen = set()
         waiting_projects = set()
-        for run_id in sorted(system.orch.runs(), key=lambda r: system.orch.run_info(r)["created_at"], reverse=True):
-            info = system.orch.run_info(run_id)
-            project = subject_project(info["subject_ref"] or "")
+        # Newest first from one read; each subject's project is found once; a run simply over hides older ones but is not asked more.
+        open_, projects_of = system.orch.open_runs(), {}
+        for info in system.orch.run_rows():
+            run_id, subject = info["run_id"], info["subject_ref"] or ""
+            if subject not in projects_of:
+                projects_of[subject] = subject_project(subject)
+            project = projects_of[subject]
             key = (project["project_id"] if project else info["subject_ref"], info["pipeline_id"])
             if key in seen:
                 continue                                       # only the newest run of a piece of work speaks for it
             seen.add(key)
+            if run_id not in open_:
+                continue
             status = system.orch.run_status(run_id).value
             if status not in ("waiting_review", "blocked"):
                 continue
@@ -180,7 +214,7 @@ def add_missions(app: FastAPI, system, *, health) -> None:
             else:
                 out.append({"key": f"blocked:{stage.stage_id}", "kind": "blocked", "id": stage.stage_id, "pipeline": pipeline, "project_id": project and project["project_id"],
                             "title": f"Đang dừng: {PIPELINE_NAMES.get(pipeline, pipeline)} · {where}", "asked_by": PIPELINE_NAMES.get(pipeline, pipeline),
-                            "why": stage.blocked_reason or "Bước này cần bạn xử lý trước khi chạy tiếp.", "touches": where, "cost": None,
+                            "why": system.orch.why_stopped(stage) or "Bước này cần bạn xử lý trước khi chạy tiếp.", "touches": where, "cost": None,
                             "next": "Xử lý xong lý do rồi cho chạy tiếp.", "at": info["created_at"], "actions": ["resume"], "link": link})
         for t in system.producer.tasks():
             if t["status"] == "waiting_operator" and t["project_id"] not in waiting_projects:
@@ -249,7 +283,7 @@ def add_missions(app: FastAPI, system, *, health) -> None:
         kill = system.orch.kill_switch()
         busy_engines = set()
         live_pipelines = set()
-        for run_id in system.orch.runs():
+        for run_id in system.orch.open_runs():                   # a run simply over is not running
             if system.orch.run_status(run_id).value != "running":
                 continue
             try:
@@ -305,7 +339,7 @@ def add_missions(app: FastAPI, system, *, health) -> None:
         window = system.orch.setting("background_window", "")
         stalled = [r for r in system.orch.runs() if system.orch.run_status(r).value == "running" and system.orch.stalled(r)]
         workers = []
-        for lane, name in (("interactive", "Làn tương tác"), ("background", "Làn chạy nền")):
+        for lane, name in (("interactive", "Làn tương tác"), ("agent", "Làn của trợ lý"), ("claude_code", "Làn Claude Code"), ("background", "Làn chạy nền")):
             q = load.get(lane, {"ready": 0, "running": 0, "retry_wait": 0, "costly_running": 0})
             held = lane == "background" and not in_window(window)
             if kill:
@@ -381,7 +415,7 @@ def add_missions(app: FastAPI, system, *, health) -> None:
         waits = approvals()
         crew = fleet()
         states = [x["state"] for group in ("agents", "workers", "engines") for x in crew[group]]
-        failed = [r for r in system.orch.runs() if system.orch.run_status(r).value == "failed" and not system.orch.cleared(r)]
+        failed = [r for r in system.orch.open_runs() if system.orch.run_status(r).value == "failed" and not system.orch.cleared(r)]
         alerts = [{"kind": "offline", "text": f"{e['name']}: {e['detail']}", "link": "/he-thong"} for e in crew["engines"] if e["state"] == "offline"]
         alerts += [{"kind": "failed", "text": f"{len(failed)} lượt chạy lỗi chưa xem", "link": "/tien-trinh"}] if failed else []
         res = resources()

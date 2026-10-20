@@ -181,7 +181,7 @@ class Library:
         so it never holds up a render. Returns the runs started."""
         runs = []
         for asset in self._assets.assets():
-            if asset["kind"] != "video":
+            if asset["kind"] != "video" or asset.get("origin") == "licensed":       # stock is never divided (taken_in)
                 continue
             original = self._assets.original(asset["asset_id"])
             meta = original.metadata

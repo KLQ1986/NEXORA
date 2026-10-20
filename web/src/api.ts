@@ -6,7 +6,7 @@ export type Run = { held?: boolean; stalled?: boolean; cleared?: boolean; run_id
 export type Word = { text: string; start: number; end: number; p: number };
 export type Asset = {
   scene_cuts?: number[]; enhance: Run | null; enhanced: { upscale?: number; smooth_fps?: number | null; vq?: boolean; visual_quality?: string; visual_quality_version?: number } | null;
-  enhanced_url?: string | null; enhanced_stale?: boolean; original_url?: string; codec?: string | null; pixel_format?: string | null; rejected: boolean; reference_only?: boolean; consent?: string | null; session: string; used_in: { project_id: string; title: string }[]; speech: { words: number; sentences: number; seconds: number; doubtful: number } | null; transcribe: Run | null;
+  origin?: string; enhanced_url?: string | null; enhanced_stale?: boolean; original_url?: string; codec?: string | null; pixel_format?: string | null; rejected: boolean; reference_only?: boolean; consent?: string | null; session: string; used_in: { project_id: string; title: string }[]; speech: { words: number; sentences: number; seconds: number; doubtful: number } | null; transcribe: Run | null;
   asset_id: string; name: string; file_name: string; title: string | null; session_set: string | null; trashed_at: number | null; path: string; online: boolean; size: number; duplicate_of: string | null;
   duration: number | null; width: number | null; height: number | null; frame_rate: number | null; has_audio: boolean | null;
   usable_ranges: number[][]; black_ranges: number[][]; frozen_ranges: number[][];
@@ -146,7 +146,9 @@ export type RenderItem = { render_id: string; created_at: number; url: string; p
 export type BoardEvent = { at: number; kind: string; pipeline: string; stage_key: string | null; actor: string; payload: Record<string, unknown> };
 export type Notice = { notification_id: number; kind: string; run_id: string; stage_key: string | null; reason: string | null; created_at: number; read_at: number | null; pipeline: string | null; subject_name: string | null; link: string | null };
 export type Production = { production_id: string; title: string; channel: string | null; template: string | null; voice: string | null; music_path: string | null;
-  budget_cap: number | null; notes: string | null; videos: string[]; spent: number; created_at: number };
+  budget_cap: number | null; notes: string | null; videos: string[]; spent: number; created_at: number; missions?: ProductionMission[] };
+/** A mission given for a production, as its page lists it; the whole of it is in Mission Control. */
+export type ProductionMission = { mission_id: string; text: string; title: string | null; kind_name: string | null; status: string; count: number; done: number; spent: number; created_at: number };
 export type Project = { production?: { production_id: string; title: string } | null; production_id?: string | null; channel: string | null; project_id: string; title: string; trashed_at: number | null; created_at: number; format: string; music_path: string | null;
   due_date: string | null; script: { script_id: string; version: number; match_approved: boolean; critique: Critique[] | null; label: string | null } | null;
   idea: { idea_id: string; title: string; angle: string | null; shots: IdeaShot[]; gaps: string[]; seconds: number; risk: string | null; reason: string | null } | null; structure: StructureCheck | null; shots: Shot[]; match: Run | null; render: Run | null; renders: RenderItem[];

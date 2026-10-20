@@ -1,6 +1,7 @@
 """The HTTP API (design v4.0, section 25). It holds no business logic: it validates and delegates."""
 import shutil
 import json
+import threading
 import time
 from pathlib import Path
 
@@ -9,7 +10,7 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from nexora.core.adapter import AdapterError, ErrorCode
+from nexora.core.adapter import AdapterError, ErrorCode, Request
 from nexora.modules.edit.colour import colour_pairs
 from nexora.modules.planning import storyboard as SB
 
@@ -23,7 +24,7 @@ class RegisterRequest(BaseModel):
     path: str
 
 
-def run_view(system, run_id: str) -> dict:
+def run_view(system, run_id: str, *, outputs: bool = True) -> dict:
     from nexora.core.schedule import in_window
     info = system.orch.run_info(run_id)
     stages = system.orch.stages(run_id)
@@ -40,7 +41,7 @@ def run_view(system, run_id: str) -> dict:
         "cleared": status == "failed" and system.orch.cleared(run_id),      # a failure set aside, or put right by a later run
         "cost": system.orch.run_cost(run_id),
         "stages": [{"stage_id": s.stage_id, "stage_key": s.stage_key, "status": s.status.value, "blocked_reason": s.blocked_reason,
-                    "attempts": len(system.orch.attempts(s.stage_id)), "outputs": s.outputs}
+                    "attempts": len(system.orch.attempts(s.stage_id)), **({"outputs": s.outputs} if outputs else {})}
                    for s in system.orch.stages(run_id)],
     }
 
@@ -124,6 +125,11 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             raise HTTPException(409, f"Chưa đủ điều kiện lên mức này. {err}")
         except (TypeError, ValueError):
             raise HTTPException(422, "Mức tự chủ là một số từ 0 đến 4")
+
+    @app.post("/api/v1/autonomy/switches")
+    def set_autonomy_switches(body: dict):
+        """Approving switched on or off for some gates (clips, renders, pictures), by the operator, at any level."""
+        return system.autonomy.set_switches({k: v for k, v in body.items() if isinstance(v, bool)})
 
     STOCK_SOURCES = {"archive_org": "Internet Archive", "nasa": "NASA", "wikimedia": "Wikimedia Commons"}       # libraries that need no key
 
@@ -215,8 +221,14 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         return {"assets": [asset_view(system, a, used) for a in system.assets.assets()]}
 
     @app.get("/api/v1/runs")
-    def list_runs():
-        return [run_view(system, run_id) for run_id in system.orch.runs()]
+    def list_runs(active: bool = False):
+        # Polled every few seconds by every open page: without what each stage produced, which was 5 MB of a 5.6 MB answer.
+        # `active`: only runs at work or waiting their turn, for the top bar's count (about 20 runs to look at, not 629).
+        if active:
+            open_ = system.orch.open_runs()
+            views = [run_view(system, r, outputs=False) for r in system.orch.runs() if r in open_]
+            return [v for v in views if v["status"] in ("running", "queued")]
+        return [run_view(system, run_id, outputs=False) for run_id in system.orch.runs()]
 
     @app.get("/api/v1/runs/{run_id}")
     def get_run(run_id: str):
@@ -289,13 +301,22 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         system.assets.relink_volume(volume_id, mount)
         return {"volumes": system.assets.volumes()}
 
-    checked = {"at": 0.0, "checks": []}
+    checked = {"at": 0.0, "checks": [], "busy": False}
 
     def health() -> list[dict]:
-        """The system check starts other programs, so its answer is kept for half a minute instead of being asked on every poll."""
+        """The system check starts other programs, so its answer is kept for half a minute instead of being asked on every poll;
+        once there is an answer, an old one is renewed in the background, so no request waits the two seconds the check takes."""
         from nexora.app import doctor
-        if time.time() - checked["at"] > 30:
+        if checked["at"] == 0.0:
             checked.update(at=time.time(), checks=doctor(system, config))
+        elif time.time() - checked["at"] > 30 and not checked["busy"]:
+            checked["busy"] = True
+            def renew():
+                try:
+                    checked.update(at=time.time(), checks=doctor(system, config))
+                finally:
+                    checked["busy"] = False
+            threading.Thread(target=renew, name="system-check", daemon=True).start()
         return checked["checks"]
 
     @app.get("/api/v1/doctor")
@@ -453,18 +474,25 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         for p in system.projects.projects():
             for sid in system.projects.script_ids(p["project_id"]):
                 titles[sid] = p
-        asset_names = {}
+        asset_names, cut_projects = {}, {}
         attention, running, seen = [], [], set()
-        for run_id in sorted(system.orch.runs(), key=lambda r: system.orch.run_info(r)["created_at"], reverse=True):
-            view = run_view(system, run_id)
-            subject = view["subject_ref"] or ""
+        # Newest first, from one read of the runs; a run that has simply succeeded or was cancelled still hides older runs of
+        # the same work, but is not looked at further (Mission Control's Board waited on this: 629 runs built in full every 4 s).
+        open_ = system.orch.open_runs()
+        for row in system.orch.run_rows():
+            run_id, subject, pipeline = row["run_id"], row["subject_ref"] or "", row["pipeline_id"]
             project = titles.get(subject)
             if not project and subject.startswith("cut_") and getattr(system, "cuts", None) is not None:
-                cut = system.cuts.get(subject)                   # an export of the Edit step names its project
-                project = system.projects.project(cut["project_id"]) if cut else None
-            if (project["project_id"] if project and subject.startswith("cut_") else subject, view["pipeline"]) in seen:
+                if subject not in cut_projects:
+                    cut = system.cuts.get(subject)               # an export of the Edit step names its project
+                    cut_projects[subject] = system.projects.project(cut["project_id"]) if cut else None
+                project = cut_projects[subject]
+            if (project["project_id"] if project and subject.startswith("cut_") else subject, pipeline) in seen:
                 continue                                  # only the newest run of a piece of work speaks for it
-            seen.add((project["project_id"] if project and subject.startswith("cut_") else subject, view["pipeline"]))
+            seen.add((project["project_id"] if project and subject.startswith("cut_") else subject, pipeline))
+            if run_id not in open_:
+                continue                                  # succeeded or cancelled: nothing to say
+            view = run_view(system, run_id, outputs=False)
             if subject and subject not in asset_names and not project and system.assets.asset(subject):
                 asset_names[subject] = system.assets.path_of(system.assets.original(subject)).name
             elif subject and subject not in asset_names and not project and system.vq_reader is not None and (vq := system.vq_reader.subject(subject)):
@@ -519,7 +547,9 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         task_id = system.producer.start(goal, format=body.get("format") if body.get("format") in ("landscape", "portrait", "square") else "landscape",
                                         lines=max(2, min(12, int(body.get("lines", 5)))), use_stock=bool(body.get("use_stock", True)),
                                         urls=[u for u in (str(u).strip() for u in body.get("urls") or []) if u.lower().startswith(("http://", "https://"))],
-                                        critique=bool(body.get("critique", True)), find_sources=bool(body.get("find_sources", False)))
+                                        critique=bool(body.get("critique", True)), find_sources=bool(body.get("find_sources", False)),
+                                        topic=bool(body.get("topic")), production_id=body.get("production_id") or None,
+                                        seconds=max(30, min(900, int(body.get("seconds") or 180))))
         return system.producer.task(task_id)
 
     @app.post("/api/v1/control/desktop-notifications")
@@ -816,7 +846,12 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
                     "url": f"/api/v1/renders/{r['render_id']}/file", "package": system.distribution.package(r["render_id"])}
                    for r in system.projects.renders(project["project_id"])]
         template = template_named(system, project.get("template"))
-        structure = system.planning.structure(project["project_id"], template["structure"]) if script and template and template.get("structure") else None
+        parts = template and template.get("structure")
+        written = system.topics.latest(project["project_id"]) if parts else None
+        if written and written["state"] == "applied" and written.get("seconds"):          # a script from a topic is as long as was asked
+            from nexora.modules.planning.topic import scaled_structure
+            parts = scaled_structure(parts, written["seconds"])
+        structure = system.planning.structure(project["project_id"], parts) if script and parts else None
         return {**project, "script": {"script_id": script["script_id"], "version": script["version"], "match_approved": script["match_approved"], "critique": script["critique"],
                                       "label": script.get("label")} if script else None,
                 "idea": json.loads(project["idea"]) if project.get("idea") else None, "structure": structure,
@@ -931,12 +966,42 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             return {"shot_id": sh.shot_id, "code": codes[sh.shot_id], "scene_id": sh.scene_id, "version": sh.version, "state": sh.state, "spec": sh.spec,
                     "assignment": {**a, "candidates": [dress(c) for c in a.get("candidates", [])], "others": [dress(c) for c in others],
                                    "name": names.get(a.get("asset_id"), a.get("asset_id"))} if a else None,
-                    "checks": sh.checks, "frame_url": frame(sh), "clip_url": clip(sh), "script_shot": sh.script_shot}
+                    "checks": sh.checks, "frame_url": frame(sh), "clip_url": clip(sh), "script_shot": sh.script_shot, "stock_options": stock_options(sh)}
+
+        def stock_options(sh) -> list[dict]:
+            """Stock candidates for the shot (found for it here, or for its script line by the producer): watched from their source."""
+            if system.stock_scout is None:
+                return []
+            found = system.stock_scout.options(project_id, sh.shot_id) or (system.stock_scout.options(project_id, sh.script_shot) if sh.script_shot else [])
+            keep = ("cid", "source", "source_url", "preview_url", "width", "height", "duration", "creator", "license", "licence_class", "look", "why", "siglip", "query")
+            return [{**{k: c.get(k) for k in keep}, "thumb_url": f"/api/v1/stock/{c['cid']}/thumb" if c.get("thumb") else None} for c in found]
 
         gap = lambda a, b: (b.assignment or {}).get("gap_prev")
         seams = SB.seams(shots, scene_of, colour_gap=gap)
         for x in seams:
             x["a_code"], x["b_code"] = codes[x["a"]], codes[x["b"]]
+
+        def still(sh) -> bool:
+            """The shot's picture is a still (a photograph, a generated image) where the storyboard promised moving footage."""
+            a = sh.assignment or {}
+            if not a.get("asset_id") or not system.assets.asset(a["asset_id"]):
+                return a.get("kind") == "generated" and not a.get("video")
+            return bool(system.assets.original(a["asset_id"]).metadata.get("probe", {}).get("still"))
+        def picture(sh) -> dict | None:
+            """The framing measured on the shot's own clip: its size as described, its camera movement as measured."""
+            a = sh.assignment or {}
+            if not a.get("asset_id"):
+                return None
+            m = system.index.moment(a["moment_id"]) if a.get("moment_id") else None
+            if m is None:
+                t = float(a.get("t_in") or 0.0)
+                m = next((x for x in system.index.moments(a["asset_id"], level="segment") if x.t_start <= t < x.t_end), None)
+            if m is None:
+                return None
+            size = (m.data.get("detail") or {}).get("co_canh") if isinstance(m.data.get("detail"), dict) else None
+            camera = ((m.data.get("labels") or {}).get("camera") or {}).get("value")
+            return {"size": size if size in SB.SIZES else None,
+                    "move": None if camera in (None, "unknown") else "đứng yên" if camera == "static" else "chuyển động"}
         cost_cap = project.get("budget_cap")
         return {"project": {"project_id": project_id, "title": project["title"], "format": project["format"], "budget_cap": cost_cap,
                             "spent": round(system.generation.spent(project_id), 2)},
@@ -945,6 +1010,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
                             "script": " ".join(sh.spec["line"] for sh in shots if sh.scene_id == sc.scene_id and sh.spec["line"]),
                             "seconds": round(sum(sh.spec["duration"]["target"] for sh in shots if sh.scene_id == sc.scene_id), 1)} for sc in scenes],
                 "shots": [shot_view(sh) for sh in shots], "seams": seams, "plans": SB.camera_plan(shots, scenes),
+                "rhythm": SB.rhythm(shots, codes, still=still, picture=picture),
                 "messages": store.messages(project_id), "seconds": round(sum(sh.spec["duration"]["target"] for sh in shots), 1),
                 "vocabulary": {"sizes": SB.SIZES, "angles": SB.ANGLES, "moves": SB.MOVES, "lenses": SB.LENSES, "sources": SB.SOURCES, "times": SB.TIMES,
                                "checks": {k: {"text": v[0], "by": v[1], "op": v[2], "value": v[3]} for k, v in SB.CHECKS.items()}},
@@ -1055,6 +1121,23 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         """One of the shot's other options becomes a shot of its own, right after it."""
         return picture_call(project_id, shot_id, lambda: system.director.add_clip(shot_id, int(body.get("candidate", -1))))
 
+    @app.post("/api/v1/projects/{project_id}/storyboard/shots/{shot_id}/look")
+    def storyboard_look(project_id: str, shot_id: str):
+        """The model looks at the frames of the shot's picture and its first other candidates against its line."""
+        seen: dict = {}
+        view = picture_call(project_id, shot_id, lambda: seen.update(system.director.look(shot_id)))
+        return {**view, "looked": seen}
+
+    @app.post("/api/v1/projects/{project_id}/storyboard/shots/{shot_id}/remove")
+    def storyboard_remove(project_id: str, shot_id: str):
+        """The shot's picture is taken off (it does not show the line); its other candidates stay to choose from."""
+        return picture_call(project_id, shot_id, lambda: system.director.remove(shot_id))
+
+    @app.post("/api/v1/projects/{project_id}/storyboard/shots/{shot_id}/use-moment")
+    def storyboard_use_moment(project_id: str, shot_id: str, body: dict):
+        """A stretch the operator found in the Library becomes the shot's picture."""
+        return picture_call(project_id, shot_id, lambda: system.director.use_moment(shot_id, str(body.get("moment_id", ""))))
+
     @app.post("/api/v1/projects/{project_id}/storyboard/shots/{shot_id}/none-fits")
     def storyboard_none_fits(project_id: str, shot_id: str):
         return picture_call(project_id, shot_id, lambda: system.director.none_fits(shot_id))
@@ -1070,10 +1153,10 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
 
     @app.post("/api/v1/projects/{project_id}/storyboard/shots/{shot_id}/stock")
     def storyboard_stock_call(project_id: str, shot_id: str, body: dict):
+        """Stock candidates for the shot, judged on their previews: shown to choose from, nothing downloaded. The operator's
+        words (`query`) when given, else the shot's own line."""
         from nexora.app import storyboard_stock
         query = str(body.get("query", "")).strip()
-        if not query:
-            raise HTTPException(422, "Cần từ khoá để tìm clip stock")
         found: dict = {}
         def go():
             try:
@@ -1083,12 +1166,33 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         view = picture_call(project_id, shot_id, go)
         return {**view, "stock": found}
 
+    @app.post("/api/v1/projects/{project_id}/storyboard/shots/{shot_id}/use-stock")
+    def storyboard_use_stock(project_id: str, shot_id: str, body: dict):
+        """A stock candidate chosen for the shot: downloaded now, taken into the Library, given to the shot."""
+        from nexora.app import use_stock_candidate
+        def go():
+            try:
+                use_stock_candidate(system, str(body.get("candidate", "")), shot_id=shot_id)
+            except AdapterError as err:
+                raise ValueError(f"Không tải được clip stock: {err.message}")
+        return picture_call(project_id, shot_id, go)
+
+    @app.get("/api/v1/stock/{cid}/thumb")
+    def stock_thumb(cid: str):
+        """A stock candidate's preview picture, kept until its project's storyboard is approved."""
+        c = system.stock_scout.candidate(cid) if system.stock_scout is not None else None
+        if c is None or not c.get("thumb") or not Path(c["thumb"]).is_file():
+            raise HTTPException(404, "no preview")
+        return FileResponse(c["thumb"], media_type="image/jpeg", headers={"Cache-Control": "max-age=86400"})
+
     @app.post("/api/v1/projects/{project_id}/storyboard/approve")
     def storyboard_approve(project_id: str):
         """The storyboard approved: written to the script with every picture, its options and treatment; the clips approved, so
         the cut can be rendered."""
+        from nexora.app import after_storyboard_approved
         need_project(project_id)
         done = board_call(lambda: system.director.approve(project_id))
+        done["cleaned"] = after_storyboard_approved(system, project_id)
         # A clip match still waiting at its gate is decided by the same word, for this script or the version the storyboard was
         # laid out from (approving writes the storyboard back as a new version): the storyboard is where its clips were looked at.
         for script_id in system.projects.script_ids(project_id):
@@ -1219,6 +1323,11 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         if not lines:
             raise HTTPException(422, "Kịch bản cần ít nhất một câu")
         system.planning.save_script(project_id, lines)
+        offered = system.topics.latest(project_id)
+        if offered and offered["state"] == "offered" and offered["package"]:
+            from nexora.app import merge_sources
+            merge_sources(system, project_id, offered["package"]["sources"])          # a script from a topic brings its sources once, when saved
+            system.topics.mark(offered["run_id"], "applied")
         return project_view(system.projects.project(project_id))
 
     @app.post("/api/v1/projects/{project_id}/script/rewrite")
@@ -1266,6 +1375,57 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
             raise HTTPException(503, f"Mô hình không trả lời được: {err.message or err.code.value}")
         system.projects.keep_draft(project_id, written)
         return {"lines": [l if isinstance(l, str) else l["text"] for l in written]}
+
+    @app.post("/api/v1/projects/{project_id}/draft-from-topic", status_code=202)
+    def draft_from_topic(project_id: str, body: dict):
+        """A script from a topic, written by Claude Code from what it reads on the web. It runs in the background and the editor
+        asks for it when it is done; nothing is saved until the operator saves the script."""
+        need_project(project_id)
+        topic = str(body.get("topic") or "").strip()
+        if not topic:
+            raise HTTPException(422, "Hãy nói chủ đề của video")
+        if "model.claude_code" not in {c.name for c in system.adapters.describe()}:
+            raise HTTPException(503, "Máy này chưa có Claude Code. Cài Claude Code và đăng nhập một lần bằng lệnh claude.")
+        from nexora.modules.planning.topic import FORMS, clamp_seconds
+        form = str(body.get("form") or "reportage")
+        if form not in FORMS:
+            raise HTTPException(422, "Không có thể loại này")
+        seconds = clamp_seconds(body.get("seconds") if body.get("seconds") is not None else float(body.get("minutes") or 3) * 60)
+        return {"run_id": system.topics.start(project_id, topic, goal=str(body.get("goal") or ""), seconds=seconds, form=form)}
+
+    @app.get("/api/v1/topic/forms")
+    def topic_forms():
+        """The kinds of video a script from a topic can be, and the lengths it can be asked for."""
+        from nexora.modules.planning.topic import DEFAULT_FORM, DEFAULT_SECONDS, FORMS, MAX_SECONDS, MIN_SECONDS
+        return {"forms": [{"key": k, "name": name} for k, (name, _) in FORMS.items()], "default": DEFAULT_FORM,
+                "seconds": {"min": MIN_SECONDS, "max": MAX_SECONDS, "default": DEFAULT_SECONDS}}
+
+    @app.get("/api/v1/projects/{project_id}/draft-from-topic")
+    def topic_draft(project_id: str):
+        """The latest script from a topic asked for this video: still being written, failed (with why), or offered to the
+        editor with its sources, what it could not verify and its warnings."""
+        from nexora.modules.planning.topic import script_lines
+        need_project(project_id)
+        got = system.topics.latest(project_id)
+        if got is None:
+            return {"state": None}
+        status = system.orch.run_status(got["run_id"]).value
+        reason = None
+        if status in ("failed", "blocked"):
+            reason = system.orch.why_stopped(system.orch.stages(got["run_id"])[0])
+        if got["state"] == "written":
+            system.topics.mark(got["run_id"], "offered")
+            got["state"] = "offered"
+        if got["state"] != "offered" or not got["package"]:
+            return {"state": got["state"], "status": status, "reason": reason, "topic": got["topic"], "created_at": got["created_at"],
+                    "target_seconds": got.get("seconds"), "form": got.get("form")}
+        lines = script_lines(got["package"])
+        system.projects.keep_draft(project_id, [l for l in lines if isinstance(l, dict)])
+        package = got["package"]
+        return {"state": "offered", "status": status, "topic": got["topic"], "created_at": got["created_at"], "title": package["title"], "angle": package["angle"],
+                "lines": [l if isinstance(l, str) else l["text"] for l in lines], "sources": package["sources"], "unverified": package["unverified"],
+                "warnings": package["warnings"], "api_equivalent": package.get("api_equivalent", 0.0),
+                "seconds": package.get("seconds"), "target_seconds": got.get("seconds"), "form": got.get("form")}
 
     @app.post("/api/v1/projects/{project_id}/draft")
     def draft_script(project_id: str, body: dict):
@@ -1325,7 +1485,7 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
         if not query:
             raise HTTPException(422, "Cần từ khoá để tìm clip stock")
         try:
-            return fill_gap_from_stock(system, shot_id, query)
+            return fill_gap_from_stock(system, shot_id, query, take=True)       # the operator asked for this line
         except AdapterError as err:
             raise HTTPException(503, f"Không tìm được clip stock: {err.message}")
 
@@ -1801,7 +1961,10 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
     @app.get("/api/v1/productions/{production_id}")
     def get_production(production_id: str):
         d = production_view(need_production(production_id))
-        return {**d, "projects": [project_view(system.projects.project(v)) for v in d["videos"]]}
+        given = [{"mission_id": m["mission_id"], "text": m["text"], "title": m["plan"].get("title"), "kind_name": m["kind_name"], "status": m["status"],
+                  "count": len(m["children"]), "done": sum(c["state"] == "done" for c in m["children"]), "spent": m["spent"], "created_at": m["created_at"]}
+                 for m in system.missions.missions(production_id=production_id)]
+        return {**d, "projects": [project_view(system.projects.project(v)) for v in d["videos"]], "missions": given}
 
     @app.patch("/api/v1/productions/{production_id}")
     def change_production(production_id: str, body: dict):
@@ -2433,10 +2596,19 @@ def create_app(system, *, web_dir: str | Path | None = None, config=None) -> Fas
     def vq_subject_frame(subject: str, t: float = 0.0, graded: int = 0, width: int = 0):
         """A frame of the source at `t`, as it is or with its colour transform, for the viewer and for marking a region; with
         `width`, a smaller copy (kept beside it) for a card, so a storyboard of many shots does not fetch full frames."""
-        if system.vq_reader.subject(subject) is None:
-            raise HTTPException(404, "no such subject")
         try:
-            frame = system.vq.frame(subject, t, graded=bool(graded))
+            if system.vq_reader.subject(subject) is not None:
+                frame = system.vq.frame(subject, t, graded=bool(graded))
+            elif system.assets.asset(subject) is not None:
+                # In the Library, not yet looked at by visual quality (a stock clip just brought in for a shot): its own frame.
+                frame = system.data_dir / "tmp" / "frames" / subject / f"{max(0.0, t):.2f}_s_1280.jpg"
+                if not frame.is_file():
+                    frame.parent.mkdir(parents=True, exist_ok=True)
+                    source = system.assets.path_of(system.assets.original(subject))
+                    system.adapters.submit("ffmpeg", Request("vq_render", inputs={"path": str(source)},
+                                                             params={"kind": "still", "out": str(frame), "t_in": max(0.0, t), "filters": [], "width": 1280}))
+            else:
+                raise HTTPException(404, "no such subject")
         except AdapterError as e:
             raise HTTPException(422, str(e))
         if 0 < width < 1280:

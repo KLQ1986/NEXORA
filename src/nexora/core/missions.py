@@ -15,7 +15,7 @@ from nexora.core.ids import new_id
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS missions (mission_id TEXT PRIMARY KEY, text TEXT NOT NULL, plan TEXT NOT NULL, problems TEXT NOT NULL,
-    state TEXT NOT NULL, links TEXT NOT NULL, events TEXT NOT NULL, created_at REAL NOT NULL, updated_at REAL NOT NULL);
+    state TEXT NOT NULL, links TEXT NOT NULL, events TEXT NOT NULL, created_at REAL NOT NULL, updated_at REAL NOT NULL, production_id TEXT);
 CREATE INDEX IF NOT EXISTS missions_created ON missions (created_at)
 """
 STATES = ("draft", "planned", "confirmed", "paused", "cancelled")
@@ -29,6 +29,14 @@ class MissionStore:
             for statement in SCHEMA.strip().split(";\n"):
                 if statement.strip():
                     c.execute(statement)
+            if "production_id" not in {r[1] for r in c.execute("PRAGMA table_info(missions)")}:
+                c.execute("ALTER TABLE missions ADD COLUMN production_id TEXT")
+            # The production a mission works for (projects of videos, 2026-10-18): the one it was given from, else the one its
+            # videos went into. Missions made before it was kept take it from their plan (when that production is still there) or their first video.
+            c.execute("UPDATE missions SET production_id = COALESCE("
+                      "(SELECT d.production_id FROM productions d WHERE d.production_id = json_extract(missions.plan, '$.production_id')), "
+                      "(SELECT p.production_id FROM projects p WHERE p.project_id = json_extract(missions.links, '$.projects[0]'))) "
+                      "WHERE production_id IS NULL")
 
     @property
     def _conn(self):
@@ -41,17 +49,25 @@ class MissionStore:
         mission_id, now = new_id("msn"), time.time()
         events = [{"at": now, "kind": "created", "text": text}, {"at": now, "kind": "planned", "text": "; ".join(problems) or None}]
         with db.write(self._conn) as c:
-            c.execute("INSERT INTO missions (mission_id, text, plan, problems, state, links, events, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            c.execute("INSERT INTO missions (mission_id, text, plan, problems, state, links, events, created_at, updated_at, production_id) VALUES (?,?,?,?,?,?,?,?,?,?)",
                       (mission_id, text, json.dumps(plan, ensure_ascii=False), json.dumps(problems, ensure_ascii=False), "draft" if problems else "planned",
-                       json.dumps({k: [] for k in LINKS}), json.dumps(events, ensure_ascii=False), now, now))
+                       json.dumps({k: [] for k in LINKS}), json.dumps(events, ensure_ascii=False), now, now, plan.get("production_id")))
         return mission_id
 
     def get(self, mission_id: str) -> dict | None:
         r = self._conn.execute("SELECT * FROM missions WHERE mission_id = ?", (mission_id,)).fetchone()
         return self._row(r) if r else None
 
-    def missions(self, *, limit: int = 200) -> list[dict]:
-        return [self._row(r) for r in self._conn.execute("SELECT * FROM missions ORDER BY created_at DESC LIMIT ?", (limit,))]
+    def missions(self, *, limit: int = 200, production_id: str | None = None) -> list[dict]:
+        if production_id:
+            rows = self._conn.execute("SELECT * FROM missions WHERE production_id = ? ORDER BY created_at DESC LIMIT ?", (production_id, limit))
+        else:
+            rows = self._conn.execute("SELECT * FROM missions ORDER BY created_at DESC LIMIT ?", (limit,))
+        return [self._row(r) for r in rows]
+
+    def set_production(self, mission_id: str, production_id: str | None) -> None:
+        with db.write(self._conn) as c:
+            c.execute("UPDATE missions SET production_id = ? WHERE mission_id = ?", (production_id, mission_id))
 
     def _event(self, c, mission_id: str, kind: str, text: str | None) -> None:
         events = json.loads(c.execute("SELECT events FROM missions WHERE mission_id = ?", (mission_id,)).fetchone()[0])

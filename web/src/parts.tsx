@@ -1,5 +1,5 @@
 import { t as tr, tv, lang, setLang, type Lang } from "./i18n";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { STAGE_NAMES, STATUS_NAMES, timecode, type Asset, type Shot, type Stage } from "./api";
 
@@ -26,7 +26,7 @@ export function RangeStrip({ asset, playhead, onSeek, tall = false }: { asset: A
         {playhead != null && <div className="absolute inset-y-0 w-0.5 bg-cue shadow-[0_0_8px_var(--color-cue)]" style={{ left: pct(playhead) }} />}
       </div>
       {tall && (
-        <div className="mono relative mt-1.5 h-4 text-[10.5px] text-faint">
+        <div className="mono relative mt-1.5 h-4 text-mini text-faint">
           <span className="absolute left-0">0:00</span>
           {minutes.filter((m) => m / d < 0.92 && m / d > 0.06).map((m) => <span key={m} className="absolute -translate-x-1/2" style={{ left: pct(m) }}>{timecode(m)}</span>)}
           <span className="absolute right-0">{timecode(d)}</span>
@@ -50,7 +50,7 @@ export function StageRail({ stages, labels = false, name }: { stages: Stage[]; l
         return (
           <div key={s.stage_id} role="listitem" className="min-w-0 flex-1" title={`${label}: ${STATUS_NAMES[s.status] ?? s.status}`}>
             <div className={`h-1.5 rounded-full ${TONE[s.status] ?? "bg-overlay"}`} />
-            {labels && <p className={`mt-1.5 truncate text-[11px] ${s.status === "running" ? "text-ink" : s.status === "failed" ? "text-tally" : s.status === "blocked" || s.status === "waiting_review" ? "text-cue" : "text-faint"}`}>{label}</p>}
+            {labels && <p className={`mt-1.5 truncate text-mini ${s.status === "running" ? "text-ink" : s.status === "failed" ? "text-tally" : s.status === "blocked" || s.status === "waiting_review" ? "text-cue" : "text-faint"}`}>{label}</p>}
           </div>
         );
       })}
@@ -71,7 +71,7 @@ export function Button({ children, onClick, kind = "plain", disabled, busy, size
     : kind === "quiet" ? "text-mute hover:bg-raised hover:text-ink disabled:opacity-40"
     : kind === "ai" ? "border border-ai/35 bg-ai/10 text-ai hover:bg-ai/20 disabled:opacity-40"
     : "border border-edge bg-raised text-ink hover:border-[#454c5c] hover:bg-overlay disabled:border-line disabled:text-faint disabled:hover:bg-raised";
-  return <button type={type} title={title} onClick={onClick} disabled={disabled || busy} aria-busy={busy || undefined} className={`btn inline-flex shrink-0 items-center justify-center gap-2 rounded-lg font-medium ${size === "sm" ? "h-7 px-2.5 text-[12.5px]" : "h-9 px-3.5 text-[13.5px]"} ${look}`}>{busy && <Spinner size={size === "sm" ? 12 : 14} />}{children}</button>;
+  return <button type={type} title={title} onClick={onClick} disabled={disabled || busy} aria-busy={busy || undefined} className={`btn inline-flex shrink-0 items-center justify-center gap-2 rounded-lg font-medium ${size === "sm" ? "h-7 px-2.5 text-meta" : "h-9 px-3.5 text-ui-l"} ${look}`}>{busy && <Spinner size={size === "sm" ? 12 : 14} />}{children}</button>;
 }
 
 const ICONS: Record<string, string> = {
@@ -146,13 +146,31 @@ export function Icon({ name, size = 16, className = "" }: { name: keyof typeof I
 }
 
 /** The operations section's side menu: the four screens that look after the machine. The open one may hang its own places beneath. */
-export function OpsSide({ children }: { children?: React.ReactNode }) {
+/* The projects' part of Mission Control's side menu is the projects page's own (videos by where they stand); it is handed in
+   here so this file does not import that page. */
+let ProjectsMenu: ((props: Record<string, unknown>) => React.ReactNode) | null = null;
+export function registerProjectsMenu(menu: (props: Record<string, unknown>) => React.ReactNode) { ProjectsMenu = menu; }
+
+export const MISSION_TABS: [string, string, string][] = [["overview", tr("Board"), "gauge"], ["missions", tr("Nhiệm vụ"), "bolt"], ["approvals", tr("Phê duyệt"), "check"],
+  ["agents", tr("Agents"), "cpu"], ["quality", tr("Chất lượng"), "shield"], ["artifacts", tr("Artifacts"), "layers"], ["resources", tr("Ngân sách & tài nguyên"), "coins"], ["logs", tr("Nhật ký"), "list"]];
+
+/** Mission Control's side menu, the same on every screen of it (design 2026-10-19): its own views, the machine's pages, and the
+    projects with their videos. `projects`: the projects part with the open video unfolded (the projects page passes its own). */
+export function OpsSide({ children, projects, counts }: { children?: React.ReactNode; projects?: React.ReactNode; counts?: Record<string, number | undefined> }) {
   const path = window.location.pathname;
-  const items: [string, string, string][] = [["/phong-may", tr("Mission Control"), "gauge"], ["/tien-trinh", tr("Tiến trình"), "pulse"], ["/chi-phi", tr("Chi phí"), "coins"], ["/thong-bao", tr("Thông báo"), "bell"], ["/thung-rac", tr("Thùng rác"), "trash"], ["/he-thong", tr("Hệ thống"), "sliders"]];
+  const tab = path.startsWith("/phong-may") ? new URLSearchParams(window.location.search).get("tab") || "overview" : null;
+  const ops: [string, string, string][] = [["/tien-trinh", tr("Tiến trình"), "pulse"], ["/chi-phi", tr("Chi phí"), "coins"], ["/thong-bao", tr("Thông báo"), "bell"], ["/thung-rac", tr("Thùng rác"), "trash"], ["/he-thong", tr("Hệ thống"), "sliders"]];
   return (
-    <SideGroup label={tr("Vận hành")}>
-      {items.map(([to, label, icon]) => { const on = path.startsWith(to); return <SideLink key={to} label={label} icon={icon} on={on && !children} onClick={() => goTo(to)}>{on ? children : null}</SideLink>; })}
-    </SideGroup>
+    <>
+      <SideGroup label={tr("Mission Control")}>
+        {MISSION_TABS.map(([k, label, icon]) => <SideLink key={k} label={label} icon={icon} on={tab === k} count={counts?.[k]} tone={k === "approvals" ? "cue" : undefined}
+                                                          onClick={() => goTo(k === "overview" ? "/phong-may" : `/phong-may?tab=${k}`)} />)}
+      </SideGroup>
+      <SideGroup label={tr("Vận hành")}>
+        {ops.map(([to, label, icon]) => { const on = path.startsWith(to); return <SideLink key={to} label={label} icon={icon} on={on && !children} onClick={() => goTo(to)}>{on ? children : null}</SideLink>; })}
+      </SideGroup>
+      {projects ?? (ProjectsMenu ? ProjectsMenu({}) : null)}
+    </>
   );
 }
 
@@ -177,7 +195,7 @@ export function useSideHidden() {
 export function SideGroup({ label, end, children }: { label?: React.ReactNode; end?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="mb-5 last:mb-0">
-      {label && <p className="flex items-center justify-between gap-2 px-2.5 pb-1.5 text-[12px] text-faint">{label}{end}</p>}
+      {label && <p className="flex items-center justify-between gap-2 px-2.5 pb-1.5 text-mini text-faint">{label}{end}</p>}
       <div className="grid gap-0.5">{children}</div>
     </div>
   );
@@ -190,9 +208,9 @@ export function SideLink({ label, icon, lead, on, onClick, count, tone, small, t
   return (
     <>
       <button type="button" onClick={onClick} aria-current={on ? "page" : undefined} title={title}
-              className={`flex w-full min-w-0 items-center gap-2.5 rounded-lg px-2.5 text-left transition-colors ${small ? "h-8 text-[13px]" : "h-9 text-[13.5px]"} ${on ? "bg-accent/10 font-medium text-accent shadow-[inset_0_0_0_1px_rgba(70,200,224,0.18)]" : "text-mute hover:bg-raised/60 hover:text-ink"}`}>
+              className={`flex w-full min-w-0 items-center gap-2.5 rounded-lg px-2.5 text-left transition-colors ${small ? "h-8 text-ui" : "h-9 text-ui-l"} ${on ? "bg-accent/10 font-medium text-accent shadow-[inset_0_0_0_1px_rgba(70,200,224,0.18)]" : "text-mute hover:bg-raised/60 hover:text-ink"}`}>
         {lead ?? (icon && <Icon name={icon} size={small ? 15 : 16} />)}<span className="min-w-0 flex-1 truncate">{label}</span>
-        {count != null && count > 0 && <span className={`mono shrink-0 rounded-md px-1.5 text-[11px] font-medium leading-[18px] ${badge}`}>{count}</span>}
+        {count != null && count > 0 && <span className={`mono shrink-0 rounded-md px-1.5 text-mini font-medium leading-[18px] ${badge}`}>{count}</span>}
       </button>
       {children && <div className="mb-1 ml-[18px] grid gap-0.5 border-l border-line pl-2">{children}</div>}
     </>
@@ -215,8 +233,9 @@ export function SideFrame({ side, children }: { side: React.ReactNode; children:
 
 export function Page({ title, note, actions, back, tabs, side, children, wide = false, full = false, flush = false }: { title: React.ReactNode; eyebrow?: React.ReactNode; note?: React.ReactNode; actions?: React.ReactNode;
   back?: { label: string; onClick: () => void }; tabs?: React.ReactNode; side?: React.ReactNode; children: React.ReactNode; wide?: boolean; full?: boolean; flush?: boolean }) {
-  // How wide the content may run: a reading measure, a wide one for work surfaces, or the whole window for the overview.
-  const measure = full ? "max-w-none" : wide ? "max-w-[1600px]" : "max-w-[1240px]";
+  // How wide the content may run: one measure for every screen (Mission Control's 1680 px), or the whole window.
+  // `wide` is kept for the screens that ask for it; it is the same measure now (design review 2026-10-20).
+  const measure = full ? "max-w-none" : "max-w-[1680px]";
   // Coming back to a screen finds it where it was left.
   const scroller = useRef<HTMLDivElement>(null);
   const place = window.location.pathname + window.location.search;
@@ -236,8 +255,9 @@ export function Page({ title, note, actions, back, tabs, side, children, wide = 
   // A sentence about what the screen is for waits behind an (i); short facts stay in view.
   const explain = typeof note === "string" && note.length > 40;
   const facts = note && !explain ? note : null;
-  // A bar with nothing but the (i) is not worth its height: then the screen starts straight with its content.
-  const bar = !!(back || facts || actions);
+  // Every screen has its bar with its name, so screens read alike (design review 2026-10-20); on a phone the bar shows only
+  // when it carries a way back or the menu, the bottom nav naming the screen.
+  const bar = true;
   return (
     <div className="flex min-h-0 min-w-0 flex-1">
       {side && !hidden && <aside aria-label={tr("Menu của mục này")} className="hidden w-[248px] shrink-0 overflow-y-auto overflow-x-hidden border-r border-line bg-surface/40 px-3 py-4 lg:block">{side}</aside>}
@@ -247,19 +267,20 @@ export function Page({ title, note, actions, back, tabs, side, children, wide = 
       <section className="flex min-h-0 min-w-0 flex-1 flex-col">
         <h1 className="sr-only">{title}</h1>
         {(bar || side) && (
-          <header className={`h-12 shrink-0 items-center gap-3 border-b border-line px-4 md:px-8 ${bar ? (side || back ? "flex" : "hidden md:flex") : "flex lg:hidden"}`}>
-            {side && <button type="button" onClick={() => setDrawer(true)} className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-line px-2.5 text-[12.5px] text-mute hover:bg-raised hover:text-ink lg:hidden" aria-label={tr("Mở menu của mục này")}><Icon name="sliders" size={14} />{tr("Menu mục")}</button>}
+          <header className={`h-12 shrink-0 items-center gap-3 border-b border-line px-4 md:px-8 ${side || back ? "flex" : "hidden md:flex"}`}>
+            {side && <button type="button" onClick={() => setDrawer(true)} className="flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-line px-2.5 text-meta text-mute hover:bg-raised hover:text-ink lg:hidden" aria-label={tr("Mở menu của mục này")}><Icon name="sliders" size={14} />{tr("Menu mục")}</button>}
             {side && <button type="button" onClick={toggleSide} className="hidden h-8 w-8 shrink-0 place-items-center rounded-md text-faint hover:bg-raised hover:text-ink lg:grid" title={hidden ? tr("Hiện menu bên (phím [)") : tr("Ẩn menu bên (phím [)")} aria-label={hidden ? tr("Hiện menu bên (phím [)") : tr("Ẩn menu bên (phím [)")}><Icon name="collapse" size={16} className={hidden ? "rotate-180" : ""} /></button>}
-            {back && <button type="button" onClick={back.onClick} title={back.label} className="flex shrink-0 items-center gap-1 rounded-md text-[13px] text-mute transition-colors hover:text-ink"><Icon name="back" size={16} /><span className="hidden sm:inline">{back.label}</span></button>}
-            {back && <><span className="hidden text-edge sm:inline">/</span><span className="display min-w-0 truncate text-[16px] leading-tight sm:max-w-[45%] sm:shrink-0">{title}</span></>}
+            {back && <button type="button" onClick={back.onClick} title={back.label} className="flex shrink-0 items-center gap-1 rounded-md text-ui text-mute transition-colors hover:text-ink"><Icon name="back" size={16} /><span className="hidden sm:inline">{back.label}</span></button>}
+            {back && <span className="hidden text-edge sm:inline">/</span>}
+            <span className={`display min-w-0 truncate text-page leading-tight ${back ? "sm:max-w-[45%] sm:shrink-0" : "shrink-0"}`}>{title}</span>
             {explain && <Hint text={note as string}><span className="sr-only">{title}</span></Hint>}
-            {facts && <div className="hidden min-w-0 items-center overflow-hidden whitespace-nowrap text-[13px] text-faint md:flex [&>*]:flex-nowrap">{facts}</div>}
+            {facts && <div className="hidden min-w-0 items-center overflow-hidden whitespace-nowrap text-ui text-faint md:flex [&>*]:flex-nowrap">{facts}</div>}
             {actions && <div className="ml-auto hidden shrink-0 items-center gap-2 md:flex">{actions}</div>}
           </header>
         )}
         {tabs && <div className="shrink-0 border-b border-line px-4 md:px-8"><div className={`mx-auto ${measure}`}>{tabs}</div></div>}
         <div ref={scroller} onScroll={(e) => { scrolled.set(place, e.currentTarget.scrollTop); }} className={`min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden ${flush ? "" : "px-4 pb-12 pt-5 md:px-8 md:pt-6"}`}><div className={`min-w-0 ${flush ? "h-full" : `mx-auto ${measure}`}`}>
-          {!flush && (facts || actions) && <div className="mb-5 flex flex-wrap items-center gap-x-4 gap-y-3 md:hidden">{facts && <div className="min-w-0 text-[13px] text-mute">{facts}</div>}{actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}</div>}
+          {!flush && (facts || actions) && <div className="mb-5 flex flex-wrap items-center gap-x-4 gap-y-3 md:hidden">{facts && <div className="min-w-0 text-ui text-mute">{facts}</div>}{actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}</div>}
           {children}</div></div>
       </section>
     </div>
@@ -290,8 +311,8 @@ export function Tabs<T extends string>({ items, value, onChange }: { items: { ke
     <div ref={row} className="scroll-x -mb-px flex gap-1" role="tablist">
       {items.map((t) => (
         <button key={t.key} type="button" role="tab" aria-selected={value === t.key} onClick={() => onChange(t.key)}
-                className={`flex h-10 items-center gap-2 whitespace-nowrap border-b-2 px-3 text-[13.5px] transition-colors ${value === t.key ? "border-accent font-medium text-ink" : "border-transparent text-mute hover:text-ink"}`}>
-          {t.icon && <Icon name={t.icon} size={15} />}{t.label}{t.count ? <span className="mono rounded bg-overlay px-1.5 text-[11px] leading-[18px] text-mute">{t.count}</span> : null}
+                className={`flex h-10 items-center gap-2 whitespace-nowrap border-b-2 px-3 text-ui-l transition-colors ${value === t.key ? "border-accent font-medium text-ink" : "border-transparent text-mute hover:text-ink"}`}>
+          {t.icon && <Icon name={t.icon} size={15} />}{t.label}{t.count ? <span className="mono rounded bg-overlay px-1.5 text-mini leading-[18px] text-mute">{t.count}</span> : null}
         </button>
       ))}
     </div>
@@ -307,9 +328,9 @@ export function Section({ title, icon, note, actions, children }: { title: strin
       <div className="mb-3 flex flex-wrap items-end justify-between gap-x-6 gap-y-1.5">
         <div className="min-w-0">
           {explain ? (
-            <Hint text={note as string}><h2 className="flex cursor-default items-center gap-2 text-[15px] font-semibold">{icon && <Icon name={icon} size={16} className="text-mute" />}{title}</h2></Hint>
+            <Hint text={note as string}><h2 className="flex cursor-default items-center gap-2 text-title font-semibold">{icon && <Icon name={icon} size={16} className="text-mute" />}{title}</h2></Hint>
           ) : (
-            <><h2 className="flex items-center gap-2 text-[15px] font-semibold">{icon && <Icon name={icon} size={16} className="text-accent" />}{title}</h2>{note && <div className="mt-0.5 max-w-2xl text-[13px] text-mute">{note}</div>}</>
+            <><h2 className="flex items-center gap-2 text-title font-semibold">{icon && <Icon name={icon} size={16} className="text-accent" />}{title}</h2>{note && <div className="mt-0.5 max-w-2xl text-ui text-mute">{note}</div>}</>
           )}
         </div>
         {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
@@ -327,7 +348,7 @@ export function Hint({ text, children }: { text: string; children: React.ReactNo
       {children}
       <button type="button" aria-label={tr("Giải thích")} aria-expanded={open} onClick={() => setOpen((o) => !o)} onFocus={() => setOpen(true)} onBlur={() => setOpen(false)}
               className={`grid h-5 w-5 place-items-center rounded-full transition-colors ${open ? "text-ink" : "text-faint hover:text-ink"}`}><Icon name="info" size={14} /></button>
-      {open && <span role="tooltip" className="rise absolute left-0 top-full z-30 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-lg border border-edge bg-overlay px-3 py-2 text-[12.5px] font-normal leading-relaxed text-mute shadow-xl shadow-black/40">{text}</span>}
+      {open && <span role="tooltip" className="rise absolute left-0 top-full z-30 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-lg border border-edge bg-overlay px-3 py-2 text-meta font-normal leading-relaxed text-mute shadow-xl shadow-black/40">{text}</span>}
     </span>
   );
 }
@@ -336,7 +357,7 @@ export function Hint({ text, children }: { text: string; children: React.ReactNo
 export function Tag({ tone = "mute", children, dot = true }: { tone?: "mute" | "cue" | "proof" | "tally" | "ai" | "accent"; children: React.ReactNode; dot?: boolean }) {
   const look = { mute: "bg-overlay text-mute", cue: "bg-cue/12 text-cue", proof: "bg-proof/12 text-proof", tally: "bg-tally/12 text-tally", ai: "bg-ai/12 text-ai", accent: "bg-accent/15 text-accent" }[tone];
   const dotc = { mute: "bg-faint", cue: "bg-cue", proof: "bg-proof", tally: "bg-tally", ai: "bg-ai", accent: "bg-accent" }[tone];
-  return <span className={`inline-flex h-6 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-[12px] font-medium ${look}`}>{dot && <span className={`h-1.5 w-1.5 rounded-full ${dotc}`} />}{children}</span>;
+  return <span className={`inline-flex h-6 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-mini font-medium ${look}`}>{dot && <span className={`h-1.5 w-1.5 rounded-full ${dotc}`} />}{children}</span>;
 }
 
 /** A cut at a glance: one frame per shot, each as wide as it lasts. */
@@ -354,7 +375,7 @@ export function Filmstrip({ shots, height = 56, numbered = false, className = ""
       {items.map(({ s, d, src, gap }, i) => (
         <div key={s.shot_id} title={`${i + 1}. ${s.text}`} style={{ width: `${(d / total) * 100}%` }} className={`relative ${gap && !src ? "hatch bg-raised" : "bg-black"}`}>
           {src && <img src={src} alt="" loading="lazy" className="h-full w-full object-cover" />}
-          {numbered && <span className="mono absolute left-1 top-1 rounded bg-black/70 px-1 text-[10px] leading-4">{i + 1}</span>}
+          {numbered && <span className="mono absolute left-1 top-1 rounded bg-black/70 px-1 text-mini leading-4">{i + 1}</span>}
         </div>
       ))}
     </div>
@@ -371,9 +392,9 @@ export function Stat({ label, value, sub, icon, tone, children }: { label: strin
   const c = { cue: "text-cue", ai: "text-ai", accent: "text-accent", proof: "text-proof" }[tone ?? "accent"];
   return (
     <div className="panel flex min-w-0 flex-col p-4">
-      <div className="flex items-start justify-between gap-2"><span className="truncate text-[13px] text-mute">{label}</span>{icon && <Icon name={icon} size={17} className={`shrink-0 ${c}`} />}</div>
-      <div className="mono mt-2 truncate text-[26px] font-semibold leading-none tracking-tight">{value}</div>
-      {sub && <div className="mt-2 truncate text-[12px] text-faint">{sub}</div>}
+      <div className="flex items-start justify-between gap-2"><span className="truncate text-ui text-mute">{label}</span>{icon && <Icon name={icon} size={17} className={`shrink-0 ${c}`} />}</div>
+      <div className="mono mt-2 truncate text-kpi-l font-semibold leading-none tracking-tight">{value}</div>
+      {sub && <div className="mt-2 truncate text-mini text-faint">{sub}</div>}
       {children && <div className="mt-3">{children}</div>}
     </div>
   );
@@ -384,8 +405,8 @@ export function Readout({ label, value, icon, tone = "accent", on, onClick }: { 
   const c = { cue: "text-cue", ai: "text-ai", accent: "text-accent", proof: "text-proof", tally: "text-tally", ink: "text-ink" }[tone];
   return (
     <button type="button" role="radio" aria-checked={!!on} onClick={onClick} className="tile flex min-w-0 flex-col p-3.5 text-left">
-      <span className="flex items-start justify-between gap-2"><span className="truncate text-[13px] text-mute">{label}</span><Icon name={icon} size={16} className={`shrink-0 ${c}`} /></span>
-      <span className="mono mt-2 text-[24px] font-semibold leading-none tracking-tight">{value}</span>
+      <span className="flex items-start justify-between gap-2"><span className="truncate text-ui text-mute">{label}</span><Icon name={icon} size={16} className={`shrink-0 ${c}`} /></span>
+      <span className="mono mt-2 text-kpi-m font-semibold leading-none tracking-tight">{value}</span>
     </button>
   );
 }
@@ -402,8 +423,8 @@ export function Empty({ icon = "sparkles", title, children, action }: { icon?: s
   return (
     <div className="panel flex flex-col items-center px-6 py-10 text-center">
       <span className="mb-3 grid h-11 w-11 place-items-center rounded-xl bg-accent/12 text-accent"><Icon name={icon} size={20} /></span>
-      <p className="font-medium">{title}</p>
-      {children && <div className="mt-1 max-w-md text-[13px] text-mute">{children}</div>}
+      <p className="text-title font-semibold">{title}</p>
+      {children && <div className="mt-1 max-w-md text-ui text-mute">{children}</div>}
       {action && <div className="mt-4">{action}</div>}
     </div>
   );
@@ -433,7 +454,7 @@ export function LangSwitch({ size = "md" }: { size?: "sm" | "md" }) {
     <div role="group" aria-label={tr("Ngôn ngữ giao diện")} className={`flex shrink-0 overflow-hidden rounded-lg border border-line bg-surface ${size === "sm" ? "h-8" : "h-9"}`}>
       {options.map(([code, name]) => (
         <button key={code} type="button" aria-pressed={lang === code} title={name} onClick={() => { if (lang !== code) setLang(code); }}
-                className={`px-2.5 text-[12px] font-semibold uppercase tracking-wide transition-colors ${lang === code ? "bg-raised text-ink" : "text-faint hover:text-mute"}`}>
+                className={`px-2.5 text-mini font-semibold uppercase tracking-wide transition-colors ${lang === code ? "bg-raised text-ink" : "text-faint hover:text-mute"}`}>
           {code}
         </button>
       ))}
@@ -477,7 +498,7 @@ export function Toaster() {
   return (
     <div className="pointer-events-none fixed inset-x-0 bottom-[calc(16px+env(safe-area-inset-bottom))] z-50 flex flex-col items-center gap-2 px-4 md:bottom-10" aria-live="polite" aria-atomic="false">
       {toasts.map((t) => (
-        <div key={t.id} className="toast pointer-events-auto flex max-w-[520px] items-center gap-3 py-2.5 pl-4 pr-2 text-[13px]" role="status">
+        <div key={t.id} className="toast pointer-events-auto flex max-w-[520px] items-center gap-3 py-2.5 pl-4 pr-2 text-ui" role="status">
           {t.tone !== "plain" && <Icon name={t.tone === "proof" ? "check" : "alert"} size={15} className={t.tone === "proof" ? "text-proof" : "text-tally"} />}
           <span className="min-w-0">{t.text}</span>
           {t.action && <button type="button" className="btn shrink-0 rounded-md px-2.5 py-1 font-medium text-accent hover:bg-accent/12" onClick={() => { t.action!.run(); dismiss(t); }}>{t.action.label}</button>}
@@ -516,13 +537,68 @@ export function Dialogs() {
   return (
     <div className="scrim fixed inset-0 z-50 grid place-items-center px-4" onMouseDown={() => q.resolve(false)}>
       <div role="dialog" aria-modal="true" aria-labelledby="ask-title" className="dialog w-full max-w-sm p-5" onMouseDown={(e) => e.stopPropagation()}>
-        <h2 id="ask-title" className="text-[15px] font-semibold">{q.title}</h2>
-        {q.body && <div className="mt-1.5 text-[13px] text-mute">{q.body}</div>}
+        <h2 id="ask-title" className="text-title font-semibold">{q.title}</h2>
+        {q.body && <div className="mt-1.5 text-ui text-mute">{q.body}</div>}
         <div className="mt-5 flex justify-end gap-2">
           <Button onClick={() => q.resolve(false)}>{tr("Thôi")}</Button>
-          <button ref={yes} type="button" onClick={() => q.resolve(true)} className={`btn inline-flex h-9 items-center rounded-lg px-3.5 text-[13.5px] font-medium ${q.danger ? "bg-tally text-white hover:bg-tally/85" : "brand-button"}`}>{q.confirm}</button>
+          <button ref={yes} type="button" onClick={() => q.resolve(true)} className={`btn inline-flex h-9 items-center rounded-lg px-3.5 text-ui-l font-medium ${q.danger ? "bg-tally text-white hover:bg-tally/85" : "brand-button"}`}>{q.confirm}</button>
         </div>
       </div>
     </div>
   );
 }
+
+export type DropItem = { value: string; label: string; dot?: string; note?: string };
+/** A choice that always opens downward, under its own card (a native list on macOS opens over the chosen line instead).
+ *  `className` frames the card, `children` is what the card shows; ↑ ↓ Enter Esc work, a click outside closes it. */
+export function DropList({ value, items, onChange, label, className = "", children }: { value: string; items: DropItem[]; onChange: (v: string) => void;
+  label: string; className?: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const [at, setAt] = useState(0);
+  const [place, setPlace] = useState({ left: 0, top: 0, width: 0 });
+  const box = useRef<HTMLDivElement>(null), list = useRef<HTMLUListElement>(null);
+  // The list is laid over the page from <body>, so no clipping parent (a header row, a scrolled pane) cuts it; it follows its card.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const follow = () => { const r = box.current?.getBoundingClientRect(); if (r) setPlace({ left: r.left, top: r.bottom + 6, width: r.width }); };
+    const away = (e: PointerEvent) => { const t = e.target as Node; if (!box.current?.contains(t) && !list.current?.contains(t)) setOpen(false); };
+    follow();
+    document.addEventListener("pointerdown", away);
+    window.addEventListener("resize", follow);
+    window.addEventListener("scroll", follow, true);
+    return () => { document.removeEventListener("pointerdown", away); window.removeEventListener("resize", follow); window.removeEventListener("scroll", follow, true); };
+  }, [open]);
+  useEffect(() => { if (open) list.current?.children[at]?.scrollIntoView({ block: "nearest" }); }, [open, at]);
+  const show = () => { setAt(Math.max(0, items.findIndex((i) => i.value === value))); setOpen(true); };
+  const pick = (v: string) => { setOpen(false); if (v !== value) onChange(v); };
+  const key = (e: React.KeyboardEvent) => {
+    if (!open) { if (["ArrowDown", "ArrowUp", "Enter", " "].includes(e.key)) { e.preventDefault(); show(); } return; }
+    if (e.key === "Escape" || e.key === "Tab") setOpen(false);
+    else if (e.key === "ArrowDown") { e.preventDefault(); setAt((a) => Math.min(items.length - 1, a + 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setAt((a) => Math.max(0, a - 1)); }
+    else if (e.key === "Enter" || e.key === " ") { e.preventDefault(); if (items[at]) pick(items[at].value); }
+  };
+  return (
+    <div ref={box} className="relative">
+      <button type="button" aria-haspopup="listbox" aria-expanded={open} aria-label={label} onClick={() => (open ? setOpen(false) : show())} onKeyDown={key}
+              className={`group flex w-full cursor-pointer items-center text-left transition-colors hover:border-accent/50 focus-visible:border-accent ${open ? "border-accent/70" : ""} ${className}`}>
+        {children}
+        <Icon name="down" size={14} className={`shrink-0 text-faint transition-transform group-hover:text-ink ${open ? "rotate-180 text-ink" : ""}`} />
+      </button>
+      {open && createPortal(
+        <ul ref={list} role="listbox" aria-label={label} style={{ left: place.left, top: place.top, width: Math.max(280, place.width) }}
+            className="pop fixed z-50 max-h-80 overflow-auto rounded-xl border border-line bg-surface p-1 shadow-[0_12px_40px_-8px_rgba(0,0,0,.8)]">
+          {items.map((it, i) => (
+            <li key={it.value} role="option" aria-selected={it.value === value} onPointerEnter={() => setAt(i)} onClick={() => pick(it.value)}
+                className={`flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-ui ${i === at ? "bg-white/[0.07]" : ""} ${it.value === value ? "font-semibold text-accent" : "text-ink"}`}>
+              <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${it.dot ?? "bg-faint"}`} />
+              <span className="min-w-0 flex-1 truncate" title={it.label}>{it.label}</span>
+              {it.note && <span className="shrink-0 text-mini font-normal text-faint">{it.note}</span>}
+              {it.value === value && <Icon name="check" size={13} className="shrink-0" />}
+            </li>))}
+        </ul>, document.body)}
+    </div>);
+}
+
+/** A video's state as the dot beside its name. */
+export const TONE_DOT: Record<string, string> = { mute: "bg-faint", cue: "bg-cue", proof: "bg-proof", tally: "bg-tally", ai: "bg-ai", accent: "bg-accent" };

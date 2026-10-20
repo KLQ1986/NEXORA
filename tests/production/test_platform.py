@@ -219,3 +219,39 @@ def test_a_cloud_model_that_cannot_serve_hands_the_work_back_to_the_local_one_an
     strict.orch.set_setting("model_routes", json.dumps({"*": "model.cloud"}))
     with pytest.raises(AdapterError):                                          # a bad answer is the model's fault, not a reason to ask another one silently
         strict.adapters.submit("model", Request("chat", params={"prompt": "x", "json": True}, privacy_class=PrivacyClass.CLOUD_ALLOWED))
+
+
+def test_the_operator_turns_approving_on_their_own_and_off_gate_by_gate(tmp_path):
+    from tests.fakes import FakeImageGen, FakeVideoGen
+    system = build(tmp_path / "data", model=FakeModel(), voice=FakeVoice(), segment_seconds=2.0, generators=[FakeImageGen(), FakeVideoGen()])
+    client = TestClient(create_app(system))
+    system.library.ingest(make_video(tmp_path / "a.mp4", picture=20)); drain(system)
+    system.orch.set_setting("autonomy_level", "0")                                   # whatever the level: the switches are the operator's own
+    assert client.get("/api/v1/autonomy").json()["switches"] == {"clips": False, "renders": False, "pictures": False, "stock": False}
+
+    off = cut(system, client, tmp_path, "Chưa bật", approve_clips=False)
+    assert system.autonomy.tick() == [] and client.get(f"/api/v1/projects/{off}").json()["match"]["status"] == "waiting_review"
+
+    switched = client.post("/api/v1/autonomy/switches", json={"clips": True, "renders": True}).json()["switches"]
+    assert switched == {"clips": True, "renders": True, "pictures": False, "stock": False}             # no record needs earning first
+    assert system.autonomy.tick() == [f"clips:{off}"]
+    client.post(f"/api/v1/projects/{off}/render"); drain(system)
+    view = client.get(f"/api/v1/projects/{off}").json()
+    assert system.autonomy.tick() == [f"approved:{view['renders'][0]['render_id']}"]
+    assert client.get(f"/api/v1/projects/{off}").json()["render"]["status"] == "succeeded"
+    assert {d["actor"] for d in system.orch.decisions("sourcing.match") + system.orch.decisions("edit.render")} == {"policy"}       # the operator's record is untouched
+
+    pid = system.planning.create_project("Mèo")
+    run = system.generation.start(system.planning.save_script(pid, ["Một chú mèo cam ngồi bên cửa sổ."]))
+    drain(system)
+    assert system.autonomy.tick() == [] and system.orch.run_status(run) is RunStatus.WAITING_REVIEW        # paid pictures wait while their switch is off
+    client.post("/api/v1/autonomy/switches", json={"pictures": True})
+    assert system.autonomy.tick() == [f"pictures:{run}"]; drain(system)
+    assert system.autonomy.tick() == [f"pictures:{run}"] and system.orch.run_status(run) is RunStatus.SUCCEEDED
+
+    client.post("/api/v1/autonomy/switches", json={"clips": False, "renders": False, "pictures": False})
+    later = cut(system, client, tmp_path, "Đã tắt", approve_clips=False)
+    assert system.autonomy.tick() == [] and client.get(f"/api/v1/projects/{later}").json()["match"]["status"] == "waiting_review"
+    system.orch.set_kill_switch(True)
+    client.post("/api/v1/autonomy/switches", json={"clips": True})
+    assert system.autonomy.tick() == []                                                # the kill switch first, always

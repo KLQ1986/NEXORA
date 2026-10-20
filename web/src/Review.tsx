@@ -131,8 +131,8 @@ function Gallery({ projects }: { projects: Project[] | null }) {
                   <span className="absolute inset-0 grid place-items-center opacity-0 transition-opacity duration-200 group-hover:opacity-100"><span className="grid h-12 w-12 place-items-center rounded-full bg-white/90 text-canvas shadow-lg"><Icon name="play" size={20} /></span></span>
                 </span>
                 <span className="block px-4 pb-4 pt-3">
-                  <span className="block truncate text-[15px] font-medium">{r.render.package?.title || r.project.title}</span>
-                  <span className="mt-1 flex flex-wrap items-center gap-x-2.5 text-[12px] text-faint">
+                  <span className="block truncate text-title font-medium">{r.render.package?.title || r.project.title}</span>
+                  <span className="mt-1 flex flex-wrap items-center gap-x-2.5 text-mini text-faint">
                     <span>{tv`Bản ${r.version}/${r.of}`}</span><span className="mono">{when(r.render.created_at)}</span>
                     <span className={q.passed ? "text-proof" : "text-tally"}>{q.passed ? tr("QC đạt") : tr("QC chưa đạt")}</span>
                     {notes > 0 && <span className="text-cue">{tv`${notes} điểm nên xem`}</span>}
@@ -262,7 +262,7 @@ function Screening({ reel, siblings }: { reel: Reel; siblings: Reel[] }) {
     { key: "review", label: tr("Duyệt"), icon: "check", dot: reel.verdict === "waiting" ? "bg-cue" : undefined }, { key: "lineage", label: tr("Nguồn gốc"), icon: "layers" },
   ];
   const btn = "btn grid h-9 w-9 place-items-center rounded-lg text-mute hover:bg-raised hover:text-ink";
-  const pill = "btn inline-flex h-8 items-center gap-1.5 rounded-lg border border-edge bg-raised px-3 text-[12.5px] hover:bg-overlay";
+  const pill = "btn inline-flex h-8 items-center gap-1.5 rounded-lg border border-edge bg-raised px-3 text-meta hover:bg-overlay";
   const facts: [string, string, string, string][] = [
     [tr("Thời lượng"), timecode(total), "clock", ""], [tr("Dựng lúc"), when(render.created_at), "scissors", ""],
     [tr("Kiểm tra"), render.qc.passed ? tr("Đạt") : tr("Chưa đạt"), "shield", render.qc.passed ? "text-proof" : "text-tally"],
@@ -277,21 +277,21 @@ function Screening({ reel, siblings }: { reel: Reel; siblings: Reel[] }) {
       <div className="min-w-0 shrink-0 lg:min-h-0 lg:flex-1 lg:shrink lg:overflow-y-auto">
         <div className="mx-auto w-full max-w-[1500px] px-4 pb-10 pt-4 md:px-8">
           <div className="mb-3 flex flex-wrap items-center gap-2">
-            <button type="button" onClick={() => go("/phong-chieu")} className="flex items-center gap-1 text-[12.5px] text-mute hover:text-ink"><Icon name="back" size={14} />{tr("Phòng chiếu")}</button>
+            <button type="button" onClick={() => go("/phong-chieu")} className="flex items-center gap-1 text-meta text-mute hover:text-ink"><Icon name="back" size={14} />{tr("Phòng chiếu")}</button>
             <span className="text-faint">/</span>
-            <button type="button" onClick={() => go(`/du-an/${p.project_id}`)} className="max-w-[40ch] truncate text-[12.5px] text-mute hover:text-ink">{p.title}</button>
+            <button type="button" onClick={() => go(`/du-an/${p.project_id}`)} className="max-w-[40ch] truncate text-meta text-mute hover:text-ink">{p.title}</button>
             <span className="ml-auto" />
             {siblings.length > 1 && (
               <div className="scroll-x flex max-w-full gap-1 rounded-lg border border-line bg-canvas p-1" role="tablist" aria-label={tr("Các bản dựng của dự án")}>
                 {siblings.map((s) => (
                   <button key={s.render.render_id} type="button" role="tab" aria-selected={s.render.render_id === render.render_id} onClick={() => go(`/phong-chieu?r=${s.render.render_id}`)} title={`${VERDICT[s.verdict].label} · ${when(s.render.created_at)}`}
-                          className={`flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-[12px] ${s.render.render_id === render.render_id ? "bg-overlay font-medium text-ink" : "text-mute hover:text-ink"}`}>
+                          className={`flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-mini ${s.render.render_id === render.render_id ? "bg-overlay font-medium text-ink" : "text-mute hover:text-ink"}`}>
                     <span className={`h-1.5 w-1.5 rounded-full ${DOT[VERDICT[s.verdict].tone]}`} />{tv`Bản ${s.version}`}
                   </button>
                 ))}
               </div>
             )}
-            <a href={render.url} download className={`${pill} !h-9 !text-[13px]`}><Icon name="download" size={14} />{tr("Tải video")}</a>
+            <a href={render.url} download className={`${pill} !h-9 !text-ui`}><Icon name="download" size={14} />{tr("Tải video")}</a>
           </div>
 
           {/* The stage: black, the picture alone. */}
@@ -319,12 +319,12 @@ function Screening({ reel, siblings }: { reel: Reel; siblings: Reel[] }) {
                   <Wave peaks={peaks} tone="text-edge" />
                   <div className="absolute inset-0" style={{ clipPath: `inset(0 ${100 - Math.min(100, (t / total) * 100)}% 0 0)` }}><Wave peaks={peaks} tone="text-accent" /></div>
                 </>}
-                {peaks && peaks.length === 0 && <span className="absolute inset-0 grid place-items-center text-[11.5px] text-faint">{tr("Bản dựng này không có tiếng")}</span>}
+                {peaks && peaks.length === 0 && <span className="absolute inset-0 grid place-items-center text-mini text-faint">{tr("Bản dựng này không có tiếng")}</span>}
               </div>
               <div className="relative mt-1.5 h-9">
                 {shots.map((s) => (
                   <div key={s.n} className={`absolute inset-y-0 overflow-hidden rounded-[5px] border-x border-surface transition-colors ${s.gap ? "hatch-cue bg-raised" : current?.n === s.n ? "bg-accent/35" : s.n % 2 ? "bg-overlay" : "bg-raised"}`} style={{ left: pct(s.start), width: pct(s.end - s.start) }}>
-                    <span className={`mono absolute left-1.5 top-1/2 -translate-y-1/2 text-[10px] ${current?.n === s.n ? "text-ink" : "text-faint"}`}>{s.n}</span>
+                    <span className={`mono absolute left-1.5 top-1/2 -translate-y-1/2 text-mini ${current?.n === s.n ? "text-ink" : "text-faint"}`}>{s.n}</span>
                   </div>
                 ))}
                 {findings.map((f, i) => { const s = shots[f.shot - 1]; return s ? <span key={`f${i}`} title={`${f.check}: ${f.text}`} className={`absolute top-0 h-2 w-2 -translate-x-1/2 rotate-45 rounded-[2px] ${f.severity === "cao" ? "bg-cue" : "bg-ai"}`} style={{ left: pct(s.start + Math.min(0.3, (s.end - s.start) / 2)) }} /> : null; })}
@@ -335,12 +335,12 @@ function Screening({ reel, siblings }: { reel: Reel; siblings: Reel[] }) {
                 <div className="pointer-events-none absolute bottom-full z-20 mb-2 -translate-x-1/2" style={{ left: `clamp(80px, ${pct(hoverT)}, calc(100% - 80px))` }}>
                   <div className="dialog w-40 overflow-hidden !animate-none">
                     {hoverShot?.thumb ? <img src={hoverShot.thumb} alt="" className="aspect-video w-full object-cover" /> : <div className="hatch aspect-video bg-raised" />}
-                    <p className="flex items-center justify-between px-2 py-1 text-[11px]"><span className="mono">{timecode(hoverT)}</span>{hoverShot && <span className="text-faint">{tv`Cảnh ${hoverShot.n}`}</span>}</p>
+                    <p className="flex items-center justify-between px-2 py-1 text-mini"><span className="mono">{timecode(hoverT)}</span>{hoverShot && <span className="text-faint">{tv`Cảnh ${hoverShot.n}`}</span>}</p>
                   </div>
                 </div>
               )}
             </div>
-            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11.5px] text-faint">
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-mini text-faint">
               <span className="flex items-center gap-1.5"><span className="h-0.5 w-3 rounded bg-accent" />{tr("Âm thanh")}</span>
               <span className="flex items-center gap-1.5"><span className="h-2 w-3 rounded-sm bg-overlay" />{tr("Cảnh")}</span>
               {findings.length > 0 && <span className="flex items-center gap-1.5"><span className="h-2 w-2 rotate-45 rounded-[2px] bg-cue" />{tr("Nên xem lại")}</span>}
@@ -359,7 +359,7 @@ function Screening({ reel, siblings }: { reel: Reel; siblings: Reel[] }) {
               <button type="button" className={btn} onClick={() => jumpShot(1)} title={tr("Cảnh sau (↓)")} aria-label={tr("Cảnh sau")}><Icon name="skipfwd" size={17} /></button>
               <button type="button" className={`${btn} ${loop ? "!bg-accent/15 !text-accent" : ""}`} onClick={() => setLoop(!loop)} aria-pressed={loop} title={tr("Lặp lại cảnh đang xem")} aria-label={tr("Lặp lại cảnh")}><Icon name="loop" size={17} /></button>
             </div>
-            <p className="mono whitespace-nowrap text-[16px] font-medium tracking-tight">{total < 3600 ? longTc(t).slice(3) : longTc(t)} <span className="text-faint">/ {total < 3600 ? longTc(total).slice(3) : longTc(total)}</span></p>
+            <p className="mono whitespace-nowrap text-page font-medium tracking-tight">{total < 3600 ? longTc(t).slice(3) : longTc(t)} <span className="text-faint">/ {total < 3600 ? longTc(total).slice(3) : longTc(total)}</span></p>
             <div className="ml-auto [&_.seg>button]:px-2"><Seg label={tr("Tốc độ phát")} value={speed} onChange={setSpeed} items={SPEEDS} /></div>
             <div className="flex items-center gap-0.5">
               <button type="button" className={btn} onClick={mark} title={tr("Ghi mốc nhận xét (N)")} aria-label={tr("Ghi mốc nhận xét")}><Icon name="comment" size={16} /></button>
@@ -371,17 +371,17 @@ function Screening({ reel, siblings }: { reel: Reel; siblings: Reel[] }) {
           {/* What this cut is */}
           <div className="mt-8 grid gap-6 2xl:grid-cols-[minmax(0,1fr)_auto]">
             <div className="min-w-0">
-              <h1 className="text-[26px] font-semibold leading-tight tracking-tight md:text-[30px]">{title}</h1>
-              <p className="mt-2 max-w-3xl text-[14px] leading-relaxed text-mute">{pkg?.description || tv`Bản dựng ${reel.version} của “${p.title}”, ${shots.length} cảnh, dài ${timecode(total)}.`}</p>
-              <div className="mt-4 flex flex-wrap gap-2">{tags.map((x) => <span key={x} className="rounded-md border border-line bg-raised px-2.5 py-1 text-[12.5px] text-mute">#{x.toLowerCase().replace(/\s+/g, "-")}</span>)}</div>
+              <h1 className="text-kpi-l font-semibold leading-tight tracking-tight md:text-kpi-xl">{title}</h1>
+              <p className="mt-2 max-w-3xl text-body leading-relaxed text-mute">{pkg?.description || tv`Bản dựng ${reel.version} của “${p.title}”, ${shots.length} cảnh, dài ${timecode(total)}.`}</p>
+              <div className="mt-4 flex flex-wrap gap-2">{tags.map((x) => <span key={x} className="rounded-md border border-line bg-raised px-2.5 py-1 text-meta text-mute">#{x.toLowerCase().replace(/\s+/g, "-")}</span>)}</div>
             </div>
             <dl className="grid grid-cols-2 gap-2 self-start sm:grid-cols-4 2xl:grid-cols-2">
               {facts.map(([k, val, icon, tone]) => (
-                <div key={k} className="panel-raised min-w-[132px] px-3 py-2.5"><dt className="eyebrow flex items-center gap-1.5 !text-[10px]"><Icon name={icon} size={12} />{k}</dt><dd className={`mono mt-1 text-[14px] ${tone}`}>{val}</dd></div>
+                <div key={k} className="panel-raised min-w-[132px] px-3 py-2.5"><dt className="eyebrow flex items-center gap-1.5 !text-mini"><Icon name={icon} size={12} />{k}</dt><dd className={`mono mt-1 text-body ${tone}`}>{val}</dd></div>
               ))}
             </dl>
           </div>
-          <p className="mt-8 hidden flex-wrap gap-x-4 gap-y-1 text-[11.5px] text-faint md:flex">
+          <p className="mt-8 hidden flex-wrap gap-x-4 gap-y-1 text-mini text-faint md:flex">
             {KEYS.map(([k, w]) => <span key={k}><kbd className="mono rounded border border-line px-1">{k}</kbd> {w}</span>)}
           </p>
         </div>
@@ -392,7 +392,7 @@ function Screening({ reel, siblings }: { reel: Reel; siblings: Reel[] }) {
         <div className="grid grid-cols-5 gap-1 border-b border-line p-2" role="tablist">
           {PANELS.map((x) => (
             <button key={x.key} type="button" role="tab" aria-selected={panel === x.key} onClick={() => setPanel(x.key)}
-                    className={`relative flex flex-col items-center gap-1 rounded-lg py-2 text-[11.5px] transition-colors ${panel === x.key ? "bg-raised font-medium text-accent" : "text-mute hover:bg-raised/60 hover:text-ink"}`}>
+                    className={`relative flex flex-col items-center gap-1 rounded-lg py-2 text-mini transition-colors ${panel === x.key ? "bg-raised font-medium text-accent" : "text-mute hover:bg-raised/60 hover:text-ink"}`}>
               <Icon name={x.icon} size={17} />{x.label}{x.dot && <span className={`absolute right-[22%] top-1.5 h-1.5 w-1.5 rounded-full ${x.dot}`} />}
             </button>
           ))}
@@ -401,7 +401,7 @@ function Screening({ reel, siblings }: { reel: Reel; siblings: Reel[] }) {
         {panel === "scenes" && (
           <div className="flex items-center gap-2 border-b border-line p-3">
             <span className="relative min-w-0 flex-1"><Icon name="search" size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint" />
-              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={tr("Tìm trong bản dựng…")} aria-label={tr("Tìm cảnh")} className="h-9 w-full pl-9 pr-3 text-[13px]" /></span>
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={tr("Tìm trong bản dựng…")} aria-label={tr("Tìm cảnh")} className="h-9 w-full pl-9 pr-3 text-ui" /></span>
             <div className="seg" role="radiogroup" aria-label={tr("Cách xem")}>
               <button type="button" role="radio" aria-checked={!grid} onClick={() => setGrid(false)} aria-label={tr("Danh sách")}><Icon name="list" size={14} /></button>
               <button type="button" role="radio" aria-checked={grid} onClick={() => setGrid(true)} aria-label={tr("Lưới")}><Icon name="grid" size={14} /></button>
@@ -412,8 +412,8 @@ function Screening({ reel, siblings }: { reel: Reel; siblings: Reel[] }) {
         <div ref={list} className="p-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto" onWheel={() => { if (playing) setFollow(false); }}>
           {panel === "scenes" && (
             <>
-              {!follow && playing && <button type="button" onClick={() => setFollow(true)} className="sticky top-0 z-10 mb-2 flex w-full items-center justify-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-medium text-canvas shadow-lg"><Icon name="down" size={13} />{tr("Theo cảnh đang phát")}</button>}
-              {shots.length === 0 && <p className="px-2 py-6 text-center text-[13px] text-mute">{tr("Bản dựng này được làm trước khi hệ thống ghi lại từng cảnh. Dựng lại để xem theo cảnh.")}</p>}
+              {!follow && playing && <button type="button" onClick={() => setFollow(true)} className="sticky top-0 z-10 mb-2 flex w-full items-center justify-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-mini font-medium text-canvas shadow-lg"><Icon name="down" size={13} />{tr("Theo cảnh đang phát")}</button>}
+              {shots.length === 0 && <p className="px-2 py-6 text-center text-ui text-mute">{tr("Bản dựng này được làm trước khi hệ thống ghi lại từng cảnh. Dựng lại để xem theo cảnh.")}</p>}
               <ol className={grid ? "grid grid-cols-2 gap-2" : "grid gap-2"}>
                 {matching.map((s) => {
                   const on = current?.n === s.n;
@@ -423,13 +423,13 @@ function Screening({ reel, siblings }: { reel: Reel; siblings: Reel[] }) {
                               className={`group w-full rounded-xl border p-2 text-left transition-colors ${on ? "border-accent/60 bg-accent/[0.07]" : "border-line bg-raised/40 hover:border-edge hover:bg-raised"} ${grid ? "" : "flex gap-3"}`}>
                         <span className={`relative block shrink-0 overflow-hidden rounded-lg bg-black ${grid ? "w-full" : "w-[128px]"}`}>
                           {s.thumb ? <img src={s.thumb} alt="" loading="lazy" className="aspect-video w-full object-cover transition-transform duration-300 group-hover:scale-[1.04]" /> : <span className={`block aspect-video ${s.gap ? "hatch-cue bg-raised" : "hatch bg-raised"}`} />}
-                          <TimeChip className="absolute bottom-1 left-1 !h-[18px] !px-1.5 !text-[10px]">{longTc(s.start).slice(3, 8)}</TimeChip>
+                          <TimeChip className="absolute bottom-1 left-1 !h-[18px] !px-1.5 !text-mini">{longTc(s.start).slice(3, 8)}</TimeChip>
                           {on && playing && <span className="absolute right-1 top-1 flex h-[18px] items-end gap-[2px] rounded bg-black/60 px-1 pb-[3px]">{[0, 1, 2].map((k) => <span key={k} className="eq w-[2px] rounded-full bg-accent" style={{ animationDelay: `${k * 0.15}s` }} />)}</span>}
                         </span>
                         <span className={`block min-w-0 ${grid ? "mt-2 px-0.5" : "py-0.5"}`}>
-                          <span className={`block truncate text-[13px] font-medium leading-snug ${on ? "text-accent" : ""}`}>{s.scene ? `${s.scene} · ` : ""}{tv`Cảnh ${String(s.n).padStart(2, "0")}`}</span>
-                          <span className={`mt-0.5 block text-[12.5px] leading-relaxed text-mute ${grid ? "line-clamp-2" : "line-clamp-3"}`}>{s.text}</span>
-                          {!grid && <span className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[10.5px]">
+                          <span className={`block truncate text-ui font-medium leading-snug ${on ? "text-accent" : ""}`}>{s.scene ? `${s.scene} · ` : ""}{tv`Cảnh ${String(s.n).padStart(2, "0")}`}</span>
+                          <span className={`mt-0.5 block text-meta leading-relaxed text-mute ${grid ? "line-clamp-2" : "line-clamp-3"}`}>{s.text}</span>
+                          {!grid && <span className="mt-1.5 flex flex-wrap items-center gap-1.5 text-mini">
                             <span className="mono rounded bg-overlay px-1.5 py-0.5 text-faint">{(s.end - s.start).toFixed(1)}s</span>
                             {s.gap ? <span className="rounded bg-cue/12 px-1.5 py-0.5 text-cue">{tr("THIẾU HÌNH")}</span> : s.source && <span className="max-w-[160px] truncate rounded bg-overlay px-1.5 py-0.5 text-faint">{s.source}</span>}
                             {findings.some((f) => f.shot === s.n) && <span className="rounded bg-cue/12 px-1.5 py-0.5 text-cue">{tr("NÊN XEM")}</span>}
@@ -440,7 +440,7 @@ function Screening({ reel, siblings }: { reel: Reel; siblings: Reel[] }) {
                   );
                 })}
               </ol>
-              {needle && matching.length === 0 && <p className="px-2 py-6 text-center text-[13px] text-mute">{tv`Không có cảnh nào chứa “${query}”.`}</p>}
+              {needle && matching.length === 0 && <p className="px-2 py-6 text-center text-ui text-mute">{tv`Không có cảnh nào chứa “${query}”.`}</p>}
             </>
           )}
 
@@ -449,7 +449,7 @@ function Screening({ reel, siblings }: { reel: Reel; siblings: Reel[] }) {
               <div className="mb-3 flex items-center gap-2 px-1">
                 <p className="eyebrow flex-1">{tr("Lời dẫn theo thời gian")}</p>
                 <Button size="sm" kind="quiet" onClick={() => { void navigator.clipboard?.writeText(shots.map((s) => s.text).join("\n")); toast(tr("Đã chép toàn bộ lời dẫn.")); }}><Icon name="copy" size={13} />{tr("Chép")}</Button>
-                {pkg && <a className="btn inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[12.5px] text-mute hover:bg-raised hover:text-ink" href={`/api/v1/renders/${render.render_id}/package/${pkg.captions}`} download><Icon name="download" size={13} />SRT</a>}
+                {pkg && <a className="btn inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-meta text-mute hover:bg-raised hover:text-ink" href={`/api/v1/renders/${render.render_id}/package/${pkg.captions}`} download><Icon name="download" size={13} />SRT</a>}
               </div>
               <ol className="grid gap-0.5">
                 {shots.map((s) => {
@@ -457,10 +457,10 @@ function Screening({ reel, siblings }: { reel: Reel; siblings: Reel[] }) {
                   return (
                     <li key={s.n} data-n={s.n}>
                       <button type="button" onClick={() => seek(s.start + 0.001)} className={`grid w-full grid-cols-[52px_minmax(0,1fr)] gap-3 rounded-lg px-2 py-2 text-left transition-colors ${on ? "bg-accent/[0.08]" : "hover:bg-raised/60"}`}>
-                        <span className={`mono pt-0.5 text-[11.5px] ${on ? "text-accent" : "text-faint"}`}>{timecode(s.start)}</span>
-                        <span className={`text-[14px] leading-relaxed transition-colors duration-300 ${on ? "text-ink" : t > s.end ? "text-mute" : "text-faint"}`}>
+                        <span className={`mono pt-0.5 text-mini ${on ? "text-accent" : "text-faint"}`}>{timecode(s.start)}</span>
+                        <span className={`text-body leading-relaxed transition-colors duration-300 ${on ? "text-ink" : t > s.end ? "text-mute" : "text-faint"}`}>
                           {s.scene && s.scene !== shots[s.n - 2]?.scene && <span className="eyebrow mb-1 block !text-accent">{s.scene}</span>}
-                          {s.text}{s.own && <span className="ml-2 align-middle text-[10.5px] text-proof">● {tr("giọng bạn")}</span>}
+                          {s.text}{s.own && <span className="ml-2 align-middle text-mini text-proof">● {tr("giọng bạn")}</span>}
                         </span>
                       </button>
                     </li>
@@ -468,7 +468,7 @@ function Screening({ reel, siblings }: { reel: Reel; siblings: Reel[] }) {
                 })}
               </ol>
               {pkg?.translations && Object.keys(pkg.translations).length > 0 && (
-                <p className="mt-4 flex flex-wrap gap-2 px-2 text-[12px] text-mute">{tr("Bản dịch phụ đề:")}{Object.entries(pkg.translations).map(([lang, file]) => <a key={lang} className="link" href={`/api/v1/renders/${render.render_id}/package/${file}`} download>{lang}</a>)}</p>
+                <p className="mt-4 flex flex-wrap gap-2 px-2 text-mini text-mute">{tr("Bản dịch phụ đề:")}{Object.entries(pkg.translations).map(([lang, file]) => <a key={lang} className="link" href={`/api/v1/renders/${render.render_id}/package/${file}`} download>{lang}</a>)}</p>
               )}
             </div>
           )}
@@ -478,24 +478,24 @@ function Screening({ reel, siblings }: { reel: Reel; siblings: Reel[] }) {
               <div className="panel-raised overflow-hidden">
                 <p className="flex items-center justify-between border-b border-line px-3.5 py-2.5"><span className="eyebrow">{tr("Kiểm tra tự động")}</span><Tag tone={render.qc.passed ? "proof" : "tally"}>{render.qc.passed ? tr("Đạt") : tr("Chưa đạt")}</Tag></p>
                 <ul className="rows">
-                  {Object.entries(render.qc.checks).map(([name, ok]) => <li key={name} className="flex items-center justify-between gap-3 px-3.5 py-2 text-[13px]"><span>{name}</span><Icon name={ok ? "check" : "x"} size={15} className={ok ? "text-proof" : "text-tally"} /></li>)}
-                  {render.qc.gaps > 0 && <li className="flex items-center justify-between gap-3 px-3.5 py-2 text-[13px]"><span>{tr("Câu dùng nền trơn vì thiếu hình")}</span><span className="mono text-cue">{render.qc.gaps}</span></li>}
+                  {Object.entries(render.qc.checks).map(([name, ok]) => <li key={name} className="flex items-center justify-between gap-3 px-3.5 py-2 text-ui"><span>{name}</span><Icon name={ok ? "check" : "x"} size={15} className={ok ? "text-proof" : "text-tally"} /></li>)}
+                  {render.qc.gaps > 0 && <li className="flex items-center justify-between gap-3 px-3.5 py-2 text-ui"><span>{tr("Câu dùng nền trơn vì thiếu hình")}</span><span className="mono text-cue">{render.qc.gaps}</span></li>}
                 </ul>
               </div>
               <div className="ai-card p-3.5">
-                <div className="flex items-center gap-2"><Icon name="sparkles" size={15} className="text-ai" /><span className="flex-1 text-[13px] font-medium">{tr("AI xem như người xem")}</span>
+                <div className="flex items-center gap-2"><Icon name="sparkles" size={15} className="text-ai" /><span className="flex-1 text-ui font-medium">{tr("AI xem như người xem")}</span>
                   <Button size="sm" kind="ai" busy={busy === "watch"} onClick={watchAgain}>{render.qc.viewer ? tr("Xem lại") : tr("Cho AI xem")}</Button></div>
-                <p className="mt-1 text-[12px] text-mute">{render.qc.viewer ? tv`Đã xem ${render.qc.viewer.judged} trên ${render.qc.viewer.of} cảnh có hình.` : tr("Mô hình nhìn từng cảnh và so với lời dẫn: mở đầu, nhịp, lặp, hình có khớp lời không.")}</p>
+                <p className="mt-1 text-mini text-mute">{render.qc.viewer ? tv`Đã xem ${render.qc.viewer.judged} trên ${render.qc.viewer.of} cảnh có hình.` : tr("Mô hình nhìn từng cảnh và so với lời dẫn: mở đầu, nhịp, lặp, hình có khớp lời không.")}</p>
               </div>
-              {findings.length === 0 ? <p className="flex items-center gap-2 px-1 text-[13px] text-proof"><Icon name="check" size={15} />{tr("Không có điểm nào cần xem lại.")}</p> : (
+              {findings.length === 0 ? <p className="flex items-center gap-2 px-1 text-ui text-proof"><Icon name="check" size={15} />{tr("Không có điểm nào cần xem lại.")}</p> : (
                 <div>
                   <p className="eyebrow mb-2 px-1">{tv`Nên xem lại · ${findings.length}`}</p>
                   <ul className="grid gap-2">
                     {findings.map((f, i) => { const s = shots[f.shot - 1]; return (
-                      <li key={i}><button type="button" onClick={() => { if (s) seek(s.start + 0.001); }} className="w-full rounded-xl border border-line bg-raised/40 p-3 text-left text-[13px] transition-colors hover:border-edge">
+                      <li key={i}><button type="button" onClick={() => { if (s) seek(s.start + 0.001); }} className="w-full rounded-xl border border-line bg-raised/40 p-3 text-left text-ui transition-colors hover:border-edge">
                         <span className="mb-1 flex items-center gap-2"><span className={`h-2 w-2 rotate-45 rounded-[2px] ${f.severity === "cao" ? "bg-cue" : "bg-ai"}`} /><span className="font-medium">{f.check}</span>
-                          <span className="ml-auto flex items-center gap-1.5 text-[11px] text-faint">{f.by}{s && <TimeChip className="!h-[18px] !text-[10px]">{timecode(s.start)}</TimeChip>}</span></span>
-                        <span className="block text-mute">{tv`Cảnh ${f.shot}: ${f.text}`}</span>{f.fix && <span className="mt-1 block text-[12px] text-faint">→ {f.fix}</span>}
+                          <span className="ml-auto flex items-center gap-1.5 text-mini text-faint">{f.by}{s && <TimeChip className="!h-[18px] !text-mini">{timecode(s.start)}</TimeChip>}</span></span>
+                        <span className="block text-mute">{tv`Cảnh ${f.shot}: ${f.text}`}</span>{f.fix && <span className="mt-1 block text-mini text-faint">→ {f.fix}</span>}
                       </button></li>); })}
                   </ul>
                 </div>
@@ -506,22 +506,22 @@ function Screening({ reel, siblings }: { reel: Reel; siblings: Reel[] }) {
           {panel === "review" && (
             <div className="grid gap-4">
               <div className={`rounded-xl border p-4 ${reel.verdict === "waiting" ? "cue-card" : "border-line bg-raised/40"}`}>
-                <p className="flex items-center gap-2"><Tag tone={v.tone}>{v.label}</Tag>{render.review && <span className="mono text-[11.5px] text-faint">{when(render.review.at)}</span>}</p>
-                {reel.verdict === "open" && <p className="mt-2 text-[12.5px] text-mute">{tr("Đây là bản cũ, đã có bản dựng mới hơn. Chỉ bản mới nhất đang chờ mới duyệt được.")}</p>}
+                <p className="flex items-center gap-2"><Tag tone={v.tone}>{v.label}</Tag>{render.review && <span className="mono text-mini text-faint">{when(render.review.at)}</span>}</p>
+                {reel.verdict === "open" && <p className="mt-2 text-meta text-mute">{tr("Đây là bản cũ, đã có bản dựng mới hơn. Chỉ bản mới nhất đang chờ mới duyệt được.")}</p>}
                 {render.review?.comment && (
-                  <div className="mt-3 text-[13px] leading-relaxed">
+                  <div className="mt-3 text-ui leading-relaxed">
                     {render.review.comment.split(/(\d{1,2}:\d{2}(?:\.\d{1,3})?)/).map((part, i) => /^\d{1,2}:\d{2}/.test(part)
-                      ? <button key={i} type="button" onClick={() => seek(marksIn(part)[0]?.at ?? 0)} className="mono mx-0.5 rounded bg-tally/15 px-1.5 text-[12px] text-tally hover:bg-tally/25">{part}</button> : <span key={i}>{part}</span>)}
+                      ? <button key={i} type="button" onClick={() => seek(marksIn(part)[0]?.at ?? 0)} className="mono mx-0.5 rounded bg-tally/15 px-1.5 text-mini text-tally hover:bg-tally/25">{part}</button> : <span key={i}>{part}</span>)}
                   </div>
                 )}
               </div>
               {reel.verdict === "waiting" && (
                 <div className="grid gap-3">
                   <label htmlFor="rv-note" className="field-label !mb-0">{tr("Nhận xét theo mốc thời gian")}</label>
-                  <textarea id="rv-note" value={note} onChange={(e) => setNote(e.target.value)} rows={5} placeholder={tr("0:07 cảnh xay cà phê bị tối, đổi cảnh khác\n0:12 lời dẫn đọc nhanh quá")} className="w-full p-3 text-[13px] leading-relaxed" />
+                  <textarea id="rv-note" value={note} onChange={(e) => setNote(e.target.value)} rows={5} placeholder={tr("0:07 cảnh xay cà phê bị tối, đổi cảnh khác\n0:12 lời dẫn đọc nhanh quá")} className="w-full p-3 text-ui leading-relaxed" />
                   <div className="flex flex-wrap items-center gap-2">
                     <Button size="sm" onClick={mark}><Icon name="clock" size={13} />{tv`Ghi mốc ${timecode(t)}`}</Button>
-                    <span className="text-[11.5px] text-faint">{tr("hoặc bấm N khi đang xem")}</span>
+                    <span className="text-mini text-faint">{tr("hoặc bấm N khi đang xem")}</span>
                   </div>
                   <div className="mt-2 grid grid-cols-2 gap-2">
                     <Button busy={busy === "reject"} disabled={!!busy} onClick={() => decide(false)}><Icon name="refresh" size={14} />{tr("Chưa được, dựng lại")}</Button>
@@ -531,7 +531,7 @@ function Screening({ reel, siblings }: { reel: Reel; siblings: Reel[] }) {
               )}
               {reel.verdict !== "waiting" && <Button onClick={() => go(`/du-an/${p.project_id}`)}><Icon name="clapper" size={14} />{tr("Mở dự án để sửa và dựng lại")}</Button>}
               {rights && !rights.clear && (
-                <div className="cue-card p-3.5 text-[12.5px]"><p className="mb-1 flex items-center gap-2 font-medium text-cue"><Icon name="alert" size={14} />{tr("Bản quyền cần xử lý trước khi đăng")}</p>
+                <div className="cue-card p-3.5 text-meta"><p className="mb-1 flex items-center gap-2 font-medium text-cue"><Icon name="alert" size={14} />{tr("Bản quyền cần xử lý trước khi đăng")}</p>
                   <ul className="grid gap-1 text-mute">{rights.blockers.map((b) => <li key={b}>• {b}</li>)}</ul></div>
               )}
             </div>
@@ -544,10 +544,10 @@ function Screening({ reel, siblings }: { reel: Reel; siblings: Reel[] }) {
                 <a className={pill} href={`/api/v1/renders/${render.render_id}/otio`} download><Icon name="download" size={13} />OpenTimelineIO</a>
               </div>
               {!lineage && <div className="grid gap-2 p-1"><Skeleton lines={3} /><Skeleton lines={3} /></div>}
-              {lineage && <p className="px-1 text-[12px] text-faint">{tv`Kịch bản phiên bản ${lineage.script.version}`} · <span className="mono break-all">{lineage.file.split("/").slice(-2).join("/")}</span></p>}
+              {lineage && <p className="px-1 text-mini text-faint">{tv`Kịch bản phiên bản ${lineage.script.version}`} · <span className="mono break-all">{lineage.file.split("/").slice(-2).join("/")}</span></p>}
               {lineage?.shots.map((s) => (
-                <button key={s.line} type="button" onClick={() => { if (shots[s.line - 1]) seek(shots[s.line - 1].start + 0.001); }} className="rounded-xl border border-line bg-raised/40 p-3 text-left text-[12.5px] hover:border-edge">
-                  <span className="mb-1 flex items-center gap-2"><span className="mono grid h-5 w-6 place-items-center rounded bg-overlay text-[10.5px] text-mute">{s.line}</span><span className="line-clamp-1 flex-1 text-ink">{s.text}</span><span className="mono text-[11px] text-faint">{s.duration.toFixed(1)}s</span></span>
+                <button key={s.line} type="button" onClick={() => { if (shots[s.line - 1]) seek(shots[s.line - 1].start + 0.001); }} className="rounded-xl border border-line bg-raised/40 p-3 text-left text-meta hover:border-edge">
+                  <span className="mb-1 flex items-center gap-2"><span className="mono grid h-5 w-6 place-items-center rounded bg-overlay text-mini text-mute">{s.line}</span><span className="line-clamp-1 flex-1 text-ink">{s.text}</span><span className="mono text-mini text-faint">{s.duration.toFixed(1)}s</span></span>
                   {s.source && <span className="block text-mute"><Icon name="film" size={12} className="mr-1 inline align-[-1px]" />{s.source.name}{s.source.t_in != null && <span className="mono"> @ {timecode(s.source.t_in)}</span>} <span className="text-faint">· {ORIGIN[s.source.origin] ?? s.source.origin}{s.source.rights?.licence ? ` · ${s.source.rights.licence}` : ""}</span></span>}
                   {s.generated?.map((g, k) => <span key={k} className="mt-1 block text-mute"><Icon name="spark" size={12} className="mr-1 inline align-[-1px] text-ai" />{g.provider}{g.model ? ` / ${g.model}` : ""}{g.seed != null && <span className="mono"> · seed {g.seed}</span>}<span className="mt-0.5 line-clamp-2 block text-faint">{g.prompt}</span></span>)}
                   {!s.source && !s.generated && <span className="block text-cue">{tr("Nền trơn, không có hình")}</span>}

@@ -27,7 +27,8 @@ LOCATE_PROMPT = (
     "Đây là {n} khung hình liên tiếp, đánh số từ 1 đến {n}, của một đoạn video. Câu lời dẫn: \"{line}\".\n"
     "Khung hình số mấy cho thấy rõ nhất điều câu này nói? Chỉ trả về JSON với khoá khung (số từ 1 đến {n})."
 )
-MATCH = PipelineDefinition("sourcing.match", "1", [StageDef("match", gate=True, requires=("model",))])
+# A match takes about a minute a line on this Mac when every candidate is looked at: a fifteen-minute script, two hours or more.
+MATCH = PipelineDefinition("sourcing.match", "1", [StageDef("match", gate=True, requires=("model",), timeout_seconds=6 * 3600)])
 WORDS_PER_SECOND = 2.6
 MIN_SECONDS = 2.5
 QUOTE_FOUND = 0.6        # a typed quote is found in the speech that says it this well
@@ -124,10 +125,10 @@ class Sourcing:
     def register(self, registry: PipelineRegistry) -> None:
         registry.register(MATCH, {"match": self._match})
 
-    def start_match(self, script_id: str, *, wait=None) -> str:
+    def start_match(self, script_id: str, *, wait=None, lane: str | None = None) -> str:
         self._projects.set_match_approved(script_id, False)
         self._orch.supersede(MATCH.pipeline_id, script_id)
-        run_id = self._orch.submit_run(MATCH, subject_ref=script_id)
+        run_id = self._orch.submit_run(MATCH, subject_ref=script_id, lane=lane)
         if wait:
             wait()
         return run_id
@@ -223,6 +224,16 @@ class Sourcing:
             c["chosen_before"] = told.get(h.moment.moment_id) == "accepted"
             out.append(c)
         return out
+
+    def look(self, line: str, *, asset_id: str, t_in: float, moment_id: str | None = None) -> tuple[int, str] | None:
+        """The model's look at the frames of one picture against a line (0-10, and why), asked for by the operator on the
+        storyboard; None when the picture has no analysed frames yet (a stock clip still being understood)."""
+        moment = self._index.moment(moment_id) if moment_id else None
+        if moment is None:
+            moment = next((m for m in self._index.moments(asset_id, level="segment") if m.t_start <= t_in < m.t_end), None)
+        if moment is None or not (moment.data.get("frames") or moment.data.get("frame")):
+            return None
+        return self._look(line, type("Hit", (), {"moment": moment})())
 
     def remember(self, line: str, moment_id: str | None, verdict: str, *, asset_id: str | None = None, t_in: float | None = None, t_out: float | None = None) -> None:
         """The operator's verdict on a stretch of footage for these words ("accepted" or "rejected"), kept for every later search."""
@@ -491,8 +502,8 @@ class Sourcing:
         self._projects.set_selection(shot_id, status=sel.status, asset_id=sel.asset_id, moment_id=sel.moment_id, t_in=round(t_in, 2), t_out=round(t_out, 2),
                                      score=sel.score, reason=sel.reason, alternates=sel.alternates, decided_by="operator")
 
-    def approve(self, run_id: str) -> None:
-        """The operator accepts the selections as they stand."""
+    def approve(self, run_id: str, *, actor: str = "operator") -> None:
+        """The operator (or the policy they switched on) accepts the selections as they stand."""
         script_id = self._orch.run_info(run_id)["subject_ref"]
         for sel in self._projects.selections(script_id):
             if sel.moment_id and sel.status in ("proposed", "accepted"):
@@ -501,5 +512,5 @@ class Sourcing:
                 self._projects.set_selection(sel.shot_id, status="accepted", asset_id=sel.asset_id, moment_id=sel.moment_id, t_in=sel.t_in, t_out=sel.t_out,
                                              score=sel.score, reason=sel.reason, alternates=sel.alternates, decided_by=sel.decided_by)
         stage = self._orch.stages(run_id)[0]
-        self._orch.decide_review(stage.stage_id, approve=True)
+        self._orch.decide_review(stage.stage_id, approve=True, actor=actor)
         self._projects.set_match_approved(script_id, True)

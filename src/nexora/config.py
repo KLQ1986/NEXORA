@@ -19,6 +19,8 @@ class Config:
     segment_seconds: float = 15.0
     judge: bool = True
     openmontage_repo: str = "~/openmontage"
+    pexels_api_key: str = ""
+    pixabay_api_key: str = ""
     min_free_gb: float = 2.0
     backups_kept: int = 7
     speech_model: str = "data/models/ggml-large-v3-turbo-q5_0.bin"
@@ -55,6 +57,11 @@ class Config:
     claude_model: str = "claude-haiku-5-5"
     claude_input_price: float = 0.0
     claude_output_price: float = 0.0
+    claude_code_binary: str = ""
+    claude_code_model: str = "opus"
+    claude_code_effort: str = "high"
+    claude_code_chat_seconds: float = 180.0
+    claude_code_research_seconds: float = 900.0
 
     @classmethod
     def load(cls, path: str | Path = "nexora.toml") -> "Config":
@@ -83,6 +90,8 @@ match_threshold = 0.52            # how alike a moment must be to a script line 
 segment_seconds = 15.0            # the longest stretch of footage described as one moment; footage is divided where its content changes
 judge = true                      # let the vision model look at candidate frames before a clip is proposed
 openmontage_repo = "~/openmontage"
+pexels_api_key = ""                # a free key from pexels.com/api adds Pexels to the stock search; PEXELS_API_KEY does the same
+pixabay_api_key = ""               # a free key from pixabay.com/api/docs adds Pixabay videos; PIXABAY_API_KEY does the same
 min_free_gb = 2.0                 # below this much free disk, work that writes large files waits for the operator
 backups_kept = 7                  # how many database backups to keep
 speech_model = "data/models/ggml-large-v3-turbo-q5_0.bin"   # a whisper.cpp model; empty turns speech recognition off
@@ -119,4 +128,9 @@ anthropic_workspace_id = ""       # needed only for a key that is not tied to on
 claude_model = "claude-haiku-5-5"
 claude_input_price = 0.0          # USD per million input tokens, for the cost record; take the figure from your Anthropic price list
 claude_output_price = 0.0         # USD per million output tokens
+claude_code_binary = ""           # Claude Code for writing on your Claude plan; empty: the claude on the path, if any. Log in once by running claude
+claude_code_model = "opus"
+claude_code_effort = "high"
+claude_code_chat_seconds = 180.0
+claude_code_research_seconds = 900.0     # a script from a topic: looking the subject up on the web takes minutes
 """

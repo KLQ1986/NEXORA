@@ -19,8 +19,8 @@ from nexora.core.pipeline import PipelineDefinition, PipelineRegistry, StageDef
 from nexora.core.projects import ProjectStore
 
 RENDER = PipelineDefinition("edit.render", "1", [
-    StageDef("narration", requires=("voice",)),
-    StageDef("segments", depends_on=("narration",), requires=("ffmpeg", "graphics")),
+    StageDef("narration", requires=("voice",), timeout_seconds=3 * 3600),              # a long script from a topic: a hundred lines and more
+    StageDef("segments", depends_on=("narration",), requires=("ffmpeg", "graphics"), timeout_seconds=3 * 3600),
     StageDef("assemble", depends_on=("segments",), gate=True, requires=("ffmpeg", "ffprobe")),
 ])
 FORMATS = {
@@ -102,12 +102,12 @@ class Edit:
             raise ValueError("this shot has no clip yet")
         self._projects.set_extras(shot_id, **clean)
 
-    def start_render(self, script_id: str) -> str:
+    def start_render(self, script_id: str, *, lane: str | None = None) -> str:
         script = self._projects.script(script_id)
         if not script["match_approved"]:
             raise ValueError("the selections of this script have not been approved yet")
         self._orch.supersede(RENDER.pipeline_id, script_id)
-        return self._orch.submit_run(RENDER, subject_ref=script_id)
+        return self._orch.submit_run(RENDER, subject_ref=script_id, lane=lane)
 
     def _narration(self, ctx, preview: bool = False):
         """One audio file per line; without a voice, the length is estimated and the line is silent."""

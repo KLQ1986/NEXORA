@@ -8,6 +8,9 @@ over a blocker, but only by saying why, and the reason is kept with the package.
 from pathlib import Path
 
 
+from nexora.modules.quality.licences import LABELS, SAFE, classify, why_not
+
+
 def rights_report(shots: list[dict], assets: dict[str, dict], *, music: str | None = None, music_cleared: bool = False) -> dict:
     """`shots`: the cut's shots (asset_id, is_fact, source, fact_check, text). `assets`: by asset id, with origin, name and rights.
     Returns {items, blockers, disclosures}."""
@@ -21,10 +24,18 @@ def rights_report(shots: list[dict], assets: dict[str, dict], *, music: str | No
             item = {"asset_id": asset_id, "name": a["name"], "origin": a["origin"], "first_line": n, "license": rights.get("license"), "source_url": rights.get("source_url"),
                     "creator": rights.get("creator"), "ok": True, "note": "Footage của bạn."}
             if a["origin"] == "licensed":
-                item["ok"] = bool(rights.get("license") and rights.get("source_url"))
-                item["note"] = f"Giấy phép: {rights.get('license')}. Nguồn: {rights.get('source_url')}" if item["ok"] else "Clip lấy từ bên ngoài nhưng không có giấy phép hoặc nguồn trong hồ sơ."
-                if not item["ok"]:
+                # What the licence allows, not only that one is written down: a non-commercial, share-alike or unclear licence
+                # stops the video as surely as a missing one (research 2026-10-19).
+                item["licence_class"] = cls = classify(rights.get("license"))
+                item["ok"] = bool(rights.get("license") and rights.get("source_url")) and cls in SAFE
+                if not (rights.get("license") and rights.get("source_url")):
+                    item["note"] = "Clip lấy từ bên ngoài nhưng không có giấy phép hoặc nguồn trong hồ sơ."
                     blockers.append(f"“{a['name']}” (câu {n}) là clip lấy từ bên ngoài mà chưa có giấy phép và nguồn.")
+                elif cls not in SAFE:
+                    item["note"] = f"{LABELS[cls]}: {rights.get('license')}. Nguồn: {rights.get('source_url')}"
+                    blockers.append(f"“{a['name']}” (câu {n}): {why_not(cls)} ({rights.get('license')}).")
+                else:
+                    item["note"] = f"{LABELS[cls]}. Giấy phép: {rights.get('license')}. Nguồn: {rights.get('source_url')}"
             elif a["origin"] == "generated":
                 item["note"] = "Hình sinh bằng AI. Cần ghi rõ khi đăng."
             if a.get("people") and a.get("consent") not in ("given", "not_needed"):

@@ -5,7 +5,8 @@ import { Empty, Icon, OpsSide, Page, Seg, Tag } from "./parts";
 
 export const KIND: Record<string, string> = { model_fallback: tr("Mô hình cloud không dùng được"), autonomy_lowered: tr("Mức tự chủ bị hạ"), metrics_due: tr("Tới mốc ghi số liệu"), disk_low: tr("Ổ đĩa sắp đầy"), volume_offline: tr("Mất nơi chứa footage"), gaps: tr("Thiếu hình"), waiting_review: tr("Chờ bạn duyệt"), blocked: tr("Đang dừng"), failed: tr("Thất bại"), succeeded: tr("Đã xong") };
 export const ICON: Record<string, string> = { model_fallback: "globe", autonomy_lowered: "bolt", metrics_due: "pulse", disk_low: "disk", volume_offline: "folder", gaps: "image", waiting_review: "eye", blocked: "alert", failed: "x", succeeded: "check" };
-export const PIPE: Record<string, string> = { "library.ingest": tr("Nhập footage"), "library.ingest_image": tr("Nhập ảnh"), "library.ingest_audio": tr("Nhập nhạc"), "sourcing.generate": tr("Sinh hình bằng AI"), "library.understand": tr("Xem và mô tả video"), "sourcing.match": tr("Chọn clip cho kịch bản"), "edit.render": tr("Dựng video") };
+// Every pipeline's name, the one list the screens read.
+export const PIPE: Record<string, string> = { "library.ingest": tr("Nhập footage"), "library.ingest_image": tr("Nhập ảnh"), "library.ingest_audio": tr("Nhập nhạc"), "library.understand": tr("Xem và mô tả video"), "library.transcribe": tr("Nghe lời nói trong footage"), "library.profile": tr("Đo và nhận diện footage"), "library.structure": tr("Đo và chia footage thành cú máy, nhịp"), "library.cuts": tr("Tìm chỗ chuyển cảnh"), "library.enhance": tr("Nâng chất lượng clip"), "vq.analyse": tr("Đo chất lượng hình"), "vq.preview": tr("Xem thử chỉnh hình"), "vq.apply": tr("Chỉnh chất lượng hình"), "planning.topic_script": tr("Viết kịch bản theo chủ đề"), "sourcing.match": tr("Chọn clip cho kịch bản"), "sourcing.generate": tr("Sinh hình bằng AI"), "sourcing.train": tr("Huấn luyện mô hình nhân vật"), "edit.render": tr("Dựng video"), "edit.preview": tr("Dựng bản xem thử"), "edit.cut": tr("Xuất bản dựng") };
 
 /** How much a notice asks of the operator: amber waits for you, red has stopped, the rest is a record. */
 export const noticeTone = (k: string) => (k === "waiting_review" || k === "blocked" || k === "gaps" || k === "model_fallback" || k === "autonomy_lowered" || k === "metrics_due" || k === "disk_low" || k === "volume_offline" ? "cue" : k === "failed" ? "tally" : k === "succeeded" ? "proof" : "mute") as "cue" | "tally" | "proof" | "mute";
@@ -39,10 +40,10 @@ export default function Notices() {
                     <span className={`hidden h-8 w-8 place-items-center rounded-lg sm:grid ${tile[t]}`}><Icon name={ICON[n.kind] ?? "bell"} size={15} /></span>
                     <span className="min-w-0">
                       {n.subject_name && <a href={n.link ?? "#"} className={`block truncate hover:underline ${unread ? "font-medium" : ""}`}>{n.subject_name}</a>}
-                      <span className={`block truncate text-[13px] ${n.subject_name ? "text-mute" : unread ? "font-medium" : ""}`}>{PIPE[n.pipeline ?? ""] ?? n.pipeline ?? (n.kind === "volume_offline" ? n.reason : tr("Máy này"))}{n.stage_key ? tv`, bước ${(STAGE_NAMES[n.stage_key] ?? n.stage_key).toLowerCase()}` : ""}{n.reason && n.kind !== "volume_offline" ? ` (${n.kind === "gaps" ? tv`${n.reason} câu chưa có hình` : REASONS[n.reason] ?? n.reason})` : ""}</span>
+                      <span className={`block truncate text-ui ${n.subject_name ? "text-mute" : unread ? "font-medium" : ""}`}>{PIPE[n.pipeline ?? ""] ?? n.pipeline ?? (n.kind === "volume_offline" ? n.reason : tr("Máy này"))}{n.stage_key ? tv`, bước ${(STAGE_NAMES[n.stage_key] ?? n.stage_key).toLowerCase()}` : ""}{n.reason && n.kind !== "volume_offline" ? ` (${n.kind === "gaps" ? tv`${n.reason} câu chưa có hình` : REASONS[n.reason] ?? n.reason})` : ""}</span>
                     </span>
                     <Tag tone={t}>{KIND[n.kind] ?? n.kind}</Tag>
-                    <span className="mono text-right text-[12px] text-faint">{new Date(n.created_at * 1000).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" })}</span>
+                    <span className="mono text-right text-mini text-faint">{new Date(n.created_at * 1000).toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" })}</span>
                   </li>
                 );
               })}

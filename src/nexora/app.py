@@ -9,7 +9,7 @@ from pathlib import Path
 from nexora.adapters.graphics import CaptionAdapter
 from nexora.adapters.media import FFmpegAdapter, FFprobeAdapter
 from nexora.core.adapter import AdapterRegistry
-from nexora.core.adapter import Adapter, PrivacyClass, Request
+from nexora.core.adapter import Adapter, AdapterError, PrivacyClass, Request
 from nexora.core.assets import AssetStore
 from nexora.core.index import MomentIndex
 from nexora.core.orchestrator import Orchestrator
@@ -19,7 +19,7 @@ from nexora.agents.producer import Producer
 from nexora.core.pipeline import PipelineRegistry
 from nexora.core.schedule import in_window
 from nexora.core.projects import ProjectStore
-from nexora.core.states import RunStatus
+from nexora.core.states import RunStatus, StageStatus
 from nexora.core.worker import Worker
 from nexora.modules.library.ingest import Library
 from nexora.core.intelligence import VideoIntelligence
@@ -80,42 +80,104 @@ class System:
     storyboard_planner: "StoryboardPlanner" = None
     director: "Director" = None                  # carries the storyboard's shots to acceptance, and holds the conversation
     missions: "Missions" = None                  # Mission Control: the operator's missions, planned, checked and carried out
+    stock_scout: "StockScout" = None             # stock judged on its previews before anything is downloaded
 
 
-def storyboard_stock(system: "System", shot_id: str, query: str) -> dict:
-    """A storyboard shot without a picture filled from licensed stock: searched, brought into the Library like any footage, and
-    given to the shot whole (the operator trims it there). Only the query text leaves the machine."""
-    out_dir = system.data_dir / "media" / "stock"
-    sources = json.loads(system.orch.setting("stock_sources", "[]"))
-    result = system.adapters.submit("stock", Request("search", inputs={"queries": [query]}, params={"out_dir": str(out_dir), "clips_per_query": 1, **({"sources": sources} if sources else {})},
-                                                    privacy_class=PrivacyClass.CLOUD_ALLOWED))
-    if not result.files:
-        return {"found": False}
-    clip = result.outputs["clips"][0]
-    rights = {"source": clip.get("source"), "source_url": clip.get("source_url"), "license": clip.get("license"), "creator": clip.get("creator"), "query": query}
-    asset_id, run_id = system.library.ingest(result.files[0], origin="licensed", rights=rights)
-    system.director.use_asset(shot_id, asset_id, reason=f"Clip stock từ {clip.get('source')}. Giấy phép: {clip.get('license')}. Nguồn: {clip.get('source_url')}")
-    return {"found": True, "asset_id": asset_id, "run_id": run_id, "rights": rights}
+from nexora.modules.quality.licences import classify as classify_licence
 
 
-def fill_gap_from_stock(system: "System", shot_id: str, query: str) -> dict:
-    """Resolve a gap with licensed stock: search, bring the clip into the Library like any footage, and propose it for the shot.
-    Only the query text leaves the machine. Lives here because it joins two modules that may not import each other."""
-    out_dir = system.data_dir / "media" / "stock"
-    sources = json.loads(system.orch.setting("stock_sources", "[]"))          # the operator's choice of stock libraries; empty means the adapter's own
-    result = system.adapters.submit("stock", Request("search", inputs={"queries": [query]}, params={"out_dir": str(out_dir), "clips_per_query": 1, **({"sources": sources} if sources else {})},
-                                                    privacy_class=PrivacyClass.CLOUD_ALLOWED))
-    if not result.files:
-        return {"found": False}
-    clip = result.outputs["clips"][0]
-    rights = {"source": clip.get("source"), "source_url": clip.get("source_url"), "license": clip.get("license"), "creator": clip.get("creator"), "query": query}
-    asset_id, run_id = system.library.ingest(result.files[0], origin="licensed", rights=rights)
-    # Proposed at once so the operator sees something; placed properly, or withdrawn, once the clip has been watched (see build()).
-    system.sourcing.use_asset(shot_id, asset_id, pending=system.intelligence.understands,
-                              reason=f"Clip stock từ {clip.get('source')}. Giấy phép: {clip.get('license')}. Nguồn: {clip.get('source_url')}")
-    if system.orch.run_status(run_id) is RunStatus.SUCCEEDED and system.index.moments(asset_id, level="segment"):
-        system.sourcing.refine_from_asset(shot_id, asset_id)     # the same clip was fetched before and has already been watched
-    return {"found": True, "asset_id": asset_id, "run_id": run_id, "rights": rights}
+def _stock_reason(c: dict) -> str:
+    seen = f" Mô hình chấm ảnh xem trước {c['look']}/10: {c.get('why') or ''}".rstrip() if c.get("look") is not None else ""
+    return f"Clip stock từ {c.get('source')}. Giấy phép: {c.get('license')}. Nguồn: {c.get('source_url')}.{seen}"
+
+
+def use_stock_candidate(system: "System", cid: str, *, shot_id: str) -> dict:
+    """A stock candidate chosen for a shot (a storyboard shot or a script line): only now is it downloaded, taken into the
+    Library as licensed footage with where it came from, and given to the shot."""
+    c = system.stock_scout.candidate(cid)
+    if c is None:
+        raise LookupError(cid)
+    if system.orch.kill_switch():
+        raise ValueError("Đang dừng khẩn cấp: không tải clip stock")
+    path = system.stock_scout.fetch(cid, system.data_dir / "media" / "stock")
+    rights = {"source": c.get("source"), "source_url": c.get("source_url"), "license": c.get("license"), "creator": c.get("creator"), "query": c.get("query"),
+              "project_id": c.get("project_id"), "stock_id": f"{c['source']}:{c['source_id']}", "score": c.get("look"), "why": c.get("why"),
+              # Kept as evidence for a dispute: what the library said, when, and what it was taken to allow.
+              "licence_class": classify_licence(c.get("license")), "fetched_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "download_url": c.get("download_url")}
+    asset_id, run_id = system.library.ingest(path, origin="licensed", rights=rights)
+    if system.storyboard is not None and system.storyboard.shot(shot_id) is not None:
+        system.director.use_asset(shot_id, asset_id, reason=_stock_reason(c))
+    else:
+        # Proposed at once; placed on the part that shows the line once the clip has been described (see build()).
+        system.sourcing.use_asset(shot_id, asset_id, pending=system.intelligence.understands, reason=_stock_reason(c))
+        if system.orch.run_status(run_id) is RunStatus.SUCCEEDED and system.index.moments(asset_id, level="segment"):
+            system.sourcing.refine_from_asset(shot_id, asset_id)     # the same clip was fetched before and has already been described
+    return {"asset_id": asset_id, "run_id": run_id, "rights": rights}
+
+
+def _stock_sources(system: "System") -> list[str] | None:
+    return json.loads(system.orch.setting("stock_sources", "[]")) or None      # the operator's choice of libraries; empty means all
+
+
+def storyboard_stock(system: "System", shot_id: str, query: str | None = None) -> dict:
+    """Stock candidates for a storyboard shot, judged on their previews and shown to the operator; nothing is downloaded until
+    one is chosen. `query`: the operator's own words for what to look for, else the shot's line."""
+    if system.orch.kill_switch():
+        raise ValueError("Đang dừng khẩn cấp: không tìm clip stock")
+    s = system.storyboard.shot(shot_id)
+    line = (query or "").strip() or s.spec.get("line") or s.spec.get("intent") or ""
+    found = system.stock_scout.find(s.project_id, shot_id, line, seconds=float(s.spec["duration"]["target"]), sources=_stock_sources(system))
+    return {"found": bool(found), "options": len(found), "passed": sum(1 for c in found if c.get("look") is not None and c["look"] >= 5)}
+
+
+def fill_gap_from_stock(system: "System", shot_id: str, line: str, *, take: bool | None = None, fresh: bool = True) -> dict:
+    """A script line the footage does not show: stock candidates judged on their previews and kept for the operator to choose
+    from. Only when the operator lets the best one be taken (Tự duyệt → stock) is the best that passes downloaded, and never
+    the clip already chosen for the line before or after it. `take`: the operator asked for this very line, so the best is
+    taken whatever the switch says. `fresh=False` (the producer): a line that already has candidates keeps them, so a step
+    taken up again does not search every line once more."""
+    if system.orch.kill_switch():
+        return {"found": False, "options": 0, "stopped": True}
+    shot = system.projects.shot(shot_id)
+    script = system.projects.script(shot.script_id)
+    from nexora.modules.sourcing.match import needed_seconds
+    found = (None if fresh else system.stock_scout.options(script["project_id"], shot_id)) or \
+        system.stock_scout.find(script["project_id"], shot_id, line, seconds=needed_seconds(line), sources=_stock_sources(system))
+    if not (take if take is not None else system.autonomy.switches().get("stock")):
+        return {"found": False, "options": len(found)}
+    lines = [x.shot_id for x in script["shots"]]
+    at = lines.index(shot_id)
+    avoid = set()
+    for near in lines[max(0, at - 1):at] + lines[at + 1:at + 2]:
+        sel = system.projects.selection(near)
+        if sel is not None and sel.asset_id and system.assets.asset(sel.asset_id):
+            stock_id = (system.assets.original(sel.asset_id).metadata.get("rights") or {}).get("stock_id")
+            if stock_id:
+                avoid.add(stock_id)
+    best = system.stock_scout.best(script["project_id"], shot_id, avoid=avoid)
+    if best is None:
+        return {"found": False, "options": len(found)}
+    return {"found": True, "options": len(found), "query": best.get("query"), **use_stock_candidate(system, best["cid"], shot_id=shot_id)}
+
+
+def after_storyboard_approved(system: "System", project_id: str) -> dict:
+    """Once a storyboard is approved: the stock candidates of the project and their previews are gone (none was downloaded),
+    and stock downloaded for it that the approved storyboard does not use goes to the Trash (30 days to take it back). A clip
+    another project uses, or one the operator rated 4 stars or more, stays."""
+    previews = system.stock_scout.forget(project_id) if system.stock_scout is not None else 0
+    used = {r[0] for r in system.projects._conn.execute("SELECT DISTINCT asset_id FROM selections WHERE asset_id IS NOT NULL")}
+    for row in system.storyboard._conn.execute("SELECT assignment FROM sb_shots WHERE assignment IS NOT NULL"):
+        a = json.loads(row[0] or "null") or {}
+        used.add(a.get("asset_id"))
+    unused = []
+    for asset in system.assets.assets():
+        if asset.get("origin") != "licensed" or asset.get("trashed_at") or asset["asset_id"] in used or (asset.get("rating") or 0) >= 4:
+            continue
+        if (system.assets.original(asset["asset_id"]).metadata.get("rights") or {}).get("project_id") == project_id:
+            unused.append(asset["asset_id"])
+    if unused:
+        trash_items(system, assets=unused)
+    return {"previews": previews, "trashed": len(unused)}
 
 
 _FACES: dict = {}
@@ -431,7 +493,8 @@ def structure_config(system: "System") -> dict:
 
 
 PIPELINE_NAMES = {"edit.cut": "Xuất bản dựng", "library.ingest": "Nhập footage", "library.ingest_image": "Nhập ảnh", "library.ingest_audio": "Nhập nhạc", "library.understand": "Hiểu nội dung footage", "library.transcribe": "Nghe lời nói trong footage", "library.profile": "Đo và nhận diện footage",
-                  "sourcing.match": "Chọn clip", "sourcing.generate": "Sinh hình bằng AI", "edit.render": "Dựng video", "edit.preview": "Dựng bản xem thử", "library.enhance": "Nâng chất lượng clip", "sourcing.train": "Huấn luyện mô hình nhân vật", "library.cuts": "Tìm chỗ chuyển cảnh", "library.structure": "Đo và chia footage thành cú máy, nhịp"}
+                  "sourcing.match": "Chọn clip", "sourcing.generate": "Sinh hình bằng AI", "edit.render": "Dựng video", "edit.preview": "Dựng bản xem thử", "library.enhance": "Nâng chất lượng clip", "sourcing.train": "Huấn luyện mô hình nhân vật", "library.cuts": "Tìm chỗ chuyển cảnh", "library.structure": "Đo và chia footage thành cú máy, nhịp",
+                  "planning.topic_script": "Viết kịch bản theo chủ đề", "vq.analyse": "Đo chất lượng hình", "vq.preview": "Xem thử chỉnh hình", "vq.apply": "Chỉnh chất lượng hình"}
 ANNOUNCE = {"model_fallback": "không dùng được mô hình cloud đã chọn, mô hình trên máy làm thay", "autonomy_lowered": "mức tự chủ vừa bị hạ", "metrics_due": "đã tới mốc ghi số liệu", "disk_low": "ổ đĩa sắp đầy", "volume_offline": "không tìm thấy nơi chứa footage", "gaps": "còn câu chưa có hình", "waiting_review": "đang chờ bạn duyệt", "blocked": "đang dừng và cần bạn xử lý", "failed": "thất bại", "succeeded": "đã xong"}
 QUIET = frozenset({"library.ingest", "library.ingest_image", "library.ingest_audio", "library.understand", "library.transcribe", "library.profile", "edit.preview", "library.cuts", "library.enhance", "library.structure"})   # finishing these needs nobody's attention
 
@@ -552,6 +615,8 @@ def start_library_work(system: "System", kind: str) -> list[str]:
         if asset["kind"] != "video" or asset.get("rejected") or asset.get("trashed_at"):
             continue
         aid = asset["asset_id"]
+        if kind != "understand" and asset.get("origin") == "licensed":
+            continue                                   # stock is described, never listened to
         if kind == "understand":
             if system.index.moments(aid, level="video"):
                 continue
@@ -617,6 +682,86 @@ def update_production(system: "System", production_id: str, changes: dict) -> di
             if values:
                 take_shared(system, video["project_id"], values)
     return system.productions.get(production_id)
+
+
+def topic_context(system: "System", project_id: str) -> dict:
+    """What a writer of a script from a topic is told about the video: the voice to write in, the template's parts, the way of
+    illustrating, and the titles of the other videos of its production, so that this one takes another angle."""
+    from nexora.modules.planning.scripts import HOUSE_VOICE
+    project = system.projects.project(project_id) or {}
+    def told(p: dict) -> str:                    # a sibling's title, and the angle its own writer took, when one wrote it
+        angle = ((system.topics.latest(p["project_id"]) or {}).get("package") or {}).get("angle") if system.topics else None
+        return f"{p['title']} (góc: {angle})" if angle else p["title"]
+    siblings = [told(p) for p in system.projects.projects() if project.get("production_id") and p.get("production_id") == project["production_id"] and p["project_id"] != project_id]
+    return {"voice": system.orch.setting("writing_voice", "") or HOUSE_VOICE, "structure": (template_named(system, project.get("template")) or {}).get("structure"),
+            "style": illustration_style(system, project), "siblings": siblings}
+
+
+def merge_sources(system: "System", project_id: str, sources: list[dict]) -> int:
+    """Sources a writer read, kept as the operator's own are (who published it, when, the passage), merged by address into the
+    video's production, where its other videos find them, and into the video itself. Returns how many were new to the video."""
+    import time
+    def merged(raw: str | None) -> tuple[str, int]:
+        kept = json.loads(raw or "[]")
+        known = {s.get("url") for s in kept}
+        new = [{"title": s["title"], "publisher": s.get("publisher"), "date": s.get("date"), "url": s["url"], "passage": s["passage"], "retrieved_at": time.time()}
+               for s in sources if s.get("url") and s["url"] not in known]
+        return json.dumps(kept + new, ensure_ascii=False), len(new)
+    project = system.projects.project(project_id) or {}
+    production = system.productions.get(project.get("production_id")) if system.productions else None
+    if production:
+        value, added = merged(production.get("research"))
+        if added:
+            update_production(system, production["production_id"], {"research": value})       # reaches the videos still on its sources
+    value, added = merged((system.projects.project(project_id) or {}).get("research"))
+    if added:
+        system.projects.update_project(project_id, research=value)
+    return added
+
+
+def apply_topic(system: "System", project_id: str, run_id: str) -> str:
+    """A script from a topic, written and checked, saved into the video with what the writer said about each line, and its
+    sources into the production and the video. Returns the script saved."""
+    from nexora.modules.planning.topic import script_lines
+    got = system.topics.get(run_id)
+    if not got or not got["package"]:
+        raise ValueError("nothing was written for this run")
+    lines = script_lines(got["package"])
+    system.projects.keep_draft(project_id, [l for l in lines if isinstance(l, dict)])
+    script_id = system.planning.save_script(project_id, lines)
+    merge_sources(system, project_id, got["package"]["sources"])
+    system.topics.mark(run_id, "applied")
+    return script_id
+
+
+def cut_gate(system: "System", project_id: str) -> str | None:
+    """The stage of the project's cut waiting for review, if one is: the newer of a render from its script and an export of
+    its newest saved cut (the Edit step), as the review screen shows it."""
+    script = system.projects.current_script(project_id)
+    runs = [r for r in system.orch.runs_for_subject(script["script_id"]) if system.orch.pipeline_of(r) == "edit.render"] if script else []
+    cut = system.cuts.latest(project_id) if getattr(system, "cuts", None) is not None else None
+    if cut:
+        runs += [r for r in system.orch.runs_for_subject(cut["cut_id"]) if system.orch.pipeline_of(r) == "edit.cut"]
+    if not runs:
+        return None
+    newest = max(runs, key=lambda r: system.orch.run_info(r).get("created_at") or 0)
+    return next((s.stage_id for s in system.orch.stages(newest) if s.status is StageStatus.WAITING_REVIEW), None)
+
+
+def approve_clips_by_policy(system: "System", project_id: str, run_id: str) -> None:
+    """A clip match approved by the operator's switch, as the storyboard approves it: a storyboard laid out for the video is
+    written back to the script with its pictures first; with none, the selections are taken as they stand."""
+    if system.storyboard is not None and system.storyboard.shots(project_id) and system.director is not None:
+        try:
+            system.director.approve(project_id)
+        except (ValueError, LookupError, AdapterError):
+            pass                                                    # the storyboard could not be written back; the clips still stand
+        for script_id in system.projects.script_ids(project_id):
+            for waiting, stage_id in system.orch.waiting_review("sourcing.match"):
+                if system.orch.run_info(waiting)["subject_ref"] == script_id:
+                    system.orch.decide_review(stage_id, approve=True, actor="policy")
+        return
+    system.sourcing.approve(run_id, actor="policy")
 
 
 def lay_out_storyboard(system: "System", project_id: str) -> int:
@@ -723,7 +868,7 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
           segment_seconds: float = 12.0, voice: Adapter | None = None, match_threshold: float = 0.5, judge: bool = True,
           generators: list[Adapter] | None = None, stock: Adapter | None = None, desktop: Adapter | None = None, voice_name: str = "Linh",
           ffmpeg_binary: str = "", web: Adapter | None = None, speech: Adapter | None = None, publishers: list[Adapter] | None = None, shot_models: list[Adapter] | None = None, cloud_models: list[Adapter] | None = None,
-          recognisers: list[Adapter] | None = None, pictures: Adapter | None = None) -> System:
+          recognisers: list[Adapter] | None = None, pictures: Adapter | None = None, stock_api: Adapter | None = None, stock_preview=None) -> System:
     """`model` is the adapter for vision, reasoning and embeddings; without one, footage is ingested but not understood."""
     data_dir = Path(data_dir).resolve()          # tools resolve relative paths differently; keep every path absolute
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -837,6 +982,8 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     edit.register(registry)
     if stock is not None:
         adapters.register(stock)
+    if stock_api is not None and stock_api.describe() and getattr(stock_api, "sources", lambda: ["any"])():
+        adapters.register(stock_api)
     if desktop is not None:
         adapters.register(desktop)
     if web is not None:
@@ -845,7 +992,7 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
         adapters.register(generator)
     generation = Generation(orch, projects, assets, adapters, data_dir / "media", judge=model is not None,
                             prefer=lambda kind: json.loads(orch.setting(f"providers:{kind}", "[]")),
-                            also_left=lambda project_id: production_budget_left(projects, productions, generation, project_id))
+                            also_left=lambda project_id: production_budget_left(projects, productions, generation, project_id), db_path=db_path)
     generation.register(registry)
     # The Edit step on FilmCraft: the storyboard built into a sequence in the browser, the cut kept in versions, rendered here.
     from nexora.adapters.filmcraft import FilmCraft
@@ -871,7 +1018,11 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
     # Long footage analysis has its own worker, so that a render or a match the operator is waiting for never queues behind it.
     night_only = lambda: in_window(orch.setting("background_window", ""))          # the operator may keep heavy analysis to chosen hours
     workers = [Worker(orch, registry, worker_id=f"interactive-{os.getpid()}", lanes=frozenset({"interactive"}), log=log),
-               Worker(orch, registry, worker_id=f"background-{os.getpid()}", lanes=frozenset({"background"}), log=log, allowed=night_only)]
+               Worker(orch, registry, worker_id=f"background-{os.getpid()}", lanes=frozenset({"background"}), log=log, allowed=night_only),
+               # A writer that reads the web (Claude Code) takes minutes and runs one at a time on the operator's plan: a lane of its own.
+               Worker(orch, registry, worker_id=f"claude-code-{os.getpid()}", lanes=frozenset({"claude_code"}), log=log),
+               # What the producer starts on its own (a match, a render) runs here, so the operator's own never waits behind an hour of it.
+               Worker(orch, registry, worker_id=f"agent-{os.getpid()}", lanes=frozenset({"agent"}), log=log)]
     system = System(data_dir, orch, assets, adapters, registry, worker, library, index, projects, planning, sourcing, edit, distribution, generation, workers)
     system.intelligence, system.vi = intelligence, vi
     system.vq, system.vq_reader = vq, vq_reader
@@ -893,7 +1044,8 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
                                likeness=lambda a, ref: face_likeness(system, a["asset_id"], mid(a), ref),
                                # the storyboard chooses pictures with the clip step's search and teaches it the operator's verdicts
                                find=lambda words, need, line, illustration=None: system.sourcing.find(words, need, line=line, illustration=illustration),
-                               remember=lambda line, moment_id, verdict, **kw: system.sourcing.remember(line, moment_id, verdict, **kw))
+                               remember=lambda line, moment_id, verdict, **kw: system.sourcing.remember(line, moment_id, verdict, **kw),
+                               look=(lambda line, asset_id, t_in, moment_id: system.sourcing.look(line, asset_id=asset_id, t_in=t_in, moment_id=moment_id)) if model is not None else None)
     system.viewer = Viewer(projects, adapters, data_dir / "media") if model is not None else None
     def measured_boundaries(asset_id: str):
         made = analysis.as_measured(asset_id) if assets.asset(asset_id) else None
@@ -914,12 +1066,24 @@ def build(data_dir: str | Path, *, min_free_bytes: int = 2 * 1024**3, model: Ada
         package = distribution.build_package(render_id)
         return distribution.annotate_package(render_id, rights={**render_rights(system, render_id), "override_reason": None}, checks=package_checks(package))
     has_folder = any(c.name == "publish.folder" for c in adapters.describe())
+    from nexora.modules.sourcing.stock import StockScout
+    system.stock_scout = StockScout(db_path, adapters, data_dir / "tmp" / "stock", **({"fetch": stock_preview, "frame": stock_preview} if stock_preview else {}))
     system.autonomy = Autonomy(orch, projects, package=package_for_policy, rights=lambda render_id: render_rights(system, render_id),
-                               publish=(lambda render_id: system.publishing.publish(render_id, "publish.folder")) if has_folder else None)
+                               publish=(lambda render_id: system.publishing.publish(render_id, "publish.folder")) if has_folder else None,
+                               approve_clips=lambda project_id, run_id: approve_clips_by_policy(system, project_id, run_id),
+                               cut_gate=lambda project_id: cut_gate(system, project_id),
+                               approve_pictures=lambda run_id: system.generation.approve(run_id, actor="policy"))
+    from nexora.modules.planning.topic import TopicWriter
+    system.topics = TopicWriter(db_path, adapters, context=lambda project_id: topic_context(system, project_id), submit=orch.submit_run)
+    system.topics.register(registry)
     system.producer = Producer(db_path, orch=orch, projects=projects, planning=planning, sourcing=sourcing, edit=edit, adapters=adapters,
-                               fill_gap=lambda shot_id, query: fill_gap_from_stock(system, shot_id, query),
+                               fill_gap=lambda shot_id, line: fill_gap_from_stock(system, shot_id, line, fresh=False),
                                to_storyboard=lambda project_id: lay_out_storyboard(system, project_id),
-                               style=lambda project_id: illustration_style(system, projects.project(project_id)))
+                               style=lambda project_id: illustration_style(system, projects.project(project_id)),
+                               write_topic=lambda project_id, topic, seconds, form: system.topics.start(project_id, topic, seconds=seconds, form=form),
+                               topic_state=lambda run_id: (system.topics.get(run_id) or {}).get("state", "asked"),
+                               apply_topic=lambda project_id, run_id: apply_topic(system, project_id, run_id),
+                               generate=lambda script_id, shot_ids: system.generation.start(script_id, only=shot_ids))
     from nexora.agents.missions import Missions
     from nexora.core.missions import MissionStore
 
@@ -940,8 +1104,11 @@ def build_from_config(config, **overrides) -> System:
     from nexora.adapters.desktop import DesktopNotifier
     from nexora.adapters.ollama import OllamaAdapter
     from nexora.adapters.openmontage import OpenMontageStock
+    from nexora.adapters.stock_api import StockApi
     import os as _os
     from nexora.adapters.claude import ClaudeText
+    from nexora.adapters.claude_code import ClaudeCode, find_claude
+    claude_code = config.claude_code_binary or find_claude()          # Claude Code, when installed: the operator's plan
     from nexora.adapters.motion import StillMotion
     from nexora.adapters.outbox import FolderPublisher
     from nexora.adapters.pollinations import PollinationsImage
@@ -967,7 +1134,8 @@ def build_from_config(config, **overrides) -> System:
                  model=OllamaAdapter(host=config.ollama_host, vision_model=config.vision_model, embed_model=config.embed_model,
                                      judge_model=config.judge_model, writer_model=config.writer_model),
                  voice=SayVoice(), voice_name=config.voice, match_threshold=config.match_threshold,
-                 stock=OpenMontageStock(config.openmontage_repo), desktop=DesktopNotifier(), web=WebReader(),
+                 stock=OpenMontageStock(config.openmontage_repo, keys={"pexels": _os.environ.get("PEXELS_API_KEY") or config.pexels_api_key, "pixabay_video": _os.environ.get("PIXABAY_API_KEY") or config.pixabay_api_key}), desktop=DesktopNotifier(), web=WebReader(),
+                 stock_api=StockApi(pexels_key=_os.environ.get("PEXELS_API_KEY") or config.pexels_api_key, pixabay_key=_os.environ.get("PIXABAY_API_KEY") or config.pixabay_api_key),
                  pictures=_pictures(config),
                  recognisers=[AppleVision(AppleTool(Path(config.data_dir) / "tools")), AppleSound(AppleTool(Path(config.data_dir) / "tools"))] if AppleTool(Path(config.data_dir) / "tools").available() else [],
                  speech=WhisperCpp(config.speech_model, language=config.speech_language, vad_model=config.speech_vad_model or None) if config.speech_model else None,
@@ -981,9 +1149,12 @@ def build_from_config(config, **overrides) -> System:
                  publishers=[*([FolderPublisher(config.publish_folder)] if config.publish_folder else []),
                              *([YouTubePublisher(config.youtube_client_id, config.youtube_client_secret, config.youtube_refresh_token, privacy=config.youtube_privacy)]
                                if config.youtube_client_id and config.youtube_client_secret and config.youtube_refresh_token else [])],
-                 cloud_models=[ClaudeText(_os.environ.get("ANTHROPIC_API_KEY") or config.anthropic_api_key, model=config.claude_model, workspace_id=config.anthropic_workspace_id,
-                                          input_price=config.claude_input_price, output_price=config.claude_output_price)]
-                 if (_os.environ.get("ANTHROPIC_API_KEY") or config.anthropic_api_key) else [], **overrides)
+                 cloud_models=([ClaudeText(_os.environ.get("ANTHROPIC_API_KEY") or config.anthropic_api_key, model=config.claude_model, workspace_id=config.anthropic_workspace_id,
+                                           input_price=config.claude_input_price, output_price=config.claude_output_price)]
+                               if (_os.environ.get("ANTHROPIC_API_KEY") or config.anthropic_api_key) else [])
+                              + ([ClaudeCode(claude_code, model=config.claude_code_model, effort=config.claude_code_effort, chat_seconds=config.claude_code_chat_seconds,
+                                             research_seconds=config.claude_code_research_seconds, workdir=Path(config.data_dir) / "claude_code")] if claude_code else []),
+                 **overrides)
 
 
 def _pictures(config):

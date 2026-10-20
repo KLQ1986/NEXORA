@@ -37,16 +37,16 @@ function Calendar() {
     <div className="grid items-start gap-8 xl:grid-cols-[minmax(0,1fr)_320px]">
       <div className="min-w-0">
         <div className="mb-3 flex items-center gap-2">
-          <h2 className="text-[16px] font-semibold capitalize">{new Date(at.y, at.m, 1).toLocaleDateString(locale, { month: "long", year: "numeric" })}</h2>
+          <h2 className="text-page font-semibold capitalize">{new Date(at.y, at.m, 1).toLocaleDateString(locale, { month: "long", year: "numeric" })}</h2>
           <span className="ml-auto flex gap-1.5">
             <Button size="sm" onClick={() => shift(-1)} title={tr("Tháng trước")}><Icon name="back" size={14} /></Button>
             <Button size="sm" onClick={() => setAt({ y: now.getFullYear(), m: now.getMonth() })}>{tr("Hôm nay")}</Button>
             <Button size="sm" onClick={() => shift(1)} title={tr("Tháng sau")}><Icon name="next" size={14} /></Button>
           </span>
         </div>
-        {late.length > 0 && <p className="mb-3 flex items-center gap-2 rounded-xl border border-cue/40 bg-cue/10 px-4 py-2.5 text-[13px] text-cue"><Icon name="alert" size={15} />{tv`${late.length} video đã quá ngày dự định mà chưa có bản dựng được duyệt.`}</p>}
+        {late.length > 0 && <p className="mb-3 flex items-center gap-2 rounded-xl border border-cue/40 bg-cue/10 px-4 py-2.5 text-ui text-cue"><Icon name="alert" size={15} />{tv`${late.length} video đã quá ngày dự định mà chưa có bản dựng được duyệt.`}</p>}
         <div className="panel overflow-x-auto">
-          <div className="grid min-w-[680px] grid-cols-7 border-b border-line text-[12px] text-faint">{WEEKDAYS.map((d) => <div key={d} className="px-2.5 py-2">{d}</div>)}</div>
+          <div className="grid min-w-[680px] grid-cols-7 border-b border-line text-mini text-faint">{WEEKDAYS.map((d) => <div key={d} className="px-2.5 py-2">{d}</div>)}</div>
           {weeks.map((week, i) => (
             <div key={i} className="grid min-w-[680px] grid-cols-7 border-b border-line last:border-b-0">
               {week.map((d) => {
@@ -54,11 +54,11 @@ function Calendar() {
                 return (
                   <div key={day} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { const id = e.dataTransfer.getData("text/plain"); if (id) plan(id, day); }}
                        className={`min-h-[96px] border-r border-line p-1.5 last:border-r-0 ${today ? "bg-accent/[0.06] shadow-[inset_0_0_0_1px_rgba(70,200,224,0.35)]" : d.getMonth() === at.m ? "" : "bg-raised/30 text-faint"}`}>
-                    <div className={`mono mb-1 inline-grid h-6 min-w-6 place-items-center rounded-md px-1 text-[12px] ${today ? "bg-accent text-[#04161b] font-semibold" : ""}`}>{d.getDate()}</div>
+                    <div className={`mono mb-1 inline-grid h-6 min-w-6 place-items-center rounded-md px-1 text-mini ${today ? "bg-accent text-[#04161b] font-semibold" : ""}`}>{d.getDate()}</div>
                     <div className="grid gap-1">
                       {items.map((p) => (
                         <button key={p.project_id} type="button" draggable onDragStart={(e) => e.dataTransfer.setData("text/plain", p.project_id)} onClick={() => open(`/du-an/${p.project_id}`)} title={`${p.title} — ${p.stage}`}
-                                className={`truncate rounded-md border px-1.5 py-1 text-left text-[12px] leading-tight ${p.ready ? "border-proof/40 bg-proof/10" : day < (data?.today ?? "") ? "border-cue/40 bg-cue/10" : "border-line bg-raised"}`}>{p.title}</button>
+                                className={`truncate rounded-md border px-1.5 py-1 text-left text-mini leading-tight ${p.ready ? "border-proof/40 bg-proof/10" : day < (data?.today ?? "") ? "border-cue/40 bg-cue/10" : "border-line bg-raised"}`}>{p.title}</button>
                       ))}
                     </div>
                   </div>
@@ -67,19 +67,19 @@ function Calendar() {
             </div>
           ))}
         </div>
-        <p className="mt-2 text-[12px] text-faint">{tr("Kéo một video sang ngày khác để dời lịch. Viền xanh là video đã có bản dựng được duyệt; viền vàng là video đã quá ngày.")}</p>
+        <p className="mt-2 text-mini text-faint">{tr("Kéo một video sang ngày khác để dời lịch. Viền xanh là video đã có bản dựng được duyệt; viền vàng là video đã quá ngày.")}</p>
       </div>
       <div className="grid gap-8">
       <Section title={tr("Kênh")} icon="user" note={tr("Mỗi kênh có nhịp đăng riêng. Lịch cho biết tuần nào còn thiếu video so với nhịp đó.")}>
         <ul className="panel rows empty:hidden">
           {(data?.channels ?? []).map((c) => { const gap = data!.cadence.find((x) => x.channel === c.name); return (
-            <li key={c.name} className="px-3 py-2.5 text-[13px]"><div className="flex items-center gap-2"><span className="font-medium">{c.name}</span><span className="text-faint">{[c.platform, c.per_week ? tv`${c.per_week} video mỗi tuần` : "", c.audience].filter(Boolean).join(", ")}</span>
+            <li key={c.name} className="px-3 py-2.5 text-ui"><div className="flex items-center gap-2"><span className="font-medium">{c.name}</span><span className="text-faint">{[c.platform, c.per_week ? tv`${c.per_week} video mỗi tuần` : "", c.audience].filter(Boolean).join(", ")}</span>
               <button type="button" className="link ml-auto" onClick={() => { const before = data!.channels; saveChannels(before.filter((x) => x.name !== c.name)); toast(tv`Đã bỏ kênh “${c.name}”.`, { undo: () => saveChannels(before) }); }}>{tr("Bỏ")}</button></div>
               <Profile channel={c} save={(change) => saveChannels(data!.channels.map((x) => (x.name === c.name ? { ...x, ...change } : x)))} />
-              {gap && <p className="mt-1 flex flex-wrap gap-1.5">{gap.weeks.map((w) => <span key={w.from} title={tv`Tuần từ ${w.from}`} className={`mono rounded-md border px-1.5 py-0.5 text-[11.5px] ${w.short ? "border-cue/40 bg-cue/10 text-cue" : "border-proof/40 bg-proof/10 text-proof"}`}>{w.from.slice(5)}: {w.short ? tv`thiếu ${w.short}` : tr("đủ")}</span>)}</p>}
+              {gap && <p className="mt-1 flex flex-wrap gap-1.5">{gap.weeks.map((w) => <span key={w.from} title={tv`Tuần từ ${w.from}`} className={`mono rounded-md border px-1.5 py-0.5 text-mini ${w.short ? "border-cue/40 bg-cue/10 text-cue" : "border-proof/40 bg-proof/10 text-proof"}`}>{w.from.slice(5)}: {w.short ? tv`thiếu ${w.short}` : tr("đủ")}</span>)}</p>}
             </li>); })}
         </ul>
-        <form className="mt-2 grid gap-2 text-[13px]" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); const name = String(f.get("name") ?? "").trim(); if (!name || !data) return;
+        <form className="mt-2 grid gap-2 text-ui" onSubmit={(e) => { e.preventDefault(); const f = new FormData(e.currentTarget); const name = String(f.get("name") ?? "").trim(); if (!name || !data) return;
           saveChannels([...data.channels.filter((c) => c.name !== name), { name, platform: String(f.get("platform") ?? ""), audience: String(f.get("audience") ?? ""), per_week: Number(f.get("per_week") || 0), template: null }]); e.currentTarget.reset(); }}>
           <div className="flex gap-2"><input name="name" aria-label={tr("Tên kênh")} placeholder={tr("Tên kênh")} className="h-8 min-w-0 flex-1 px-2.5" /><input name="platform" aria-label={tr("Nền tảng")} placeholder={tr("Nền tảng")} className="h-8 w-28 px-2.5" /></div>
           <div className="flex items-center gap-2"><input name="audience" aria-label={tr("Người xem")} placeholder={tr("Người xem là ai")} className="h-8 min-w-0 flex-1 px-2.5" /><input name="per_week" type="number" inputMode="decimal" min="0" max="21" aria-label={tr("Số video mỗi tuần")} placeholder="0" className="mono h-8 w-16 px-2" /><span className="text-faint">{tr("mỗi tuần")}</span></div>
@@ -87,13 +87,13 @@ function Calendar() {
         </form>
       </Section>
       <Section title={tr("Chưa có ngày đăng")} icon="clock" note={tr("Kéo vào một ngày trên lịch, hoặc chọn ngày ở đây.")}>
-        {data && unplanned.length === 0 && <p className="text-[13px] text-mute">{tr("Mọi dự án đều đã có ngày.")}</p>}
+        {data && unplanned.length === 0 && <p className="text-ui text-mute">{tr("Mọi dự án đều đã có ngày.")}</p>}
         <ul className="panel rows empty:hidden">
           {unplanned.map((p) => (
-            <li key={p.project_id} draggable onDragStart={(e) => e.dataTransfer.setData("text/plain", p.project_id)} className="grid cursor-grab gap-1.5 px-3 py-2.5 text-[13px]">
+            <li key={p.project_id} draggable onDragStart={(e) => e.dataTransfer.setData("text/plain", p.project_id)} className="grid cursor-grab gap-1.5 px-3 py-2.5 text-ui">
               <button type="button" className="truncate text-left font-medium hover:text-accent" onClick={() => open(`/du-an/${p.project_id}`)}>{p.title}</button>
               <div className="flex items-center gap-2"><Tag tone={p.ready ? "proof" : "mute"}>{p.stage}</Tag>
-                <input type="date" aria-label={tv`Ngày đăng của ${p.title}`} onChange={(e) => e.target.value && plan(p.project_id, e.target.value)} className="mono ml-auto h-8 px-2 text-[12px]" /></div>
+                <input type="date" aria-label={tv`Ngày đăng của ${p.title}`} onChange={(e) => e.target.value && plan(p.project_id, e.target.value)} className="mono ml-auto h-8 px-2 text-mini" /></div>
             </li>
           ))}
         </ul>
@@ -105,21 +105,21 @@ function Calendar() {
 
 /** How a channel speaks: written into every prompt that plans or writes for it. Each change is a new version of the profile. */
 function Profile({ channel: c, save }: { channel: Channel; save: (change: Partial<Channel>) => void }) {
-  const field = "h-8 min-w-0 px-2.5 text-[12.5px]";
+  const field = "h-8 min-w-0 px-2.5 text-meta";
   const blur = (key: keyof Channel) => (e: { target: { value: string } }) => { if (e.target.value !== (c[key] ?? "")) save({ [key]: e.target.value }); };
   return (
     <details className="mt-1.5">
-      <summary className="cursor-pointer list-none text-[12.5px] text-accent">{tr("Hồ sơ kênh")}{c.version ? <span className="mono ml-1.5 text-faint">v{c.version}</span> : null}
+      <summary className="cursor-pointer list-none text-meta text-accent">{tr("Hồ sơ kênh")}{c.version ? <span className="mono ml-1.5 text-faint">v{c.version}</span> : null}
         {(c.tone || c.banned?.length) ? <span className="ml-2 text-faint">{[c.tone, c.banned?.length ? tv`${c.banned.length} cụm từ cấm` : ""].filter(Boolean).join(", ")}</span> : null}</summary>
       <div className="mt-2 grid gap-2">
         <input aria-label={tr("Giọng văn")} placeholder={tr("Giọng văn: mộc, ấm, hài hước…")} defaultValue={c.tone ?? ""} onBlur={blur("tone")} className={field} />
         <input aria-label={tr("Nhịp")} placeholder={tr("Nhịp: chậm, nhiều khoảng lặng…")} defaultValue={c.pacing ?? ""} onBlur={blur("pacing")} className={field} />
         <textarea aria-label={tr("Cụm từ không bao giờ dùng, mỗi dòng một cụm")} rows={2} placeholder={tr("Cụm từ không bao giờ dùng, mỗi dòng một cụm")} defaultValue={(c.banned ?? []).join("\n")}
-                  onBlur={(e) => { const banned = e.target.value.split("\n").map((x) => x.trim()).filter(Boolean); if (banned.join("\n") !== (c.banned ?? []).join("\n")) save({ banned }); }} className="p-2 text-[12.5px]" />
-        <label className="flex items-center gap-2 text-[12.5px] text-mute">{tr("Cách minh hoạ")}
+                  onBlur={(e) => { const banned = e.target.value.split("\n").map((x) => x.trim()).filter(Boolean); if (banned.join("\n") !== (c.banned ?? []).join("\n")) save({ banned }); }} className="p-2 text-meta" />
+        <label className="flex items-center gap-2 text-meta text-mute">{tr("Cách minh hoạ")}
           <select value={c.illustration ?? ""} onChange={(e) => save({ illustration: (e.target.value || null) as Channel["illustration"] })} className="h-8 pl-2.5 text-ink">
             <option value="">{tr("Theo mẫu video")}</option><option value="mixed">{tr("Pha trộn (máy chọn từng câu)")}</option><option value="associative">{tr("Liên tưởng")}</option><option value="direct">{tr("Trực tiếp")}</option></select></label>
-        <textarea aria-label={tr("Ghi chú cho người viết")} rows={2} placeholder={tr("Ghi chú cho người viết: điều kênh luôn làm, điều nên tránh")} defaultValue={c.notes ?? ""} onBlur={blur("notes")} className="p-2 text-[12.5px]" />
+        <textarea aria-label={tr("Ghi chú cho người viết")} rows={2} placeholder={tr("Ghi chú cho người viết: điều kênh luôn làm, điều nên tránh")} defaultValue={c.notes ?? ""} onBlur={blur("notes")} className="p-2 text-meta" />
       </div>
     </details>
   );
@@ -129,7 +129,7 @@ function SubjectRows({ rows, unusedOnly }: { rows: RadarSubject[]; unusedOnly: b
   return (
     <ul className="panel rows">
       {rows.map((s) => (
-        <li key={s.subject} className="px-4 py-3 text-[13px]">
+        <li key={s.subject} className="px-4 py-3 text-ui">
           <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1"><span className="font-medium capitalize">{s.subject}</span>
             <span className="mono text-faint">{unusedOnly ? tv`${s.unused_videos} video chưa dùng, ${timecode(s.unused_seconds)}` : `${s.videos} video, ${timecode(s.seconds)}`}</span>
             {!unusedOnly && <span className="ml-auto text-faint">{tv`${s.videos - s.unused_videos} đã dùng trong dự án`}</span>}</div>
@@ -153,10 +153,10 @@ function RadarView() {
           <input value={topic} onChange={(e) => setTopic(e.target.value)} aria-label={tr("Chủ đề muốn theo dõi")} placeholder={tr("Ví dụ: món ăn đường phố buổi tối")} className="h-9 min-w-0 flex-1 px-3" />
           <Button type="submit" disabled={!topic.trim()}><Icon name="plus" size={14} />{tr("Theo dõi")}</Button>
         </form>
-        {data && data.watched.length === 0 && <p className="text-[13px] text-mute">{tr("Chưa có chủ đề nào. Thêm một chủ đề bạn định làm để biết kho đã đủ hình hay cần quay thêm.")}</p>}
+        {data && data.watched.length === 0 && <p className="text-ui text-mute">{tr("Chưa có chủ đề nào. Thêm một chủ đề bạn định làm để biết kho đã đủ hình hay cần quay thêm.")}</p>}
         <ul className="panel rows empty:hidden">
           {(data?.watched ?? []).map((w) => (
-            <li key={w.topic} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-[13px]">
+            <li key={w.topic} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-ui">
               <span className="min-w-0 font-medium">{w.topic}</span><Tag tone={tone(w.verdict)}>{w.verdict}</Tag>
               <span className="mono text-faint">{tv`${w.moments} cảnh khớp trong ${w.assets} video`}</span>
               <span className="ml-auto flex items-center gap-3">
@@ -173,7 +173,7 @@ function RadarView() {
         {!!data?.unused.length && <SubjectRows rows={data.unused} unusedOnly />}
       </Section>
       {!!data?.subjects.length && <Section title={tr("Kho đang có gì")} icon="layers" note={tr("Mọi chủ đề hệ thống nhận ra trong kho, xếp theo thời lượng.")}><SubjectRows rows={data.subjects} unusedOnly={false} /></Section>}
-      <p className="text-[12px] text-faint">{tr("Radar này chỉ nhìn vào kho của bạn. Xu hướng trên các nền tảng và số liệu video đã đăng chưa được nối vào vì hệ thống chưa có tài khoản nền tảng nào.")}</p>
+      <p className="text-mini text-faint">{tr("Radar này chỉ nhìn vào kho của bạn. Xu hướng trên các nền tảng và số liệu video đã đăng chưa được nối vào vì hệ thống chưa có tài khoản nền tảng nào.")}</p>
     </div>
   );
 }
@@ -189,7 +189,7 @@ function PublicationRow({ p, target, due, picked, pick, reload }: { p: Publicati
   const last = p.snapshots[p.snapshots.length - 1];
   const age = p.published_at ? (Date.now() / 1000 - p.published_at) / 3600 : 0;
   return (
-    <li className="px-4 py-3 text-[13px]">
+    <li className="px-4 py-3 text-ui">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <input type="checkbox" aria-label={tv`Chọn ${p.title} để so sánh`} checked={picked} onChange={pick} />
         <button type="button" className="min-w-0 truncate text-left font-medium hover:text-accent" onClick={() => open_(`/du-an/${p.project_id}`)}>{p.title}</button>
@@ -202,11 +202,11 @@ function PublicationRow({ p, target, due, picked, pick, reload }: { p: Publicati
       {open && (
         <div className="mt-3 grid gap-3">
           {p.snapshots.length > 0 && (
-            <div className="overflow-x-auto"><table className="w-full min-w-[420px] text-[12.5px]"><thead><tr className="text-left text-faint"><th className="py-1 font-normal">Sau</th>{FIGURE.map(([k, n]) => <th key={k} className="py-1 font-normal">{n}</th>)}</tr></thead>
+            <div className="overflow-x-auto"><table className="w-full min-w-[420px] text-meta"><thead><tr className="text-left text-faint"><th className="py-1 font-normal">Sau</th>{FIGURE.map(([k, n]) => <th key={k} className="py-1 font-normal">{n}</th>)}</tr></thead>
               <tbody>{p.snapshots.map((s) => <tr key={s.snapshot_id} className="border-t border-line"><td className="mono py-1">{s.hours < 48 ? tv`${s.hours.toFixed(0)} giờ` : tv`${(s.hours / 24).toFixed(0)} ngày`}</td>{FIGURE.map(([k]) => <td key={k} className="mono py-1">{s.figures[k] !== undefined ? Math.round(s.figures[k]) : ""}</td>)}</tr>)}</tbody></table></div>)}
           <form className="flex flex-wrap items-end gap-2" onSubmit={async (e) => { e.preventDefault(); const f = e.currentTarget; const body = Object.fromEntries([...new FormData(f).entries()].filter(([, v]) => String(v).trim() !== ""));
             setNote(null); try { await post(`/api/v1/publications/${p.publication_id}/metrics`, body); f.reset(); } catch (err) { setNote((err as Error).message); } reload(); }}>
-            {FIGURE.map(([k, n]) => <label key={k} className="grid gap-1 text-[12px] text-mute">{n}<input name={k} type="number" inputMode="decimal" min="0" className="mono h-8 w-24 px-2" /></label>)}
+            {FIGURE.map(([k, n]) => <label key={k} className="grid gap-1 text-mini text-mute">{n}<input name={k} type="number" inputMode="decimal" min="0" className="mono h-8 w-24 px-2" /></label>)}
             <Button size="sm" type="submit">{tr("Ghi số liệu lúc này")}</Button>
             <Button size="sm" onClick={async () => setForecast(await call<Forecast>(`/api/v1/publications/${p.publication_id}/forecast`))}>{tr("Dự báo một tuần")}</Button>
           </form>
@@ -229,7 +229,7 @@ function Campaigns() {
     <Section title={tr("Chiến dịch")} icon="calendar" note={tr("Một nhóm video cùng hướng tới một con số trong một khoảng thời gian. Tiến độ tính từ số liệu bạn đã ghi.")}>
       <ul className="grid gap-3 empty:hidden">
         {(data?.campaigns ?? []).map((c) => (
-          <li key={c.campaign_id} className="panel p-4 text-[13px]">
+          <li key={c.campaign_id} className="panel p-4 text-ui">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1"><span className="font-medium">{c.name}</span><span className="mono text-faint">{tv`${c.starts ?? "?"} đến ${c.ends ?? "?"}`}</span>
               {c.late > 0 && <Tag tone="cue">{tv`${c.late} video quá ngày`}</Tag>}{c.pace && <Tag tone={c.pace.on_pace ? "proof" : "cue"}>{c.pace.on_pace ? tr("Đúng tiến độ") : tr("Chậm tiến độ")}</Tag>}
               <button type="button" className="link ml-auto" onClick={async () => { if (!(await ask(tv`Xoá chiến dịch “${c.name}”?`, { body: tr("Các video và số liệu của chúng vẫn còn; chỉ nhóm này và mục tiêu của nó bị xoá."), confirm: tr("Xoá chiến dịch") }))) return; await call(`/api/v1/campaigns/${c.campaign_id}`, { method: "DELETE" }); reload(); }}>{tr("Xoá")}</button></div>
@@ -238,7 +238,7 @@ function Campaigns() {
             <ul className="mt-2 flex flex-wrap gap-2">{c.videos.map((v) => <li key={v.project_id}><button type="button" onClick={() => open_(`/du-an/${v.project_id}`)} className={`rounded-lg border px-2.5 py-1 text-left ${v.late ? "border-cue/40 bg-cue/10" : v.published ? "border-proof/40 bg-proof/10" : "border-line bg-raised/50"}`}>{v.title} <span className="mono text-faint">{v.published ? Math.round(v.value) : v.due_date ?? tr("chưa có ngày")}</span></button></li>)}</ul>
           </li>))}
       </ul>
-      <details className="mt-3 text-[13px]"><summary className="cursor-pointer list-none text-accent">{tr("Lập chiến dịch mới")}</summary>
+      <details className="mt-3 text-ui"><summary className="cursor-pointer list-none text-accent">{tr("Lập chiến dịch mới")}</summary>
         <form className="panel mt-2 grid gap-3 p-4" onSubmit={async (e) => { e.preventDefault(); const f = new FormData(e.currentTarget); setNote(null);
           try { await post("/api/v1/campaigns", { name: f.get("name"), target: Number(f.get("target") || 0), starts: f.get("starts"), ends: f.get("ends"), projects: picked }); e.currentTarget.reset(); setPicked([]); } catch (err) { setNote((err as Error).message); } reload(); }}>
           <div className="flex flex-wrap gap-2"><input name="name" aria-label={tr("Tên chiến dịch")} placeholder={tr("Tên chiến dịch, ví dụ: Tháng ẩm thực đường phố")} className="h-9 min-w-0 flex-1 px-3" />
@@ -248,7 +248,7 @@ function Campaigns() {
           <div className="flex items-center gap-3"><Button type="submit" kind="primary">{tr("Lập chiến dịch")}</Button>{note && <span className="text-tally">{note}</span>}</div>
         </form>
       </details>
-      <form className="mt-4 flex flex-wrap items-center gap-2 border-t border-line pt-4 text-[13px]" onSubmit={async (e) => { e.preventDefault(); const on = String(new FormData(e.currentTarget).get("on") ?? ""); if (on) setChange(await call(`/api/v1/publishing/change?on=${on}`)); }}>
+      <form className="mt-4 flex flex-wrap items-center gap-2 border-t border-line pt-4 text-ui" onSubmit={async (e) => { e.preventDefault(); const on = String(new FormData(e.currentTarget).get("on") ?? ""); if (on) setChange(await call(`/api/v1/publishing/change?on=${on}`)); }}>
         <label htmlFor="changed" className="text-mute">{tr("Bạn đổi cách làm từ ngày")}</label><input id="changed" name="on" type="date" className="mono h-8 px-2" /><Button size="sm" type="submit">{tr("So trước và sau")}</Button>
         {change && <p className="w-full text-mute">{change.text}</p>}
       </form>
@@ -271,7 +271,7 @@ function Results() {
           {published.map((p) => <PublicationRow key={p.publication_id} p={p} target={name(p.target)} due={data!.due.find((d) => d.publication_id === p.publication_id)?.mark ?? null} picked={picked.includes(p.publication_id)} pick={() => toggle(p.publication_id)} reload={reload} />)}
         </ul>
         {picked.length >= 2 && (
-          <form className="ai-card mt-3 flex flex-wrap items-center gap-2 p-3 text-[13px]" onSubmit={async (e) => { e.preventDefault(); if (!question.trim()) return; await post("/api/v1/experiments", { question, publications: picked }); setPicked([]); setQuestion(""); reload(); }}>
+          <form className="ai-card mt-3 flex flex-wrap items-center gap-2 p-3 text-ui" onSubmit={async (e) => { e.preventDefault(); if (!question.trim()) return; await post("/api/v1/experiments", { question, publications: picked }); setPicked([]); setQuestion(""); reload(); }}>
             <label htmlFor="question" className="font-medium">{tv`So sánh ${picked.length} video đã chọn`}</label>
             <input id="question" value={question} onChange={(e) => setQuestion(e.target.value)} placeholder={tr("Câu hỏi của thí nghiệm, ví dụ: ảnh đại diện có chữ có hơn không?")} className="h-8 min-w-0 flex-1 px-2.5" />
             <Button size="sm" kind="ai" type="submit" disabled={!question.trim()}>{tr("Lập thí nghiệm")}</Button>
@@ -282,7 +282,7 @@ function Results() {
         <Section title={tr("Thí nghiệm")} icon="sparkles" note={tr("Các biến thể được so ở cùng một tuổi của video, không so tổng số hôm nay.")}>
           <ul className="grid gap-3">
             {data.experiments.map((x) => (
-              <li key={x.experiment_id} className="panel p-4 text-[13px]">
+              <li key={x.experiment_id} className="panel p-4 text-ui">
                 <p className="font-medium">{x.question}</p>
                 <div className="mt-2 flex flex-wrap gap-2">{x.variants.map((v) => <span key={v.publication_id} className={`rounded-lg border px-2.5 py-1.5 ${x.verdict.decided && x.verdict.leader === v.label ? "border-proof/50 bg-proof/10" : "border-line bg-raised/50"}`}><span className="font-medium">{v.label}</span> <span className="text-mute">{v.title}</span> <span className="mono">{v.value === null ? tr("chưa có số") : Math.round(v.value)}</span></span>)}</div>
                 <p className={`mt-2 ${x.verdict.decided ? "" : "text-mute"}`}>{x.verdict.text}</p>
@@ -294,7 +294,7 @@ function Results() {
         </Section>)}
       {!!data?.breakdown.length && (
         <Section title={tr("Những gì đi cùng nhau")} icon="layers" note={tr("Lượt xem trung vị sau một ngày, nhóm theo đặc điểm của video. Đây là những thứ xuất hiện cùng nhau, không phải nguyên nhân; với ít video thì có thể chỉ là ngẫu nhiên.")}>
-          <ul className="panel rows text-[13px]">{data.breakdown.map((g) => <li key={g.kind + g.name} className="flex gap-3 px-4 py-2"><span className="w-28 shrink-0 text-faint">{g.kind}</span><span className="min-w-0 flex-1">{g.name}</span><span className="mono">{tv`${Math.round(g.median)} lượt xem`}</span><span className="mono w-20 text-right text-faint">{g.videos} video</span></li>)}</ul>
+          <ul className="panel rows text-ui">{data.breakdown.map((g) => <li key={g.kind + g.name} className="flex gap-3 px-4 py-2"><span className="w-28 shrink-0 text-faint">{g.kind}</span><span className="min-w-0 flex-1">{g.name}</span><span className="mono">{tv`${Math.round(g.median)} lượt xem`}</span><span className="mono w-20 text-right text-faint">{g.videos} video</span></li>)}</ul>
         </Section>)}
     </div>
   );

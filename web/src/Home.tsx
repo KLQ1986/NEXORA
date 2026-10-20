@@ -1,3 +1,4 @@
+import { PIPE } from "./Notices";
 import { t as tr, tv, locale } from "./i18n";
 import { useState } from "react";
 import { megabytes, post, projectState, REASONS, stageName, timecode, usePoll, type AgentTask, type Asset, type CalendarRow, type Channel, type Project, type Publishing, type Radar, type Stage } from "./api";
@@ -13,8 +14,7 @@ type HomeData = {
   recent: { project_id: string; title: string; created_at: number; renders: number }[];
 };
 
-const WORK: Record<string, string> = { "library.ingest": tr("Nhập footage"), "library.ingest_image": tr("Nhập ảnh"), "library.ingest_audio": tr("Nhập nhạc"), "library.understand": tr("Xem và mô tả"),
-  "sourcing.match": tr("Chọn clip"), "sourcing.generate": tr("Sinh hình bằng AI"), "edit.render": tr("Dựng video") };
+const WORK = PIPE;
 const WORK_ICON: Record<string, string> = { "library.ingest": "film", "library.ingest_image": "image", "library.ingest_audio": "music", "library.understand": "eye",
   "sourcing.match": "sparkles", "sourcing.generate": "spark", "edit.render": "scissors" };
 const ASK: Record<string, (i: Item) => string> = {
@@ -72,12 +72,12 @@ const LINE: { step: number; label: string; icon: string; waits?: boolean }[] = [
 function Tile({ label, value, sub, icon, tone, to, go, share, quiet }: { label: string; value: string; sub: string; icon: string; tone: Tone; to: string; go: (to: string) => void; share?: number; quiet?: boolean }) {
   return (
     <a href={to} onClick={(e) => { e.preventDefault(); go(to); }} className="tile group relative flex min-w-0 flex-col p-3 2xl:p-4">
-      <span className="flex items-start justify-between gap-3"><span className="truncate text-[13px] text-mute">{label}</span><Icon name={icon} size={17} className={TEXT[tone]} /></span>
-      <span className="mono mt-1.5 text-[22px] font-semibold leading-none tracking-tight 2xl:mt-2 2xl:text-[26px]">{value}</span>
+      <span className="flex items-start justify-between gap-3"><span className="truncate text-ui text-mute">{label}</span><Icon name={icon} size={17} className={TEXT[tone]} /></span>
+      <span className="mono mt-1.5 text-kpi-s font-semibold leading-none tracking-tight 2xl:mt-2 2xl:text-kpi-l">{value}</span>
       {share != null
         ? <span className="mt-3 block h-1 overflow-hidden rounded-full bg-white/[0.06]"><span className={`block h-full rounded-full ${share > 0.9 && !quiet ? "bg-cue" : "bg-gradient-to-r from-accent-deep to-accent"}`} style={{ width: `${Math.max(2, share * 100)}%` }} /></span>
-        : <span className="mt-2 truncate text-[12px] text-faint">{sub}</span>}
-      {share != null && <span className="mt-1.5 truncate text-[12px] text-faint">{sub}</span>}
+        : <span className="mt-2 truncate text-mini text-faint">{sub}</span>}
+      {share != null && <span className="mt-1.5 truncate text-mini text-faint">{sub}</span>}
     </a>
   );
 }
@@ -86,7 +86,7 @@ function Tile({ label, value, sub, icon, tone, to, go, share, quiet }: { label: 
 function Panel({ title, icon, tone = "accent", end, children, className = "", fill = false }: { title: string; icon: string; tone?: Tone; end?: React.ReactNode; children: React.ReactNode; className?: string; fill?: boolean }) {
   return (
     <section className={`panel flex min-h-0 min-w-0 flex-col p-4 2xl:p-5 ${className}`} aria-label={title}>
-      <h2 className="mb-3 flex shrink-0 items-center gap-2 text-[15px] font-semibold"><Icon name={icon} size={16} className={TEXT[tone]} />{title}<span className="ml-auto flex items-center text-[12.5px] font-normal">{end}</span></h2>
+      <h2 className="mb-3 flex shrink-0 items-center gap-2 text-title font-semibold"><Icon name={icon} size={16} className={TEXT[tone]} />{title}<span className="ml-auto flex items-center text-meta font-normal">{end}</span></h2>
       {fill ? <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">{children}</div> : children}
     </section>
   );
@@ -110,19 +110,20 @@ function Rhythm({ projects, posted }: { projects: Project[]; posted: number[] })
   const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="mb-3 flex shrink-0 flex-wrap items-center gap-x-5 gap-y-1 text-[12.5px] text-mute">
+      <div className="mb-3 flex shrink-0 flex-wrap items-center gap-x-5 gap-y-1 text-meta text-mute">
         <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: CUT }} />{tr("Bản dựng")}<span className="mono text-ink">{sum(cuts)}</span></span>
         <span className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-sm" style={{ background: POST }} />{tr("Đã đăng")}<span className="mono text-ink">{sum(posts)}</span></span>
       </div>
       <div className="relative flex min-h-[150px] flex-1 flex-col xl:min-h-[90px]" onMouseLeave={() => setHover(null)}>
-        <div className="pointer-events-none absolute inset-x-0 top-0 border-t border-dashed border-white/[0.06]" /><span className="mono pointer-events-none absolute -top-2 right-0 text-[10.5px] text-faint">{top}</span>
+        <div className="pointer-events-none absolute inset-x-0 top-0 border-t border-dashed border-white/[0.06]" />
+        {sum(cuts) + sum(posts) === 0 && <p className="pointer-events-none absolute inset-0 grid place-items-center px-6 text-center text-ui text-faint">{tr("Chưa có bản dựng hay video đăng nào trong 14 ngày qua.")}</p>}<span className="mono pointer-events-none absolute -top-2 right-0 text-mini text-faint">{top}</span>
         <div className="flex min-h-0 flex-1 items-end gap-1 border-b border-line" role="img" aria-label={tr("Số bản dựng và số video đăng mỗi ngày trong 14 ngày qua")}>
           {days.map((d, k) => (
             <div key={k} className={`relative flex h-full flex-1 items-end justify-center gap-[2px] rounded-t-md transition-colors ${hover === k ? "bg-white/[0.04]" : ""}`} onMouseEnter={() => setHover(k)}>
               <span className="w-full max-w-[12px] rounded-t-[4px]" style={{ height: `${(cuts[k] / top) * 100}%`, minHeight: cuts[k] ? 3 : 0, background: CUT }} />
               <span className="w-full max-w-[12px] rounded-t-[4px]" style={{ height: `${(posts[k] / top) * 100}%`, minHeight: posts[k] ? 3 : 0, background: POST }} />
               {hover === k && (
-                <span className={`dialog pointer-events-none absolute bottom-full z-10 mb-2 w-max px-3 py-2 text-[12px] ${k > 9 ? "right-0" : k < 4 ? "left-0" : "left-1/2 -translate-x-1/2"}`}>
+                <span className={`dialog pointer-events-none absolute bottom-full z-10 mb-2 w-max px-3 py-2 text-mini ${k > 9 ? "right-0" : k < 4 ? "left-0" : "left-1/2 -translate-x-1/2"}`}>
                   <span className="mb-1 block text-mute">{d.toLocaleDateString(locale, { weekday: "short", day: "numeric", month: "numeric" })}</span>
                   <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-sm" style={{ background: CUT }} />{tr("Bản dựng")}<span className="mono ml-auto pl-3">{cuts[k]}</span></span>
                   <span className="flex items-center gap-2"><span className="h-2 w-2 rounded-sm" style={{ background: POST }} />{tr("Đã đăng")}<span className="mono ml-auto pl-3">{posts[k]}</span></span>
@@ -131,7 +132,7 @@ function Rhythm({ projects, posted }: { projects: Project[]; posted: number[] })
             </div>
           ))}
         </div>
-        <div className="mt-1.5 flex gap-1">{days.map((d, k) => <span key={k} className={`mono flex-1 text-center text-[10.5px] ${k === 13 ? "text-accent" : "text-faint"}`}>{k % 2 === 1 || k === 13 ? d.getDate() : ""}</span>)}</div>
+        <div className="mt-1.5 flex gap-1">{days.map((d, k) => <span key={k} className={`mono flex-1 text-center text-mini ${k === 13 ? "text-accent" : "text-faint"}`}>{k % 2 === 1 || k === 13 ? d.getDate() : ""}</span>)}</div>
       </div>
       <table className="sr-only"><caption>{tr("Nhịp 14 ngày")}</caption><thead><tr><th>{tr("Ngày")}</th><th>{tr("Bản dựng")}</th><th>{tr("Đã đăng")}</th></tr></thead>
         <tbody>{days.map((d, k) => <tr key={k}><td>{d.toLocaleDateString(locale)}</td><td>{cuts[k]}</td><td>{posts[k]}</td></tr>)}</tbody></table>
@@ -146,8 +147,8 @@ function Cadences({ channels, cadence, today, go }: { channels: Channel[]; caden
   const paced = channels.filter((c) => c.per_week > 0);
   if (!paced.length) return (
     <div className="rounded-lg bg-white/[0.03] px-4 py-4 text-center short:py-2.5">
-      <p className="text-[13px] text-mute">{tr("Chưa có kênh nào đặt nhịp đăng.")}</p>
-      <button type="button" onClick={() => go("/ke-hoach")} className="link mt-2 text-[12.5px]">{tr("Thêm kênh")}</button>
+      <p className="text-ui text-mute">{tr("Chưa có kênh nào đặt nhịp đăng.")}</p>
+      <button type="button" onClick={() => go("/ke-hoach")} className="link mt-2 text-meta">{tr("Thêm kênh")}</button>
     </div>
   );
   return (
@@ -158,8 +159,8 @@ function Cadences({ channels, cadence, today, go }: { channels: Channel[]; caden
         const planned = now ? now.planned : 0, need = Math.max(c.per_week, planned), behind = now ? now.short > 0 : true;
         return (
           <li key={c.name}>
-            <div className="mb-1.5 flex items-baseline justify-between gap-3 text-[13px]"><span className="truncate font-medium">{c.name}</span>
-              <span className={`mono shrink-0 text-[12px] ${behind ? "text-cue" : "text-proof"}`}>{planned}/{c.per_week}{behind && now ? <span className="ml-1.5 font-sans">{tv`thiếu ${now.short}`}</span> : null}</span></div>
+            <div className="mb-1.5 flex items-baseline justify-between gap-3 text-ui"><span className="truncate font-medium">{c.name}</span>
+              <span className={`mono shrink-0 text-mini ${behind ? "text-cue" : "text-proof"}`}>{planned}/{c.per_week}{behind && now ? <span className="ml-1.5 font-sans">{tv`thiếu ${now.short}`}</span> : null}</span></div>
             <div className="flex gap-1" aria-hidden="true">{Array.from({ length: Math.min(need, 14) }, (_, k) => <span key={k} className={`h-1.5 flex-1 rounded-full ${k < planned ? (behind ? "bg-cue" : "bg-proof") : "bg-white/[0.07]"}`} />)}</div>
           </li>
         );
@@ -177,22 +178,22 @@ function Upcoming({ rows, go }: { rows: CalendarRow[]; go: (to: string) => void 
   // A week with nothing on it is one line and a way to plan it, not seven empty rows.
   if (!soon && !late.length) return (
     <div className="rounded-lg bg-white/[0.03] px-4 py-5 text-center short:py-2.5">
-      <p className="text-[13px] text-mute">{tr("Chưa có video nào xếp lịch trong 7 ngày tới.")}</p>
-      <button type="button" onClick={() => go("/ke-hoach")} className="link mt-2 text-[12.5px]">{tr("Xếp lịch đăng")}</button>
+      <p className="text-ui text-mute">{tr("Chưa có video nào xếp lịch trong 7 ngày tới.")}</p>
+      <button type="button" onClick={() => go("/ke-hoach")} className="link mt-2 text-meta">{tr("Xếp lịch đăng")}</button>
     </div>
   );
   return (
     <div className="grid gap-1">
-      {late.length > 0 && <button type="button" onClick={() => go("/ke-hoach")} className="mb-1 flex items-center gap-2 rounded-lg bg-cue/10 px-3 py-2 text-left text-[12.5px] text-cue"><Icon name="alert" size={14} />{tv`${late.length} video đã quá ngày đăng`}</button>}
+      {late.length > 0 && <button type="button" onClick={() => go("/ke-hoach")} className="mb-1 flex items-center gap-2 rounded-lg bg-cue/10 px-3 py-2 text-left text-meta text-cue"><Icon name="alert" size={14} />{tv`${late.length} video đã quá ngày đăng`}</button>}
       {days.map((d, k) => {
         const due = rows.filter((r) => r.due_date === dayKey(d));
         return (
           <div key={k} className="flex items-start gap-3 rounded-lg px-2 py-1.5">
-            <span className={`mono w-[72px] shrink-0 whitespace-nowrap pt-0.5 text-[12px] ${k === 0 ? "font-medium text-accent" : "text-faint"}`}>{k === 0 ? tr("Hôm nay") : `${d.toLocaleDateString(locale, { weekday: "short" })} ${d.getDate()}/${d.getMonth() + 1}`}</span>
+            <span className={`mono w-[72px] shrink-0 whitespace-nowrap pt-0.5 text-mini ${k === 0 ? "font-medium text-accent" : "text-faint"}`}>{k === 0 ? tr("Hôm nay") : `${d.toLocaleDateString(locale, { weekday: "short" })} ${d.getDate()}/${d.getMonth() + 1}`}</span>
             <span className="grid min-w-0 flex-1 gap-1">
-              {due.length === 0 && <span className="text-[12.5px] text-faint/70">{tr("Trống")}</span>}
+              {due.length === 0 && <span className="text-meta text-faint/70">{tr("Trống")}</span>}
               {due.map((r) => (
-                <button key={r.project_id} type="button" onClick={() => go(`/du-an/${r.project_id}`)} className="flex min-w-0 items-center gap-2 text-left text-[13px] hover:text-accent">
+                <button key={r.project_id} type="button" onClick={() => go(`/du-an/${r.project_id}`)} className="flex min-w-0 items-center gap-2 text-left text-ui hover:text-accent">
                   <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${r.ready ? "bg-proof" : "bg-cue"}`} title={r.ready ? tr("Đã sẵn sàng") : tr("Chưa xong")} /><span className="truncate">{r.title}</span></button>
               ))}
             </span>
@@ -252,7 +253,7 @@ export default function Home({ go }: { go: (to: string) => void }) {
       <div className="grid items-start gap-4 xl:h-full xl:grid-cols-[minmax(0,1fr)_320px] xl:items-stretch 2xl:grid-cols-[minmax(0,1fr)_380px]">
         <div className="flex min-h-0 min-w-0 flex-col gap-4">
           <Panel className="shrink-0" title={tr("Dây chuyền sản xuất")} icon="pulse"
-                 end={<span className="inline-flex h-6 items-center gap-1.5 rounded-full border border-proof/30 bg-proof/10 px-2.5 text-[11.5px] font-medium text-proof"><span className="ping relative h-1.5 w-1.5 rounded-full bg-proof" />{tr("Trực tiếp")}</span>}>
+                 end={<span className="inline-flex h-6 items-center gap-1.5 rounded-full border border-proof/30 bg-proof/10 px-2.5 text-mini font-medium text-proof"><span className="ping relative h-1.5 w-1.5 rounded-full bg-proof" />{tr("Trực tiếp")}</span>}>
             <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
               <Tile go={go} to="/phong-chieu" label={tr("Chờ bạn")} value={String(waiting)} sub={waiting ? tr("Duyệt hoặc xử lý chỗ dừng") : tr("Không có gì đang chờ")} icon="bell" tone="cue" />
               <Tile go={go} to="/tien-trinh" label={tr("Máy đang chạy")} value={String(busy)} sub={busy ? (WORK[d.running[0]?.pipeline] ?? tr("Trợ lý sản xuất")) : tr("Máy đang rảnh")} icon="cpu" tone="ai" />
@@ -266,15 +267,15 @@ export default function Home({ go }: { go: (to: string) => void }) {
                 return (
                   <li key={s.step} className={`relative flex min-h-[96px] flex-col gap-2 p-3 short:min-h-0 short:py-2.5 2xl:min-h-[124px] ${empty ? "min-w-[96px] flex-[0.6]" : "min-w-[150px] flex-[1.4]"} ${hot ? "bg-cue/[0.06]" : "bg-surface"}`}>
                     <span className={`absolute inset-x-0 top-0 h-0.5 ${hot ? "bg-cue" : empty ? "bg-transparent" : "bg-accent/60"}`} />
-                    <span className={`flex items-center gap-1.5 truncate text-[12px] ${hot ? "text-cue" : empty ? "text-faint" : "text-mute"}`}><Icon name={s.icon} size={13} />{s.label}</span>
-                    <span className={`mono text-[22px] font-semibold leading-none ${empty ? "text-faint/60" : hot ? "text-cue" : "text-ink"}`}>{here.length}</span>
+                    <span className={`flex items-center gap-1.5 truncate text-mini ${hot ? "text-cue" : empty ? "text-faint" : "text-mute"}`}><Icon name={s.icon} size={13} />{s.label}</span>
+                    <span className={`mono text-kpi-s font-semibold leading-none ${empty ? "text-faint/60" : hot ? "text-cue" : "text-ink"}`}>{here.length}</span>
                     {!empty && (
                       <span className="mt-auto grid grid-cols-2 gap-1 short:hidden">
                         {here.slice(0, here.length > 4 ? 3 : 4).map((p) => { const src = poster(p); return (
                           <a key={p.project_id} href={`/du-an/${p.project_id}`} onClick={open(`/du-an/${p.project_id}`)} title={p.title} aria-label={p.title}
                              className="block aspect-video overflow-hidden rounded-md ring-1 ring-white/5 transition-[box-shadow,filter] hover:brightness-125 hover:ring-accent/60">
                             {src ? <img src={src} alt="" className="h-full w-full object-cover" /> : <span className="hatch block h-full w-full" />}</a>); })}
-                        {here.length > 4 && <span className="mono grid aspect-video place-items-center rounded-md bg-white/[0.04] text-[12px] text-mute">+{here.length - 3}</span>}
+                        {here.length > 4 && <span className="mono grid aspect-video place-items-center rounded-md bg-white/[0.04] text-mini text-mute">+{here.length - 3}</span>}
                       </span>
                     )}
                   </li>
@@ -292,23 +293,23 @@ export default function Home({ go }: { go: (to: string) => void }) {
                 {stuck.map((i) => (
                   <li key={i.run_id}><a href={i.link} onClick={open(i.link)} className="flex items-center gap-3 rounded-lg p-2 transition-colors hover:bg-white/[0.04]">
                     <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${i.status === "failed" ? TINT.tally : TINT.cue}`}><Icon name="alert" size={16} /></span>
-                    <span className="min-w-0 flex-1"><span className="block truncate text-[13.5px] font-medium">{i.name}</span><span className={`block truncate text-[12.5px] ${i.status === "failed" ? "text-tally" : "text-cue"}`}>{ASK[i.status]?.(i) ?? i.status}</span></span></a></li>
+                    <span className="min-w-0 flex-1"><span className="block truncate text-ui-l font-medium">{i.name}</span><span className={`block truncate text-meta ${i.status === "failed" ? "text-tally" : "text-cue"}`}>{ASK[i.status]?.(i) ?? i.status}</span></span></a></li>
                 ))}
                 {d.offline_volumes.map((v) => (
                   <li key={v.volume_id}><a href="/he-thong" onClick={open("/he-thong")} className="flex items-center gap-3 rounded-lg p-2 transition-colors hover:bg-white/[0.04]">
                     <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${TINT.cue}`}><Icon name="disk" size={16} /></span>
-                    <span className="min-w-0 flex-1"><span className="block truncate text-[13.5px] font-medium">{v.mount_path}</span><span className="block truncate text-[12.5px] text-cue">{tv`Không tìm thấy nơi chứa ${v.files} file footage`}</span></span></a></li>
+                    <span className="min-w-0 flex-1"><span className="block truncate text-ui-l font-medium">{v.mount_path}</span><span className="block truncate text-meta text-cue">{tv`Không tìm thấy nơi chứa ${v.files} file footage`}</span></span></a></li>
                 ))}
                 {d.problems.map((p) => (
                   <li key={p.name}><a href="/he-thong" onClick={open("/he-thong")} className="flex items-center gap-3 rounded-lg p-2 transition-colors hover:bg-white/[0.04]">
                     <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${TINT.tally}`}><Icon name="cpu" size={16} /></span>
-                    <span className="min-w-0 flex-1"><span className="block truncate text-[13.5px] font-medium">{p.name}</span><span className="block truncate text-[12.5px] text-tally">{p.detail}</span></span></a></li>
+                    <span className="min-w-0 flex-1"><span className="block truncate text-ui-l font-medium">{p.name}</span><span className="block truncate text-meta text-tally">{p.detail}</span></span></a></li>
                 ))}
                 {dueMetrics.slice(0, 3).map((m) => (
                   <li key={`${m.publication_id}-${m.mark}`}><a href="/ke-hoach?xem=ket-qua" onClick={open("/ke-hoach?xem=ket-qua")} className="flex items-center gap-3 rounded-lg p-2 transition-colors hover:bg-white/[0.04]">
                     <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${TINT.cue}`}><Icon name="pulse" size={16} /></span>
-                    <span className="min-w-0 flex-1"><span className="block truncate text-[13.5px] font-medium">{m.title}</span><span className="block truncate text-[12.5px] text-cue">{tv`Tới mốc ghi số liệu ${m.mark < 48 ? tv`${m.mark} giờ` : tv`${Math.round(m.mark / 24)} ngày`} sau khi đăng`}</span></span>
-                    <span className={`inline-flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-[12px] font-medium ${TINT.cue}`}><Icon name="edit" size={13} />{tr("Ghi số liệu")}</span></a></li>
+                    <span className="min-w-0 flex-1"><span className="block truncate text-ui-l font-medium">{m.title}</span><span className="block truncate text-meta text-cue">{tv`Tới mốc ghi số liệu ${m.mark < 48 ? tv`${m.mark} giờ` : tv`${Math.round(m.mark / 24)} ngày`} sau khi đăng`}</span></span>
+                    <span className={`inline-flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-mini font-medium ${TINT.cue}`}><Icon name="edit" size={13} />{tr("Ghi số liệu")}</span></a></li>
                 ))}
                 {groups.slice(0, 5).map((g) => { const n = g[0], many = g.length > 1; const to = many ? (n.label === tr("Duyệt bản dựng") ? "/phong-chieu" : "/du-an") : n.to; return (
                   <li key={n.label}><a href={to} onClick={open(to)} className="group flex items-center gap-3 rounded-lg p-2 transition-colors hover:bg-white/[0.04]">
@@ -317,10 +318,21 @@ export default function Home({ go }: { go: (to: string) => void }) {
                         ? <img key={x.p.project_id} src={src} alt="" className="absolute h-9 w-12 rounded-md object-cover ring-2 ring-surface" style={{ left: shift, top: 0 }} />
                         : <span key={x.p.project_id} className="hatch absolute h-9 w-12 rounded-md ring-2 ring-surface" style={{ left: shift, top: 0 }} />; })}
                     </span>
-                    <span className="min-w-0 flex-1"><span className="block truncate text-[13.5px] font-medium">{many ? tv`${g.length} video` : n.p.title}</span>
-                      <span className="block truncate text-[12.5px] text-mute">{many ? g.map((x) => x.p.title).join(", ") : n.hint}</span></span>
-                    <span className={`inline-flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-[12px] font-medium ${TINT[n.tone]}`}><Icon name={n.icon} size={13} />{n.label}</span></a></li>); })}
+                    <span className="min-w-0 flex-1"><span className="block truncate text-ui-l font-medium">{many ? tv`${g.length} video` : n.p.title}</span>
+                      <span className="block truncate text-meta text-mute">{many ? g.map((x) => x.p.title).join(", ") : n.hint}</span></span>
+                    <span className={`inline-flex h-7 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-mini font-medium ${TINT[n.tone]}`}><Icon name={n.icon} size={13} />{n.label}</span></a></li>); })}
               </ul>
+              {/* What was made last, under what waits: the panel is a share of the screen's height, and its foot is not left bare. */}
+              {d.recent.length > 0 && (
+                <div className="mt-auto border-t border-line pt-3">
+                  <p className="mb-1 px-2 text-meta text-faint">{tr("Video gần đây")}</p>
+                  <ul className="grid gap-0.5">{d.recent.slice(0, 4).map((r) => { const p = list.find((x) => x.project_id === r.project_id); const src = p ? poster(p) : null; return (
+                    <li key={r.project_id}><a href={`/du-an/${r.project_id}`} onClick={open(`/du-an/${r.project_id}`)} className="flex items-center gap-3 rounded-lg px-2 py-1.5 transition-colors hover:bg-white/[0.04]">
+                      {src ? <img src={src} alt="" className="h-8 w-12 shrink-0 rounded-md object-cover" /> : <span className="hatch h-8 w-12 shrink-0 rounded-md" />}
+                      <span className="min-w-0 flex-1 truncate text-ui font-medium">{r.title}</span>
+                      <span className="shrink-0 text-meta text-faint">{r.renders ? tv`${r.renders} bản dựng` : tr("chưa dựng")} · {new Date(r.created_at * 1000).toLocaleDateString(locale, { day: "numeric", month: "numeric" })}</span>
+                    </a></li>); })}</ul>
+                </div>)}
             </Panel>
 
             <Panel fill title={tr("Nhịp 14 ngày")} icon="pulse"><Rhythm projects={list} posted={posted} /></Panel>
@@ -333,8 +345,8 @@ export default function Home({ go }: { go: (to: string) => void }) {
                   <ul className={`grid gap-2 sm:grid-cols-2 ${best.length ? "" : "2xl:grid-cols-4"}`}>
                     {ideas.map((x, k) => (
                       <li key={x.subject} className={`flex items-center gap-3 rounded-lg bg-white/[0.03] p-2.5 ${k > 1 ? "short:hidden" : ""}`}>
-                        <span className="min-w-0 flex-1"><span className="block truncate text-[13.5px] font-medium first-letter:uppercase">{x.subject}</span>
-                          <span className="block truncate text-[12.5px] text-mute">{fresh.length ? tv`${x.unused_videos} video chưa dùng, ${hours(x.unused_seconds)} hình` : tv`${x.videos} video, ${hours(x.seconds)} hình trong kho`}</span></span>
+                        <span className="min-w-0 flex-1"><span className="block truncate text-ui-l font-medium first-letter:uppercase">{x.subject}</span>
+                          <span className="block truncate text-meta text-mute">{fresh.length ? tv`${x.unused_videos} video chưa dùng, ${hours(x.unused_seconds)} hình` : tv`${x.videos} video, ${hours(x.seconds)} hình trong kho`}</span></span>
                         <Button size="sm" onClick={() => startFrom(x.subject)}><Icon name="plus" size={13} />{tr("Làm video")}</Button>
                       </li>
                     ))}
@@ -346,9 +358,9 @@ export default function Home({ go }: { go: (to: string) => void }) {
                   <ul className="grid gap-1">
                     {best.map(({ x, views }, k) => (
                       <li key={x.publication_id} className="flex items-center gap-3 rounded-lg p-2">
-                        <span className={`mono grid h-7 w-7 shrink-0 place-items-center rounded-md text-[12px] ${k === 0 ? "bg-accent/15 text-accent" : "bg-white/[0.05] text-mute"}`}>{k + 1}</span>
-                        <span className="min-w-0 flex-1"><span className="block truncate text-[13.5px] font-medium">{x.title}</span><span className="block truncate text-[12px] text-faint">{x.target}</span></span>
-                        <span className="mono shrink-0 text-[14px] font-medium">{views.toLocaleString(locale)}<span className="ml-1 text-[11.5px] font-normal text-faint">{tr("lượt xem")}</span></span>
+                        <span className={`mono grid h-7 w-7 shrink-0 place-items-center rounded-md text-mini ${k === 0 ? "bg-accent/15 text-accent" : "bg-white/[0.05] text-mute"}`}>{k + 1}</span>
+                        <span className="min-w-0 flex-1"><span className="block truncate text-ui-l font-medium">{x.title}</span><span className="block truncate text-mini text-faint">{x.target}</span></span>
+                        <span className="mono shrink-0 text-body font-medium">{views.toLocaleString(locale)}<span className="ml-1 text-mini font-normal text-faint">{tr("lượt xem")}</span></span>
                       </li>
                     ))}
                   </ul>
@@ -367,29 +379,29 @@ export default function Home({ go }: { go: (to: string) => void }) {
           </Panel>
 
           <Panel className="shrink-0" title={tr("Bản dựng mới nhất")} icon="screen" end={<button type="button" onClick={() => go("/phong-chieu")} className="link">{tr("Phòng chiếu")}</button>}>
-            {renders.length === 0 && <p className="text-[13px] text-mute">{tr("Chưa có bản dựng nào.")}</p>}
+            {renders.length === 0 && <p className="text-ui text-mute">{tr("Chưa có bản dựng nào.")}</p>}
             <ul className="grid gap-2">
               {renders.map(({ p, r }, k) => { const src = r.package ? `/api/v1/renders/${r.render_id}/package/${r.package.thumbnail}` : poster(p); const ok = r.review?.approved;
                 const wait = p.renders[0]?.render_id === r.render_id && p.render?.status === "waiting_review"; return (
                 <li key={r.render_id} className={k > 1 ? "short:hidden" : ""}><a href={`/phong-chieu?r=${r.render_id}`} onClick={open(`/phong-chieu?r=${r.render_id}`)} className="group flex items-center gap-3 rounded-lg p-1.5 transition-colors hover:bg-white/[0.04]">
                   <span className="relative h-12 w-20 shrink-0 overflow-hidden rounded-md bg-black">
                     {src ? <img src={src} alt="" className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" /> : <span className="hatch block h-full w-full" />}
-                    <span className="chip mono absolute bottom-1 right-1 !h-[18px] !px-1.5 !text-[10.5px]">{timecode(r.qc.duration)}</span></span>
-                  <span className="min-w-0 flex-1"><span className="block truncate text-[13.5px] font-medium">{p.title}</span>
-                    <span className={`block truncate text-[12px] ${wait ? "text-cue" : ok ? "text-proof" : "text-faint"}`}>{wait ? tr("Chờ bạn duyệt") : ok ? tr("Đã duyệt") : new Date(r.created_at * 1000).toLocaleDateString(locale)}</span></span>
+                    <span className="chip mono absolute bottom-1 right-1 !h-[18px] !px-1.5 !text-mini">{timecode(r.qc.duration)}</span></span>
+                  <span className="min-w-0 flex-1"><span className="block truncate text-ui-l font-medium">{p.title}</span>
+                    <span className={`block truncate text-mini ${wait ? "text-cue" : ok ? "text-proof" : "text-faint"}`}>{wait ? tr("Chờ bạn duyệt") : ok ? tr("Đã duyệt") : new Date(r.created_at * 1000).toLocaleDateString(locale)}</span></span>
                   <Icon name="play" size={15} className="text-faint transition-colors group-hover:text-accent" /></a></li>); })}
             </ul>
           </Panel>
 
           <Panel fill className="xl:max-h-[38%] xl:shrink-0 xl:short:max-h-[24%]" title={tr("Máy đang làm gì")} icon="cpu" tone="ai" end={<button type="button" onClick={() => go("/tien-trinh")} className="link">{tr("Tiến trình")}</button>}>
-            {busy === 0 && <p className="flex items-center gap-2.5 rounded-lg bg-white/[0.03] px-3 py-2.5 text-[13px] text-mute"><span className="h-2 w-2 rounded-full bg-proof" />{tr("Máy đang rảnh.")}</p>}
+            {busy === 0 && <p className="flex items-center gap-2.5 rounded-lg bg-white/[0.03] px-3 py-2.5 text-ui text-mute"><span className="h-2 w-2 rounded-full bg-proof" />{tr("Máy đang rảnh.")}</p>}
             <ul className="grid gap-2">
               {d.running.map((i) => (
                 <li key={i.run_id} className="rounded-lg bg-white/[0.03] p-3">
                   <div className="mb-2.5 flex items-center gap-3">
                     <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${TINT.ai}`}><Icon name={WORK_ICON[i.pipeline] ?? "pulse"} size={15} /></span>
-                    <span className="min-w-0 flex-1"><span className="block truncate text-[13.5px] font-medium">{WORK[i.pipeline] ?? i.pipeline}<span className="ml-2 font-normal text-mute">{i.name}</span></span>
-                      <span className="block truncate text-[12px] text-mute">{i.held ? tr("Chờ tới giờ phân tích") : i.stage_key ? tv`Bước ${stageName(i.stage_key, i.pipeline)}` : tr("Trong hàng đợi")}</span></span>
+                    <span className="min-w-0 flex-1"><span className="block truncate text-ui-l font-medium">{WORK[i.pipeline] ?? i.pipeline}<span className="ml-2 font-normal text-mute">{i.name}</span></span>
+                      <span className="block truncate text-mini text-mute">{i.held ? tr("Chờ tới giờ phân tích") : i.stage_key ? tv`Bước ${stageName(i.stage_key, i.pipeline)}` : tr("Trong hàng đợi")}</span></span>
                   </div>
                   <StageRail stages={i.stages ?? []} name={(k) => stageName(k, i.pipeline)} />
                 </li>
@@ -397,17 +409,17 @@ export default function Home({ go }: { go: (to: string) => void }) {
               {d.agent.map((t) => (
                 <li key={t.task_id}><a href={`/du-an/${t.project_id}`} onClick={open(`/du-an/${t.project_id}`)} className="flex items-start gap-3 rounded-lg bg-ai/[0.06] p-3 transition-colors hover:bg-ai/10">
                   <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${TINT.ai}`}><Icon name="sparkles" size={15} /></span>
-                  <span className="min-w-0"><span className="block truncate text-[13.5px] font-medium">{tv`Trợ lý sản xuất: ${t.goal}`}</span>
-                    <span className={`line-clamp-2 text-[12.5px] ${t.status === "waiting_operator" ? "text-cue" : "text-mute"}`}>{t.log[t.log.length - 1]?.text}</span></span></a></li>
+                  <span className="min-w-0"><span className="block truncate text-ui-l font-medium">{tv`Trợ lý sản xuất: ${t.goal}`}</span>
+                    <span className={`line-clamp-2 text-meta ${t.status === "waiting_operator" ? "text-cue" : "text-mute"}`}>{t.log[t.log.length - 1]?.text}</span></span></a></li>
               ))}
             </ul>
             {d.unavailable.length > 0 && (
               <div className="mt-3 border-t border-line pt-3">
-                <p className="mb-2 text-[12.5px] text-faint">{tr("Chưa dùng được trên máy này")}</p>
+                <p className="mb-2 text-meta text-faint">{tr("Chưa dùng được trên máy này")}</p>
                 <ul className="grid gap-1.5">
                   {d.unavailable.map((u) => (
-                    <li key={u.pipeline} className="flex items-start gap-2.5 text-[13px]"><span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-cue" />
-                      <span><span className="font-medium">{WORK[u.pipeline] ?? u.pipeline}</span><span className="block text-[12.5px] text-mute">{tv`Thiếu ${u.missing.map((m) => NEEDS[m] ?? m).join(", ")}`}</span></span></li>
+                    <li key={u.pipeline} className="flex items-start gap-2.5 text-ui"><span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-cue" />
+                      <span><span className="font-medium">{WORK[u.pipeline] ?? u.pipeline}</span><span className="block text-meta text-mute">{tv`Thiếu ${u.missing.map((m) => NEEDS[m] ?? m).join(", ")}`}</span></span></li>
                   ))}
                 </ul>
               </div>

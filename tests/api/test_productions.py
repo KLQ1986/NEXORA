@@ -89,3 +89,46 @@ def test_a_mission_makes_one_production_of_its_videos_or_adds_to_the_one_named(t
     assert m2["plan"]["production_id"] == pid
     done2 = client.post(f"/api/v1/missions/{m2['mission_id']}/confirm").json()
     assert all(system.projects.project(p)["production_id"] == pid and system.projects.project(p)["voice"] == "Linh" for p in done2["links"]["projects"])
+
+
+def test_a_production_lists_the_missions_given_for_it_and_mission_control_filters_by_it(tmp_path):
+    system, client = _setup(tmp_path)
+    plan = {"loai": "video", "muc_tieu": "buổi sáng ở chợ", "tieu_de": "Chợ sáng", "so_video": 1, "dinh_dang": "portrait", "so_cau": 3}
+    system.adapters._adapters["model"].answers["mission_plan"] = plan
+    pid = client.post("/api/v1/productions", json={"title": "Chợ"}).json()["production_id"]
+    given = client.post("/api/v1/missions", json={"text": "làm video chợ", "production_id": pid}).json()
+    assert given["production_id"] == pid                                                          # kept as soon as it is planned
+    loose = client.post("/api/v1/missions", json={"text": "làm video biển"}).json()
+    assert loose["production_id"] is None
+    client.post(f"/api/v1/missions/{loose['mission_id']}/confirm")
+    made = system.missions.store.get(loose["mission_id"])["production_id"]                         # the production its videos went into
+    assert made and made != pid and system.productions.get(made)["title"] == "Chợ sáng"
+
+    view = client.get(f"/api/v1/productions/{pid}").json()
+    assert [m["mission_id"] for m in view["missions"]] == [given["mission_id"]] and view["missions"][0]["status"] == "planned"
+    listed = client.get("/api/v1/missions", params={"production": pid}).json()
+    assert [m["mission_id"] for m in listed["missions"]] == [given["mission_id"]] and listed["missions"][0]["production"] == {"production_id": pid, "title": "Chợ"}
+    every = client.get("/api/v1/missions").json()
+    assert {d["production_id"] for d in every["productions"]} == {pid, made}
+    assert client.get(f"/api/v1/missions/{given['mission_id']}").json()["production"]["title"] == "Chợ"
+
+    # An empty production removed: the mission planned for it keeps its record and, carried out, makes a production of its own.
+    assert client.delete(f"/api/v1/productions/{pid}").status_code == 200
+    assert system.missions.store.get(given["mission_id"])["production_id"] is None
+    from nexora.core.missions import MissionStore
+    assert MissionStore(tmp_path / "data" / "nexora.db").get(given["mission_id"])["production_id"] is None     # not brought back at start-up
+    done = client.post(f"/api/v1/missions/{given['mission_id']}/confirm").json()
+    assert system.productions.get(system.projects.project(done["links"]["projects"][0])["production_id"]) is not None
+
+
+def test_missions_made_before_take_the_production_of_their_first_video(tmp_path):
+    system, client = _setup(tmp_path)
+    plan = {"loai": "video", "muc_tieu": "chợ", "tieu_de": "Chợ", "so_video": 1, "dinh_dang": "portrait", "so_cau": 3}
+    system.adapters._adapters["model"].answers["mission_plan"] = plan
+    m = client.post("/api/v1/missions", json={"text": "làm video chợ"}).json()
+    done = client.post(f"/api/v1/missions/{m['mission_id']}/confirm").json()
+    owner = system.projects.project(done["links"]["projects"][0])["production_id"]
+    with sqlite3.connect(tmp_path / "data" / "nexora.db") as c:                         # as a database from before missions kept it
+        c.execute("UPDATE missions SET production_id = NULL")
+    from nexora.core.missions import MissionStore
+    assert MissionStore(tmp_path / "data" / "nexora.db").get(m["mission_id"])["production_id"] == owner
